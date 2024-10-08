@@ -103,9 +103,9 @@ extern "C"
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
-                                 const void* data,
-                                 size_t bytes_in,
-                                 size_t* bytes_out);
+                                     const void* data,
+                                     size_t bytes_in,
+                                     size_t* bytes_out);
 
 #ifdef __cplusplus
 }

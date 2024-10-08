@@ -20,8 +20,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOTEST "Disable all tests" OFF)
+option(BUILD_PYTHON "Build Python bindings" OFF)
 
 add_subdirectory(src)
-add_subdirectory(tests)
+if (${NOTEST})
+    message(STATUS "Skipping test targets")
+else ()
+    add_subdirectory(tests)
+endif ()
+
+if (${BUILD_PYTHON})
+    add_subdirectory(python)
+else ()
+    message(STATUS "Skipping Python bindings")
+endif ()
 
 include(CPack)

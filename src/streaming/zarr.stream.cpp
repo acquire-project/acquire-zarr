@@ -970,7 +970,7 @@ bool
 finalize_stream(struct ZarrStream_s* stream)
 {
     if (stream == nullptr) {
-        LOG_INFO("Stream is null. Nothing to finalize.");
+        LOG_INFO("Stream is null. Nothing to finalize_.");
         return true;
     }
 
