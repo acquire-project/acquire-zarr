@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.23)
 project(acquire-zarr)
+cmake_policy(SET CMP0057 NEW)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()
 
