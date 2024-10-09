@@ -57,7 +57,7 @@ jobs:
 
       - name: Package
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DNOTEST=1
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
           cmake --build ${{github.workspace}}/pack --config Release
           cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
 
@@ -93,12 +93,12 @@ jobs:
 
       - name: Build for x64
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-x64 -B ${{github.workspace}}/build-x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64" -DNOTEST=1
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-x64 -B ${{github.workspace}}/build-x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64" -DBUILD_TESTS=OFF
           cmake --build ${{github.workspace}}/build-x64 --config Release
 
       - name: Build for arm64
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=arm64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-arm64 -B ${{github.workspace}}/build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64"
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=arm64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-arm64 -B ${{github.workspace}}/build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64" -DBUILD_TESTS=OFF
           cmake --build ${{github.workspace}}/build-arm64 --config Release
 
       - name: Test  # don't release if tests are failing
