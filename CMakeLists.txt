@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.23)
 project(acquire-zarr)
+cmake_policy(SET CMP0057 NEW) # allows IN_LIST operator (for pybind11)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()
 
@@ -19,10 +20,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(BUILD_TESTS "Build tests" ON)
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    include(CTest)
+endif()
 
 add_subdirectory(src)
-if (${BUILD_TESTS})
+if (BUILD_TESTING)
     add_subdirectory(tests)
 else ()
     message(STATUS "Skipping test targets")
