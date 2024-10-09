@@ -1,4 +1,6 @@
+cmake_minimum_required(VERSION 3.30)
 project(acquire-zarr-py)
+cmake_policy(SET CMP0057 NEW)
 
 execute_process(COMMAND python3 -m pybind11 --cmakedir
         RESULT_VARIABLE pybind11_NOT_FOUND

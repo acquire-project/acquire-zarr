@@ -1,0 +1,5 @@
+include python/CMakeLists.txt
+include python/acquire-zarr-py.cpp
+recursive-include include *
+recursive-include python/include *
+recursive-include src *
