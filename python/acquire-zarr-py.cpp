@@ -289,41 +289,36 @@ PYBIND11_MODULE(acquire_zarr, m)
            append
     )pbdoc";
 
-    py::enum_<ZarrVersion>(m, "Version")
+    py::enum_<ZarrVersion>(m, "ZarrVersion")
       .value("V2", ZarrVersion_2)
-      .value("V3", ZarrVersion_3)
-      .export_values();
+      .value("V3", ZarrVersion_3);
 
-    py::enum_<ZarrDataType>(m, "DType")
-      .value("DTYPE_UINT8", ZarrDataType_uint8)
-      .value("DTYPE_UINT16", ZarrDataType_uint16)
-      .value("DTYPE_UINT32", ZarrDataType_uint32)
-      .value("DTYPE_UINT64", ZarrDataType_uint64)
-      .value("DTYPE_INT8", ZarrDataType_int8)
-      .value("DTYPE_INT16", ZarrDataType_int16)
-      .value("DTYPE_INT32", ZarrDataType_int32)
-      .value("DTYPE_INT64", ZarrDataType_int64)
-      .value("DTYPE_FLOAT32", ZarrDataType_float32)
-      .value("DTYPE_FLOAT64", ZarrDataType_float64)
-      .export_values();
+    py::enum_<ZarrDataType>(m, "ZarrDataType")
+      .value("UINT8", ZarrDataType_uint8)
+      .value("UINT16", ZarrDataType_uint16)
+      .value("UINT32", ZarrDataType_uint32)
+      .value("UINT64", ZarrDataType_uint64)
+      .value("INT8", ZarrDataType_int8)
+      .value("INT16", ZarrDataType_int16)
+      .value("INT32", ZarrDataType_int32)
+      .value("INT64", ZarrDataType_int64)
+      .value("FLOAT32", ZarrDataType_float32)
+      .value("FLOAT64", ZarrDataType_float64);
 
-    py::enum_<ZarrCompressor>(m, "Compressor")
-      .value("COMPRESSOR_NONE", ZarrCompressor_None)
-      .value("COMPRESSOR_BLOSC1", ZarrCompressor_Blosc1)
-      .export_values();
+    py::enum_<ZarrCompressor>(m, "ZarrCompressor")
+      .value("NONE", ZarrCompressor_None)
+      .value("BLOSC1", ZarrCompressor_Blosc1);
 
-    py::enum_<ZarrCompressionCodec>(m, "CompressionCodec")
-      .value("COMPRESSION_NONE", ZarrCompressionCodec_None)
-      .value("COMPRESSION_BLOSC_LZ4", ZarrCompressionCodec_BloscLZ4)
-      .value("COMPRESSION_BLOSC_ZSTD", ZarrCompressionCodec_BloscZstd)
-      .export_values();
+    py::enum_<ZarrCompressionCodec>(m, "ZarrCompressionCodec")
+      .value("NONE", ZarrCompressionCodec_None)
+      .value("BLOSC_LZ4", ZarrCompressionCodec_BloscLZ4)
+      .value("BLOSC_ZSTD", ZarrCompressionCodec_BloscZstd);
 
-    py::enum_<ZarrDimensionType>(m, "DimensionType")
-      .value("DIMENSION_TYPE_SPACE", ZarrDimensionType_Space)
-      .value("DIMENSION_TYPE_CHANNEL", ZarrDimensionType_Channel)
-      .value("DIMENSION_TYPE_TIME", ZarrDimensionType_Time)
-      .value("DIMENSION_TYPE_OTHER", ZarrDimensionType_Other)
-      .export_values();
+    py::enum_<ZarrDimensionType>(m, "ZarrDimensionType")
+      .value("SPACE", ZarrDimensionType_Space)
+      .value("CHANNEL", ZarrDimensionType_Channel)
+      .value("TIME", ZarrDimensionType_Time)
+      .value("OTHER", ZarrDimensionType_Other);
 
     py::class_<PyZarrS3Settings>(m, "S3Settings")
       .def(py::init<>())
