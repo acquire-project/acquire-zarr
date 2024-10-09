@@ -2,6 +2,7 @@
 #include "zarr.common.hh"
 
 #include <stdexcept>
+#include <algorithm>
 
 std::string
 zarr::trim(std::string_view s)
