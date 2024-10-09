@@ -425,7 +425,7 @@ zarr::ArrayWriter::close_sinks_()
 {
     for (auto i = 0; i < data_sinks_.size(); ++i) {
         EXPECT(finalize_sink(std::move(data_sinks_[i])),
-               "Failed to finalize_ sink ",
+               "Failed to finalize sink ",
                i);
     }
     data_sinks_.clear();
@@ -444,7 +444,7 @@ bool
 zarr::finalize_array(std::unique_ptr<ArrayWriter>&& writer)
 {
     if (writer == nullptr) {
-        LOG_INFO("Array writer is null. Nothing to finalize_.");
+        LOG_INFO("Array writer is null. Nothing to finalize.");
         return true;
     }
 
@@ -452,12 +452,12 @@ zarr::finalize_array(std::unique_ptr<ArrayWriter>&& writer)
     try {
         writer->flush_(); // data sinks finalized here
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to finalize_ array writer: ", exc.what());
+        LOG_ERROR("Failed to finalize array writer: ", exc.what());
         return false;
     }
 
     if (!finalize_sink(std::move(writer->metadata_sink_))) {
-        LOG_ERROR("Failed to finalize_ metadata sink");
+        LOG_ERROR("Failed to finalize metadata sink");
         return false;
     }
 

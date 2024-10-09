@@ -5,7 +5,7 @@ bool
 zarr::finalize_sink(std::unique_ptr<zarr::Sink>&& sink)
 {
     if (sink == nullptr) {
-        LOG_INFO("Sink is null. Nothing to finalize_.");
+        LOG_INFO("Sink is null. Nothing to finalize.");
         return true;
     }
 

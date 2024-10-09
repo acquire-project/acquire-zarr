@@ -32,7 +32,7 @@ zarr::S3Sink::flush_()
             return false;
         }
         if (!finalize_multipart_upload_()) {
-            LOG_ERROR("Failed to finalize_ multipart upload of object ",
+            LOG_ERROR("Failed to finalize multipart upload of object ",
                       object_key_);
             return false;
         }
