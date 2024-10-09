@@ -26,7 +26,7 @@ class CMakeBuild(build_ext):
             "--preset=default",
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DBUILD_PYTHON=ON",
-            "-DBUILD_TESTS=OFF",
+            "-DBUILD_TESTING=OFF",
         ]
 
         if self.compiler.compiler_type == "msvc":
