@@ -26,5 +26,3 @@ target_link_libraries(acquire_zarr PRIVATE acquire-zarr)
 set_target_properties(acquire_zarr PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
-
-add_subdirectory(tests)
