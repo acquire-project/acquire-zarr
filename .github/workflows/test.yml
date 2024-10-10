@@ -172,7 +172,7 @@ jobs:
         shell: bash
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build numpy
+        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest
 
       - name: Build and install Python bindings
         run: python -m pip install .
