@@ -88,11 +88,6 @@ jobs:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
       - name: Install minio and mcli
         run: |
           apt update && apt install -y tmux wget
@@ -138,3 +133,50 @@ jobs:
           ZARR_S3_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
           ZARR_S3_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
+
+  test_python:
+    name: Test on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "windows-latest"
+          - "macos-latest"
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest
+
+      - name: Build and install Python bindings
+        run: python -m pip install .
+
+      - name: Run tests
+        run: python -m pytest -v
+        
