@@ -27,12 +27,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -61,7 +60,7 @@ jobs:
           cmake --build ${{github.workspace}}/pack --config Release
           cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.platform}} binaries
           path: ${{github.workspace}}/*.zip
@@ -72,12 +71,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -115,7 +113,7 @@ jobs:
         run: |
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: macos-latest binaries
           path: ${{github.workspace}}/*.zip
