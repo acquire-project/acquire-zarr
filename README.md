@@ -1,30 +1,90 @@
-# Acquire Zarr Driver
+# Acquire Zarr streaming library
 
-[![Build](https://github.com/acquire-project/acquire-driver-zarr/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-driver-zarr/actions/workflows/build.yml)
-[![Tests](https://github.com/acquire-project/acquire-driver-zarr/actions/workflows/test_pr.yml/badge.svg)](https://github.com/acquire-project/acquire-driver-zarr/actions/workflows/test_pr.yml)
+[![Build](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml)
+[![Tests](https://github.com/acquire-project/acquire-zarr/actions/workflows/test_pr.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/test_pr.yml)
 [![Chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://acquire-imaging.zulipchat.com/)
 
-This is an Acquire Driver that supports chunked streaming to [zarr][].
+This library supports chunked, compressed streaming to [Zarr][].
 
-## Installing Dependencies
+## Dependencies
 
-This driver uses the following libraries:
-- blosc v1.21.5
-- nlohmann-json v3.11.3
+This library has the following dependencies:
+- [c-blosc](https://github.com/Blosc/c-blosc) v1.21.6
+- [nlohmann-json](https://github.com/nlohmann/json) v3.11.3
+- [minio-cpp](https://github.com/minio/minio-cpp) v0.3.0
 
-We prefer using [vcpkg](https://vcpkg.io/en/) for dependency management, as it integrates well with CMake. Below are instructions for installing vcpkg locally and configuring it to fetch and compile the necessary dependencies (the steps are taken from [this vcpkg guide](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started?pivots=shell-bash)).
+We prefer using [vcpkg] for dependency management Below are instructions for installing vcpkg locally and configuring it to fetch and compile the necessary dependencies (the steps are taken from [this vcpkg guide](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started?pivots=shell-bash)).
 
-- `git clone https://github.com/microsoft/vcpkg.git`
-- `cd vcpkg && ./bootstrap-vcpkg.sh `
+- ``
+- ` `
 - Add export commands to your shell's profile script (e.g., `~/.bashrc` or `~/.zshrc`)
-  - `export VCPKG_ROOT=/path/to/vcpkg`
-  - `export PATH=$VCPKG_ROOT:$PATH`
-  - [Click here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel) to learn how to add environment variables on Windows.
+  - ``
+  - ``
+  - 
 - Select the default CMake preset before building (consider deleting your build directory first)
   - `cmake --preset=default -B /path/to/build`
     - (Alternatively, from the build directory, run `cmake --preset=default /path/to/source`.)
     - If you're building this project on Windows, you might need to specify your compiler triplet. This ensures that all dependencies are built as static libraries. You can specify the triplet during the preset selection process.
       - `cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-windows-static ...`
+
+## Building
+
+### Installing dependencies
+
+You should use [vcpkg] to install dependencies, as it integrates well with CMake.
+
+To install vcpkg, clone the repository and bootstrap it:
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg && ./bootstrap-vcpkg.sh
+```
+
+and then add the vcpkg directory to your path:
+
+```bash
+cat >> ~/.bashrc <<EOF
+export VCPKG_ROOT=${PWD}
+export PATH=\$VCPKG_ROOT:\$PATH
+EOF
+```
+
+If you're using Windows, click [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel) to learn how to set environment variables.
+You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
+
+### Configuring
+
+To build the library, you can use CMake:
+
+```bash
+cmake --preset=default -B /path/to/build /path/to/source
+```
+
+On Windows, you'll need to specify the target triplet to ensure that all dependencies are built as static libraries:
+
+```pwsh
+cmake --preset=default -B /path/to/build -DVCPKG_TARGET_TRIPLET=x64-windows-static /path/to/source
+```
+
+Aside from the usual CMake options, you can choose to disable tests by setting `BUILD_TESTING` to `OFF`:
+
+```bash
+cmake --preset=default -B /path/to/build -DBUILD_TESTING=OFF /path/to/source
+```
+
+To build the Python bindings, you can set `BUILD_PYTHON` to `ON`:
+
+```bash
+cmake --preset=default -B /path/to/build -DBUILD_PYTHON=ON /path/to/source
+```
+
+### Building
+
+After configuring, you can build the library:
+
+```bash
+cmake --build /path/to/build
+```
 
 ## Devices
 
@@ -317,7 +377,7 @@ the previous level, until the dimensions are less than or equal to a single tile
 Suppose your frame size is 1920 x 1080, with a tile size of 384 x 216.
 Then the sequence of levels will have dimensions 1920 x 1080, 960 x 540, 480 x 270, and 240 x 135.
 
-[zarr]: https://zarr.readthedocs.io/en/stable/spec/v2.html
+[Zarr]: https://zarr.readthedocs.io/en/stable/spec/v2.html
 
 [Blosc]: https://github.com/Blosc/c-blosc
 
@@ -326,3 +386,5 @@ Then the sequence of levels will have dimensions 1920 x 1080, 960 x 540, 480 x 2
 [Zarr v3]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 
 [acquire-common]: https://github.com/acquire-project/acquire-common
+
+[vcpkg]: https://vcpkg.io/en/
