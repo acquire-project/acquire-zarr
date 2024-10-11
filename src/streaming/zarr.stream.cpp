@@ -151,7 +151,7 @@ validate_custom_metadata(const char* metadata)
     );
 
     if (val.is_discarded()) {
-        LOG_ERROR("Invalid JSON: ", metadata);
+        LOG_ERROR("Invalid JSON: '", metadata, "'");
         return false;
     }
 
