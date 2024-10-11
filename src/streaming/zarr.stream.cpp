@@ -587,8 +587,8 @@ ZarrStream_s::create_store_()
         {
             std::error_code ec;
             if (!fs::create_directories(store_path_, ec)) {
-                set_error_("Failed to create store path '" +
-                           store_path_ + "': " + ec.message());
+                set_error_("Failed to create store path '" + store_path_ +
+                           "': " + ec.message());
                 return false;
             }
         }
@@ -647,7 +647,6 @@ ZarrStream_s::create_writers_()
                 writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
                   downsampled_config, thread_pool_, s3_connection_pool_));
             }
-            //            scaled_frames_.emplace(level++, std::nullopt);
 
             config = std::move(downsampled_config);
             downsampled_config = {};
@@ -882,7 +881,8 @@ ZarrStream_s::write_multiscale_frames_(const std::byte* data,
         return;
     }
 
-    std::function<std::byte*(const std::byte*, size_t&, size_t&, size_t&)> scale;
+    std::function<std::byte*(const std::byte*, size_t&, size_t&, size_t&)>
+      scale;
     std::function<void(void*, size_t, const void*, size_t)> average2;
 
     switch (dtype_) {
