@@ -340,13 +340,6 @@ class PyZarrStream
         }
     }
 
-    ~PyZarrStream()
-    {
-        if (is_active()) {
-            ZarrStream_destroy(stream_.get());
-        }
-    }
-
     void append(py::array image_data)
     {
         if (!is_active()) {
