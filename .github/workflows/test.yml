@@ -133,7 +133,7 @@ jobs:
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
 
   test_python:
-    name: Test on ${{ matrix.platform }}
+    name: Test Python on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 20
     strategy:

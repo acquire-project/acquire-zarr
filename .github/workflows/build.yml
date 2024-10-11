@@ -7,6 +7,7 @@ on:
 
 jobs:
   windows-and-linux-build:
+    name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
     strategy:
       matrix:
         build_type:
