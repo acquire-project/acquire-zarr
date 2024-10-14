@@ -257,9 +257,11 @@ class PyZarrStreamSettings
 
   private:
     std::string store_path_;
-    std::optional<std::string> custom_metadata_;
-    std::optional<PyZarrS3Settings> s3_settings_;
-    std::optional<PyZarrCompressionSettings> compression_settings_;
+    std::optional<std::string> custom_metadata_{ std::nullopt };
+    std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
+    std::optional<PyZarrCompressionSettings> compression_settings_{
+        std::nullopt
+    };
     bool multiscale_ = false;
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
@@ -527,18 +529,23 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("store_path"))
               settings.set_store_path(kwargs["store_path"].cast<std::string>());
 
-          if (kwargs.contains("custom_metadata"))
-              settings.set_custom_metadata(
-                kwargs["custom_metadata"].cast<std::optional<std::string>>());
+          if (kwargs.contains("custom_metadata") &&
+              !kwargs["custom_metadata"].is_none()) {
+              auto cm = kwargs["custom_metadata"].cast<std::string>();
+              settings.set_custom_metadata(cm);
+          }
 
-          if (kwargs.contains("s3"))
-              settings.set_s3(
-                kwargs["s3"].cast<std::optional<PyZarrS3Settings>>());
+          if (kwargs.contains("s3") && !kwargs["s3"].is_none()) {
+              auto s3 = kwargs["s3"].cast<PyZarrS3Settings>();
+              settings.set_s3(s3);
+          }
 
-          if (kwargs.contains("compression"))
-              settings.set_compression(
-                kwargs["compression"]
-                  .cast<std::optional<PyZarrCompressionSettings>>());
+          if (kwargs.contains("compression") &&
+              !kwargs["compression"].is_none()) {
+              auto compression =
+                kwargs["compression"].cast<PyZarrCompressionSettings>();
+              settings.set_compression(compression);
+          }
 
           if (kwargs.contains("dimensions"))
               settings.dimensions =
