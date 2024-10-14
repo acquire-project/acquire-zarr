@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - "main"
-  pull_request: # TODO (aliddell): remove this
-    branches:
-      - "main"
 
 jobs:
   windows-and-linux-build:
+    name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
     strategy:
       matrix:
         build_type:
@@ -29,12 +27,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -58,7 +55,7 @@ jobs:
           cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.platform}} ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
@@ -75,12 +72,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -114,7 +110,7 @@ jobs:
         run: |
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: macos-latest ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
@@ -132,12 +128,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -163,6 +158,7 @@ jobs:
         run: python -m build
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
+          name: ${{matrix.platform}} wheel
           path: ${{github.workspace}}/dist/*.whl
