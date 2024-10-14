@@ -11,6 +11,10 @@ on:
 env:
   BUILD_TYPE: Release
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     name: Test on ${{ matrix.platform }}
@@ -32,10 +36,6 @@ jobs:
             vcpkg_triplet: "arm64-osx"
     permissions:
       actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
       - uses: actions/checkout@v3
@@ -75,10 +75,6 @@ jobs:
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
       - uses: actions/checkout@v3
@@ -143,10 +139,6 @@ jobs:
           - "ubuntu-latest"
           - "windows-latest"
           - "macos-latest"
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
       - uses: actions/checkout@v3
