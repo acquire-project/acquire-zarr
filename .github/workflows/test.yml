@@ -11,6 +11,10 @@ on:
 env:
   BUILD_TYPE: Release
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     name: Test on ${{ matrix.platform }}
@@ -34,11 +38,6 @@ jobs:
       actions: write
 
     steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -78,11 +77,6 @@ jobs:
       MINIO_SECRET_KEY: 12345678
 
     steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -135,7 +129,7 @@ jobs:
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
 
   test_python:
-    name: Test on ${{ matrix.platform }}
+    name: Test Python on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 20
     strategy:
@@ -147,11 +141,6 @@ jobs:
           - "macos-latest"
 
     steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -175,8 +164,7 @@ jobs:
         run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest
 
       - name: Build and install Python bindings
-        run: python -m pip install .
+        run: python -m pip install ".[testing]"
 
       - name: Run tests
         run: python -m pytest -v
-        
