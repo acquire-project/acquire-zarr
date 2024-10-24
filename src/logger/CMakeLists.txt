@@ -6,7 +6,7 @@ add_library(acquire-logger
 )
 
 target_include_directories(acquire-logger
-        PRIVATE
+        INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
