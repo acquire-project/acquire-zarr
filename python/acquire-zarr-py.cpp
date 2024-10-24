@@ -290,11 +290,11 @@ class PyZarrStream
         auto store_path = settings.store_path();
         stream_settings.store_path = store_path.c_str();
 
-        auto metadata = settings.custom_metadata();
-        stream_settings.custom_metadata =
-          settings.custom_metadata().has_value()
-            ? settings.custom_metadata()->c_str()
-            : nullptr;
+        std::string metadata;
+        if (settings.custom_metadata()) {
+            metadata = settings.custom_metadata().value();
+            stream_settings.custom_metadata = metadata.c_str();
+        }
 
         if (settings.s3().has_value()) {
             s3_settings.endpoint = settings.s3()->endpoint().c_str();
@@ -566,10 +566,10 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
-                 "StreamSettings(store_path='" + self.store_path();
+                 "StreamSettings(store_path='" + self.store_path() + "'";
                if (self.custom_metadata().has_value()) {
-                   repr +=
-                     ", custom_metadata='" + self.custom_metadata().value();
+                   repr += ", custom_metadata='" +
+                           self.custom_metadata().value() + "'";
                }
 
                if (self.s3().has_value()) {
@@ -582,9 +582,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                for (const auto& dim : self.dimensions) {
                    repr += dim.repr() + ", ";
                }
+
+               std::string multiscale = self.multiscale() ? "True" : "False";
                repr +=
-                 "], multiscale=" + std::to_string(self.multiscale()) +
-                 ", data_type=DataType." +
+                 "], multiscale=" + multiscale + ", data_type=DataType." +
                  std::string(data_type_to_str(self.data_type())) +
                  ", version=ZarrVersion." +
                  std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
