@@ -18,7 +18,7 @@ find_package(pybind11 REQUIRED)
 
 pybind11_add_module(acquire_zarr acquire-zarr-py.cpp)
 
-target_include_directories(acquire_zarr PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(acquire_zarr PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(acquire_zarr PRIVATE acquire-zarr)
 
 set_target_properties(acquire_zarr PROPERTIES

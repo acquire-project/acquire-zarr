@@ -34,9 +34,9 @@ foreach (name ${tests})
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
     target_include_directories(${tgt} PRIVATE
-            ${CMAKE_SOURCE_DIR}/include
-            ${CMAKE_SOURCE_DIR}/src/logger
-            ${CMAKE_SOURCE_DIR}/src/streaming
+            ${PROJECT_SOURCE_DIR}/include
+            ${PROJECT_SOURCE_DIR}/src/logger
+            ${PROJECT_SOURCE_DIR}/src/streaming
     )
     target_link_libraries(${tgt} PRIVATE
             acquire-logger
