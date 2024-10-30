@@ -14,6 +14,7 @@ set(tests
         s3-connection-upload-multipart-object
         file-sink-write
         s3-sink-write
+        s3-sink-write-multipart
         sink-creator-make-metadata-sinks
         sink-creator-make-data-sinks
         array-writer-downsample-writer-config
