@@ -89,7 +89,6 @@ dimension_type_to_str(ZarrDimensionType t)
             return "UNKNOWN";
     }
 }
-
 } // namespace
 
 class PyZarrS3Settings
@@ -163,10 +162,10 @@ class PyZarrCompressionSettings
     }
 
   private:
-    ZarrCompressor compressor_;
-    ZarrCompressionCodec codec_;
-    uint8_t level_;
-    uint8_t shuffle_;
+    ZarrCompressor compressor_{ ZarrCompressor_None };
+    ZarrCompressionCodec codec_{ ZarrCompressionCodec_None };
+    uint8_t level_{ 0 };
+    uint8_t shuffle_{ 0 };
 };
 
 class PyZarrDimensionProperties
@@ -218,10 +217,10 @@ class PyZarrStreamSettings
 
     std::vector<PyZarrDimensionProperties> dimensions;
 
-    std::string store_path() const { return store_path_; }
+    const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
 
-    std::optional<std::string> custom_metadata() const
+    const std::optional<std::string>& custom_metadata() const
     {
         return custom_metadata_;
     }
@@ -230,13 +229,13 @@ class PyZarrStreamSettings
         custom_metadata_ = metadata;
     }
 
-    std::optional<PyZarrS3Settings> s3() const { return s3_settings_; }
+    const std::optional<PyZarrS3Settings>& s3() const { return s3_settings_; }
     void set_s3(const std::optional<PyZarrS3Settings>& settings)
     {
         s3_settings_ = settings;
     }
 
-    std::optional<PyZarrCompressionSettings> compression() const
+    const std::optional<PyZarrCompressionSettings>& compression() const
     {
         return compression_settings_;
     }
@@ -287,21 +286,28 @@ class PyZarrStream
             .version = settings.version(),
         };
 
-        auto store_path = settings.store_path();
-        stream_settings.store_path = store_path.c_str();
+        store_path_ = settings.store_path();
+        stream_settings.store_path = store_path_.c_str();
 
-        std::string metadata;
         if (settings.custom_metadata()) {
-            metadata = settings.custom_metadata().value();
-            stream_settings.custom_metadata = metadata.c_str();
+            custom_metadata_ = settings.custom_metadata().value();
+            stream_settings.custom_metadata = custom_metadata_.c_str();
         }
 
         if (settings.s3().has_value()) {
-            s3_settings.endpoint = settings.s3()->endpoint().c_str();
-            s3_settings.bucket_name = settings.s3()->bucket_name().c_str();
-            s3_settings.access_key_id = settings.s3()->access_key_id().c_str();
-            s3_settings.secret_access_key =
-              settings.s3()->secret_access_key().c_str();
+            const auto& s3 = settings.s3().value();
+            s3_endpoint_ = s3.endpoint();
+            s3_settings.endpoint = s3_endpoint_.c_str();
+
+            s3_bucket_name_ = s3.bucket_name();
+            s3_settings.bucket_name = s3_bucket_name_.c_str();
+
+            s3_access_key_id_ = s3.access_key_id();
+            s3_settings.access_key_id = s3_access_key_id_.c_str();
+
+            s3_secret_access_key_ = s3.secret_access_key();
+            s3_settings.secret_access_key = s3_secret_access_key_.c_str();
+
             stream_settings.s3_settings = &s3_settings;
         }
 
@@ -315,14 +321,14 @@ class PyZarrStream
         }
 
         const auto& dims = settings.dimensions;
+        dimension_names_.resize(dims.size());
 
         std::vector<ZarrDimensionProperties> dimension_props;
-        std::vector<std::string> dimension_names(dims.size());
         for (auto i = 0; i < dims.size(); ++i) {
             const auto& dim = dims[i];
-            dimension_names[i] = dim.name();
+            dimension_names_[i] = dim.name();
             ZarrDimensionProperties properties{
-                .name = dimension_names[i].c_str(),
+                .name = dimension_names_[i].c_str(),
                 .type = dim.type(),
                 .array_size_px = dim.array_size_px(),
                 .chunk_size_px = dim.chunk_size_px(),
@@ -372,6 +378,16 @@ class PyZarrStream
       std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
 
     ZarrStreamPtr stream_;
+
+    std::string store_path_;
+    std::string custom_metadata_;
+
+    std::vector<std::string> dimension_names_;
+
+    std::string s3_endpoint_;
+    std::string s3_bucket_name_;
+    std::string s3_access_key_id_;
+    std::string s3_secret_access_key_;
 };
 
 PYBIND11_MODULE(acquire_zarr, m)

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
 import dotenv
-
-dotenv.load_dotenv()
-
 import json
 from pathlib import Path
 import os
@@ -63,6 +60,25 @@ def settings():
     )
 
     return s
+
+
+@pytest.fixture(scope="module")
+def s3_settings():
+    dotenv.load_dotenv()
+    if (
+        "ZARR_S3_ENDPOINT" not in os.environ
+        or "ZARR_S3_BUCKET_NAME" not in os.environ
+        or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
+        or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
+    ):
+        return None
+
+    yield S3Settings(
+        endpoint=os.environ["ZARR_S3_ENDPOINT"],
+        bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
+        access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
+        secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
+    )
 
 
 @pytest.fixture(scope="function")
@@ -142,17 +158,6 @@ def get_directory_store(version: ZarrVersion, store_path: str):
         return zarr.DirectoryStore(store_path)
     else:
         return zarr.DirectoryStoreV3(store_path)
-
-def make_s3_settings(store_path: str):    
-    if "ZARR_S3_ENDPOINT" not in os.environ or "ZARR_S3_BUCKET_NAME" not in os.environ or "ZARR_S3_ACCESS_KEY_ID" not in os.environ or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ:
-        return None
-    
-    return S3Settings(
-        endpoint=os.environ["ZARR_S3_ENDPOINT"],
-        bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
-        access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
-        secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
-    )
 
 
 @pytest.mark.parametrize(
@@ -314,19 +319,17 @@ def test_stream_data_to_filesystem(
         ),
     ],
 )
-@pytest.mark.skip(reason="Temporary; needs debugging")
 def test_stream_data_to_s3(
     settings: StreamSettings,
-    store_path: Path,
+    s3_settings: Optional[S3Settings],
     request: pytest.FixtureRequest,
     version: ZarrVersion,
     compression_codec: Optional[CompressionCodec],
 ):
-    s3_settings = make_s3_settings(store_path)
     if s3_settings is None:
         pytest.skip("S3 settings not set")
 
-    settings.store_path = str(store_path / f"{request.node.name}.zarr")
+    settings.store_path = f"{request.node.name}.zarr"
     settings.version = version
     settings.s3 = s3_settings
     if compression_codec is not None:
@@ -352,17 +355,21 @@ def test_stream_data_to_s3(
     )
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    del stream  # close the stream, flush the data
 
     s3 = s3fs.S3FileSystem(
         key=settings.s3.access_key_id,
-        secret=settings.s3_secret_access_key,
-        client_kwargs={"endpoint_url": settings.s3_endpoint},
+        secret=settings.s3.secret_access_key,
+        client_kwargs={"endpoint_url": settings.s3.endpoint},
     )
     store = s3fs.S3Map(
         root=f"{s3_settings.bucket_name}/{settings.store_path}", s3=s3
     )
-    cache = zarr.LRUStoreCache(store, max_size=2**28)
+    cache = (
+        zarr.LRUStoreCache(store, max_size=2**28)
+        if version == ZarrVersion.V2
+        else zarr.LRUStoreCacheV3(store, max_size=2**28)
+    )
     group = zarr.group(store=cache)
 
     data = group["0"]
@@ -387,4 +394,3 @@ def test_stream_data_to_s3(
 
     # cleanup
     s3.rm(store.root, recursive=True)
-    
