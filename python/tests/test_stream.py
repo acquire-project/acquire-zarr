@@ -71,14 +71,14 @@ def s3_settings():
         or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
         or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
     ):
-        return None
-
-    yield S3Settings(
-        endpoint=os.environ["ZARR_S3_ENDPOINT"],
-        bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
-        access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
-        secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
-    )
+        yield None
+    else:
+        yield S3Settings(
+            endpoint=os.environ["ZARR_S3_ENDPOINT"],
+            bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
+            access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
+            secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
+        )
 
 
 @pytest.fixture(scope="function")
