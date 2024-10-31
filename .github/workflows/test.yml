@@ -119,7 +119,7 @@ jobs:
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-      - name: Test
+      - name: Test C++
         working-directory: ${{github.workspace}}/build
         env:
           ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
@@ -127,6 +127,13 @@ jobs:
           ZARR_S3_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
           ZARR_S3_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest ".[testing]"
+
+      - name: Test Python
+        run: python -m pytest -v -k test_stream_data_to_s3
+        
 
   test_python:
     name: Test Python on ${{ matrix.platform }}
@@ -158,26 +165,6 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install minio and mcli
-        run: |
-          apt update && apt install -y tmux wget
-          wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mcli
-          chmod +x /usr/local/bin/minio
-          chmod +x /usr/local/bin/mcli
-
-      - name: Start minio in tmux
-        run: |
-          tmux new -d -s minio
-          tmux send-keys -t minio "MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD minio server /tmp/minio --console-address :9001" Enter
-          sleep 5
-          mcli alias set $MINIO_ALIAS $MINIO_URL $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
-          mcli admin user svcacct add --access-key $MINIO_ACCESS_KEY --secret-key $MINIO_SECRET_KEY $MINIO_ALIAS $MINIO_ROOT_USER
-
-      - name: Create a bucket
-        run: |
-          mcli mb $MINIO_ALIAS/$MINIO_BUCKET
-
       - name: Install vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git
@@ -194,9 +181,4 @@ jobs:
         run: python -m pip install ".[testing]"
 
       - name: Run tests
-        env:
-          ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
-          ZARR_S3_BUCKET_NAME: ${{ env.MINIO_BUCKET }}
-          ZARR_S3_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
-          ZARR_S3_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: python -m pytest -v
