@@ -26,6 +26,7 @@ testing = [
     "s3fs",
     "tifffile",
     "zarr",
+    "python-dotenv",
 ]
 
 [tool.black]
