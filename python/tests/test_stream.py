@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 import zarr
 from numcodecs import blosc
+import re
 import s3fs
 
 from acquire_zarr import (
@@ -26,6 +27,7 @@ from acquire_zarr import (
     Dimension,
     DimensionType,
     ZarrVersion,
+    DataType,
 )
 
 
@@ -329,9 +331,10 @@ def test_stream_data_to_s3(
     if s3_settings is None:
         pytest.skip("S3 settings not set")
 
-    settings.store_path = f"{request.node.name}.zarr"
+    settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace("]", "")
     settings.version = version
     settings.s3 = s3_settings
+    settings.data_type = DataType.UINT16
     if compression_codec is not None:
         settings.compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
