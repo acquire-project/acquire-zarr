@@ -10,7 +10,7 @@ std::mutex Logger::log_mutex_{};
 void
 Logger::set_log_level(LogLevel level)
 {
-    if (level < LogLevel_Debug || level > LogLevel_Error) {
+    if (level < LogLevel_Debug || level > LogLevel_None) {
         throw std::invalid_argument("Invalid log level");
     }
 
