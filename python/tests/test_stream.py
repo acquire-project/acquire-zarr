@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 import zarr
 from numcodecs import blosc
-import re
 import s3fs
 
 from acquire_zarr import (
@@ -28,6 +27,9 @@ from acquire_zarr import (
     DimensionType,
     ZarrVersion,
     DataType,
+    LogLevel,
+    set_log_level,
+    get_log_level
 )
 
 
@@ -397,3 +399,12 @@ def test_stream_data_to_s3(
 
     # cleanup
     s3.rm(store.root, recursive=True)
+
+
+@pytest.mark.parametrize(
+    ("level",),
+    [(LogLevel.DEBUG,), (LogLevel.INFO,), (LogLevel.WARNING,), (LogLevel.ERROR,), (LogLevel.NONE,)],
+)
+def test_set_log_level(level: LogLevel):
+    set_log_level(level)
+    assert get_log_level() == level

@@ -1,3 +1,4 @@
+#include <iostream>
 #include <memory>
 
 #include <pybind11/pybind11.h>
@@ -85,6 +86,25 @@ dimension_type_to_str(ZarrDimensionType t)
             return "TIME";
         case ZarrDimensionType_Other:
             return "OTHER";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+const char*
+log_level_to_str(ZarrLogLevel level)
+{
+    switch (level) {
+        case ZarrLogLevel_Debug:
+            return "DEBUG";
+        case ZarrLogLevel_Info:
+            return "INFO";
+        case ZarrLogLevel_Warning:
+            return "WARNING";
+        case ZarrLogLevel_Error:
+            return "ERROR";
+        case ZarrLogLevel_None:
+            return "NONE";
         default:
             return "UNKNOWN";
     }
@@ -444,6 +464,13 @@ PYBIND11_MODULE(acquire_zarr, m)
       .value(dimension_type_to_str(ZarrDimensionType_Other),
              ZarrDimensionType_Other);
 
+    py::enum_<ZarrLogLevel>(m, "LogLevel")
+      .value(log_level_to_str(ZarrLogLevel_Debug), ZarrLogLevel_Debug)
+      .value(log_level_to_str(ZarrLogLevel_Info), ZarrLogLevel_Info)
+      .value(log_level_to_str(ZarrLogLevel_Warning), ZarrLogLevel_Warning)
+      .value(log_level_to_str(ZarrLogLevel_Error), ZarrLogLevel_Error)
+      .value(log_level_to_str(ZarrLogLevel_None), ZarrLogLevel_None);
+
     py::class_<PyZarrS3Settings>(m, "S3Settings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
           PyZarrS3Settings settings;
@@ -671,4 +698,30 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def(py::init<PyZarrStreamSettings>())
       .def("append", &PyZarrStream::append)
       .def("is_active", &PyZarrStream::is_active);
+
+    m.def(
+      "set_log_level",
+      [](ZarrLogLevel level) {
+          auto status = Zarr_set_log_level(level);
+          if (status != ZarrStatusCode_Success) {
+              std::string err = "Failed to set log level: " +
+                                std::string(Zarr_get_status_message(status));
+              PyErr_SetString(PyExc_RuntimeError, err.c_str());
+              throw py::error_already_set();
+          }
+      },
+      "Set the log level for the Zarr API",
+      py::arg("level"));
+
+    m.def(
+      "get_log_level",
+      []() { return Zarr_get_log_level(); },
+      "Get the current log level for the Zarr API");
+
+    auto init_status = Zarr_set_log_level(ZarrLogLevel_Info);
+    if (init_status != ZarrStatusCode_Success) {
+        // Log the error but don't throw, as that would prevent module import
+        std::cerr << "Warning: Failed to set initial log level: "
+                  << Zarr_get_status_message(init_status) << std::endl;
+    }
 }
