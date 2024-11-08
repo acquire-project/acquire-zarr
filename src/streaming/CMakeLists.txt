@@ -33,10 +33,10 @@ add_library(${tgt}
 
 target_include_directories(${tgt}
         PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/logger>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/logger>
 )
 
 target_link_libraries(${tgt} PRIVATE
@@ -60,6 +60,6 @@ install(TARGETS ${tgt}
 )
 
 # Install public header files
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/
         DESTINATION include
 )

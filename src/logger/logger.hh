@@ -20,6 +20,10 @@ class Logger
     {
         namespace fs = std::filesystem;
 
+        if (level < current_level_) {
+            return "";
+        }
+
         std::scoped_lock lock(log_mutex_);
 
         std::string prefix;

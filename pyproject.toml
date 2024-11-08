@@ -1,0 +1,45 @@
+[build-system]
+requires = [
+    "cmake>=3.12",
+    "ninja",
+    "pybind11[global]",
+    "setuptools>=42",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acquire-zarr"
+requires-python = ">=3.9"
+version = "0.0.1"
+
+[project.optional-dependencies]
+testing = [
+    "black",
+    "dask",
+    "mypy",
+    "ome-zarr",
+    "pytest>=7",
+    "pytest-cov",
+    "python-dotenv",
+    "ruff",
+    "s3fs",
+    "tifffile",
+    "zarr",
+    "python-dotenv",
+]
+
+[tool.black]
+target-version = ['py39', 'py310', 'py311', 'py312']
+line-length = 79
+
+[tool.isort]
+profile = "black"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --color=yes"
+log_cli = true # when true, messages are printed immediately
+testpaths = [
+    "python/tests",
+]

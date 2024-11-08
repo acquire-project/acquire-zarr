@@ -128,17 +128,13 @@ zarr::S3Sink::is_multipart_upload_() const
 void
 zarr::S3Sink::create_multipart_upload_()
 {
-    if (!is_multipart_upload_()) {
-        multipart_upload_ = {};
-    }
+    multipart_upload_ = MultiPartUpload{};
 
-    if (!multipart_upload_->upload_id.empty()) {
-        return;
-    }
-
+    auto connection = connection_pool_->get_connection();
     multipart_upload_->upload_id =
-      connection_pool_->get_connection()->create_multipart_object(bucket_name_,
-                                                                  object_key_);
+      connection->create_multipart_object(bucket_name_, object_key_);
+
+    connection_pool_->return_connection(std::move(connection));
 }
 
 bool
@@ -148,9 +144,11 @@ zarr::S3Sink::flush_part_()
         return false;
     }
 
-    auto connection = connection_pool_->get_connection();
+    if (!is_multipart_upload_()) {
+        create_multipart_upload_();
+    }
 
-    create_multipart_upload_();
+    auto connection = connection_pool_->get_connection();
 
     bool retval = false;
     try {

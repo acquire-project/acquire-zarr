@@ -29,8 +29,7 @@ is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
     return nullptr != settings->compression_settings;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_s3_settings(const ZarrS3Settings* settings)
 {
     if (zarr::is_empty_string(settings->endpoint, "S3 endpoint is empty")) {
@@ -57,8 +56,7 @@ validate_s3_settings(const ZarrS3Settings* settings)
     return true;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_filesystem_store_path(std::string_view data_root)
 {
     fs::path path(data_root);
@@ -89,8 +87,7 @@ validate_filesystem_store_path(std::string_view data_root)
     return true;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_compression_settings(const ZarrCompressionSettings* settings)
 {
     if (settings->compressor >= ZarrCompressorCount) {
@@ -135,8 +132,7 @@ validate_compression_settings(const ZarrCompressionSettings* settings)
     return true;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_custom_metadata(const char* metadata)
 {
     if (metadata == nullptr || !*metadata) {
@@ -151,15 +147,14 @@ validate_custom_metadata(const char* metadata)
     );
 
     if (val.is_discarded()) {
-        LOG_ERROR("Invalid JSON: ", metadata);
+        LOG_ERROR("Invalid JSON: '", metadata, "'");
         return false;
     }
 
     return true;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_dimension(const ZarrDimensionProperties* dimension,
                    ZarrVersion version,
                    bool is_append)
@@ -191,8 +186,7 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     return true;
 }
 
-[[nodiscard]]
-bool
+[[nodiscard]] bool
 validate_settings(const struct ZarrStreamSettings_s* settings)
 {
     if (!settings) {
@@ -292,8 +286,7 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 
 template<typename T>
-[[nodiscard]]
-std::byte*
+[[nodiscard]] std::byte*
 scale_image(const std::byte* const src,
             size_t& bytes_of_src,
             size_t& width,
@@ -587,8 +580,8 @@ ZarrStream_s::create_store_()
         {
             std::error_code ec;
             if (!fs::create_directories(store_path_, ec)) {
-                set_error_("Failed to create store path '" +
-                           store_path_ + "': " + ec.message());
+                set_error_("Failed to create store path '" + store_path_ +
+                           "': " + ec.message());
                 return false;
             }
         }
@@ -647,7 +640,6 @@ ZarrStream_s::create_writers_()
                 writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
                   downsampled_config, thread_pool_, s3_connection_pool_));
             }
-            //            scaled_frames_.emplace(level++, std::nullopt);
 
             config = std::move(downsampled_config);
             downsampled_config = {};

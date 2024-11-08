@@ -27,6 +27,9 @@ extern "C"
             case ZarrLogLevel_Error:
                 level = LogLevel_Error;
                 break;
+            case ZarrLogLevel_None:
+                level = LogLevel_None;
+                break;
             default:
                 return ZarrStatusCode_InvalidArgument;
         }
@@ -53,8 +56,11 @@ extern "C"
             case LogLevel_Warning:
                 level = ZarrLogLevel_Warning;
                 break;
-            default:
+            case LogLevel_Error:
                 level = ZarrLogLevel_Error;
+                break;
+            case LogLevel_None:
+                level = ZarrLogLevel_None;
                 break;
         }
         return level;

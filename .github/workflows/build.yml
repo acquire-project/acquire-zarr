@@ -7,6 +7,7 @@ on:
 
 jobs:
   windows-and-linux-build:
+    name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
     strategy:
       matrix:
         build_type:
@@ -26,12 +27,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.build_type }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -55,7 +55,7 @@ jobs:
           cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.platform}} ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
@@ -72,12 +72,11 @@ jobs:
     permissions:
       actions: write
 
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-macos-latest-${{ matrix.build_type }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+    steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -111,7 +110,55 @@ jobs:
         run: |
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: macos-latest ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
+
+  build-wheel:
+    strategy:
+      matrix:
+        platform:
+          - "windows-latest"
+          - "ubuntu-latest"
+          - "macos-latest" # TODO (aliddell): universal binary?
+
+    runs-on: ${{ matrix.platform }}
+
+    permissions:
+      actions: write
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" cmake build
+
+      - name: Build
+        run: python -m build
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.platform}} wheel
+          path: ${{github.workspace}}/dist/*.whl
