@@ -54,7 +54,7 @@ class CMakeBuild(build_ext):
         dst = self.get_ext_fullpath(ext.name)
         self.move_file(matching_files, dst)
 
-    def move_file(self, src_files, dst):
+    def move_file(self, src_files, dst, level=1):
         import shutil
 
         try:
@@ -65,18 +65,8 @@ class CMakeBuild(build_ext):
             print(f"Error moving files to {dst}: {e}")
             raise
 
-with open(Path(__file__).parent / "README.md") as f:
-    long_description = f.read()
 
 setup(
-    name="acquire-zarr",
-    version="0.0.1",
-    author="Alan Liddell",
-    author_email="aliddell@chanzuckerberg.com",
-    description="Python bindings for acquire-zarr",
-    long_description=long_description,
     ext_modules=[CMakeExtension("acquire_zarr")],
     cmdclass=dict(build_ext=CMakeBuild),
-    zip_safe=False,
-    python_requires=">=3.6",
 )

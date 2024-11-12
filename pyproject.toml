@@ -10,8 +10,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-requires-python = ">=3.9"
 version = "0.0.1"
+description = "Python bindings for acquire-zarr"
+authors = [
+    {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
 
 [project.optional-dependencies]
 testing = [
@@ -43,3 +48,6 @@ log_cli = true # when true, messages are printed immediately
 testpaths = [
     "python/tests",
 ]
+
+[tool.setuptools]
+zip-safe = false
