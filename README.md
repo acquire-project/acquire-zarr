@@ -13,7 +13,7 @@ This library supports chunked, compressed, multiscale streaming to [Zarr][], wit
 ### Installing dependencies
 
 This library has the following dependencies:
-- [c-blosc](https://github.com/Blosc/c-blosc) v1.21.6
+- [c-blosc](https://github.com/Blosc/c-blosc) v1.21.5
 - [nlohmann-json](https://github.com/nlohmann/json) v3.11.3
 - [minio-cpp](https://github.com/minio/minio-cpp) v0.3.0
 
