@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.0.1"
+version = "0.0.2"
 description = "Python bindings for acquire-zarr"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
