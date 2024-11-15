@@ -5,6 +5,8 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
+    branches:
+      - "manylinux-release"
 
 env:
   BUILD_TYPE: Release
@@ -125,8 +127,8 @@ jobs:
       matrix:
         platform:
           - "windows-latest"
-          - "ubuntu-latest"
-          - "macos-latest"
+          - "ubuntu-20.04" # TODO (aliddell): manylinux support
+          - "macos-latest" # TODO (aliddell): universal binary?
 
     runs-on: ${{ matrix.platform }}
 
@@ -156,75 +158,82 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install cibuildwheel
-        run: python -m pip install cibuildwheel
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest
 
-      - name: Build wheels
-        env:
-          CIBW_BUILD: "cp310-*"  # Build for Python 3.10
-          CIBW_ARCHS: auto64  # Build for 64-bit architectures
-          CIBW_BEFORE_BUILD: pip install -U pip "pybind11[global]" cmake build numpy pytest
-          CIBW_TEST_REQUIRES: pytest
-          CIBW_TEST_COMMAND: pytest {package}/tests -v
-        run: python -m cibuildwheel --output-dir wheelhouse
+      - name: Install
+        run: python -m pip install ".[testing]"
 
-      - name: Upload wheels
+      - name: Test
+        run: python -m pytest -v
+
+      - name: Build
+        run: python -m build -o dist
+
+      - name: Fix wheel for manylinux
+        if: ${{ matrix.platform == 'ubuntu-20.04' }}
+        run: |
+          python -m pip install -U auditwheel
+          auditwheel repair dist/*.whl -w dist
+          rm dist/*-linux_*.whl
+
+      - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.platform}} wheel
-          path: ./wheelhouse/*.whl
+          path: ${{github.workspace}}/dist/*.whl
 
-  release:
-    needs:
-      - windows-and-linux-build
-      - mac-build
-      - build-wheel
-    name: "Release"
-    runs-on: "ubuntu-latest"
+  # release:
+  #   needs:
+  #     - windows-and-linux-build
+  #     - mac-build
+  #     - build-wheel
+  #   name: "Release"
+  #   runs-on: "ubuntu-latest"
 
-    environment:
-      name: pypi
-      url: https://pypi.org/p/acquire-zarr
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/acquire-zarr
 
-    permissions: write-all
+  #   permissions: write-all
 
-    steps:
-      - uses: actions/checkout@v3
+  #   steps:
+  #     - uses: actions/checkout@v3
 
-      - uses: actions/download-artifact@v4
-        id: download
-        with:
-          path: ${{ github.workspace }}/artifacts
+  #     - uses: actions/download-artifact@v4
+  #       id: download
+  #       with:
+  #         path: ${{ github.workspace }}/artifacts
 
-      - name: Collect wheels
-        run: |
-          mkdir -p dist
-          mv ${{steps.download.outputs.download-path}}/*/*.whl dist
+  #     - name: Collect wheels
+  #       run: |
+  #         mkdir -p dist
+  #         mv ${{steps.download.outputs.download-path}}/*/*.whl dist
 
-      - name: Tagged release
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ github.token }}
-          prerelease: false
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
+  #     - name: Tagged release
+  #       if: ${{ github.ref_name != 'nightly' }}
+  #       uses: marvinpinto/action-automatic-releases@latest
+  #       with:
+  #         repo_token: ${{ github.token }}
+  #         prerelease: false
+  #         files: |
+  #           ${{steps.download.outputs.download-path}}/*/*.zip
+  #           dist/*.whl
 
-      - name: Nightly release
-        if: ${{ github.ref_name == 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ secrets.PAT }}
-          automatic_release_tag: "nightly"
-          prerelease: true
-          title: "Nightly Release"
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
+  #     - name: Nightly release
+  #       if: ${{ github.ref_name == 'nightly' }}
+  #       uses: marvinpinto/action-automatic-releases@latest
+  #       with:
+  #         repo_token: ${{ secrets.PAT }}
+  #         automatic_release_tag: "nightly"
+  #         prerelease: true
+  #         title: "Nightly Release"
+  #         files: |
+  #           ${{steps.download.outputs.download-path}}/*/*.zip
+  #           dist/*.whl
 
-      - name: Publish wheels
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
+  #     - name: Publish wheels
+  #       if: ${{ github.ref_name != 'nightly' }}
+  #       uses: pypa/gh-action-pypi-publish@release/v1
+  #       with:
+  #         skip-existing: true
