@@ -190,7 +190,6 @@ bool
 zarr::ArrayWriter::make_metadata_sink_()
 {
     if (metadata_sink_) {
-        LOG_INFO("Metadata sink already exists");
         return true;
     }
 
