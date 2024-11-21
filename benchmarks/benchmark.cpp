@@ -28,7 +28,7 @@ const std::vector<ChunkConfig> CHUNK_CONFIGS = { { 1, 1, 64, 64, 64 },
 const unsigned int ARRAY_WIDTH = 1920, ARRAY_HEIGHT = 1080, ARRAY_PLANES = 6,
                    ARRAY_CHANNELS = 3, ARRAY_TIMEPOINTS = 10;
 
-const unsigned int NUM_RUNS = 1;
+const unsigned int NUM_RUNS = 5;
 
 struct BenchmarkConfig
 {
