@@ -10,10 +10,10 @@ struct ChunkIndex
     uint64_t size;
 };
 
-class ShardBuffer
+class ShardIndexBuffer
 {
   public:
-    ShardBuffer() { ready_chunks_.reserve(MAX_BUFFER_SIZE_); }
+    ShardIndexBuffer() { ready_chunks_.reserve(MAX_BUFFER_SIZE_); }
 
     bool try_add_chunk(uint32_t chunk_buffer_index, uint64_t chunk_size)
     {
@@ -21,10 +21,11 @@ class ShardBuffer
         if (ready_chunks_.size() >= MAX_BUFFER_SIZE_) {
             return false;
         }
+
         ready_chunks_.push_back(
           { chunk_buffer_index, cumulative_size_, chunk_size });
         cumulative_size_ += chunk_size;
-        ready_count_++;
+        ++ready_count_;
         return true;
     }
 
@@ -57,7 +58,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    std::vector<ShardBuffer> shard_buffers_;
+    std::vector<ShardIndexBuffer> shards_ready_;
 
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
