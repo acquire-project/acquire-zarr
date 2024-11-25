@@ -23,7 +23,7 @@ jobs:
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
           sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
           sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-          sudo apt-get install cmake g++-11
+          sudo apt-get install cmake g++-11 patchelf
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 90
 
@@ -36,10 +36,15 @@ jobs:
           ./vcpkg integrate install
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build
+        run: python -m pip install -U pip "pybind11[global]" cmake build auditwheel
 
       - name: Build
         run: python -m build -o dist
+
+      - name: Fix wheel for manylinux
+        run: |
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
+          rm dist/*-linux_*.whl
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
