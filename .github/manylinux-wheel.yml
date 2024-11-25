@@ -1,0 +1,12 @@
+name: "Build a manylinux wheel"
+
+on:
+  pull_request:
+    branches:
+      - main
+
+description: 'Greet someone and record the time'
+
+runs:
+  using: 'docker'
+  image: 'manylinux.Dockerfile'
