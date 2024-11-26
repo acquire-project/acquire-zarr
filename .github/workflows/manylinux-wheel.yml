@@ -8,7 +8,7 @@ on:
 jobs:
   build-wheel:
     name: Build manylinux wheel
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
@@ -49,5 +49,5 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: ubuntu-20.04 wheel
+          name: ubuntu-22.04 wheel
           path: ${{github.workspace}}/dist/*.whl
