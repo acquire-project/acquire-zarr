@@ -5,6 +5,8 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
+    branches:
+      - manylinux-release
 
 env:
   BUILD_TYPE: Release
@@ -125,7 +127,7 @@ jobs:
       matrix:
         platform:
           - "windows-latest"
-          - "ubuntu-20.04" # TODO (aliddell): manylinux support
+          - "ubuntu-22.04"
           - "macos-latest" # TODO (aliddell): universal binary?
 
     runs-on: ${{ matrix.platform }}
@@ -145,7 +147,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.8"
 
       - name: Install vcpkg
         run: |
@@ -156,8 +158,15 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest
+      - name: Install system dependencies
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        run: |
+          sudo apt-get install patchelf
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 90
+
+      - name: Install Python dependencies
+        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest auditwheel
 
       - name: Install
         run: python -m pip install ".[testing]"
@@ -169,10 +178,9 @@ jobs:
         run: python -m build -o dist
 
       - name: Fix wheel for manylinux
-        if: ${{ matrix.platform == 'ubuntu-20.04' }}
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
         run: |
-          python -m pip install -U auditwheel
-          auditwheel repair dist/*.whl -w dist
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
           rm dist/*-linux_*.whl
 
       - name: Upload wheel
