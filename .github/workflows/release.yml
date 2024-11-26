@@ -5,8 +5,6 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
-    branches:
-      - manylinux-release
 
 env:
   BUILD_TYPE: Release
@@ -189,57 +187,57 @@ jobs:
           name: ${{matrix.platform}} wheel
           path: ${{github.workspace}}/dist/*.whl
 
-  # release:
-  #   needs:
-  #     - windows-and-linux-build
-  #     - mac-build
-  #     - build-wheel
-  #   name: "Release"
-  #   runs-on: "ubuntu-latest"
+  release:
+    needs:
+      - windows-and-linux-build
+      - mac-build
+      - build-wheel
+    name: "Release"
+    runs-on: "ubuntu-latest"
 
-  #   environment:
-  #     name: pypi
-  #     url: https://pypi.org/p/acquire-zarr
+    environment:
+      name: pypi
+      url: https://pypi.org/p/acquire-zarr
 
-  #   permissions: write-all
+    permissions: write-all
 
-  #   steps:
-  #     - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v3
 
-  #     - uses: actions/download-artifact@v4
-  #       id: download
-  #       with:
-  #         path: ${{ github.workspace }}/artifacts
+      - uses: actions/download-artifact@v4
+        id: download
+        with:
+          path: ${{ github.workspace }}/artifacts
 
-  #     - name: Collect wheels
-  #       run: |
-  #         mkdir -p dist
-  #         mv ${{steps.download.outputs.download-path}}/*/*.whl dist
+      - name: Collect wheels
+        run: |
+          mkdir -p dist
+          mv ${{steps.download.outputs.download-path}}/*/*.whl dist
 
-  #     - name: Tagged release
-  #       if: ${{ github.ref_name != 'nightly' }}
-  #       uses: marvinpinto/action-automatic-releases@latest
-  #       with:
-  #         repo_token: ${{ github.token }}
-  #         prerelease: false
-  #         files: |
-  #           ${{steps.download.outputs.download-path}}/*/*.zip
-  #           dist/*.whl
+      - name: Tagged release
+        if: ${{ github.ref_name != 'nightly' }}
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ github.token }}
+          prerelease: false
+          files: |
+            ${{steps.download.outputs.download-path}}/*/*.zip
+            dist/*.whl
 
-  #     - name: Nightly release
-  #       if: ${{ github.ref_name == 'nightly' }}
-  #       uses: marvinpinto/action-automatic-releases@latest
-  #       with:
-  #         repo_token: ${{ secrets.PAT }}
-  #         automatic_release_tag: "nightly"
-  #         prerelease: true
-  #         title: "Nightly Release"
-  #         files: |
-  #           ${{steps.download.outputs.download-path}}/*/*.zip
-  #           dist/*.whl
+      - name: Nightly release
+        if: ${{ github.ref_name == 'nightly' }}
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.PAT }}
+          automatic_release_tag: "nightly"
+          prerelease: true
+          title: "Nightly Release"
+          files: |
+            ${{steps.download.outputs.download-path}}/*/*.zip
+            dist/*.whl
 
-  #     - name: Publish wheels
-  #       if: ${{ github.ref_name != 'nightly' }}
-  #       uses: pypa/gh-action-pypi-publish@release/v1
-  #       with:
-  #         skip-existing: true
+      - name: Publish wheels
+        if: ${{ github.ref_name != 'nightly' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
