@@ -19,11 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get install -y wget software-properties-common wget lsb-release gnupg
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
-          sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
-          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-          sudo apt-get install cmake g++-11 patchelf
+          sudo apt-get install cmake patchelf
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 90
 
