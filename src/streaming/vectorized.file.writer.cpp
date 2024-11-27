@@ -1,6 +1,8 @@
 #include "vectorized.file.writer.hh"
 #include "macros.hh"
 
+#include <cstring>
+
 namespace {
 #ifdef _WIN32
 std::string
@@ -53,6 +55,12 @@ get_sector_size(const std::string& path)
     }
 
     return bytes_per_sector;
+}
+#else
+std::string
+get_last_error_as_string()
+{
+    return strerror(errno);
 }
 #endif
 
@@ -171,31 +179,29 @@ zarr::VectorizedFileWriter::write_vectors(
     _aligned_free(aligned_ptr);
     return retval;
 #else
-    std::vector<struct iovec> iovecs;
-    iovecs.reserve(buffers.size());
+    std::vector<struct iovec> iovecs(buffers.size());
 
-    for (const auto& buffer : buffers) {
-        if (!is_aligned(buffer.data(), page_size_)) {
-            return false;
-        }
-        struct iovec iov;
-        iov.iov_base =
-          const_cast<void*>(static_cast<const void*>(buffer.data()));
-        iov.iov_len = buffer.size();
-        iovecs.push_back(iov);
-    }
-
-    if (lseek(fd_, offsets[0], SEEK_SET) == -1) {
-        return false;
+    for (auto i = 0; i < buffers.size(); ++i) {
+        auto* iov = &iovecs[i];
+        memset(iov, 0, sizeof(struct iovec));
+        iov->iov_base =
+          const_cast<void*>(static_cast<const void*>(buffers[i].data()));
+        iov->iov_len = buffers[i].size();
     }
 
     ssize_t total_bytes = 0;
     for (const auto& buffer : buffers) {
-        total_bytes += buffer.size();
+        total_bytes += static_cast<ssize_t>(buffer.size());
     }
 
-    ssize_t bytes_written = writev(fd_, iovecs.data(), iovecs.size());
+    ssize_t bytes_written = pwritev(fd_,
+                                    iovecs.data(),
+                                    static_cast<int>(iovecs.size()),
+                                    static_cast<int>(offsets[0]));
+
     if (bytes_written != total_bytes) {
+        auto error = get_last_error_as_string();
+        LOG_ERROR("Failed to write file: ", error);
         return false;
     }
 #endif
@@ -205,17 +211,16 @@ zarr::VectorizedFileWriter::write_vectors(
 size_t
 zarr::VectorizedFileWriter::align_size_(size_t size) const
 {
-    return align_to_sector_(align_to_page_(size));
+    size = align_to_page_(size);
+#ifdef _WIN32
+    return (size + sector_size_ - 1) & ~(sector_size_ - 1);
+#else
+    return size;
+#endif
 }
 
 size_t
 zarr::VectorizedFileWriter::align_to_page_(size_t size) const
 {
     return (size + page_size_ - 1) & ~(page_size_ - 1);
-}
-
-size_t
-zarr::VectorizedFileWriter::align_to_sector_(size_t size) const
-{
-    return (size + sector_size_ - 1) & ~(sector_size_ - 1);
 }

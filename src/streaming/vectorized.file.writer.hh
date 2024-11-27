@@ -37,6 +37,5 @@ class VectorizedFileWriter
 
     size_t align_size_(size_t size) const;
     size_t align_to_page_(size_t size) const;
-    size_t align_to_sector_(size_t size) const;
 };
 } // namespace zarr
