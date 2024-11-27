@@ -1,5 +1,7 @@
 #include "thread.pool.hh"
 
+#include <algorithm>
+
 zarr::ThreadPool::ThreadPool(unsigned int n_threads, ErrorCallback&& err)
   : error_handler_{ std::move(err) }
 {
