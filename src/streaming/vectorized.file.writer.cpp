@@ -63,12 +63,6 @@ get_last_error_as_string()
     return strerror(errno);
 }
 #endif
-
-bool
-is_aligned(const void* ptr, size_t alignment)
-{
-    return reinterpret_cast<uintptr_t>(ptr) % alignment == 0;
-}
 } // namespace
 
 zarr::VectorizedFileWriter::VectorizedFileWriter(const std::string& path)
@@ -123,6 +117,7 @@ zarr::VectorizedFileWriter::write_vectors(
   size_t offset)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    bool retval{ true };
 
 #ifdef _WIN32
     size_t total_bytes_to_write = 0;
@@ -133,7 +128,8 @@ zarr::VectorizedFileWriter::write_vectors(
     const size_t nbytes_aligned = align_size_(total_bytes_to_write);
     CHECK(nbytes_aligned >= total_bytes_to_write);
 
-    auto* aligned_ptr = (std::byte*)_aligned_malloc(nbytes_aligned, page_size_);
+    auto* aligned_ptr =
+      static_cast<std::byte*>(_aligned_malloc(nbytes_aligned, page_size_));
     if (!aligned_ptr) {
         return false;
     }
@@ -160,7 +156,6 @@ zarr::VectorizedFileWriter::write_vectors(
 
     DWORD bytes_written;
 
-    bool retval{ true };
     if (!WriteFileGather(
           handle_, segments.data(), nbytes_aligned, nullptr, &overlapped)) {
         if (GetLastError() != ERROR_IO_PENDING) {
@@ -177,7 +172,6 @@ zarr::VectorizedFileWriter::write_vectors(
     }
 
     _aligned_free(aligned_ptr);
-    return retval;
 #else
     std::vector<struct iovec> iovecs(buffers.size());
 
@@ -202,10 +196,10 @@ zarr::VectorizedFileWriter::write_vectors(
     if (bytes_written != total_bytes) {
         auto error = get_last_error_as_string();
         LOG_ERROR("Failed to write file: ", error);
-        return false;
+        retval = false;
     }
 #endif
-    return true;
+    return retval;
 }
 
 size_t
