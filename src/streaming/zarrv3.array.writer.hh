@@ -63,7 +63,10 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
 
-    ZarrVersion version_() const override { return ZarrVersion_3; }
+    std::string data_root_() const override;
+    std::string metadata_path_() const override;
+    PartsAlongDimensionFun parts_along_dimension_() const override;
+    void compress_and_flush_() override;
     bool flush_impl_() override;
     bool write_array_metadata_() override;
     bool should_rollover_() const override;

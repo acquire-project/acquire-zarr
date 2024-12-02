@@ -72,6 +72,26 @@ zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
 {
 }
 
+std::string
+zarr::ZarrV2ArrayWriter::data_root_() const
+{
+    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+           "/" + std::to_string(append_chunk_index_);
+}
+
+std::string
+zarr::ZarrV2ArrayWriter::metadata_path_() const
+{
+    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+           "/.zarray";
+}
+
+PartsAlongDimensionFun
+zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
+{
+    return chunks_along_dimension;
+}
+
 bool
 zarr::ZarrV2ArrayWriter::flush_impl_()
 {
