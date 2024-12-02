@@ -120,7 +120,7 @@ zarr::VectorizedFileWriter::~VectorizedFileWriter()
 bool
 zarr::VectorizedFileWriter::write_vectors(
   const std::vector<std::vector<std::byte>>& buffers,
-  const std::vector<size_t>& offsets)
+  size_t offset)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -154,8 +154,8 @@ zarr::VectorizedFileWriter::write_vectors(
     }
 
     OVERLAPPED overlapped = { 0 };
-    overlapped.Offset = static_cast<DWORD>(offsets[0] & 0xFFFFFFFF);
-    overlapped.OffsetHigh = static_cast<DWORD>(offsets[0] >> 32);
+    overlapped.Offset = static_cast<DWORD>(offset & 0xFFFFFFFF);
+    overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32);
     overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 
     DWORD bytes_written;
@@ -197,7 +197,7 @@ zarr::VectorizedFileWriter::write_vectors(
     ssize_t bytes_written = pwritev(fd_,
                                     iovecs.data(),
                                     static_cast<int>(iovecs.size()),
-                                    static_cast<int>(offsets[0]));
+                                    static_cast<int>(offset));
 
     if (bytes_written != total_bytes) {
         auto error = get_last_error_as_string();

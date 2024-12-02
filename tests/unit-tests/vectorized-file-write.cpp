@@ -14,20 +14,21 @@ write_to_file(const std::string& filename)
     zarr::VectorizedFileWriter writer(filename);
 
     std::vector<std::vector<std::byte>> data(10);
-    std::vector<size_t> offsets(10);
-    size_t offset = 0;
     for (auto i = 0; i < data.size(); ++i) {
         data[i].resize((i + 1) * 1024);
         std::fill(data[i].begin(), data[i].end(), std::byte(i));
-
-        offsets[i] = offset;
-        offset += data[i].size();
+        file_size += data[i].size();
     }
+    CHECK(writer.write_vectors(data, 0));
 
-    file_size = offsets.back() + data.back().size();
-    CHECK(writer.write_vectors(data, offsets));
+    // write more data
+    for (auto i = 0; i < 10; ++i) {
+        auto& vec = data[i];
+        std::fill(vec.begin(), vec.end(), std::byte(i + 10));
+    }
+    CHECK(writer.write_vectors(data, file_size));
 
-    return file_size;
+    return 2 * file_size;
 }
 
 void
@@ -41,16 +42,33 @@ verify_file_data(const std::string& filename, size_t file_size)
 
     // Verify data pattern
     size_t offset = 0;
-    for (size_t i = 0; i < 10; i++) {
+    for (size_t i = 0; i < 10; ++i) {
         size_t size = (i + 1) * 1024;
 
-        for (size_t j = offset; j < offset + size; j++) {
+        for (size_t j = offset; j < offset + size; ++j) {
             auto byte = (int)read_buffer[j];
             EXPECT(byte == i,
                    "Data mismatch at offset ",
                    j,
                    ". Expected ",
                    i,
+                   " got ",
+                   byte,
+                   ".");
+        }
+        offset += size;
+    }
+
+    for (size_t i = 0; i < 10; ++i) {
+        size_t size = (i + 1) * 1024;
+
+        for (size_t j = offset; j < offset + size; ++j) {
+            auto byte = (int)read_buffer[j];
+            EXPECT(byte == i + 10,
+                   "Data mismatch at offset ",
+                   j,
+                   ". Expected ",
+                   i + 10,
                    " got ",
                    byte,
                    ".");
@@ -74,6 +92,13 @@ main()
     try {
         const auto file_size = write_to_file(filename);
         EXPECT(fs::exists(filename), "File not found: ", filename);
+
+        auto file_size_on_disk = fs::file_size(filename);
+        EXPECT(file_size_on_disk >= file_size, // sum(1:10) * 1024 * 2
+               "Expected file size of at least ",
+               file_size,
+               " bytes, got ",
+               file_size_on_disk);
         verify_file_data(filename, file_size);
 
         retval = 0;

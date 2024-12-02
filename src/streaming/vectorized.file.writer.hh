@@ -21,7 +21,7 @@ class VectorizedFileWriter
     ~VectorizedFileWriter();
 
     bool write_vectors(const std::vector<std::vector<std::byte>>& buffers,
-                       const std::vector<size_t>& offsets);
+                       size_t offset);
 
     std::mutex& mutex() { return mutex_; }
 
