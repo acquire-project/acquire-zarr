@@ -97,7 +97,7 @@ zarr::VectorizedFileWriter::VectorizedFileWriter(const std::string& path)
     }
 #else
     page_size_ = sysconf(_SC_PAGESIZE);
-    fd_ = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0644);
+    fd_ = open(path.c_str(), O_WRONLY | O_CREAT, 0644);
     if (fd_ < 0) {
         throw std::runtime_error("Failed to open file: " + path);
     }
