@@ -94,6 +94,7 @@ class ArrayWriter
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
     void compress_buffers_();
 
+    virtual void compress_and_flush_() = 0;
     void flush_();
     [[nodiscard]] virtual bool flush_impl_() = 0;
     void rollover_();

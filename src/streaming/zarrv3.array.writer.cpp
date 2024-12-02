@@ -57,6 +57,7 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
   std::shared_ptr<ThreadPool> thread_pool,
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayWriter(config, thread_pool, s3_connection_pool)
+  , chunks_ready_count_{ 0 }
 {
     const auto number_of_shards = config_.dimensions->number_of_shards();
     const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
@@ -69,6 +70,10 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
         std::fill(
           table.begin(), table.end(), std::numeric_limits<uint64_t>::max());
     }
+
+    std::fill_n(chunks_ready_.begin(),
+                MAX_READY_CHUNK_COUNT_,
+                std::numeric_limits<uint32_t>::max());
 }
 
 std::string
@@ -90,6 +95,11 @@ PartsAlongDimensionFun
 zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
 {
     return shards_along_dimension;
+}
+
+void
+zarr::ZarrV3ArrayWriter::compress_and_flush_()
+{
 }
 
 bool

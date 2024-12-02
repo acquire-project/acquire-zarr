@@ -20,6 +20,7 @@ class TestWriter : public zarr::ArrayWriter
         return {};
     };
     bool should_rollover_() const override { return false; }
+    void compress_and_flush_() override {}
     bool flush_impl_() override { return true; }
     bool write_array_metadata_() override { return true; }
 };

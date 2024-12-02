@@ -92,6 +92,11 @@ zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
     return chunks_along_dimension;
 }
 
+void
+zarr::ZarrV2ArrayWriter::compress_and_flush_()
+{
+}
+
 bool
 zarr::ZarrV2ArrayWriter::flush_impl_()
 {
