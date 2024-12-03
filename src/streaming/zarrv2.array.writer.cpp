@@ -95,51 +95,111 @@ zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
 void
 zarr::ZarrV2ArrayWriter::compress_and_flush_()
 {
-}
-
-bool
-zarr::ZarrV2ArrayWriter::flush_impl_()
-{
-    // create chunk files
-    CHECK(data_sinks_.empty());
-    if (!make_data_sinks_()) {
-        return false;
+    if (bytes_to_flush_ == 0) {
+        LOG_DEBUG("No data to flush");
+        return;
     }
 
-    CHECK(data_sinks_.size() == chunk_buffers_.size());
+    CHECK(data_sinks_.empty());
+    CHECK(make_data_sinks_());
+
+    const auto bytes_per_px = bytes_of_type(config_.dtype);
 
     std::latch latch(chunk_buffers_.size());
-    {
-        std::scoped_lock lock(buffers_mutex_);
-        for (auto i = 0; i < data_sinks_.size(); ++i) {
-            auto& chunk = chunk_buffers_.at(i);
-            EXPECT(thread_pool_->push_job(
-                     std::move([&sink = data_sinks_.at(i),
-                                data_ = chunk.data(),
-                                size = chunk.size(),
-                                &latch](std::string& err) -> bool {
-                         bool success = false;
-                         try {
-                             std::span data{
-                                 reinterpret_cast<std::byte*>(data_), size
-                             };
-                             CHECK(sink->write(0, data));
-                             success = true;
-                         } catch (const std::exception& exc) {
-                             err = "Failed to write chunk: " +
-                                   std::string(exc.what());
-                         }
+    for (auto i = 0; i < data_sinks_.size(); ++i) {
+        auto& chunk = chunk_buffers_[i];
 
-                         latch.count_down();
-                         return success;
-                     })),
-                   "Failed to push job to thread pool");
+        if (config_.compression_params) {
+            auto& params = *config_.compression_params;
+            auto job = [&params,
+                        buf = &chunk,
+                        bytes_per_px,
+                        &sink = data_sinks_[i],
+                        thread_pool = thread_pool_,
+                        &latch](std::string& err) -> bool {
+                const size_t bytes_of_chunk = buf->size();
+
+                const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
+                ChunkBuffer tmp(tmp_size);
+                const auto nb =
+                  blosc_compress_ctx(params.clevel,
+                                     params.shuffle,
+                                     bytes_per_px,
+                                     bytes_of_chunk,
+                                     buf->data(),
+                                     tmp.data(),
+                                     tmp_size,
+                                     params.codec_id.c_str(),
+                                     0 /* blocksize - 0:automatic */,
+                                     1);
+
+                CHECK(nb > 0);
+                tmp.resize(nb);
+                buf->swap(tmp);
+
+                auto queued = thread_pool->push_job(
+                  std::move([&sink, buf, &latch](std::string& err) -> bool {
+                      bool success = false;
+
+                      try {
+                          success = sink->write(0, *buf);
+                      } catch (const std::exception& exc) {
+                          err =
+                            "Failed to write chunk: " + std::string(exc.what());
+                      }
+
+                      latch.count_down();
+                      return success;
+                  }));
+
+                if (!queued) {
+                    err = "Failed to push job to thread pool";
+                    latch.count_down();
+                }
+
+                return queued;
+            };
+
+            CHECK(thread_pool_->push_job(std::move(job)));
+        } else {
+            auto job = [buf = &chunk,
+                        &sink = data_sinks_[i],
+                        thread_pool = thread_pool_,
+                        &latch](std::string& err) -> bool {
+                auto queued = thread_pool->push_job(
+                  std::move([&sink, buf, &latch](std::string& err) -> bool {
+                      bool success = false;
+
+                      try {
+                          success = sink->write(0, *buf);
+                      } catch (const std::exception& exc) {
+                          err =
+                            "Failed to write chunk: " + std::string(exc.what());
+                      }
+
+                      latch.count_down();
+                      return success;
+                  }));
+
+                if (!queued) {
+                    err = "Failed to push job to thread pool";
+                    latch.count_down();
+                }
+
+                return queued;
+            };
+
+            CHECK(thread_pool_->push_job(std::move(job)));
         }
     }
 
     // wait for all threads to finish
     latch.wait();
+}
 
+bool
+zarr::ZarrV2ArrayWriter::flush_impl_()
+{
     return true;
 }
 

@@ -100,6 +100,8 @@ zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
 void
 zarr::ZarrV3ArrayWriter::compress_and_flush_()
 {
+    compress_buffers_();
+    CHECK(flush_impl_());
 }
 
 bool

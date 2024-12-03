@@ -366,8 +366,7 @@ zarr::ArrayWriter::flush_()
     }
 
     // compress buffers and write out
-    compress_buffers_();
-    CHECK(flush_impl_());
+    compress_and_flush_();
 
     const auto should_rollover = should_rollover_();
     if (should_rollover) {
