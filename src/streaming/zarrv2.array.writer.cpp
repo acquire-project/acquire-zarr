@@ -100,13 +100,16 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_()
         return;
     }
 
+    const auto n_chunks = chunk_buffers_.size();
+
     CHECK(data_sinks_.empty());
     CHECK(make_data_sinks_());
+    CHECK(data_sinks_.size() == n_chunks);
 
     const auto bytes_per_px = bytes_of_type(config_.dtype);
 
-    std::latch latch(chunk_buffers_.size());
-    for (auto i = 0; i < data_sinks_.size(); ++i) {
+    std::latch latch(n_chunks);
+    for (auto i = 0; i < n_chunks; ++i) {
         auto& chunk = chunk_buffers_[i];
 
         if (config_.compression_params) {
@@ -133,7 +136,12 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_()
                                      0 /* blocksize - 0:automatic */,
                                      1);
 
-                CHECK(nb > 0);
+                if (nb <= 0) {
+                    err = "Failed to compress chunk";
+                    latch.count_down();
+                    return false;
+                }
+
                 tmp.resize(nb);
                 buf->swap(tmp);
 

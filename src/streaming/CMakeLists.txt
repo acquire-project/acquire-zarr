@@ -31,6 +31,8 @@ add_library(${tgt}
         zarrv3.array.writer.cpp
         vectorized.file.writer.hh
         vectorized.file.writer.cpp
+        shard.writer.hh
+        shard.writer.cpp
 )
 
 target_include_directories(${tgt}

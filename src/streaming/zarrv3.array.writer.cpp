@@ -57,13 +57,15 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
   std::shared_ptr<ThreadPool> thread_pool,
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayWriter(config, thread_pool, s3_connection_pool)
-  , chunks_ready_count_{ 0 }
 {
-    const auto number_of_shards = config_.dimensions->number_of_shards();
+    const auto n_shards = config_.dimensions->number_of_shards();
+    const auto chunks_in_memory =
+      config_.dimensions->number_of_chunks_in_memory();
     const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
+    const auto chunks_before_flush = chunks_in_memory / n_shards;
 
-    shard_file_offsets_.resize(number_of_shards, 0);
-    shard_tables_.resize(number_of_shards);
+    shard_file_offsets_.resize(n_shards, 0);
+    shard_tables_.resize(n_shards);
 
     for (auto& table : shard_tables_) {
         table.resize(2 * chunks_per_shard);
@@ -71,9 +73,17 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
           table.begin(), table.end(), std::numeric_limits<uint64_t>::max());
     }
 
-    std::fill_n(chunks_ready_.begin(),
-                MAX_READY_CHUNK_COUNT_,
-                std::numeric_limits<uint32_t>::max());
+    // get shard indices for each chunk
+    chunk_in_shards_.resize(n_shards);
+    for (auto i = 0; i < chunks_in_memory; ++i) {
+        const auto index = config_.dimensions->shard_index_for_chunk(i);
+        chunk_in_shards_[index].push_back(i);
+    }
+
+    shards_ready_.resize(n_shards);
+    for (auto& shard : shards_ready_) {
+        shard.reset(new ShardWriter(thread_pool_, chunks_before_flush, 0));
+    }
 }
 
 std::string
@@ -100,33 +110,88 @@ zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
 void
 zarr::ZarrV3ArrayWriter::compress_and_flush_()
 {
-    compress_buffers_();
-    CHECK(flush_impl_());
+    if (bytes_to_flush_ == 0) {
+        LOG_DEBUG("No data to flush");
+        return;
+    }
+
+    // create shard files if they don't exist
+    if (data_sinks_.empty()) {
+        CHECK(make_data_sinks_());
+    }
+
+    const auto n_chunks = chunk_buffers_.size();
+    const auto n_shards = chunk_in_shards_.size();
+    CHECK(data_sinks_.size() == n_shards);
+
+    const auto bytes_per_px = bytes_of_type(config_.dtype);
+
+    auto write_table = is_finalizing_ || should_rollover_();
+
+    std::latch latch(n_chunks);
+
+    for (auto i = 0; i < n_chunks; ++i) {
+        auto& chunk = chunk_buffers_[i];
+        const auto shard_index = config_.dimensions->shard_index_for_chunk(i);
+        auto& shard = shards_ready_[shard_index];
+
+        if (config_.compression_params) {
+            auto& params = *config_.compression_params;
+            auto job = [&params,
+                        buf = &chunk,
+                        bytes_per_px,
+                        chunk_index = i,
+                        &shard,
+                        &latch](std::string& err) -> bool {
+                const size_t bytes_of_chunk = buf->size();
+
+                const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
+                ChunkBuffer tmp(tmp_size);
+                const auto nb =
+                  blosc_compress_ctx(params.clevel,
+                                     params.shuffle,
+                                     bytes_per_px,
+                                     bytes_of_chunk,
+                                     buf->data(),
+                                     tmp.data(),
+                                     tmp_size,
+                                     params.codec_id.c_str(),
+                                     0 /* blocksize - 0:automatic */,
+                                     1);
+
+                if (nb <= 0) {
+                    err = "Failed to compress chunk";
+                    latch.count_down();
+                    return false;
+                }
+
+                tmp.resize(nb);
+                buf->swap(tmp);
+
+                shard->add_chunk(buf, chunk_index);
+
+                latch.count_down();
+
+                return true;
+            };
+        } else {
+            shards_ready_[shard_index]->add_chunk(i, chunk.size());
+            latch.count_down();
+        }
+    }
+
+    latch.wait();
+    //    compress_buffers_();
+    //    CHECK(flush_impl_());
 }
 
 bool
 zarr::ZarrV3ArrayWriter::flush_impl_()
 {
-    // create shard files if they don't exist
-    if (data_sinks_.empty() && !make_data_sinks_()) {
-        return false;
-    }
-
-    const auto n_shards = config_.dimensions->number_of_shards();
-    CHECK(data_sinks_.size() == n_shards);
-
-    // get shard indices for each chunk
-    std::vector<std::vector<size_t>> chunk_in_shards(n_shards);
-    for (auto i = 0; i < chunk_buffers_.size(); ++i) {
-        const auto index = config_.dimensions->shard_index_for_chunk(i);
-        chunk_in_shards[index].push_back(i);
-    }
-
     // write out chunks to shards
-    auto write_table = is_finalizing_ || should_rollover_();
     std::latch latch(n_shards);
     for (auto i = 0; i < n_shards; ++i) {
-        const auto& chunks = chunk_in_shards.at(i);
+        const auto& chunks = chunk_in_shards_.at(i);
         auto& chunk_table = shard_tables_.at(i);
         auto* file_offset = &shard_file_offsets_.at(i);
 
