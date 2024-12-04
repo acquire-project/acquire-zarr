@@ -14,19 +14,23 @@ write_to_file(const std::string& filename)
     zarr::VectorizedFileWriter writer(filename);
 
     std::vector<std::vector<std::byte>> data(10);
+    std::vector<std::span<std::byte>> spans(10);
+
     for (auto i = 0; i < data.size(); ++i) {
         data[i].resize((i + 1) * 1024);
         std::fill(data[i].begin(), data[i].end(), std::byte(i));
         file_size += data[i].size();
+        spans[i] = data[i];
     }
-    CHECK(writer.write_vectors(data, 0));
+    CHECK(writer.write_vectors(spans, 0));
 
     // write more data
     for (auto i = 0; i < 10; ++i) {
         auto& vec = data[i];
         std::fill(vec.begin(), vec.end(), std::byte(i + 10));
+        spans[i] = vec;
     }
-    CHECK(writer.write_vectors(data, file_size));
+    CHECK(writer.write_vectors(spans, file_size));
 
     return 2 * file_size;
 }
