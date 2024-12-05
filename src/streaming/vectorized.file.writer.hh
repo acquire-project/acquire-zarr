@@ -20,7 +20,7 @@ class VectorizedFileWriter
     explicit VectorizedFileWriter(const std::string& path);
     ~VectorizedFileWriter();
 
-    bool write_vectors(const std::vector<std::vector<std::byte>>& buffers,
+    bool write_vectors(const std::vector<std::span<std::byte>>& buffers,
                        size_t offset);
 
     std::mutex& mutex() { return mutex_; }
