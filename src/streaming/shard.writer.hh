@@ -41,8 +41,6 @@ class ShardWriter
     std::mutex mutex_;
     std::condition_variable cv_;
     std::vector<ChunkBufferPtr> chunks_;
-    std::vector<ChunkIndex> ready_chunks_;
-    std::vector<ChunkIndex> chunk_table_;
     uint64_t cumulative_size_;
     uint64_t file_offset_;
 

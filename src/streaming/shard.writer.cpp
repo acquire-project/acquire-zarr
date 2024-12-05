@@ -23,7 +23,6 @@ zarr::ShardWriter::ShardWriter(std::shared_ptr<ThreadPool> thread_pool,
                 index_table_.size() / sizeof(uint64_t),
                 std::numeric_limits<uint64_t>::max());
 
-    ready_chunks_.reserve(chunks_before_flush_);
     chunks_.reserve(chunks_before_flush_);
 }
 
@@ -31,8 +30,7 @@ void
 zarr::ShardWriter::add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard)
 {
     std::unique_lock lock(mutex_);
-    cv_.wait(lock,
-             [this] { return ready_chunks_.size() < chunks_before_flush_; });
+    cv_.wait(lock, [this] { return chunks_.size() < chunks_before_flush_; });
 
     set_offset_extent_(index_in_shard, cumulative_size_, buffer->size());
     cumulative_size_ += buffer->size();
@@ -40,7 +38,17 @@ zarr::ShardWriter::add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard)
     chunks_.push_back(buffer);
     if (chunks_.size() == chunks_before_flush_) {
         auto job = [this](std::string& err) -> bool {
-            std::vector<std::vector<std::byte>> buffers;
+            std::vector<std::span<std::byte>> buffers;
+            buffers.reserve(chunks_.size() + 1);
+            for (const auto& chunk : chunks_) {
+                buffers.push_back(std::span(*chunk));
+            }
+            buffers.push_back(std::span(index_table_));
+            //            VectorizedFileWriter writer()
+
+
+            chunks_.clear();
+            cv_.notify_all();
             return true;
         };
 
