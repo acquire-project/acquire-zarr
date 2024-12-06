@@ -1,9 +1,11 @@
 project(acquire-zarr-py)
 
-execute_process(COMMAND python3 -m pybind11 --cmakedir
-        RESULT_VARIABLE pybind11_NOT_FOUND
-        OUTPUT_VARIABLE pybind11_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -m pybind11 --cmakedir
+    RESULT_VARIABLE pybind11_NOT_FOUND
+    OUTPUT_VARIABLE pybind11_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE
 )
 
 if (pybind11_NOT_FOUND)
