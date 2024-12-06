@@ -14,7 +14,10 @@ class ZarrV2ArrayWriter final : public ArrayWriter
                       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    ZarrVersion version_() const override { return ZarrVersion_2; };
+    std::string data_root_() const override;
+    std::string metadata_path_() const override;
+    PartsAlongDimensionFun parts_along_dimension_() const override;
+    void compress_and_flush_() override;
     bool flush_impl_() override;
     bool write_array_metadata_() override;
     bool should_rollover_() const override;
