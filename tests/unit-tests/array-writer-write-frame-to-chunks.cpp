@@ -13,8 +13,14 @@ class TestWriter : public zarr::ArrayWriter
     }
 
   private:
-    ZarrVersion version_() const override { return ZarrVersionCount; }
+    std::string data_root_() const override { return ""; }
+    std::string metadata_path_() const override { return ""; }
+    PartsAlongDimensionFun parts_along_dimension_() const override
+    {
+        return {};
+    };
     bool should_rollover_() const override { return false; }
+    void compress_and_flush_() override {}
     bool flush_impl_() override { return true; }
     bool write_array_metadata_() override { return true; }
 };
