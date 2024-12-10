@@ -8,6 +8,7 @@ set(tests
         array-dimensions-shard-index-for-chunk
         array-dimensions-shard-internal-index
         thread-pool-push-to-job-queue
+        make-dirs
         s3-connection-bucket-exists
         s3-connection-object-exists-check-false-positives
         s3-connection-put-object
@@ -22,11 +23,11 @@ set(tests
         zarrv2-writer-write-even
         zarrv2-writer-write-ragged-append-dim
         zarrv2-writer-write-ragged-internal-dim
+        vectorized-file-write
+        shard-writer-add-chunk-data-to-flush
         zarrv3-writer-write-even
         zarrv3-writer-write-ragged-append-dim
         zarrv3-writer-write-ragged-internal-dim
-        vectorized-file-write
-        shard-writer-add-chunk-data-to-flush
 )
 
 foreach (name ${tests})
