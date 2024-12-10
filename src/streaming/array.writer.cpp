@@ -138,36 +138,6 @@ zarr::ArrayWriter::is_s3_array_() const
 }
 
 bool
-zarr::ArrayWriter::make_data_sinks_()
-{
-    SinkCreator creator(thread_pool_, s3_connection_pool_);
-
-    const auto data_root = data_root_();
-    const auto parts_along_dimension = parts_along_dimension_();
-    if (is_s3_array_()) {
-        if (!creator.make_data_sinks(*config_.bucket_name,
-                                     data_root,
-                                     config_.dimensions.get(),
-                                     parts_along_dimension,
-                                     data_sinks_)) {
-            LOG_ERROR("Failed to create data sinks in ",
-                      data_root,
-                      " for bucket ",
-                      *config_.bucket_name);
-            return false;
-        }
-    } else if (!creator.make_data_sinks(data_root,
-                                        config_.dimensions.get(),
-                                        parts_along_dimension,
-                                        data_sinks_)) {
-        LOG_ERROR("Failed to create data sinks in ", data_root);
-        return false;
-    }
-
-    return true;
-}
-
-bool
 zarr::ArrayWriter::make_metadata_sink_()
 {
     if (metadata_sink_) {

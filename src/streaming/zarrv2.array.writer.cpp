@@ -86,10 +86,33 @@ zarr::ZarrV2ArrayWriter::metadata_path_() const
            "/.zarray";
 }
 
-PartsAlongDimensionFun
-zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
+bool
+zarr::ZarrV2ArrayWriter::make_data_sinks_()
 {
-    return chunks_along_dimension;
+    SinkCreator creator(thread_pool_, s3_connection_pool_);
+
+    const auto data_root = data_root_();
+    if (is_s3_array_()) {
+        if (!creator.make_data_s3_sinks(*config_.bucket_name,
+                                        data_root,
+                                        config_.dimensions.get(),
+                                        chunks_along_dimension,
+                                        data_sinks_)) {
+            LOG_ERROR("Failed to create data sinks in ",
+                      data_root,
+                      " for bucket ",
+                      *config_.bucket_name);
+            return false;
+        }
+    } else if (!creator.make_data_file_sinks(data_root,
+                                             config_.dimensions.get(),
+                                             chunks_along_dimension,
+                                             data_sinks_)) {
+        LOG_ERROR("Failed to create data sinks in ", data_root);
+        return false;
+    }
+
+    return true;
 }
 
 void

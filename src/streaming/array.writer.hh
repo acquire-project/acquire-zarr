@@ -80,11 +80,10 @@ class ArrayWriter
 
     virtual std::string data_root_() const = 0;
     virtual std::string metadata_path_() const = 0;
-    virtual PartsAlongDimensionFun parts_along_dimension_() const = 0;
 
     bool is_s3_array_() const;
 
-    [[nodiscard]] bool make_data_sinks_();
+    [[nodiscard]] virtual bool make_data_sinks_() = 0;
     [[nodiscard]] bool make_metadata_sink_();
     void make_buffers_() noexcept;
 

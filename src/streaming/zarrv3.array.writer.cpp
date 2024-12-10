@@ -102,10 +102,10 @@ zarr::ZarrV3ArrayWriter::metadata_path_() const
            std::to_string(config_.level_of_detail) + ".array.json";
 }
 
-PartsAlongDimensionFun
-zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
+bool
+zarr::ZarrV3ArrayWriter::make_data_sinks_()
 {
-    return shards_along_dimension;
+    return false;
 }
 
 void
