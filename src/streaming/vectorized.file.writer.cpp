@@ -33,11 +33,11 @@ get_last_error_as_string()
 }
 
 size_t
-get_sector_size(const std::string& path)
+get_sector_size(std::string_view path)
 {
     // Get volume root path
     char volume_path[MAX_PATH];
-    if (!GetVolumePathNameA(path.c_str(), volume_path, MAX_PATH)) {
+    if (!GetVolumePathNameA(path.data(), volume_path, MAX_PATH)) {
         return 0;
     }
 
@@ -65,7 +65,7 @@ get_last_error_as_string()
 #endif
 } // namespace
 
-zarr::VectorizedFileWriter::VectorizedFileWriter(const std::string& path)
+zarr::VectorizedFileWriter::VectorizedFileWriter(std::string_view path)
 {
 #ifdef _WIN32
     SYSTEM_INFO si;
@@ -77,7 +77,7 @@ zarr::VectorizedFileWriter::VectorizedFileWriter(const std::string& path)
         throw std::runtime_error("Failed to get sector size");
     }
 
-    handle_ = CreateFileA(path.c_str(),
+    handle_ = CreateFileA(path.data(),
                           GENERIC_WRITE,
                           0, // No sharing
                           nullptr,
@@ -87,13 +87,14 @@ zarr::VectorizedFileWriter::VectorizedFileWriter(const std::string& path)
                           nullptr);
     if (handle_ == INVALID_HANDLE_VALUE) {
         auto err = get_last_error_as_string();
-        throw std::runtime_error("Failed to open file '" + path + "': " + err);
+        throw std::runtime_error("Failed to open file '" + std::string(path) +
+                                 "': " + err);
     }
 #else
     page_size_ = sysconf(_SC_PAGESIZE);
-    fd_ = open(path.c_str(), O_WRONLY | O_CREAT, 0644);
+    fd_ = open(path.data(), O_WRONLY | O_CREAT, 0644);
     if (fd_ < 0) {
-        throw std::runtime_error("Failed to open file: " + path);
+        throw std::runtime_error("Failed to open file: " + std::string(path));
     }
 #endif
 }

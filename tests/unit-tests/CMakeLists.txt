@@ -26,6 +26,7 @@ set(tests
         zarrv3-writer-write-ragged-append-dim
         zarrv3-writer-write-ragged-internal-dim
         vectorized-file-write
+        shard-writer-add-chunk-data-to-flush
 )
 
 foreach (name ${tests})

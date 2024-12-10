@@ -78,7 +78,9 @@ class ArrayWriter
 
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
 
-    virtual ZarrVersion version_() const = 0;
+    virtual std::string data_root_() const = 0;
+    virtual std::string metadata_path_() const = 0;
+    virtual PartsAlongDimensionFun parts_along_dimension_() const = 0;
 
     bool is_s3_array_() const;
 
@@ -92,6 +94,7 @@ class ArrayWriter
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
     void compress_buffers_();
 
+    virtual void compress_and_flush_() = 0;
     void flush_();
     [[nodiscard]] virtual bool flush_impl_() = 0;
     void rollover_();

@@ -2,6 +2,7 @@
 
 #include "zarr.types.h"
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -112,3 +113,5 @@ class ArrayDimensions
     std::vector<ZarrDimension> dims_;
     ZarrDataType dtype_;
 };
+
+using PartsAlongDimensionFun = std::function<size_t(const ZarrDimension&)>;
