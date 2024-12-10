@@ -1,12 +1,15 @@
 #pragma once
 
-#include <span>
-#include <vector>
-#include <mutex>
 #include <cstdint>
+#include <mutex>
+#include <span>
+#include <string_view>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
+#undef min
+#undef max
 #else
 #include <sys/uio.h>
 #include <unistd.h>
@@ -17,7 +20,7 @@ namespace zarr {
 class VectorizedFileWriter
 {
   public:
-    explicit VectorizedFileWriter(const std::string& path);
+    explicit VectorizedFileWriter(std::string_view path);
     ~VectorizedFileWriter();
 
     bool write_vectors(const std::vector<std::span<std::byte>>& buffers,

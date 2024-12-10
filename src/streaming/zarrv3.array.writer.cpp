@@ -83,7 +83,7 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
     shards_ready_.resize(n_shards);
     for (auto& shard : shards_ready_) {
         shard.reset(
-          new ShardWriter(thread_pool_, chunks_before_flush, chunks_per_shard));
+          new ShardWriter("foo", chunks_before_flush, chunks_per_shard));
     }
 }
 

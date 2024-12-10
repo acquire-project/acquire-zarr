@@ -3,17 +3,21 @@
 #include "vectorized.file.writer.hh"
 
 #include <algorithm>
+#include <filesystem>
 #include <limits>
+
+namespace fs = std::filesystem;
 
 #ifdef max
 #undef max
 #endif
 
-zarr::ShardWriter::ShardWriter(std::shared_ptr<ThreadPool> thread_pool,
+zarr::ShardWriter::ShardWriter(std::string_view file_path,
                                uint32_t chunks_before_flush,
                                uint32_t chunks_per_shard)
-  : thread_pool_(thread_pool)
+  : file_path_(file_path)
   , chunks_before_flush_{ chunks_before_flush }
+  , chunks_per_shard_{ chunks_per_shard }
   , chunks_flushed_{ 0 }
   , cumulative_size_{ 0 }
   , file_offset_{ 0 }
@@ -37,24 +41,36 @@ zarr::ShardWriter::add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard)
 
     chunks_.push_back(buffer);
     if (chunks_.size() == chunks_before_flush_) {
-        auto job = [this](std::string& err) -> bool {
-            std::vector<std::span<std::byte>> buffers;
-            buffers.reserve(chunks_.size() + 1);
-            for (const auto& chunk : chunks_) {
-                buffers.push_back(std::span(*chunk));
-            }
-            buffers.push_back(std::span(index_table_));
-            //            VectorizedFileWriter writer()
-
-
-            chunks_.clear();
-            cv_.notify_all();
-            return true;
-        };
-
-        EXPECT(thread_pool_->push_job(job),
-               "Failed to push job to thread pool.");
+        flush_();
     }
+}
+
+bool
+zarr::ShardWriter::flush_()
+{
+    std::vector<std::span<std::byte>> buffers;
+    buffers.reserve(chunks_.size() + 1);
+    for (const auto& chunk : chunks_) {
+        buffers.emplace_back(*chunk);
+    }
+    buffers.emplace_back(index_table_);
+
+    try {
+        VectorizedFileWriter writer(file_path_);
+        writer.write_vectors(buffers, file_offset_);
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to write chunk: ", std::string(exc.what()));
+        return false;
+    }
+
+    chunks_flushed_ += chunks_.size();
+    chunks_.clear();
+    chunks_.reserve(chunks_before_flush_);
+    file_offset_ = cumulative_size_;
+
+    cv_.notify_all();
+
+    return true;
 }
 
 void
@@ -62,8 +78,37 @@ zarr::ShardWriter::set_offset_extent_(uint32_t shard_internal_index,
                                       uint64_t offset,
                                       uint64_t size)
 {
+    EXPECT(shard_internal_index < chunks_per_shard_,
+           "Shard internal index ",
+           shard_internal_index,
+           " out of bounds");
+
     auto* index_table_u64 = reinterpret_cast<uint64_t*>(index_table_.data());
     const auto index = 2 * shard_internal_index;
     index_table_u64[index] = offset;
     index_table_u64[index + 1] = size;
+}
+
+bool
+zarr::finalize_shard_writer(std::unique_ptr<ShardWriter>&& writer)
+{
+    if (writer == nullptr) {
+        LOG_INFO("Writer is null. Nothing to finalize.");
+        return true;
+    }
+
+    if (!writer->flush_()) {
+        return false;
+    }
+
+    // resize file if necessary
+    const auto file_size = fs::file_size(writer->file_path_);
+    const auto expected_size = writer->cumulative_size_ +
+                               writer->chunks_per_shard_ * 2 * sizeof(uint64_t);
+    if (file_size > expected_size) {
+        fs::resize_file(writer->file_path_, expected_size);
+    }
+
+    writer.reset();
+    return true;
 }
