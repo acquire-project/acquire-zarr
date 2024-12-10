@@ -179,9 +179,9 @@ zarr::ArrayWriter::make_metadata_sink_()
     if (is_s3_array_()) {
         SinkCreator creator(thread_pool_, s3_connection_pool_);
         metadata_sink_ =
-          creator.make_sink(*config_.bucket_name, metadata_path);
+          creator.make_s3_sink(*config_.bucket_name, metadata_path);
     } else {
-        metadata_sink_ = zarr::SinkCreator::make_sink(metadata_path);
+        metadata_sink_ = zarr::SinkCreator::make_file_sink(metadata_path);
     }
 
     if (!metadata_sink_) {
