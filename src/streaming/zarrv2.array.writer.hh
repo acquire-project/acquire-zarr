@@ -19,6 +19,7 @@ class ZarrV2ArrayWriter final : public ArrayWriter
     bool make_data_sinks_() override;
     bool should_rollover_() const override;
     void compress_and_flush_() override;
+    void close_sinks_() override;
     bool write_array_metadata_() override;
 };
 } // namespace zarr

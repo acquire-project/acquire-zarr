@@ -272,60 +272,47 @@ zarr::ArrayWriter::should_flush_() const
     return frames_written_ % frames_before_flush == 0;
 }
 
-void
-zarr::ArrayWriter::compress_buffers_()
+bool
+zarr::ArrayWriter::compress_chunk_buffer_(size_t chunk_index)
 {
     if (!config_.compression_params.has_value()) {
-        return;
+        return true;
     }
 
-    LOG_DEBUG("Compressing");
+    EXPECT(chunk_index < chunk_buffers_.size(),
+           "Chunk index out of bounds: ",
+           chunk_index);
 
-    BloscCompressionParams params = config_.compression_params.value();
+    LOG_DEBUG("Compressing chunk ", chunk_index);
+
+    const auto params = *config_.compression_params;
     const auto bytes_per_px = bytes_of_type(config_.dtype);
 
-    std::scoped_lock lock(buffers_mutex_);
-    std::latch latch(chunk_buffers_.size());
-    for (auto& chunk : chunk_buffers_) {
-        EXPECT(thread_pool_->push_job(
-                 [&params, buf = &chunk, bytes_per_px, &latch](
-                   std::string& err) -> bool {
-                     bool success = false;
-                     const size_t bytes_of_chunk = buf->size();
+    auto& chunk = chunk_buffers_[chunk_index];
+    const auto bytes_of_chunk = chunk.size();
 
-                     try {
-                         const auto tmp_size =
-                           bytes_of_chunk + BLOSC_MAX_OVERHEAD;
-                         ChunkBuffer tmp(tmp_size);
-                         const auto nb =
-                           blosc_compress_ctx(params.clevel,
-                                              params.shuffle,
-                                              bytes_per_px,
-                                              bytes_of_chunk,
-                                              buf->data(),
-                                              tmp.data(),
-                                              tmp_size,
-                                              params.codec_id.c_str(),
-                                              0 /* blocksize - 0:automatic */,
-                                              1);
+    const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
+    ChunkBuffer tmp(tmp_size);
+    const auto nb = blosc_compress_ctx(params.clevel,
+                                       params.shuffle,
+                                       bytes_per_px,
+                                       bytes_of_chunk,
+                                       chunk.data(),
+                                       tmp.data(),
+                                       tmp_size,
+                                       params.codec_id.c_str(),
+                                       0 /* blocksize - 0:automatic */,
+                                       1);
 
-                         tmp.resize(nb);
-                         buf->swap(tmp);
-
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to compress chunk: " +
-                               std::string(exc.what());
-                     }
-                     latch.count_down();
-
-                     return success;
-                 }),
-               "Failed to push to job queue");
+    if (nb <= 0) {
+        LOG_ERROR("Failed to compress chunk ", chunk_index);
+        return false;
     }
 
-    // wait for all threads to finish
-    latch.wait();
+    tmp.resize(nb);
+    chunk.swap(tmp);
+
+    return true;
 }
 
 void
@@ -339,11 +326,9 @@ zarr::ArrayWriter::flush_()
     compress_and_flush_();
 
     const auto should_rollover = should_rollover_();
-    if (should_rollover) {
-        rollover_();
-    }
 
     if (should_rollover || is_finalizing_) {
+        rollover_();
         CHECK(write_array_metadata_());
     }
 
@@ -352,17 +337,6 @@ zarr::ArrayWriter::flush_()
 
     // reset state
     bytes_to_flush_ = 0;
-}
-
-void
-zarr::ArrayWriter::close_sinks_()
-{
-    for (auto i = 0; i < data_sinks_.size(); ++i) {
-        EXPECT(finalize_sink(std::move(data_sinks_[i])),
-               "Failed to finalize sink ",
-               i);
-    }
-    data_sinks_.clear();
 }
 
 void

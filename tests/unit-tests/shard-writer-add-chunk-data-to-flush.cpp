@@ -85,8 +85,11 @@ main()
     const uint32_t chunks_per_shard = 8;
 
     auto shard_file_path = fs::temp_directory_path() / "shard-data.bin";
-    auto writer = std::make_unique<zarr::ShardWriter>(
-      shard_file_path.string(), chunks_before_flush, chunks_per_shard);
+    zarr::ShardWriterConfig config = { .file_path = shard_file_path.string(),
+                                       .chunks_before_flush =
+                                         chunks_before_flush,
+                                       .chunks_per_shard = chunks_per_shard };
+    auto writer = std::make_unique<zarr::ShardWriter>(config);
 
     const auto index_table_size = chunks_per_shard * 2 * sizeof(uint64_t);
 

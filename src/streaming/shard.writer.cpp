@@ -1,6 +1,7 @@
-#include "shard.writer.hh"
 #include "macros.hh"
+#include "shard.writer.hh"
 #include "vectorized.file.writer.hh"
+#include "zarr.common.hh"
 
 #include <algorithm>
 #include <filesystem>
@@ -12,16 +13,14 @@ namespace fs = std::filesystem;
 #undef max
 #endif
 
-zarr::ShardWriter::ShardWriter(std::string_view file_path,
-                               uint32_t chunks_before_flush,
-                               uint32_t chunks_per_shard)
-  : file_path_(file_path)
-  , chunks_before_flush_{ chunks_before_flush }
-  , chunks_per_shard_{ chunks_per_shard }
+zarr::ShardWriter::ShardWriter(const ShardWriterConfig& config)
+  : file_path_(config.file_path)
+  , chunks_before_flush_{ config.chunks_before_flush }
+  , chunks_per_shard_{ config.chunks_per_shard }
   , chunks_flushed_{ 0 }
   , cumulative_size_{ 0 }
   , file_offset_{ 0 }
-  , index_table_(2 * chunks_per_shard * sizeof(uint64_t))
+  , index_table_(2 * config.chunks_per_shard * sizeof(uint64_t))
 {
     std::fill_n(reinterpret_cast<uint64_t*>(index_table_.data()),
                 index_table_.size() / sizeof(uint64_t),
@@ -41,7 +40,7 @@ zarr::ShardWriter::add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard)
 
     chunks_.push_back(buffer);
     if (chunks_.size() == chunks_before_flush_) {
-        flush_();
+        CHECK(flush_());
     }
 }
 
@@ -110,5 +109,36 @@ zarr::finalize_shard_writer(std::unique_ptr<ShardWriter>&& writer)
     }
 
     writer.reset();
+    return true;
+}
+
+bool
+zarr::make_shard_writers(
+  std::string_view base_path,
+  uint32_t chunks_before_flush,
+  uint32_t chunks_per_shard,
+  const ArrayDimensions& dimensions,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::vector<std::unique_ptr<ShardWriter>>& shard_writers)
+{
+    auto paths =
+      construct_data_paths(base_path, dimensions, shards_along_dimension);
+
+    auto parent_paths = get_parent_paths(paths);
+    if (!make_dirs(parent_paths, thread_pool)) {
+        LOG_ERROR("Failed to create dataset paths.");
+        return false;
+    }
+
+    shard_writers.clear();
+    shard_writers.reserve(paths.size());
+
+    for (const auto& path : paths) {
+        ShardWriterConfig config{ .file_path = path,
+                                  .chunks_before_flush = chunks_before_flush,
+                                  .chunks_per_shard = chunks_per_shard };
+        shard_writers.emplace_back(std::make_unique<ShardWriter>(config));
+    }
+
     return true;
 }

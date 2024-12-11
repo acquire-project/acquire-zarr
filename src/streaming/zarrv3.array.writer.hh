@@ -15,7 +15,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    std::vector<std::unique_ptr<ShardWriter>> shards_ready_;
+    std::vector<std::unique_ptr<ShardWriter>> shard_writers_;
 
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
@@ -26,7 +26,10 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     bool make_data_sinks_() override;
     bool should_rollover_() const override;
     void compress_and_flush_() override;
-    bool flush_impl_() override;
+    void close_sinks_() override;
     bool write_array_metadata_() override;
+
+    bool compress_and_flush_to_filesystem_();
+    bool compress_and_flush_to_s3_();
 };
 } // namespace zarr

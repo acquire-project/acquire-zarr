@@ -133,99 +133,51 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_()
 
     std::latch latch(n_chunks);
     for (auto i = 0; i < n_chunks; ++i) {
-        auto& chunk = chunk_buffers_[i];
+        auto job = [this, i, &latch](std::string& err) -> bool {
+            if (!compress_chunk_buffer_(i)) { // no-op if no compression
+                err = "Failed to compress chunk buffer";
+                return false;
+            }
 
-        if (config_.compression_params) {
-            auto& params = *config_.compression_params;
-            auto job = [&params,
-                        buf = &chunk,
-                        bytes_per_px,
-                        &sink = data_sinks_[i],
-                        thread_pool = thread_pool_,
-                        &latch](std::string& err) -> bool {
-                const size_t bytes_of_chunk = buf->size();
+            auto queued = thread_pool_->push_job(std::move(
+              [&sink = data_sinks_[i], buf = &chunk_buffers_[i], &latch](
+                std::string& err) -> bool {
+                  bool success = false;
 
-                const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
-                ChunkBuffer tmp(tmp_size);
-                const auto nb =
-                  blosc_compress_ctx(params.clevel,
-                                     params.shuffle,
-                                     bytes_per_px,
-                                     bytes_of_chunk,
-                                     buf->data(),
-                                     tmp.data(),
-                                     tmp_size,
-                                     params.codec_id.c_str(),
-                                     0 /* blocksize - 0:automatic */,
-                                     1);
+                  try {
+                      success = sink->write(0, *buf);
+                  } catch (const std::exception& exc) {
+                      err = "Failed to write chunk: " + std::string(exc.what());
+                  }
 
-                if (nb <= 0) {
-                    err = "Failed to compress chunk";
-                    latch.count_down();
-                    return false;
-                }
+                  latch.count_down();
+                  return success;
+              }));
 
-                tmp.resize(nb);
-                buf->swap(tmp);
+            if (!queued) {
+                err = "Failed to push job to thread pool";
+                latch.count_down();
+            }
 
-                auto queued = thread_pool->push_job(
-                  std::move([&sink, buf, &latch](std::string& err) -> bool {
-                      bool success = false;
+            return queued;
+        };
 
-                      try {
-                          success = sink->write(0, *buf);
-                      } catch (const std::exception& exc) {
-                          err =
-                            "Failed to write chunk: " + std::string(exc.what());
-                      }
-
-                      latch.count_down();
-                      return success;
-                  }));
-
-                if (!queued) {
-                    err = "Failed to push job to thread pool";
-                    latch.count_down();
-                }
-
-                return queued;
-            };
-
-            CHECK(thread_pool_->push_job(std::move(job)));
-        } else {
-            auto job = [buf = &chunk,
-                        &sink = data_sinks_[i],
-                        thread_pool = thread_pool_,
-                        &latch](std::string& err) -> bool {
-                auto queued = thread_pool->push_job(
-                  std::move([&sink, buf, &latch](std::string& err) -> bool {
-                      bool success = false;
-
-                      try {
-                          success = sink->write(0, *buf);
-                      } catch (const std::exception& exc) {
-                          err =
-                            "Failed to write chunk: " + std::string(exc.what());
-                      }
-
-                      latch.count_down();
-                      return success;
-                  }));
-
-                if (!queued) {
-                    err = "Failed to push job to thread pool";
-                    latch.count_down();
-                }
-
-                return queued;
-            };
-
-            CHECK(thread_pool_->push_job(std::move(job)));
-        }
+        CHECK(thread_pool_->push_job(std::move(job)));
     }
 
     // wait for all threads to finish
     latch.wait();
+}
+
+void
+zarr::ZarrV2ArrayWriter::close_sinks_()
+{
+    for (auto i = 0; i < data_sinks_.size(); ++i) {
+        EXPECT(finalize_sink(std::move(data_sinks_[i])),
+               "Failed to finalize sink ",
+               i);
+    }
+    data_sinks_.clear();
 }
 
 bool

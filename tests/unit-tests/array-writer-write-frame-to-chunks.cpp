@@ -18,6 +18,7 @@ class TestWriter : public zarr::ArrayWriter
     bool make_data_sinks_() override { return true; }
     bool should_rollover_() const override { return false; }
     void compress_and_flush_() override {}
+    void close_sinks_() override {}
     bool write_array_metadata_() override { return true; }
 };
 } // namespace

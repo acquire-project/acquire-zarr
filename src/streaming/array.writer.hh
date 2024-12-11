@@ -91,7 +91,7 @@ class ArrayWriter
     virtual bool should_rollover_() const = 0;
 
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
-    void compress_buffers_();
+    bool compress_chunk_buffer_(size_t chunk_index);
 
     virtual void compress_and_flush_() = 0;
     void flush_();
@@ -99,7 +99,7 @@ class ArrayWriter
 
     [[nodiscard]] virtual bool write_array_metadata_() = 0;
 
-    void close_sinks_();
+    virtual void close_sinks_() = 0;
 
     friend bool finalize_array(std::unique_ptr<ArrayWriter>&& writer);
 };

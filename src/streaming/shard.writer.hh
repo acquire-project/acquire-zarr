@@ -1,6 +1,7 @@
 #pragma once
 
 #include "thread.pool.hh"
+#include "zarr.dimension.hh"
 
 #include <condition_variable>
 #include <latch>
@@ -9,14 +10,19 @@
 #include <atomic>
 
 namespace zarr {
+struct ShardWriterConfig
+{
+    std::string file_path;
+    uint32_t chunks_before_flush;
+    uint32_t chunks_per_shard;
+};
+
 class ShardWriter
 {
   public:
     using ChunkBufferPtr = std::vector<std::byte>*;
 
-    ShardWriter(std::string_view file_path,
-                uint32_t chunks_before_flush,
-                uint32_t chunks_per_shard);
+    explicit ShardWriter(const ShardWriterConfig& config);
     ~ShardWriter() = default;
 
     void add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard);
@@ -46,4 +52,12 @@ class ShardWriter
 
 bool
 finalize_shard_writer(std::unique_ptr<ShardWriter>&& writer);
+
+bool
+make_shard_writers(std::string_view base_path,
+                   uint32_t chunks_before_flush,
+                   uint32_t chunks_per_shard,
+                   const ArrayDimensions& dimensions,
+                   std::shared_ptr<ThreadPool> thread_pool,
+                   std::vector<std::unique_ptr<ShardWriter>>& shard_writers);
 } // namespace zarr
