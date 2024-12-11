@@ -25,7 +25,8 @@ main()
               !fs::exists(dir_path), "Directory ", dir_path, " already exists");
         }
 
-        EXPECT(zarr::make_dirs(dir_paths, thread_pool));
+        EXPECT(zarr::make_dirs(dir_paths, thread_pool),
+               "Failed to create dirs.");
         for (const auto& dir_path : dir_paths) {
             EXPECT(fs::is_directory(temp_dir / dir_path),
                    "Failed to create directory ",
