@@ -95,7 +95,6 @@ class ArrayWriter
 
     virtual void compress_and_flush_() = 0;
     void flush_();
-    [[nodiscard]] virtual bool flush_impl_() = 0;
     void rollover_();
 
     [[nodiscard]] virtual bool write_array_metadata_() = 0;

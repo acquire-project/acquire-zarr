@@ -192,7 +192,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_()
 }
 
 bool
-zarr::ZarrV3ArrayWriter::flush_impl_()
+zarr::ZarrV3ArrayWriter::compress_and_flush_to_s3_()
 {
     // write out chunks to shards
     //    std::latch latch(n_shards);

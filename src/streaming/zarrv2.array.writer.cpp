@@ -229,12 +229,6 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_()
 }
 
 bool
-zarr::ZarrV2ArrayWriter::flush_impl_()
-{
-    return true;
-}
-
-bool
 zarr::ZarrV2ArrayWriter::write_array_metadata_()
 {
     if (!make_metadata_sink_()) {
