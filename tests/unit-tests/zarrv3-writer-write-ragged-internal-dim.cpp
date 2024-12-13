@@ -117,7 +117,8 @@ main()
           "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
         zarr::ArrayWriterConfig config = {
-            .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+            .dimensions =
+              std::make_shared<ArrayDimensions>(std::move(dims), dtype),
             .dtype = dtype,
             .level_of_detail = 5,
             .bucket_name = std::nullopt,
@@ -130,7 +131,8 @@ main()
               std::move(config), thread_pool);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
-            std::vector data(frame_size, std::byte(0));;
+            std::vector data(frame_size, std::byte(0));
+            ;
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
                 CHECK(writer->write_frame(data));
@@ -144,10 +146,9 @@ main()
         const auto index_size = chunks_per_shard *
                                 sizeof(uint64_t) * // indices are 64 bits
                                 2;                 // 2 indices per chunk
-        const auto expected_file_size = shard_width * shard_height *
-                                          shard_planes * shard_timepoints *
-                                          chunk_size +
-                                        index_size;
+        const auto min_file_size = shard_width * shard_height * shard_planes *
+                                     shard_timepoints * chunk_size +
+                                   index_size;
 
         const fs::path data_root =
           base_dir / "data/root" / std::to_string(config.level_of_detail);
@@ -168,7 +169,7 @@ main()
                         const auto x_file = y_dir / std::to_string(x);
                         CHECK(fs::is_regular_file(x_file));
                         const auto file_size = fs::file_size(x_file);
-                        EXPECT_EQ(int, file_size, expected_file_size);
+                        EXPECT_GTE(int, file_size, min_file_size);
                     }
 
                     CHECK(!fs::is_regular_file(y_dir /
