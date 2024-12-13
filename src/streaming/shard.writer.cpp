@@ -1,6 +1,5 @@
 #include "macros.hh"
 #include "shard.writer.hh"
-#include "vectorized.file.writer.hh"
 #include "zarr.common.hh"
 
 #include <algorithm>
@@ -15,6 +14,7 @@ namespace fs = std::filesystem;
 
 zarr::ShardWriter::ShardWriter(const ShardWriterConfig& config)
   : file_path_(config.file_path)
+  , file_{ std::make_unique<VectorizedFile>(config.file_path) }
   , chunks_before_flush_{ config.chunks_before_flush }
   , chunks_per_shard_{ config.chunks_per_shard }
   , chunks_flushed_{ 0 }
@@ -34,6 +34,11 @@ zarr::ShardWriter::add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard)
 {
     std::unique_lock lock(mutex_);
     cv_.wait(lock, [this] { return chunks_.size() < chunks_before_flush_; });
+
+    // chunks have been flushed and the new offset is aligned to the sector size
+    if (chunks_.empty()) {
+        cumulative_size_ = file_offset_;
+    }
 
     set_offset_extent_(index_in_shard, cumulative_size_, buffer->size());
     cumulative_size_ += buffer->size();
@@ -55,8 +60,7 @@ zarr::ShardWriter::flush_()
     buffers.emplace_back(index_table_);
 
     try {
-        VectorizedFileWriter writer(file_path_);
-        writer.write_vectors(buffers, file_offset_);
+        file_write_vectorized(*file_, buffers, file_offset_);
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to write chunk: ", std::string(exc.what()));
         return false;
@@ -65,7 +69,7 @@ zarr::ShardWriter::flush_()
     chunks_flushed_ += chunks_.size();
     chunks_.clear();
     chunks_.reserve(chunks_before_flush_);
-    file_offset_ = cumulative_size_;
+    file_offset_ = zarr::align_to_system_boundary(cumulative_size_);
 
     cv_.notify_all();
 
@@ -96,9 +100,12 @@ zarr::finalize_shard_writer(std::unique_ptr<ShardWriter>&& writer)
         return true;
     }
 
+    // flush remaining chunks and close file
     if (!writer->flush_()) {
+        LOG_ERROR("Failed to flush remaining chunks.");
         return false;
     }
+    writer->file_.reset(); // release file handle
 
     // resize file if necessary
     const auto file_size = fs::file_size(writer->file_path_);

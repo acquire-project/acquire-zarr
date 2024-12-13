@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform.hh"
 #include "thread.pool.hh"
 #include "zarr.dimension.hh"
 
@@ -28,10 +29,12 @@ class ShardWriter
     void add_chunk(ChunkBufferPtr buffer, uint32_t index_in_shard);
 
   private:
+    std::string file_path_;
+    std::unique_ptr<VectorizedFile> file_;
+
     uint32_t chunks_before_flush_;
     uint32_t chunks_per_shard_;
     uint32_t chunks_flushed_;
-    std::string file_path_;
 
     std::vector<std::byte> index_table_;
 

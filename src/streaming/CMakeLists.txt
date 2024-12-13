@@ -29,10 +29,10 @@ add_library(${tgt}
         zarrv2.array.writer.cpp
         zarrv3.array.writer.hh
         zarrv3.array.writer.cpp
-        vectorized.file.writer.hh
-        vectorized.file.writer.cpp
         shard.writer.hh
         shard.writer.cpp
+        platform.hh
+        platform.cpp
 )
 
 target_include_directories(${tgt}
