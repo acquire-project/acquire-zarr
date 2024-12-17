@@ -4,6 +4,7 @@ set(examples
         zarrv2-raw-filesystem
         zarrv2-compressed-s3
         zarrv3-compressed-filesystem
+        zarrv3-raw-multiscale-filesystem
         zarrv3-raw-s3
 )
 
