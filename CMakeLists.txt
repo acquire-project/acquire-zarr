@@ -22,6 +22,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_PYTHON "Build Python bindings" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
+option(BUILD_BENCHMARK "Build benchmarks" OFF)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
@@ -34,16 +35,22 @@ else ()
     message(STATUS "Skipping test targets")
 endif ()
 
-if (${BUILD_PYTHON})
-    add_subdirectory(python)
-else ()
-    message(STATUS "Skipping Python bindings")
-endif ()
-
 if (${BUILD_EXAMPLES})
     add_subdirectory(examples)
 else ()
     message(STATUS "Skipping examples")
+endif ()
+
+if (BUILD_BENCHMARK)
+    add_subdirectory(benchmarks)
+else ()
+    message(STATUS "Skipping benchmarks")
+endif ()
+
+if (BUILD_PYTHON)
+    add_subdirectory(python)
+else ()
+    message(STATUS "Skipping Python bindings")
 endif ()
 
 include(CPack)

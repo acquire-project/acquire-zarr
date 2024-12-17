@@ -190,7 +190,6 @@ bool
 zarr::ArrayWriter::make_metadata_sink_()
 {
     if (metadata_sink_) {
-        LOG_INFO("Metadata sink already exists");
         return true;
     }
 
@@ -361,7 +360,7 @@ zarr::ArrayWriter::compress_buffers_()
                      try {
                          const auto tmp_size =
                            bytes_of_chunk + BLOSC_MAX_OVERHEAD;
-                         std::vector<std::byte> tmp(tmp_size);
+                         ChunkBuffer tmp(tmp_size);
                          const auto nb =
                            blosc_compress_ctx(params.clevel,
                                               params.shuffle,
