@@ -6,6 +6,13 @@ from acquire_zarr import (
 )
 
 
+def make_sample_data():
+    return np.random.randint(
+        0, 65535,
+        (5, 4, 2, 48, 64),  # Shape matches chunk sizes
+        dtype=np.uint16
+    )
+
 def main():
     settings = StreamSettings()
 
@@ -63,13 +70,8 @@ def main():
     # Create stream
     stream = ZarrStream(settings)
 
-    # Create and write sample data
-    data = np.random.randint(
-        0, 65535,
-        (5, 4, 2, 48, 64),  # Shape matches chunk sizes
-        dtype=np.uint16
-    )
-    stream.append(data)
+    # Write sample data
+    stream.append(make_sample_data())
 
 
 if __name__ == "__main__":

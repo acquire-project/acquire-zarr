@@ -5,6 +5,13 @@ from acquire_zarr import (
 )
 
 
+def make_sample_data():
+    return np.random.randint(
+        0, 65535,
+        (32, 48, 64),  # Shape matches chunk size for time dimension
+        dtype=np.int32
+    )
+
 def main():
     # Configure stream settings
     settings = StreamSettings()
@@ -43,12 +50,7 @@ def main():
 
     # Create and write sample data
     for i in range(10):
-        data = np.random.randint(
-            0, 65535,
-            (32, 48, 64),  # Shape matches chunk size for time dimension
-            dtype=np.int32
-        )
-        stream.append(data)
+        stream.append(make_sample_data())
 
 
 if __name__ == "__main__":
