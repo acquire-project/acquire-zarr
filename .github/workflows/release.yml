@@ -221,7 +221,8 @@ jobs:
       - name: Collect wheels
         run: |
           mkdir -p dist
-          mv ${{steps.download.outputs.download-path}}/*/*.whl ${{steps.download.outputs.download-path}}/*/*.tar.gz dist
+          mv ${{steps.download.outputs.download-path}}/*/*.whl dist
+          find ${{steps.download.outputs.download-path}}/ -type f -name *.tar.gz -exec mv {} dist \; -quit 
 
       - name: Tagged release
         if: ${{ github.ref_name != 'nightly' }}
