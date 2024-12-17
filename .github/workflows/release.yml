@@ -5,120 +5,123 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
+  pull_request: # TODO (aliddell): remove
+    branches:
+      - main
 
 env:
   BUILD_TYPE: Release
 
 jobs:
-  windows-and-linux-build:
-    name: Build on ${{ matrix.platform }}
-    strategy:
-      matrix:
-        platform:
-          - "windows-latest"
-          - "ubuntu-latest"
-        include:
-          - platform: "windows-latest"
-            vcpkg_triplet: "x64-windows-static"
-          - platform: "ubuntu-latest"
-            vcpkg_triplet: "x64-linux"
-
-    runs-on: ${{ matrix.platform }}
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
-
-      - name: Build
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build ${{github.workspace}}/build --config Release
-
-      - name: Test  # don't release if tests are failing
-        working-directory: ${{github.workspace}}/build
-        run: ctest -C Release -L anyplatform --output-on-failure
-
-      - name: Package
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-          cmake --build ${{github.workspace}}/pack --config Release
-          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.platform}} binaries
-          path: ${{github.workspace}}/*.zip
-
-  mac-build:
-    name: Build on macos-latest
-    runs-on: "macos-latest"
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
-
-      - name: Build for x64
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-x64 -B ${{github.workspace}}/build-x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64" -DBUILD_TESTING=OFF
-          cmake --build ${{github.workspace}}/build-x64 --config Release
-
-      - name: Build for arm64
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=arm64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-arm64 -B ${{github.workspace}}/build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64" -DBUILD_TESTING=OFF
-          cmake --build ${{github.workspace}}/build-arm64 --config Release
-
-      - name: Test  # don't release if tests are failing
-        working-directory: ${{github.workspace}}/build-arm64
-        run: ctest -C Release -L anyplatform --output-on-failure
-
-      - name: Create a universal binary
-        run: |
-          cp -r ${{github.workspace}}/build-x64 ${{github.workspace}}/build && cd ${{github.workspace}}/build
-          for filename in $(find . -type f -exec grep -H "build-x64" {} \; | awk '{print $1}' | sed -e 's/:.*//' | sort -u); do sed -i.bak -e "s/build-x64/build/g" $filename && rm ${filename}.bak; done
-          for lib in `find . -type f \( -name "*.so" -o -name "*.a" \)`; do rm $lib && lipo -create ../build-x64/${lib} ../build-arm64/${lib} -output $lib; done
-
-      - name: Package
-        run: |
-          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-latest binaries
-          path: ${{github.workspace}}/*.zip
+#  windows-and-linux-build:
+#    name: Build on ${{ matrix.platform }}
+#    strategy:
+#      matrix:
+#        platform:
+#          - "windows-latest"
+#          - "ubuntu-latest"
+#        include:
+#          - platform: "windows-latest"
+#            vcpkg_triplet: "x64-windows-static"
+#          - platform: "ubuntu-latest"
+#            vcpkg_triplet: "x64-linux"
+#
+#    runs-on: ${{ matrix.platform }}
+#
+#    permissions:
+#      actions: write
+#
+#    concurrency:
+#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
+#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+#
+#    steps:
+#      - uses: actions/checkout@v3
+#        with:
+#          submodules: true
+#
+#      - name: Install vcpkg
+#        run: |
+#          git clone https://github.com/microsoft/vcpkg.git
+#          cd vcpkg && ./bootstrap-vcpkg.sh
+#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+#          ./vcpkg integrate install
+#        shell: bash
+#
+#      - name: Build
+#        run: |
+#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
+#          cmake --build ${{github.workspace}}/build --config Release
+#
+#      - name: Test  # don't release if tests are failing
+#        working-directory: ${{github.workspace}}/build
+#        run: ctest -C Release -L anyplatform --output-on-failure
+#
+#      - name: Package
+#        run: |
+#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+#          cmake --build ${{github.workspace}}/pack --config Release
+#          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: ${{matrix.platform}} binaries
+#          path: ${{github.workspace}}/*.zip
+#
+#  mac-build:
+#    name: Build on macos-latest
+#    runs-on: "macos-latest"
+#
+#    permissions:
+#      actions: write
+#
+#    concurrency:
+#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
+#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+#
+#    steps:
+#      - uses: actions/checkout@v3
+#        with:
+#          submodules: true
+#
+#      - name: Install vcpkg
+#        run: |
+#          git clone https://github.com/microsoft/vcpkg.git
+#          cd vcpkg && ./bootstrap-vcpkg.sh
+#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+#          ./vcpkg integrate install
+#        shell: bash
+#
+#      - name: Build for x64
+#        run: |
+#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-x64 -B ${{github.workspace}}/build-x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64" -DBUILD_TESTING=OFF
+#          cmake --build ${{github.workspace}}/build-x64 --config Release
+#
+#      - name: Build for arm64
+#        run: |
+#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=arm64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-arm64 -B ${{github.workspace}}/build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64" -DBUILD_TESTING=OFF
+#          cmake --build ${{github.workspace}}/build-arm64 --config Release
+#
+#      - name: Test  # don't release if tests are failing
+#        working-directory: ${{github.workspace}}/build-arm64
+#        run: ctest -C Release -L anyplatform --output-on-failure
+#
+#      - name: Create a universal binary
+#        run: |
+#          cp -r ${{github.workspace}}/build-x64 ${{github.workspace}}/build && cd ${{github.workspace}}/build
+#          for filename in $(find . -type f -exec grep -H "build-x64" {} \; | awk '{print $1}' | sed -e 's/:.*//' | sort -u); do sed -i.bak -e "s/build-x64/build/g" $filename && rm ${filename}.bak; done
+#          for lib in `find . -type f \( -name "*.so" -o -name "*.a" \)`; do rm $lib && lipo -create ../build-x64/${lib} ../build-arm64/${lib} -output $lib; done
+#
+#      - name: Package
+#        run: |
+#          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: macos-latest binaries
+#          path: ${{github.workspace}}/*.zip
 
   build-wheel:
     strategy:
@@ -127,6 +130,12 @@ jobs:
           - "windows-latest"
           - "ubuntu-22.04"
           - "macos-latest" # TODO (aliddell): universal binary?
+        python:
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
 
     runs-on: ${{ matrix.platform }}
 
@@ -134,7 +143,7 @@ jobs:
       actions: write
 
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
@@ -145,7 +154,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python }}
 
       - name: Install vcpkg
         run: |
@@ -184,13 +193,13 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.platform}} wheel
-          path: ${{github.workspace}}/dist/*.whl
+          name: ${{ matrix.platform }} ${{ matrix.python }} wheel
+          path: ${{ github.workspace }}/dist
 
   release:
     needs:
-      - windows-and-linux-build
-      - mac-build
+#      - windows-and-linux-build
+#      - mac-build
       - build-wheel
     name: "Release"
     runs-on: "ubuntu-latest"
@@ -212,7 +221,7 @@ jobs:
       - name: Collect wheels
         run: |
           mkdir -p dist
-          mv ${{steps.download.outputs.download-path}}/*/*.whl dist
+          mv ${{steps.download.outputs.download-path}}/*/*.whl ${{steps.download.outputs.download-path}}/*/*.tar.gz dist
 
       - name: Tagged release
         if: ${{ github.ref_name != 'nightly' }}
@@ -236,8 +245,8 @@ jobs:
             ${{steps.download.outputs.download-path}}/*/*.zip
             dist/*.whl
 
-      - name: Publish wheels
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
+#      - name: Publish wheels and sources
+#        if: ${{ github.ref_name != 'nightly' }}
+#        uses: pypa/gh-action-pypi-publish@release/v1
+#        with:
+#          skip-existing: true
