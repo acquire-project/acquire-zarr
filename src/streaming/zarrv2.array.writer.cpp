@@ -139,27 +139,19 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_()
                 return false;
             }
 
-            auto queued = thread_pool_->push_job(std::move(
-              [&sink = data_sinks_[i], buf = &chunk_buffers_[i], &latch](
-                std::string& err) -> bool {
-                  bool success = false;
+            auto& sink = data_sinks_[i];
+            auto& buf = chunk_buffers_[i];
 
-                  try {
-                      success = sink->write(0, *buf);
-                  } catch (const std::exception& exc) {
-                      err = "Failed to write chunk: " + std::string(exc.what());
-                  }
+            bool success = false;
 
-                  latch.count_down();
-                  return success;
-              }));
-
-            if (!queued) {
-                err = "Failed to push job to thread pool";
-                latch.count_down();
+            try {
+                success = sink->write(0, buf);
+            } catch (const std::exception& exc) {
+                err = "Failed to write chunk: " + std::string(exc.what());
             }
 
-            return queued;
+            latch.count_down();
+            return success;
         };
 
         CHECK(thread_pool_->push_job(std::move(job)));

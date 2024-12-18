@@ -151,7 +151,7 @@ zarr::ArrayWriter::make_metadata_sink_()
         metadata_sink_ =
           creator.make_s3_sink(*config_.bucket_name, metadata_path);
     } else {
-        metadata_sink_ = zarr::SinkCreator::make_file_sink(metadata_path);
+        metadata_sink_ = SinkCreator::make_file_sink(metadata_path);
     }
 
     if (!metadata_sink_) {
