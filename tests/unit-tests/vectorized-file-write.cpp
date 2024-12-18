@@ -1,4 +1,4 @@
-#include "vectorized.file.writer.hh"
+#include "platform.hh"
 #include "unit.test.macros.hh"
 
 #include <iostream>
@@ -11,18 +11,19 @@ size_t
 write_to_file(const std::string& filename)
 {
     size_t file_size = 0;
-    zarr::VectorizedFileWriter writer(filename);
+    zarr::VectorizedFile file(filename);
 
     std::vector<std::vector<std::byte>> data(10);
     std::vector<std::span<std::byte>> spans(10);
 
     for (auto i = 0; i < data.size(); ++i) {
-        data[i].resize((i + 1) * 1024);
+        data[i].resize((i + 1) * 967);
         std::fill(data[i].begin(), data[i].end(), std::byte(i));
         file_size += data[i].size();
         spans[i] = data[i];
     }
-    CHECK(writer.write_vectors(spans, 0));
+    size_t offset = 0;
+    CHECK(file_write_vectorized(file, spans, offset));
 
     // write more data
     for (auto i = 0; i < 10; ++i) {
@@ -30,9 +31,10 @@ write_to_file(const std::string& filename)
         std::fill(vec.begin(), vec.end(), std::byte(i + 10));
         spans[i] = vec;
     }
-    CHECK(writer.write_vectors(spans, file_size));
+    offset = zarr::align_to_system_boundary(file_size);
+    CHECK(file_write_vectorized(file, spans, offset));
 
-    return 2 * file_size;
+    return offset + file_size;
 }
 
 void
@@ -47,7 +49,7 @@ verify_file_data(const std::string& filename, size_t file_size)
     // Verify data pattern
     size_t offset = 0;
     for (size_t i = 0; i < 10; ++i) {
-        size_t size = (i + 1) * 1024;
+        size_t size = (i + 1) * 967;
 
         for (size_t j = offset; j < offset + size; ++j) {
             auto byte = (int)read_buffer[j];
@@ -63,8 +65,9 @@ verify_file_data(const std::string& filename, size_t file_size)
         offset += size;
     }
 
+    offset = zarr::align_to_system_boundary(offset);
     for (size_t i = 0; i < 10; ++i) {
-        size_t size = (i + 1) * 1024;
+        size_t size = (i + 1) * 967;
 
         for (size_t j = offset; j < offset + size; ++j) {
             auto byte = (int)read_buffer[j];
@@ -98,7 +101,7 @@ main()
         EXPECT(fs::exists(filename), "File not found: ", filename);
 
         auto file_size_on_disk = fs::file_size(filename);
-        EXPECT(file_size_on_disk >= file_size, // sum(1:10) * 1024 * 2
+        EXPECT(file_size_on_disk >= file_size,
                "Expected file size of at least ",
                file_size,
                " bytes, got ",

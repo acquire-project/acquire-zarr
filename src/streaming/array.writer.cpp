@@ -75,7 +75,6 @@ zarr::downsample(const ArrayWriterConfig& config,
     return true;
 }
 
-/// Writer
 zarr::ArrayWriter::ArrayWriter(const ArrayWriterConfig& config,
                                std::shared_ptr<ThreadPool> thread_pool)
   : ArrayWriter(std::move(config), thread_pool, nullptr)
@@ -139,83 +138,20 @@ zarr::ArrayWriter::is_s3_array_() const
 }
 
 bool
-zarr::ArrayWriter::make_data_sinks_()
-{
-    std::string data_root;
-    std::function<size_t(const ZarrDimension&)> parts_along_dimension;
-    switch (version_()) {
-        case ZarrVersion_2:
-            parts_along_dimension = chunks_along_dimension;
-            data_root = config_.store_path + "/" +
-                        std::to_string(config_.level_of_detail) + "/" +
-                        std::to_string(append_chunk_index_);
-            break;
-        case ZarrVersion_3:
-            parts_along_dimension = shards_along_dimension;
-            data_root = config_.store_path + "/data/root/" +
-                        std::to_string(config_.level_of_detail) + "/c" +
-                        std::to_string(append_chunk_index_);
-            break;
-        default:
-            LOG_ERROR("Unsupported Zarr version");
-            return false;
-    }
-
-    SinkCreator creator(thread_pool_, s3_connection_pool_);
-
-    if (is_s3_array_()) {
-        if (!creator.make_data_sinks(*config_.bucket_name,
-                                     data_root,
-                                     config_.dimensions.get(),
-                                     parts_along_dimension,
-                                     data_sinks_)) {
-            LOG_ERROR("Failed to create data sinks in ",
-                      data_root,
-                      " for bucket ",
-                      *config_.bucket_name);
-            return false;
-        }
-    } else if (!creator.make_data_sinks(data_root,
-                                        config_.dimensions.get(),
-                                        parts_along_dimension,
-                                        data_sinks_)) {
-        LOG_ERROR("Failed to create data sinks in ", data_root);
-        return false;
-    }
-
-    return true;
-}
-
-bool
 zarr::ArrayWriter::make_metadata_sink_()
 {
     if (metadata_sink_) {
         return true;
     }
 
-    std::string metadata_path;
-    switch (version_()) {
-        case ZarrVersion_2:
-            metadata_path = config_.store_path + "/" +
-                            std::to_string(config_.level_of_detail) +
-                            "/.zarray";
-            break;
-        case ZarrVersion_3:
-            metadata_path = config_.store_path + "/meta/root/" +
-                            std::to_string(config_.level_of_detail) +
-                            ".array.json";
-            break;
-        default:
-            LOG_ERROR("Unsupported Zarr version");
-            return false;
-    }
+    const auto metadata_path = metadata_path_();
 
     if (is_s3_array_()) {
         SinkCreator creator(thread_pool_, s3_connection_pool_);
         metadata_sink_ =
-          creator.make_sink(*config_.bucket_name, metadata_path);
+          creator.make_s3_sink(*config_.bucket_name, metadata_path);
     } else {
-        metadata_sink_ = zarr::SinkCreator::make_sink(metadata_path);
+        metadata_sink_ = SinkCreator::make_file_sink(metadata_path);
     }
 
     if (!metadata_sink_) {
@@ -336,60 +272,47 @@ zarr::ArrayWriter::should_flush_() const
     return frames_written_ % frames_before_flush == 0;
 }
 
-void
-zarr::ArrayWriter::compress_buffers_()
+bool
+zarr::ArrayWriter::compress_chunk_buffer_(size_t chunk_index)
 {
     if (!config_.compression_params.has_value()) {
-        return;
+        return true;
     }
 
-    LOG_DEBUG("Compressing");
+    EXPECT(chunk_index < chunk_buffers_.size(),
+           "Chunk index out of bounds: ",
+           chunk_index);
 
-    BloscCompressionParams params = config_.compression_params.value();
+    LOG_DEBUG("Compressing chunk ", chunk_index);
+
+    const auto params = *config_.compression_params;
     const auto bytes_per_px = bytes_of_type(config_.dtype);
 
-    std::scoped_lock lock(buffers_mutex_);
-    std::latch latch(chunk_buffers_.size());
-    for (auto& chunk : chunk_buffers_) {
-        EXPECT(thread_pool_->push_job(
-                 [&params, buf = &chunk, bytes_per_px, &latch](
-                   std::string& err) -> bool {
-                     bool success = false;
-                     const size_t bytes_of_chunk = buf->size();
+    auto& chunk = chunk_buffers_[chunk_index];
+    const auto bytes_of_chunk = chunk.size();
 
-                     try {
-                         const auto tmp_size =
-                           bytes_of_chunk + BLOSC_MAX_OVERHEAD;
-                         ChunkBuffer tmp(tmp_size);
-                         const auto nb =
-                           blosc_compress_ctx(params.clevel,
-                                              params.shuffle,
-                                              bytes_per_px,
-                                              bytes_of_chunk,
-                                              buf->data(),
-                                              tmp.data(),
-                                              tmp_size,
-                                              params.codec_id.c_str(),
-                                              0 /* blocksize - 0:automatic */,
-                                              1);
+    const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
+    ChunkBuffer tmp(tmp_size);
+    const auto nb = blosc_compress_ctx(params.clevel,
+                                       params.shuffle,
+                                       bytes_per_px,
+                                       bytes_of_chunk,
+                                       chunk.data(),
+                                       tmp.data(),
+                                       tmp_size,
+                                       params.codec_id.c_str(),
+                                       0 /* blocksize - 0:automatic */,
+                                       1);
 
-                         tmp.resize(nb);
-                         buf->swap(tmp);
-
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to compress chunk: " +
-                               std::string(exc.what());
-                     }
-                     latch.count_down();
-
-                     return success;
-                 }),
-               "Failed to push to job queue");
+    if (nb <= 0) {
+        LOG_ERROR("Failed to compress chunk ", chunk_index);
+        return false;
     }
 
-    // wait for all threads to finish
-    latch.wait();
+    tmp.resize(nb);
+    chunk.swap(tmp);
+
+    return true;
 }
 
 void
@@ -400,15 +323,12 @@ zarr::ArrayWriter::flush_()
     }
 
     // compress buffers and write out
-    compress_buffers_();
-    CHECK(flush_impl_());
+    compress_and_flush_();
 
     const auto should_rollover = should_rollover_();
-    if (should_rollover) {
-        rollover_();
-    }
 
     if (should_rollover || is_finalizing_) {
+        rollover_();
         CHECK(write_array_metadata_());
     }
 
@@ -417,17 +337,6 @@ zarr::ArrayWriter::flush_()
 
     // reset state
     bytes_to_flush_ = 0;
-}
-
-void
-zarr::ArrayWriter::close_sinks_()
-{
-    for (auto i = 0; i < data_sinks_.size(); ++i) {
-        EXPECT(finalize_sink(std::move(data_sinks_[i])),
-               "Failed to finalize sink ",
-               i);
-    }
-    data_sinks_.clear();
 }
 
 void

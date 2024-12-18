@@ -56,7 +56,7 @@ sink_creator_make_chunk_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
     // create the sinks, then let them go out of scope to close the handles
     {
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(
+        CHECK(sink_creator.make_data_file_sinks(
           test_dir, dimensions, zarr::chunks_along_dimension, sinks));
     }
 
@@ -94,11 +94,11 @@ sink_creator_make_chunk_sinks(
         char data_[] = { 0, 0 };
         std::span data(reinterpret_cast<std::byte*>(data_), sizeof(data_));
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(bucket_name,
-                                           test_dir,
-                                           dimensions,
-                                           zarr::chunks_along_dimension,
-                                           sinks));
+        CHECK(sink_creator.make_data_s3_sinks(bucket_name,
+                                              test_dir,
+                                              dimensions,
+                                              zarr::chunks_along_dimension,
+                                              sinks));
 
         for (auto& sink : sinks) {
             CHECK(sink);
@@ -142,7 +142,7 @@ sink_creator_make_shard_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
     // create the sinks, then let them go out of scope to close the handles
     {
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(
+        CHECK(sink_creator.make_data_file_sinks(
           test_dir, dimensions, zarr::shards_along_dimension, sinks));
     }
 
@@ -180,11 +180,11 @@ sink_creator_make_shard_sinks(
         char data_[] = { 0, 0 };
         std::span data(reinterpret_cast<std::byte*>(data_), sizeof(data_));
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(bucket_name,
-                                           test_dir,
-                                           dimensions,
-                                           zarr::shards_along_dimension,
-                                           sinks));
+        CHECK(sink_creator.make_data_s3_sinks(bucket_name,
+                                              test_dir,
+                                              dimensions,
+                                              zarr::shards_along_dimension,
+                                              sinks));
 
         for (auto& sink : sinks) {
             CHECK(sink);

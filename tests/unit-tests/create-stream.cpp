@@ -46,21 +46,24 @@ main()
     memset(&settings, 0, sizeof(settings));
     settings.version = ZarrVersion_2;
 
+    std::string store_path =
+      (fs::temp_directory_path() / (TEST ".zarr")).string();
+
     try {
         // try to create a stream with no store path
         stream = ZarrStream_create(&settings);
-        CHECK(nullptr == stream);
+        CHECK(!stream);
 
         // try to create a stream with no dimensions
-        settings.store_path = static_cast<const char*>(TEST ".zarr");
+        settings.store_path = store_path.c_str();
         stream = ZarrStream_create(&settings);
-        CHECK(nullptr == stream);
+        CHECK(!stream);
         CHECK(!fs::exists(settings.store_path));
 
         // allocate dimensions
         configure_stream_dimensions(&settings);
         stream = ZarrStream_create(&settings);
-        CHECK(nullptr != stream);
+        CHECK(stream);
         CHECK(fs::is_directory(settings.store_path));
 
         retval = 0;

@@ -14,9 +14,12 @@ class ZarrV2ArrayWriter final : public ArrayWriter
                       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    ZarrVersion version_() const override { return ZarrVersion_2; };
-    bool flush_impl_() override;
-    bool write_array_metadata_() override;
+    std::string data_root_() const override;
+    std::string metadata_path_() const override;
+    bool make_data_sinks_() override;
     bool should_rollover_() const override;
+    void compress_and_flush_() override;
+    void close_sinks_() override;
+    bool write_array_metadata_() override;
 };
 } // namespace zarr
