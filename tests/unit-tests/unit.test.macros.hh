@@ -21,6 +21,13 @@
           a_ == b_, "Expected ", #a, " == ", #b, " but ", a_, " != ", b_);     \
     } while (0)
 
+#define EXPECT_GTE(T, a, b)                                                    \
+    do {                                                                       \
+        T a_ = (T)(a);                                                         \
+        T b_ = (T)(b);                                                         \
+        EXPECT(a_ >= b_, "Expected ", #a, " < ", #b, " but ", a_, " >= ", b_); \
+    } while (0)
+
 #define EXPECT_STR_EQ(a, b)                                                    \
     do {                                                                       \
         std::string a_ = (a) ? (a) : "";                                       \

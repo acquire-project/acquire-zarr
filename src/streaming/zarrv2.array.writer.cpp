@@ -72,50 +72,104 @@ zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
 {
 }
 
-bool
-zarr::ZarrV2ArrayWriter::flush_impl_()
+std::string
+zarr::ZarrV2ArrayWriter::data_root_() const
 {
-    // create chunk files
-    CHECK(data_sinks_.empty());
-    if (!make_data_sinks_()) {
+    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+           "/" + std::to_string(append_chunk_index_);
+}
+
+std::string
+zarr::ZarrV2ArrayWriter::metadata_path_() const
+{
+    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+           "/.zarray";
+}
+
+bool
+zarr::ZarrV2ArrayWriter::make_data_sinks_()
+{
+    SinkCreator creator(thread_pool_, s3_connection_pool_);
+
+    const auto data_root = data_root_();
+    if (is_s3_array_()) {
+        if (!creator.make_data_s3_sinks(*config_.bucket_name,
+                                        data_root,
+                                        config_.dimensions.get(),
+                                        chunks_along_dimension,
+                                        data_sinks_)) {
+            LOG_ERROR("Failed to create data sinks in ",
+                      data_root,
+                      " for bucket ",
+                      *config_.bucket_name);
+            return false;
+        }
+    } else if (!creator.make_data_file_sinks(data_root,
+                                             config_.dimensions.get(),
+                                             chunks_along_dimension,
+                                             data_sinks_)) {
+        LOG_ERROR("Failed to create data sinks in ", data_root);
         return false;
     }
 
-    CHECK(data_sinks_.size() == chunk_buffers_.size());
+    return true;
+}
 
-    std::latch latch(chunk_buffers_.size());
-    {
-        std::scoped_lock lock(buffers_mutex_);
-        for (auto i = 0; i < data_sinks_.size(); ++i) {
-            auto& chunk = chunk_buffers_.at(i);
-            EXPECT(thread_pool_->push_job(
-                     std::move([&sink = data_sinks_.at(i),
-                                data_ = chunk.data(),
-                                size = chunk.size(),
-                                &latch](std::string& err) -> bool {
-                         bool success = false;
-                         try {
-                             std::span data{
-                                 reinterpret_cast<std::byte*>(data_), size
-                             };
-                             CHECK(sink->write(0, data));
-                             success = true;
-                         } catch (const std::exception& exc) {
-                             err = "Failed to write chunk: " +
-                                   std::string(exc.what());
-                         }
+void
+zarr::ZarrV2ArrayWriter::compress_and_flush_()
+{
+    if (bytes_to_flush_ == 0) {
+        LOG_DEBUG("No data to flush");
+        return;
+    }
 
-                         latch.count_down();
-                         return success;
-                     })),
-                   "Failed to push job to thread pool");
-        }
+    const auto n_chunks = chunk_buffers_.size();
+
+    CHECK(data_sinks_.empty());
+    CHECK(make_data_sinks_());
+    CHECK(data_sinks_.size() == n_chunks);
+
+    const auto bytes_per_px = bytes_of_type(config_.dtype);
+
+    std::latch latch(n_chunks);
+    for (auto i = 0; i < n_chunks; ++i) {
+        auto job = [this, i, &latch](std::string& err) -> bool {
+            if (!compress_chunk_buffer_(i)) { // no-op if no compression
+                err = "Failed to compress chunk buffer";
+                return false;
+            }
+
+            auto& sink = data_sinks_[i];
+            auto& buf = chunk_buffers_[i];
+
+            bool success = false;
+
+            try {
+                success = sink->write(0, buf);
+            } catch (const std::exception& exc) {
+                err = "Failed to write chunk: " + std::string(exc.what());
+            }
+
+            latch.count_down();
+            return success;
+        };
+
+        CHECK(thread_pool_->push_job(std::move(job)));
     }
 
     // wait for all threads to finish
     latch.wait();
+}
 
-    return true;
+void
+zarr::ZarrV2ArrayWriter::close_sinks_()
+{
+    for (auto i = 0; i < data_sinks_.size(); ++i) {
+        EXPECT(finalize_sink(std::move(data_sinks_[i])),
+               "Failed to finalize sink ",
+               i);
+    }
+    data_sinks_.clear();
 }
 
 bool

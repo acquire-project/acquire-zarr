@@ -24,7 +24,7 @@ class SinkCreator
      * opened.
      * @throws std::runtime_error if the file path is not valid.
      */
-    static std::unique_ptr<Sink> make_sink(std::string_view file_path);
+    static std::unique_ptr<Sink> make_file_sink(std::string_view file_path);
 
     /**
      * @brief Create a sink from an S3 bucket name and object key.
@@ -35,8 +35,8 @@ class SinkCreator
      * @throws std::runtime_error if the bucket name or object key is not valid,
      * or if there is no connection pool.
      */
-    std::unique_ptr<Sink> make_sink(std::string_view bucket_name,
-                                    std::string_view object_key);
+    std::unique_ptr<Sink> make_s3_sink(std::string_view bucket_name,
+                                       std::string_view object_key);
 
     /**
      * @brief Create a collection of file sinks for a Zarr dataset.
@@ -49,7 +49,7 @@ class SinkCreator
      * @throws std::runtime_error if @p base_path is not valid, or if the number
      * of parts along a dimension is zero.
      */
-    [[nodiscard]] bool make_data_sinks(
+    [[nodiscard]] bool make_data_file_sinks(
       std::string_view base_path,
       const ArrayDimensions* dimensions,
       const std::function<size_t(const ZarrDimension&)>& parts_along_dimension,
@@ -66,7 +66,7 @@ class SinkCreator
      * @param[out] part_sinks The sinks created.
      * @return True iff all file sinks were created successfully.
      */
-    [[nodiscard]] bool make_data_sinks(
+    [[nodiscard]] bool make_data_s3_sinks(
       std::string_view bucket_name,
       std::string_view base_path,
       const ArrayDimensions* dimensions,
@@ -82,7 +82,7 @@ class SinkCreator
      * @throws std::runtime_error if @p base_uri is not valid, or if, for S3
      * sinks, the bucket does not exist.
      */
-    [[nodiscard]] bool make_metadata_sinks(
+    [[nodiscard]] bool make_metadata_file_sinks(
       size_t version,
       std::string_view base_path,
       std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks);
@@ -97,7 +97,7 @@ class SinkCreator
      * @throws std::runtime_error if @p version is invalid, if @p bucket_name is
      * empty or does not exist, or if @p base_path is empty.
      */
-    [[nodiscard]] bool make_metadata_sinks(
+    [[nodiscard]] bool make_metadata_s3_sinks(
       size_t version,
       std::string_view bucket_name,
       std::string_view base_path,

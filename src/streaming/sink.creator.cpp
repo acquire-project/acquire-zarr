@@ -1,8 +1,9 @@
-#include "macros.hh"
-#include "sink.creator.hh"
-#include "file.sink.hh"
-#include "s3.sink.hh"
 #include "acquire.zarr.h"
+#include "file.sink.hh"
+#include "macros.hh"
+#include "s3.sink.hh"
+#include "sink.creator.hh"
+#include "zarr.common.hh"
 
 #include <filesystem>
 #include <latch>
@@ -20,7 +21,7 @@ zarr::SinkCreator::SinkCreator(
 }
 
 std::unique_ptr<zarr::Sink>
-zarr::SinkCreator::make_sink(std::string_view file_path)
+zarr::SinkCreator::make_file_sink(std::string_view file_path)
 {
     if (file_path.starts_with("file://")) {
         file_path = file_path.substr(7);
@@ -46,8 +47,8 @@ zarr::SinkCreator::make_sink(std::string_view file_path)
 }
 
 std::unique_ptr<zarr::Sink>
-zarr::SinkCreator::make_sink(std::string_view bucket_name,
-                             std::string_view object_key)
+zarr::SinkCreator::make_s3_sink(std::string_view bucket_name,
+                                std::string_view object_key)
 {
     EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
     EXPECT(!object_key.empty(), "Object key must not be empty.");
@@ -61,7 +62,7 @@ zarr::SinkCreator::make_sink(std::string_view bucket_name,
 }
 
 bool
-zarr::SinkCreator::make_data_sinks(
+zarr::SinkCreator::make_data_file_sinks(
   std::string_view base_path,
   const ArrayDimensions* dimensions,
   const std::function<size_t(const ZarrDimension&)>& parts_along_dimension,
@@ -73,20 +74,27 @@ zarr::SinkCreator::make_data_sinks(
 
     EXPECT(!base_path.empty(), "Base path must not be empty.");
 
-    std::queue<std::string> paths;
+    std::vector<std::string> paths;
     try {
-        paths = make_data_sink_paths_(
-          base_path, dimensions, parts_along_dimension, true);
+        paths =
+          construct_data_paths(base_path, *dimensions, parts_along_dimension);
+        auto parent_paths = get_parent_paths(paths);
+        EXPECT(make_dirs(parent_paths, thread_pool_),
+               "Failed to create dataset paths.");
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to create dataset paths: ", exc.what());
         return false;
     }
 
-    return make_files_(paths, part_sinks);
+    std::queue<std::string> paths_queue;
+    for (const auto& path : paths) {
+        paths_queue.push(path);
+    }
+    return make_files_(paths_queue, part_sinks);
 }
 
 bool
-zarr::SinkCreator::make_data_sinks(
+zarr::SinkCreator::make_data_s3_sinks(
   std::string_view bucket_name,
   std::string_view base_path,
   const ArrayDimensions* dimensions,
@@ -102,7 +110,7 @@ zarr::SinkCreator::make_data_sinks(
 }
 
 bool
-zarr::SinkCreator::make_metadata_sinks(
+zarr::SinkCreator::make_metadata_file_sinks(
   size_t version,
   std::string_view base_path,
   std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks)
@@ -119,7 +127,7 @@ zarr::SinkCreator::make_metadata_sinks(
 }
 
 bool
-zarr::SinkCreator::make_metadata_sinks(
+zarr::SinkCreator::make_metadata_s3_sinks(
   size_t version,
   std::string_view bucket_name,
   std::string_view base_path,
@@ -255,57 +263,17 @@ zarr::SinkCreator::make_dirs_(std::queue<std::string>& dir_paths)
         return true;
     }
 
-    std::atomic<char> all_successful = 1;
-
-    const auto n_dirs = dir_paths.size();
-    std::latch latch(n_dirs);
-
-    for (auto i = 0; i < n_dirs; ++i) {
-        const auto dirname = dir_paths.front();
+    std::vector<std::string> paths;
+    while (!dir_paths.empty()) {
+        paths.emplace_back(dir_paths.front());
         dir_paths.pop();
-
-        EXPECT(thread_pool_->push_job(
-                 [dirname, &latch, &all_successful](std::string& err) -> bool {
-                     if (dirname.empty()) {
-                         err = "Directory name must not be empty.";
-                         latch.count_down();
-                         all_successful.fetch_and(0);
-                         return false;
-                     }
-
-                     if (fs::is_directory(dirname)) {
-                         latch.count_down();
-                         return true;
-                     } else if (fs::exists(dirname)) {
-                         err =
-                           "'" + dirname + "' exists but is not a directory";
-                         latch.count_down();
-                         all_successful.fetch_and(0);
-                         return false;
-                     }
-
-                     if (all_successful) {
-                         std::error_code ec;
-                         if (!fs::create_directories(dirname, ec)) {
-                             err = "Failed to create directory '" + dirname +
-                                   "': " + ec.message();
-                             latch.count_down();
-                             all_successful.fetch_and(0);
-                             return false;
-                         }
-                     }
-
-                     latch.count_down();
-                     return true;
-                 }),
-               "Failed to push job to thread pool.");
-
-        dir_paths.push(dirname);
     }
 
-    latch.wait();
+    for (const auto& path : paths) {
+        dir_paths.push(path);
+    }
 
-    return (bool)all_successful;
+    return make_dirs(paths, thread_pool_);
 }
 
 bool
@@ -345,7 +313,7 @@ zarr::SinkCreator::make_files_(std::queue<std::string>& file_paths,
                      }
 
                      latch.count_down();
-                     all_successful.fetch_and((char)success);
+                     all_successful.fetch_and(static_cast<char>(success));
 
                      return success;
                  }),
@@ -354,7 +322,7 @@ zarr::SinkCreator::make_files_(std::queue<std::string>& file_paths,
 
     latch.wait();
 
-    return (bool)all_successful;
+    return static_cast<bool>(all_successful);
 }
 
 bool
