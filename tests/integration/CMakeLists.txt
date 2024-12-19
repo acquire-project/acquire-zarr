@@ -23,7 +23,6 @@ foreach (name ${tests})
             ${PROJECT_SOURCE_DIR}/src/logger
     )
     target_link_libraries(${tgt} PRIVATE
-            acquire-logger
             acquire-zarr
             nlohmann_json::nlohmann_json
             miniocpp::miniocpp

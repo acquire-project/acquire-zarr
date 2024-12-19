@@ -31,6 +31,7 @@ add_library(${tgt}
         zarrv3.array.writer.cpp
         vectorized.file.writer.hh
         vectorized.file.writer.cpp
+        $<TARGET_OBJECTS:acquire-logger-obj>
 )
 
 target_include_directories(${tgt}
@@ -42,7 +43,6 @@ target_include_directories(${tgt}
 )
 
 target_link_libraries(${tgt} PRIVATE
-        acquire-logger
         blosc_static
         miniocpp::miniocpp
 )
