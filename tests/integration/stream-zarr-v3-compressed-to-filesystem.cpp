@@ -94,32 +94,18 @@ setup()
 }
 
 void
-verify_base_metadata(const nlohmann::json& meta)
-{
-    const auto extensions = meta["extensions"];
-    EXPECT_EQ(size_t, extensions.size(), 0);
-
-    const auto encoding = meta["metadata_encoding"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-
-    const auto suffix = meta["metadata_key_suffix"].get<std::string>();
-    EXPECT(suffix == ".json",
-           "Expected suffix to be '.json', but got '%s'",
-           suffix.c_str());
-
-    const auto zarr_format = meta["zarr_format"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-}
-
-void
 verify_group_metadata(const nlohmann::json& meta)
 {
+    auto zarr_format = meta["zarr_format"].get<int>();
+    EXPECT_EQ(int, zarr_format, 3);
+
+    auto node_type = meta["node_type"].get<std::string>();
+    EXPECT_STR_EQ(node_type.c_str(), "group");
+
+    EXPECT(meta["consolidated_metadata"].is_null(),
+           "Expected consolidated_metadata to be null");
+
+    // multiscales metadata
     const auto multiscales = meta["attributes"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
@@ -298,16 +284,7 @@ verify()
     CHECK(std::filesystem::is_directory(test_path));
 
     {
-        fs::path base_metadata_path = fs::path(test_path) / "zarr.json";
-        std::ifstream f(base_metadata_path);
-        nlohmann::json base_metadata = nlohmann::json::parse(f);
-
-        verify_base_metadata(base_metadata);
-    }
-
-    {
-        fs::path group_metadata_path =
-          fs::path(test_path) / "meta" / "root.group.json";
+        fs::path group_metadata_path = fs::path(test_path) / "zarr.json";
         std::ifstream f = std::ifstream(group_metadata_path);
         nlohmann::json group_metadata = nlohmann::json::parse(f);
 

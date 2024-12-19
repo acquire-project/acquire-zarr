@@ -215,32 +215,18 @@ setup()
 }
 
 void
-verify_base_metadata(const nlohmann::json& meta)
-{
-    const auto extensions = meta["extensions"];
-    EXPECT_EQ(size_t, extensions.size(), 0);
-
-    const auto encoding = meta["metadata_encoding"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-
-    const auto suffix = meta["metadata_key_suffix"].get<std::string>();
-    EXPECT(suffix == ".json",
-           "Expected suffix to be '.json', but got '%s'",
-           suffix.c_str());
-
-    const auto zarr_format = meta["zarr_format"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-}
-
-void
 verify_group_metadata(const nlohmann::json& meta)
 {
+    auto zarr_format = meta["zarr_format"].get<int>();
+    EXPECT_EQ(int, zarr_format, 3);
+
+    auto node_type = meta["node_type"].get<std::string>();
+    EXPECT_STR_EQ(node_type.c_str(), "group");
+
+    EXPECT(meta["consolidated_metadata"].is_null(),
+           "Expected consolidated_metadata to be null");
+
+    // multiscales metadata
     const auto multiscales = meta["attributes"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
@@ -363,19 +349,8 @@ verify_and_cleanup()
                                           s3_secret_access_key);
     minio::s3::Client client(url, &provider);
 
-    std::string base_metadata_path = TEST "/zarr.json";
-    std::string group_metadata_path = TEST "/meta/root.group.json";
+    std::string group_metadata_path = TEST "/zarr.json";
     std::string array_metadata_path = TEST "/meta/root/0.array.json";
-
-    {
-        EXPECT(object_exists(client, base_metadata_path),
-               "Object does not exist: %s",
-               base_metadata_path.c_str());
-        std::string contents = get_object_contents(client, base_metadata_path);
-        nlohmann::json base_metadata = nlohmann::json::parse(contents);
-
-        verify_base_metadata(base_metadata);
-    }
 
     {
         EXPECT(object_exists(client, group_metadata_path),
@@ -397,9 +372,7 @@ verify_and_cleanup()
         verify_array_metadata(array_metadata);
     }
 
-    CHECK(remove_items(
-      client,
-      { base_metadata_path, group_metadata_path, array_metadata_path }));
+    CHECK(remove_items(client, { group_metadata_path, array_metadata_path }));
 
     const auto chunk_size = chunk_width * chunk_height * chunk_planes *
                             chunk_channels * chunk_timepoints * nbytes_px;
