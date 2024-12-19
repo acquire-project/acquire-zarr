@@ -43,7 +43,6 @@ foreach (name ${tests})
             ${PROJECT_SOURCE_DIR}/src/streaming
     )
     target_link_libraries(${tgt} PRIVATE
-            acquire-logger
             acquire-zarr
             miniocpp::miniocpp
     )

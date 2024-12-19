@@ -33,6 +33,7 @@ add_library(${tgt}
         shard.writer.cpp
         platform.hh
         platform.cpp
+        $<TARGET_OBJECTS:acquire-logger-obj>
 )
 
 target_include_directories(${tgt}
@@ -44,7 +45,6 @@ target_include_directories(${tgt}
 )
 
 target_link_libraries(${tgt} PRIVATE
-        acquire-logger
         blosc_static
         miniocpp::miniocpp
 )
