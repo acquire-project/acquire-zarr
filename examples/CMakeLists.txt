@@ -18,10 +18,10 @@ foreach (name ${examples})
             ${PROJECT_SOURCE_DIR}/include
     )
     target_link_libraries(${tgt} PRIVATE
-            acquire-logger
             acquire-zarr
             nlohmann_json::nlohmann_json
             miniocpp::miniocpp
+            ZLIB::ZLIB
     )
 
     add_test(NAME example-${tgt} COMMAND ${tgt})

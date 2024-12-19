@@ -26,6 +26,7 @@ foreach (name ${tests})
             acquire-zarr
             nlohmann_json::nlohmann_json
             miniocpp::miniocpp
+            ZLIB::ZLIB
     )
 
     add_test(NAME test-${tgt} COMMAND ${tgt})
