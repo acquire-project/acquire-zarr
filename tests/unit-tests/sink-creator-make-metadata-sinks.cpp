@@ -122,8 +122,7 @@ sink_creator_make_v3_metadata_sinks(
 
     CHECK(metadata_sinks.size() == 3);
     CHECK(metadata_sinks.contains("zarr.json"));
-    CHECK(metadata_sinks.contains("meta/root.group.json"));
-    CHECK(metadata_sinks.contains("meta/acquire.json"));
+    CHECK(metadata_sinks.contains("acquire.json"));
 
     for (auto& [key, sink] : metadata_sinks) {
         CHECK(sink);

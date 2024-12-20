@@ -1,70 +1,72 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-compressed-s3.c
+/// @brief Zarr V3 with compressed data to S3
 #include "acquire.zarr.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-int main() {
+int
+main()
+{
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
+        .codec = ZarrCompressionCodec_BloscZstd,
         .level = 1,
-        .shuffle = 1
+        .shuffle = 1,
+    };
+
+    // Configure S3
+    ZarrS3Settings s3 = {
+        .endpoint = "http://192.168.1.57:9000",
+        .bucket_name = "acquire-test",
+        .access_key_id = "tv4MtRQPbtfwKxMusI0I",
+        .secret_access_key = "W85Cnb4qd7bhPaTsqkt8aEKoO3XtXm49o9nMtD5O",
     };
 
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed.zarr",
-        .s3_settings = NULL,
+        .store_path = "output_v3_compressed_s3.zarr",
+        .s3_settings = &s3,
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3
+        .version = ZarrVersion_3,
     };
 
-    // Set up 5D array (t, c, z, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
+    // Set up dimensions (t, z, y, x)
+    ZarrStreamSettings_create_dimension_array(&settings, 4);
 
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 10,
+        .array_size_px = 0, // Unlimited
         .chunk_size_px = 5,
-        .shard_size_chunks = 2
+        .shard_size_chunks = 2,
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
-        .name = "c",
-        .type = ZarrDimensionType_Channel,
-        .array_size_px = 8,
-        .chunk_size_px = 4,
-        .shard_size_chunks = 2
+        .name = "z",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 10,
+        .chunk_size_px = 2,
+        .shard_size_chunks = 1,
     };
 
     settings.dimensions[2] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 6,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1
-    };
-
-    settings.dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
         .chunk_size_px = 16,
-        .shard_size_chunks = 1
+        .shard_size_chunks = 1,
     };
 
-    settings.dimensions[4] = (ZarrDimensionProperties){
+    settings.dimensions[3] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
         .chunk_size_px = 16,
-        .shard_size_chunks = 2
+        .shard_size_chunks = 2,
     };
 
     // Create stream

@@ -775,10 +775,6 @@ ZarrStream_s::write_external_metadata_()
     );
     std::string metadata_key = "acquire.json";
 
-    if (version_ == 3) {
-        metadata_key = "meta/" + metadata_key;
-    }
-
     const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
     if (!sink) {
         set_error_("Metadata sink '" + metadata_key + "'not found");
