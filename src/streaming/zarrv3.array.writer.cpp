@@ -114,8 +114,8 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
         auto& chunk_table = shard_tables_.at(i);
         auto* file_offset = &shard_file_offsets_.at(i);
 
-        EXPECT(thread_pool_->push_job([&sink = data_sinks_.at(i),
-                                       &chunks,
+        EXPECT(thread_pool_->push_job(std::move([&sink = data_sinks_.at(i),
+                                                 &chunks,
                                        &chunk_table,
                                        file_offset,
                                        write_table,
@@ -142,24 +142,24 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
                 }
 
                 if (success && write_table) {
-                    auto* table =
+                    const auto* table =
                       reinterpret_cast<std::byte*>(chunk_table.data());
                     std::span data{ table,
                                     chunk_table.size() * sizeof(uint64_t) };
                     success = sink->write(*file_offset, data);
+                    EXPECT(success, "Failed to write table");
+
+                    *file_offset += data.size();
 
                     // compute crc32 checksum of the table
-                    if (success) {
-                        const auto* table_c =
-                          reinterpret_cast<const unsigned char*>(table);
+                    const auto* table_c =
+                      reinterpret_cast<const unsigned char*>(table);
 
-                        unsigned long crc = crc32(0L, Z_NULL, 0);
-                        crc = crc32(crc, table_c, data.size());
-                        std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
-                                            sizeof(crc) };
-                        success =
-                          sink->write(*file_offset + data.size(), crc_data);
-                    }
+                    unsigned long crc = crc32(0L, Z_NULL, 0);
+                    crc = crc32(crc, table_c, data.size());
+                    std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
+                                        sizeof(crc) };
+                    success = sink->write(*file_offset, crc_data);
                 }
             } catch (const std::exception& exc) {
                 err = "Failed to write chunk: " + std::string(exc.what());
@@ -167,7 +167,7 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
 
             latch.count_down();
             return success;
-        }),
+        })),
                "Failed to push job to thread pool");
     }
 
