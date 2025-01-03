@@ -155,7 +155,7 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
                     const auto* table_c =
                       reinterpret_cast<const unsigned char*>(table);
 
-                    unsigned long crc = crc32(0L, Z_NULL, 0);
+                    uint32_t crc = crc32(0L, Z_NULL, 0);
                     crc = crc32(crc, table_c, data.size());
                     std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
                                         sizeof(crc) };
