@@ -81,9 +81,12 @@ int main() {
 
     // Write frames
     size_t bytes_written;
+    int centerX = width / 2;
+    int centerY = height / 2;
     for (int t = 0; t < 10; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
+            int dy = y - centerY;
             for (size_t x = 0; x < width; x++) {
                 // Create a diagonal pattern that moves with time
                 // and varies intensity based on position
@@ -98,10 +101,7 @@ int main() {
                 }
 
                 // Add some circular features
-                int centerX = width / 2;
-                int centerY = height / 2;
                 int dx = x - centerX;
-                int dy = y - centerY;
                 int radius = (int)sqrt(dx*dx + dy*dy);
 
                 // Modulate the pattern with concentric circles
