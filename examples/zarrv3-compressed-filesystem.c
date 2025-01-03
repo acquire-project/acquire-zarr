@@ -69,8 +69,6 @@ int main() {
 
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
-
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");
         return 1;
