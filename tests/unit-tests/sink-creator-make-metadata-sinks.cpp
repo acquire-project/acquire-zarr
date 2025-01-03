@@ -54,10 +54,9 @@ sink_creator_make_v2_metadata_sinks(
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
     CHECK(sink_creator.make_metadata_sinks(2, test_dir, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 4);
+    CHECK(metadata_sinks.size() == 3);
     CHECK(metadata_sinks.contains(".zattrs"));
     CHECK(metadata_sinks.contains(".zgroup"));
-    CHECK(metadata_sinks.contains("0/.zattrs"));
     CHECK(metadata_sinks.contains("acquire.json"));
 
     for (auto& [key, sink] : metadata_sinks) {
@@ -85,10 +84,9 @@ sink_creator_make_v2_metadata_sinks(
     CHECK(
       sink_creator.make_metadata_sinks(2, bucket_name, test_dir, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 4);
+    CHECK(metadata_sinks.size() == 3);
     CHECK(metadata_sinks.contains(".zattrs"));
     CHECK(metadata_sinks.contains(".zgroup"));
-    CHECK(metadata_sinks.contains("0/.zattrs"));
     CHECK(metadata_sinks.contains("acquire.json"));
 
     auto conn = connection_pool->get_connection();
