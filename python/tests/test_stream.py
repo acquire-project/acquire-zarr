@@ -115,8 +115,6 @@ def validate_v2_metadata(store_path: Path):
         data = json.load(fh)
         assert data["foo"] == "bar"
 
-    assert (store_path / "0").is_dir()
-
 
 def validate_v3_metadata(store_path: Path):
     assert (store_path / "zarr.json").is_file()
@@ -380,17 +378,33 @@ def test_stream_data_to_s3(
         settings.dimensions[2].array_size_px,
     )
 
+    metadata = data.metadata
     if compression_codec is not None:
-        cname = (
-            "lz4"
-            if compression_codec == CompressionCodec.BLOSC_LZ4
-            else "zstd"
-        )
-        assert data.compressor.cname == cname
-        assert data.compressor.clevel == 1
-        assert data.compressor.shuffle == blosc.SHUFFLE
+        if version == ZarrVersion.V2:
+            cname = (
+                "lz4"
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else "zstd"
+            )
+            compressor = metadata.compressor
+            assert compressor.cname == cname
+            assert compressor.clevel == 1
+            assert compressor.shuffle == ncblosc.SHUFFLE
+        else:
+            cname = (
+                zblosc.BloscCname.lz4
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else zblosc.BloscCname.zstd
+            )
+            blosc_codec = metadata.codecs[0].codecs[1]
+            assert blosc_codec.cname == cname
+            assert blosc_codec.clevel == 1
+            assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
     else:
-        assert data.compressor is None
+        if version == ZarrVersion.V2:
+            assert metadata.compressor is None
+        else:
+            assert len(metadata.codecs[0].codecs) == 1
 
     # cleanup
     s3.rm(store.root, recursive=True)
