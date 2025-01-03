@@ -62,7 +62,9 @@ def test_set_compression_settings(settings):
     settings.compression = compression_settings
     assert settings.compression is not None
     assert settings.compression.compressor == acquire_zarr.Compressor.BLOSC1
-    assert settings.compression.codec == acquire_zarr.CompressionCodec.BLOSC_ZSTD
+    assert (
+        settings.compression.codec == acquire_zarr.CompressionCodec.BLOSC_ZSTD
+    )
     assert settings.compression.level == 5
     assert settings.compression.shuffle == 2
 
@@ -70,13 +72,15 @@ def test_set_compression_settings(settings):
 def test_set_dimensions(settings):
     assert len(settings.dimensions) == 0
 
-    settings.dimensions.append(acquire_zarr.Dimension(
-        name="foo",
-        kind=acquire_zarr.DimensionType.TIME,
-        array_size_px=1,
-        chunk_size_px=2,
-        shard_size_chunks=3,
-    ))
+    settings.dimensions.append(
+        acquire_zarr.Dimension(
+            name="foo",
+            kind=acquire_zarr.DimensionType.TIME,
+            array_size_px=1,
+            chunk_size_px=2,
+            shard_size_chunks=3,
+        )
+    )
     assert len(settings.dimensions) == 1
     assert settings.dimensions[0].name == "foo"
     assert settings.dimensions[0].kind == acquire_zarr.DimensionType.TIME
@@ -84,13 +88,15 @@ def test_set_dimensions(settings):
     assert settings.dimensions[0].chunk_size_px == 2
     assert settings.dimensions[0].shard_size_chunks == 3
 
-    settings.dimensions.append(acquire_zarr.Dimension(
-        name="bar",
-        kind=acquire_zarr.DimensionType.SPACE,
-        array_size_px=4,
-        chunk_size_px=5,
-        shard_size_chunks=6,
-    ))
+    settings.dimensions.append(
+        acquire_zarr.Dimension(
+            name="bar",
+            kind=acquire_zarr.DimensionType.SPACE,
+            array_size_px=4,
+            chunk_size_px=5,
+            shard_size_chunks=6,
+        )
+    )
     assert len(settings.dimensions) == 2
     assert settings.dimensions[1].name == "bar"
     assert settings.dimensions[1].kind == acquire_zarr.DimensionType.SPACE
@@ -98,13 +104,15 @@ def test_set_dimensions(settings):
     assert settings.dimensions[1].chunk_size_px == 5
     assert settings.dimensions[1].shard_size_chunks == 6
 
-    settings.dimensions.append(acquire_zarr.Dimension(
-        name="baz",
-        kind=acquire_zarr.DimensionType.OTHER,
-        array_size_px=7,
-        chunk_size_px=8,
-        shard_size_chunks=9,
-    ))
+    settings.dimensions.append(
+        acquire_zarr.Dimension(
+            name="baz",
+            kind=acquire_zarr.DimensionType.OTHER,
+            array_size_px=7,
+            chunk_size_px=8,
+            shard_size_chunks=9,
+        )
+    )
     assert len(settings.dimensions) == 3
     assert settings.dimensions[2].name == "baz"
     assert settings.dimensions[2].kind == acquire_zarr.DimensionType.OTHER
