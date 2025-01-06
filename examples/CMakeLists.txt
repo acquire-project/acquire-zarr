@@ -7,8 +7,9 @@ set(examples
         zarrv3-compressed-filesystem
         zarrv3-raw-multiscale-filesystem
         zarrv3-raw-s3
-        zarrv2-compressed-s3
+        zarrv3-compressed-s3
         zarrv3-compressed-multiscale-s3
+        leak-checker
 )
 
 foreach (name ${examples})
