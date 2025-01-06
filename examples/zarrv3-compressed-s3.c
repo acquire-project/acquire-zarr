@@ -1,5 +1,5 @@
 /// @file zarrv3-compressed-s3.c
-/// @brief Zarr V3 with compressed data to S3
+/// @brief Stream data to a Zarr V3 store with Zstd compression data on S3
 #include "acquire.zarr.h"
 
 #include <math.h>

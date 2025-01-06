@@ -1,5 +1,6 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-raw-multiscale-filesystem.c
+/// @brief Uncompressed streaming to a Zarr V3 store on the filesystem, with
+/// multiple levels of detail.
 #include "acquire.zarr.h"
 #include <stdbool.h>
 #include <stdio.h>

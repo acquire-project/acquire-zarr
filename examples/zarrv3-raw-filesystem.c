@@ -1,7 +1,6 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarr-v3-raw-filesystem.c
+/// @brief Basic Zarr V3 streaming to filesystem
 #include "acquire.zarr.h"
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -13,7 +12,6 @@ main()
         .store_path = "output_v3.zarr",
         .s3_settings = NULL,
         .compression_settings = NULL,
-        .multiscale = true,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
     };
