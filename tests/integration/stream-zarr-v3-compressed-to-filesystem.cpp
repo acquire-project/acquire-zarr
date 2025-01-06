@@ -89,6 +89,7 @@ setup()
     *dim = DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
     auto* stream = ZarrStream_create(&settings);
+    ZarrStreamSettings_destroy_dimension_array(&settings);
 
     return stream;
 }
