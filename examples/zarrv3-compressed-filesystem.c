@@ -1,6 +1,8 @@
 /// @file zarr-v3-compressed-filesystem.c
 /// @brief Zarr V3 with LZ4 compression to filesystem
 #include "acquire.zarr.h"
+
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -82,21 +84,44 @@ int main() {
 
     // Write frames
     size_t bytes_written;
-    for (int i = 0; i < 10; i++) {
-        // Fill frame with sample data
-        for (size_t j = 0; j < width * height; j++) {
-            frame[j] = i * 1000 + j;
+    int centerX = width / 2;
+    int centerY = height / 2;
+    for (int t = 0; t < 10; t++) {
+        // Fill frame with a moving diagonal pattern
+        for (size_t y = 0; y < height; y++) {
+            int dy = y - centerY;
+            for (size_t x = 0; x < width; x++) {
+                // Create a diagonal pattern that moves with time
+                // and varies intensity based on position
+                int diagonal = (x + y + t * 8) % 32;
+
+                // Create intensity variation
+                uint16_t intensity;
+                if (diagonal < 16) {
+                    intensity = (uint16_t)((diagonal * 4096)); // Ramp up
+                } else {
+                    intensity = (uint16_t)((31 - diagonal) * 4096); // Ramp down
+                }
+
+                // Add some circular features
+                int dx = x - centerX;
+                int radius = (int)sqrt(dx*dx + dy*dy);
+
+                // Modulate the pattern with concentric circles
+                if (radius % 16 < 8) {
+                    intensity = (uint16_t)(intensity * 0.7);
+                }
+
+                frame[y * width + x] = intensity;
+            }
         }
 
         ZarrStatusCode status = ZarrStream_append(
-          stream,
-          frame,
-          width * height * sizeof(uint16_t),
-          &bytes_written
-        );
+          stream, frame, width * height * sizeof(uint16_t), &bytes_written);
 
         if (status != ZarrStatusCode_Success) {
-            fprintf(stderr, "Failed to append frame: %s\n",
+            fprintf(stderr,
+                    "Failed to append frame: %s\n",
                     Zarr_get_status_message(status));
             break;
         }

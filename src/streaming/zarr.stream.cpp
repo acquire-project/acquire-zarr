@@ -737,8 +737,11 @@ ZarrStream_s::write_group_metadata_()
         metadata_key = ".zgroup";
     } else {
         metadata["attributes"]["multiscales"] = make_multiscale_metadata_();
+        metadata["zarr_format"] = 3;
+        metadata["consolidated_metadata"] = nullptr;
+        metadata["node_type"] = "group";
 
-        metadata_key = "meta/root.group.json";
+        metadata_key = "zarr.json";
     }
 
     const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
@@ -771,10 +774,6 @@ ZarrStream_s::write_external_metadata_()
                                           true     // ignore comments
     );
     std::string metadata_key = "acquire.json";
-
-    if (version_ == 3) {
-        metadata_key = "meta/" + metadata_key;
-    }
 
     const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
     if (!sink) {

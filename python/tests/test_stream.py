@@ -7,13 +7,11 @@ import os
 import shutil
 from typing import Optional
 
-os.environ["ZARR_V3_EXPERIMENTAL_API"] = "1"
-os.environ["ZARR_V3_SHARDING"] = "1"
-
 import numpy as np
 import pytest
 import zarr
-from numcodecs import blosc
+from numcodecs import blosc as ncblosc
+from zarr.codecs import blosc as zblosc
 import s3fs
 
 from acquire_zarr import (
@@ -29,7 +27,7 @@ from acquire_zarr import (
     DataType,
     LogLevel,
     set_log_level,
-    get_log_level
+    get_log_level,
 )
 
 
@@ -117,28 +115,15 @@ def validate_v2_metadata(store_path: Path):
         data = json.load(fh)
         assert data["foo"] == "bar"
 
-    assert (store_path / "0").is_dir()
-
 
 def validate_v3_metadata(store_path: Path):
     assert (store_path / "zarr.json").is_file()
     with open(store_path / "zarr.json", "r") as fh:
         data = json.load(fh)
-        assert data["extensions"] == []
-        assert (
-            data["metadata_encoding"]
-            == "https://purl.org/zarr/spec/protocol/core/3.0"
-        )
-        assert (
-            data["zarr_format"]
-            == "https://purl.org/zarr/spec/protocol/core/3.0"
-        )
-        assert data["metadata_key_suffix"] == ".json"
+        assert data["zarr_format"] == 3
+        assert data["node_type"] == "group"
+        assert data["consolidated_metadata"] is None
 
-    assert (store_path / "meta").is_dir()
-    assert (store_path / "meta" / "root.group.json").is_file()
-    with open(store_path / "meta" / "root.group.json", "r") as fh:
-        data = json.load(fh)
         axes = data["attributes"]["multiscales"][0]["axes"]
         assert axes[0]["name"] == "t"
         assert axes[0]["type"] == "time"
@@ -151,17 +136,10 @@ def validate_v3_metadata(store_path: Path):
         assert axes[2]["type"] == "space"
         assert axes[2]["unit"] == "micrometer"
 
-    assert (store_path / "meta" / "acquire.json").is_file()
-    with open(store_path / "meta" / "acquire.json", "r") as fh:
+    assert (store_path / "acquire.json").is_file()
+    with open(store_path / "acquire.json", "r") as fh:
         data = json.load(fh)
         assert data["foo"] == "bar"
-
-
-def get_directory_store(version: ZarrVersion, store_path: str):
-    if version == ZarrVersion.V2:
-        return zarr.DirectoryStore(store_path)
-    else:
-        return zarr.DirectoryStoreV3(store_path)
 
 
 @pytest.mark.parametrize(
@@ -236,11 +214,10 @@ def test_create_stream(
 def test_stream_data_to_filesystem(
     settings: StreamSettings,
     store_path: Path,
-    request: pytest.FixtureRequest,
     version: ZarrVersion,
     compression_codec: Optional[CompressionCodec],
 ):
-    settings.store_path = str(store_path / f"{request.node.name}.zarr")
+    settings.store_path = str(store_path / "test.zarr")
     settings.version = version
     if compression_codec is not None:
         settings.compression = CompressionSettings(
@@ -267,9 +244,7 @@ def test_stream_data_to_filesystem(
 
     del stream  # close the stream, flush the files
 
-    group = zarr.open(
-        store=get_directory_store(version, settings.store_path), mode="r"
-    )
+    group = zarr.open(settings.store_path, mode="r")
     data = group["0"]
 
     assert data.shape == (
@@ -278,17 +253,33 @@ def test_stream_data_to_filesystem(
         settings.dimensions[2].array_size_px,
     )
 
+    metadata = data.metadata
     if compression_codec is not None:
-        cname = (
-            "lz4"
-            if compression_codec == CompressionCodec.BLOSC_LZ4
-            else "zstd"
-        )
-        assert data.compressor.cname == cname
-        assert data.compressor.clevel == 1
-        assert data.compressor.shuffle == blosc.SHUFFLE
+        if version == ZarrVersion.V2:
+            cname = (
+                "lz4"
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else "zstd"
+            )
+            compressor = metadata.compressor
+            assert compressor.cname == cname
+            assert compressor.clevel == 1
+            assert compressor.shuffle == ncblosc.SHUFFLE
+        else:
+            cname = (
+                zblosc.BloscCname.lz4
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else zblosc.BloscCname.zstd
+            )
+            blosc_codec = metadata.codecs[0].codecs[1]
+            assert blosc_codec.cname == cname
+            assert blosc_codec.clevel == 1
+            assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
     else:
-        assert data.compressor is None
+        if version == ZarrVersion.V2:
+            assert metadata.compressor is None
+        else:
+            assert len(metadata.codecs[0].codecs) == 1
 
 
 @pytest.mark.parametrize(
@@ -333,7 +324,9 @@ def test_stream_data_to_s3(
     if s3_settings is None:
         pytest.skip("S3 settings not set")
 
-    settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace("]", "")
+    settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace(
+        "]", ""
+    )
     settings.version = version
     settings.s3 = s3_settings
     settings.data_type = DataType.UINT16
@@ -385,17 +378,33 @@ def test_stream_data_to_s3(
         settings.dimensions[2].array_size_px,
     )
 
+    metadata = data.metadata
     if compression_codec is not None:
-        cname = (
-            "lz4"
-            if compression_codec == CompressionCodec.BLOSC_LZ4
-            else "zstd"
-        )
-        assert data.compressor.cname == cname
-        assert data.compressor.clevel == 1
-        assert data.compressor.shuffle == blosc.SHUFFLE
+        if version == ZarrVersion.V2:
+            cname = (
+                "lz4"
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else "zstd"
+            )
+            compressor = metadata.compressor
+            assert compressor.cname == cname
+            assert compressor.clevel == 1
+            assert compressor.shuffle == ncblosc.SHUFFLE
+        else:
+            cname = (
+                zblosc.BloscCname.lz4
+                if compression_codec == CompressionCodec.BLOSC_LZ4
+                else zblosc.BloscCname.zstd
+            )
+            blosc_codec = metadata.codecs[0].codecs[1]
+            assert blosc_codec.cname == cname
+            assert blosc_codec.clevel == 1
+            assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
     else:
-        assert data.compressor is None
+        if version == ZarrVersion.V2:
+            assert metadata.compressor is None
+        else:
+            assert len(metadata.codecs[0].codecs) == 1
 
     # cleanup
     s3.rm(store.root, recursive=True)
@@ -403,7 +412,13 @@ def test_stream_data_to_s3(
 
 @pytest.mark.parametrize(
     ("level",),
-    [(LogLevel.DEBUG,), (LogLevel.INFO,), (LogLevel.WARNING,), (LogLevel.ERROR,), (LogLevel.NONE,)],
+    [
+        (LogLevel.DEBUG,),
+        (LogLevel.INFO,),
+        (LogLevel.WARNING,),
+        (LogLevel.ERROR,),
+        (LogLevel.NONE,),
+    ],
 )
 def test_set_log_level(level: LogLevel):
     set_log_level(level)

@@ -4,6 +4,7 @@
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>
+#include <zlib.h> // crc32
 
 #include <algorithm> // std::fill
 #include <latch>
@@ -41,6 +42,22 @@ sample_type_to_dtype(ZarrDataType t)
         default:
             throw std::runtime_error("Invalid ZarrDataType: " +
                                      std::to_string(static_cast<int>(t)));
+    }
+}
+
+std::string
+shuffle_to_string(uint8_t shuffle)
+{
+    switch (shuffle) {
+        case 0:
+            return "noshuffle";
+        case 1:
+            return "shuffle";
+        case 2:
+            return "bitshuffle";
+        default:
+            throw std::runtime_error("Invalid shuffle value: " +
+                                     std::to_string(shuffle));
     }
 }
 } // namespace
@@ -97,8 +114,8 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
         auto& chunk_table = shard_tables_.at(i);
         auto* file_offset = &shard_file_offsets_.at(i);
 
-        EXPECT(thread_pool_->push_job([&sink = data_sinks_.at(i),
-                                       &chunks,
+        EXPECT(thread_pool_->push_job(std::move([&sink = data_sinks_.at(i),
+                                                 &chunks,
                                        &chunk_table,
                                        file_offset,
                                        write_table,
@@ -125,11 +142,24 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
                 }
 
                 if (success && write_table) {
-                    auto* table =
+                    const auto* table =
                       reinterpret_cast<std::byte*>(chunk_table.data());
                     std::span data{ table,
                                     chunk_table.size() * sizeof(uint64_t) };
                     success = sink->write(*file_offset, data);
+                    EXPECT(success, "Failed to write table");
+
+                    *file_offset += data.size();
+
+                    // compute crc32 checksum of the table
+                    const auto* table_c =
+                      reinterpret_cast<const unsigned char*>(table);
+
+                    uint32_t crc = crc32(0L, Z_NULL, 0);
+                    crc = crc32(crc, table_c, data.size());
+                    std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
+                                        sizeof(crc) };
+                    success = sink->write(*file_offset, crc_data);
                 }
             } catch (const std::exception& exc) {
                 err = "Failed to write chunk: " + std::string(exc.what());
@@ -137,7 +167,7 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
 
             latch.count_down();
             return success;
-        }),
+        })),
                "Failed to push job to thread pool");
     }
 
@@ -179,57 +209,84 @@ zarr::ZarrV3ArrayWriter::write_array_metadata_()
 
     const auto& final_dim = config_.dimensions->final_dim();
     chunk_shape.push_back(final_dim.chunk_size_px);
-    shard_shape.push_back(final_dim.shard_size_chunks);
+    shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
     for (auto i = 1; i < config_.dimensions->ndims(); ++i) {
         const auto& dim = config_.dimensions->at(i);
         array_shape.push_back(dim.array_size_px);
         chunk_shape.push_back(dim.chunk_size_px);
-        shard_shape.push_back(dim.shard_size_chunks);
+        shard_shape.push_back(dim.shard_size_chunks * chunk_shape.back());
     }
 
     json metadata;
-    metadata["attributes"] = json::object();
+    metadata["shape"] = array_shape;
     metadata["chunk_grid"] = json::object({
-      { "chunk_shape", chunk_shape },
-      { "separator", "/" },
-      { "type", "regular" },
+      { "name", "regular" },
+      {
+        "configuration",
+        json::object({ { "chunk_shape", shard_shape } }),
+      },
+    });
+    metadata["chunk_key_encoding"] = json::object({
+      { "name", "default" },
+      {
+        "configuration",
+        json::object({ { "separator", "/" } }),
+      },
+    });
+    metadata["fill_value"] = 0;
+    metadata["attributes"] = json::object();
+    metadata["zarr_format"] = 3;
+    metadata["node_type"] = "array";
+    metadata["storage_transformers"] = json::array();
+    metadata["data_type"] = sample_type_to_dtype(config_.dtype);
+    metadata["storage_transformers"] = json::array();
+
+    auto codecs = json::array();
+
+    auto sharding_indexed = json::object();
+    sharding_indexed["name"] = "sharding_indexed";
+
+    auto configuration = json::object();
+    configuration["chunk_shape"] = chunk_shape;
+
+    auto codec = json::object();
+    codec["configuration"] = json::object({ { "endian", "little" } });
+    codec["name"] = "bytes";
+
+    auto index_codec = json::object();
+    index_codec["configuration"] = json::object({ { "endian", "little" } });
+    index_codec["name"] = "bytes";
+
+    auto crc32_codec = json::object({ { "name", "crc32c" } });
+    configuration["index_codecs"] = json::array({
+      index_codec,
+      crc32_codec,
     });
 
-    metadata["chunk_memory_layout"] = "C";
-    metadata["data_type"] = sample_type_to_dtype(config_.dtype);
-    metadata["extensions"] = json::array();
-    metadata["fill_value"] = 0;
-    metadata["shape"] = array_shape;
+    configuration["index_location"] = "end";
+    configuration["codecs"] = json::array({ codec });
 
     if (config_.compression_params) {
         const auto params = *config_.compression_params;
-        metadata["compressor"] = json::object({
-          { "codec", "https://purl.org/zarr/spec/codec/blosc/1.0" },
-          { "configuration",
-            json::object({
-              { "blocksize", 0 },
-              { "clevel", params.clevel },
-              { "cname", params.codec_id },
-              { "shuffle", params.shuffle },
-            }) },
-        });
-    } else {
-        metadata["compressor"] = nullptr;
+
+        auto compression_config = json::object();
+        compression_config["blocksize"] = 0;
+        compression_config["clevel"] = params.clevel;
+        compression_config["cname"] = params.codec_id;
+        compression_config["shuffle"] = shuffle_to_string(params.shuffle);
+        compression_config["typesize"] = bytes_of_type(config_.dtype);
+
+        auto compression_codec = json::object();
+        compression_codec["configuration"] = compression_config;
+        compression_codec["name"] = "blosc";
+        configuration["codecs"].push_back(compression_codec);
     }
 
-    // sharding storage transformer
-    // TODO (aliddell):
-    // https://github.com/zarr-developers/zarr-python/issues/877
-    metadata["storage_transformers"] = json::array();
-    metadata["storage_transformers"][0] = json::object({
-      { "type", "indexed" },
-      { "extension",
-        "https://purl.org/zarr/spec/storage_transformers/sharding/1.0" },
-      { "configuration",
-        json::object({
-          { "chunks_per_shard", shard_shape },
-        }) },
-    });
+    sharding_indexed["configuration"] = configuration;
+
+    codecs.push_back(sharding_indexed);
+
+    metadata["codecs"] = codecs;
 
     std::string metadata_str = metadata.dump(4);
     std::span data = { reinterpret_cast<std::byte*>(metadata_str.data()),

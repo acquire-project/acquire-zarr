@@ -94,32 +94,18 @@ setup()
 }
 
 void
-verify_base_metadata(const nlohmann::json& meta)
-{
-    const auto extensions = meta["extensions"];
-    EXPECT_EQ(size_t, extensions.size(), 0);
-
-    const auto encoding = meta["metadata_encoding"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-
-    const auto suffix = meta["metadata_key_suffix"].get<std::string>();
-    EXPECT(suffix == ".json",
-           "Expected suffix to be '.json', but got '%s'",
-           suffix.c_str());
-
-    const auto zarr_format = meta["zarr_format"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-}
-
-void
 verify_group_metadata(const nlohmann::json& meta)
 {
+    auto zarr_format = meta["zarr_format"].get<int>();
+    EXPECT_EQ(int, zarr_format, 3);
+
+    auto node_type = meta["node_type"].get<std::string>();
+    EXPECT_STR_EQ(node_type.c_str(), "group");
+
+    EXPECT(meta["consolidated_metadata"].is_null(),
+           "Expected consolidated_metadata to be null");
+
+    // multiscales metadata
     const auto multiscales = meta["attributes"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
@@ -196,22 +182,13 @@ verify_array_metadata(const nlohmann::json& meta)
     EXPECT_EQ(int, shape[3].get<int>(), array_height);
     EXPECT_EQ(int, shape[4].get<int>(), array_width);
 
-    const auto& chunks = meta["chunk_grid"]["chunk_shape"];
+    const auto& chunks = meta["chunk_grid"]["configuration"]["chunk_shape"];
     EXPECT_EQ(size_t, chunks.size(), 5);
-    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints);
-    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels);
-    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes);
-    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height);
-    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width);
-
-    const auto& shards =
-      meta["storage_transformers"][0]["configuration"]["chunks_per_shard"];
-    EXPECT_EQ(size_t, shards.size(), 5);
-    EXPECT_EQ(int, shards[0].get<int>(), shard_timepoints);
-    EXPECT_EQ(int, shards[1].get<int>(), shard_channels);
-    EXPECT_EQ(int, shards[2].get<int>(), shard_planes);
-    EXPECT_EQ(int, shards[3].get<int>(), shard_height);
-    EXPECT_EQ(int, shards[4].get<int>(), shard_width);
+    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints* shard_timepoints);
+    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels* shard_channels);
+    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes* shard_planes);
+    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height* shard_height);
+    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width* shard_width);
 
     const auto dtype = meta["data_type"].get<std::string>();
     EXPECT(dtype == "uint16",
@@ -219,22 +196,41 @@ verify_array_metadata(const nlohmann::json& meta)
            dtype,
            "'");
 
-    const auto& compressor = meta["compressor"];
-    EXPECT(!compressor.is_null(), "Expected compressor to be non-null");
+    const auto& codecs = meta["codecs"];
+    EXPECT_EQ(size_t, codecs.size(), 1);
+    const auto& sharding_codec = codecs[0]["configuration"];
 
-    const auto codec = compressor["codec"].get<std::string>();
-    EXPECT(codec == "https://purl.org/zarr/spec/codec/blosc/1.0",
-           "Expected codec to be 'https://purl.org/zarr/spec/codec/blosc/1.0', "
-           "but got '%s'",
-           codec.c_str());
+    const auto& shards = sharding_codec["chunk_shape"];
+    EXPECT_EQ(size_t, shards.size(), 5);
+    EXPECT_EQ(int, shards[0].get<int>(), chunk_timepoints);
+    EXPECT_EQ(int, shards[1].get<int>(), chunk_channels);
+    EXPECT_EQ(int, shards[2].get<int>(), chunk_planes);
+    EXPECT_EQ(int, shards[3].get<int>(), chunk_height);
+    EXPECT_EQ(int, shards[4].get<int>(), chunk_width);
 
-    const auto& configuration = compressor["configuration"];
-    EXPECT_EQ(int, configuration["blocksize"].get<int>(), 0);
-    EXPECT_EQ(int, configuration["clevel"].get<int>(), 2);
-    EXPECT_EQ(int, configuration["shuffle"].get<int>(), 2);
+    const auto& internal_codecs = sharding_codec["codecs"];
+    EXPECT(internal_codecs.size() == 2,
+           "Expected 2 internal codecs, got ",
+           internal_codecs.size());
 
-    const auto cname = configuration["cname"].get<std::string>();
-    EXPECT(cname == "lz4", "Expected cname to be 'lz4', but got '", cname, "'");
+    EXPECT(internal_codecs[0]["name"].get<std::string>() == "bytes",
+           "Expected first codec to be 'bytes', got ",
+           internal_codecs[0]["name"].get<std::string>());
+    EXPECT(internal_codecs[1]["name"].get<std::string>() == "blosc",
+           "Expected second codec to be 'blosc', got ",
+           internal_codecs[1]["name"].get<std::string>());
+
+    const auto& blosc_codec = internal_codecs[1];
+    const auto& blosc_config = blosc_codec["configuration"];
+    EXPECT_EQ(int, blosc_config["blocksize"].get<int>(), 0);
+    EXPECT_EQ(int, blosc_config["clevel"].get<int>(), 2);
+    EXPECT(blosc_config["cname"].get<std::string>() == "lz4",
+           "Expected codec name to be 'lz4', got ",
+           blosc_config["cname"].get<std::string>());
+    EXPECT(blosc_config["shuffle"].get<std::string>() == "bitshuffle",
+           "Expected shuffle to be 'bitshuffle', got ",
+           blosc_config["shuffle"].get<std::string>());
+    EXPECT_EQ(int, blosc_config["typesize"].get<int>(), 2);
 }
 
 void
@@ -245,16 +241,17 @@ verify_file_data()
     const auto index_size = chunks_per_shard *
                             sizeof(uint64_t) * // indices are 64 bits
                             2;                 // 2 indices per chunk
+    const auto checksum_size = 4;              // crc32 checksum is 4 bytes
     const auto expected_file_size = shard_width * shard_height * shard_planes *
                                       shard_channels * shard_timepoints *
                                       chunk_size +
-                                    index_size;
+                                    index_size + checksum_size;
 
-    fs::path data_root = fs::path(test_path) / "data" / "root" / "0";
+    fs::path data_root = fs::path(test_path) / "0";
 
     CHECK(fs::is_directory(data_root));
     for (auto t = 0; t < shards_in_t; ++t) {
-        const auto t_dir = data_root / ("c" + std::to_string(t));
+        const auto t_dir = data_root / "c" / std::to_string(t);
         CHECK(fs::is_directory(t_dir));
 
         for (auto c = 0; c < shards_in_c; ++c) {
@@ -289,7 +286,7 @@ verify_file_data()
         CHECK(!fs::is_directory(t_dir / std::to_string(shards_in_c)));
     }
 
-    CHECK(!fs::is_directory(data_root / ("c" + std::to_string(shards_in_t))));
+    CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
 }
 
 void
@@ -298,16 +295,11 @@ verify()
     CHECK(std::filesystem::is_directory(test_path));
 
     {
-        fs::path base_metadata_path = fs::path(test_path) / "zarr.json";
-        std::ifstream f(base_metadata_path);
-        nlohmann::json base_metadata = nlohmann::json::parse(f);
-
-        verify_base_metadata(base_metadata);
-    }
-
-    {
-        fs::path group_metadata_path =
-          fs::path(test_path) / "meta" / "root.group.json";
+        fs::path group_metadata_path = fs::path(test_path) / "zarr.json";
+        EXPECT(fs::is_regular_file(group_metadata_path),
+               "Expected file '",
+               group_metadata_path,
+               "' to exist");
         std::ifstream f = std::ifstream(group_metadata_path);
         nlohmann::json group_metadata = nlohmann::json::parse(f);
 
@@ -315,8 +307,11 @@ verify()
     }
 
     {
-        fs::path array_metadata_path =
-          fs::path(test_path) / "meta" / "root" / "0.array.json";
+        fs::path array_metadata_path = fs::path(test_path) / "0" / "zarr.json";
+        EXPECT(fs::is_regular_file(array_metadata_path),
+               "Expected file '",
+               array_metadata_path,
+               "' to exist");
         std::ifstream f = std::ifstream(array_metadata_path);
         nlohmann::json array_metadata = nlohmann::json::parse(f);
 
@@ -358,7 +353,7 @@ main()
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Caught exception: %s", e.what());
+        LOG_ERROR("Caught exception: ", e.what());
     }
 
     return retval;

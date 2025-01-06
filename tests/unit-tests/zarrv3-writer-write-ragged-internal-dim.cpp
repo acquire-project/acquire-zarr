@@ -47,39 +47,43 @@ const int level_of_detail = 5;
 void
 check_json()
 {
-    fs::path meta_path = base_dir / "meta" / "root" /
-                         (std::to_string(level_of_detail) + ".array.json");
+    fs::path meta_path =
+      base_dir / std::to_string(level_of_detail) / "zarr.json";
     CHECK(fs::is_regular_file(meta_path));
 
     std::ifstream f(meta_path);
     nlohmann::json meta = nlohmann::json::parse(f);
 
     EXPECT(meta["data_type"].get<std::string>() == "float64",
-           "Expected dtype to be uint16, but got ",
+           "Expected dtype to be float64, but got ",
            meta["data_type"].get<std::string>());
 
     const auto& array_shape = meta["shape"];
-    const auto& chunk_shape = meta["chunk_grid"]["chunk_shape"];
-    const auto& shard_shape =
-      meta["storage_transformers"][0]["configuration"]["chunks_per_shard"];
-
     EXPECT_EQ(int, array_shape.size(), 4);
     EXPECT_EQ(int, array_shape[0].get<int>(), array_timepoints);
     EXPECT_EQ(int, array_shape[1].get<int>(), array_planes);
     EXPECT_EQ(int, array_shape[2].get<int>(), array_height);
     EXPECT_EQ(int, array_shape[3].get<int>(), array_width);
 
+    const auto& chunk_shape =
+      meta["chunk_grid"]["configuration"]["chunk_shape"];
     EXPECT_EQ(int, chunk_shape.size(), 4);
-    EXPECT_EQ(int, chunk_shape[0].get<int>(), chunk_timepoints);
-    EXPECT_EQ(int, chunk_shape[1].get<int>(), chunk_planes);
-    EXPECT_EQ(int, chunk_shape[2].get<int>(), chunk_height);
-    EXPECT_EQ(int, chunk_shape[3].get<int>(), chunk_width);
+    EXPECT_EQ(
+      int, chunk_shape[0].get<int>(), chunk_timepoints* shard_timepoints);
+    EXPECT_EQ(int, chunk_shape[1].get<int>(), chunk_planes* shard_planes);
+    EXPECT_EQ(int, chunk_shape[2].get<int>(), chunk_height* shard_height);
+    EXPECT_EQ(int, chunk_shape[3].get<int>(), chunk_width* shard_width);
 
+    const auto& codecs = meta["codecs"];
+    EXPECT_EQ(size_t, codecs.size(), 1);
+    const auto& sharding_codec = codecs[0]["configuration"];
+
+    const auto& shard_shape = sharding_codec["chunk_shape"];
     EXPECT_EQ(int, shard_shape.size(), 4);
-    EXPECT_EQ(int, shard_shape[0].get<int>(), shard_timepoints);
-    EXPECT_EQ(int, shard_shape[1].get<int>(), shard_planes);
-    EXPECT_EQ(int, shard_shape[2].get<int>(), shard_height);
-    EXPECT_EQ(int, shard_shape[3].get<int>(), shard_width);
+    EXPECT_EQ(int, shard_shape[0].get<int>(), chunk_timepoints);
+    EXPECT_EQ(int, shard_shape[1].get<int>(), chunk_planes);
+    EXPECT_EQ(int, shard_shape[2].get<int>(), chunk_height);
+    EXPECT_EQ(int, shard_shape[3].get<int>(), chunk_width);
 }
 
 int
@@ -144,16 +148,17 @@ main()
         const auto index_size = chunks_per_shard *
                                 sizeof(uint64_t) * // indices are 64 bits
                                 2;                 // 2 indices per chunk
+        const auto checksum_size = 4;              // CRC32 checksum
         const auto expected_file_size = shard_width * shard_height *
                                           shard_planes * shard_timepoints *
                                           chunk_size +
-                                        index_size;
+                                        index_size + checksum_size;
 
         const fs::path data_root =
-          base_dir / "data/root" / std::to_string(config.level_of_detail);
+          base_dir / std::to_string(config.level_of_detail);
         CHECK(fs::is_directory(data_root));
         for (auto t = 0; t < shards_in_t; ++t) {
-            const auto t_dir = data_root / ("c" + std::to_string(t));
+            const auto t_dir = data_root / "c" / std::to_string(t);
             CHECK(fs::is_directory(t_dir));
 
             for (auto z = 0; z < shards_in_z; ++z) {
@@ -181,8 +186,7 @@ main()
             CHECK(!fs::is_directory(t_dir / std::to_string(shards_in_z)));
         }
 
-        CHECK(
-          !fs::is_directory(data_root / ("c" + std::to_string(shards_in_t))));
+        CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
 
         retval = 0;
     } catch (const std::exception& exc) {

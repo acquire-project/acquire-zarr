@@ -100,7 +100,7 @@ get_object_size(minio::s3::Client& client, const std::string& object_name)
     minio::s3::StatObjectResponse response = client.StatObject(args);
 
     if (!response) {
-        LOG_ERROR("Failed to get object size: %s", object_name.c_str());
+        LOG_ERROR("Failed to get object size: ", object_name);
         return 0;
     }
 
@@ -155,9 +155,8 @@ remove_items(minio::s3::Client& client,
     for (; result; result++) {
         minio::s3::DeleteError err = *result;
         if (!err) {
-            LOG_ERROR("Failed to delete object %s: %s",
-                      err.object_name.c_str(),
-                      err.message.c_str());
+            LOG_ERROR(
+              "Failed to delete object ", err.object_name, ": ", err.message);
             return false;
         }
     }
@@ -215,32 +214,18 @@ setup()
 }
 
 void
-verify_base_metadata(const nlohmann::json& meta)
-{
-    const auto extensions = meta["extensions"];
-    EXPECT_EQ(size_t, extensions.size(), 0);
-
-    const auto encoding = meta["metadata_encoding"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-
-    const auto suffix = meta["metadata_key_suffix"].get<std::string>();
-    EXPECT(suffix == ".json",
-           "Expected suffix to be '.json', but got '%s'",
-           suffix.c_str());
-
-    const auto zarr_format = meta["zarr_format"].get<std::string>();
-    EXPECT(encoding == "https://purl.org/zarr/spec/protocol/core/3.0",
-           "Expected encoding to be "
-           "'https://purl.org/zarr/spec/protocol/core/3.0', but got '%s'",
-           encoding.c_str());
-}
-
-void
 verify_group_metadata(const nlohmann::json& meta)
 {
+    auto zarr_format = meta["zarr_format"].get<int>();
+    EXPECT_EQ(int, zarr_format, 3);
+
+    auto node_type = meta["node_type"].get<std::string>();
+    EXPECT_STR_EQ(node_type.c_str(), "group");
+
+    EXPECT(meta["consolidated_metadata"].is_null(),
+           "Expected consolidated_metadata to be null");
+
+    // multiscales metadata
     const auto multiscales = meta["attributes"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
@@ -312,22 +297,13 @@ verify_array_metadata(const nlohmann::json& meta)
     EXPECT_EQ(int, shape[3].get<int>(), array_height);
     EXPECT_EQ(int, shape[4].get<int>(), array_width);
 
-    const auto& chunks = meta["chunk_grid"]["chunk_shape"];
+    const auto& chunks = meta["chunk_grid"]["configuration"]["chunk_shape"];
     EXPECT_EQ(size_t, chunks.size(), 5);
-    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints);
-    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels);
-    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes);
-    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height);
-    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width);
-
-    const auto& shards =
-      meta["storage_transformers"][0]["configuration"]["chunks_per_shard"];
-    EXPECT_EQ(size_t, shards.size(), 5);
-    EXPECT_EQ(int, shards[0].get<int>(), shard_timepoints);
-    EXPECT_EQ(int, shards[1].get<int>(), shard_channels);
-    EXPECT_EQ(int, shards[2].get<int>(), shard_planes);
-    EXPECT_EQ(int, shards[3].get<int>(), shard_height);
-    EXPECT_EQ(int, shards[4].get<int>(), shard_width);
+    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints* shard_timepoints);
+    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels* shard_channels);
+    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes* shard_planes);
+    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height* shard_height);
+    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width* shard_width);
 
     const auto dtype = meta["data_type"].get<std::string>();
     EXPECT(dtype == "uint16",
@@ -335,22 +311,41 @@ verify_array_metadata(const nlohmann::json& meta)
            dtype,
            "'");
 
-    const auto& compressor = meta["compressor"];
-    EXPECT(!compressor.is_null(), "Expected compressor to be non-null");
+    const auto& codecs = meta["codecs"];
+    EXPECT_EQ(size_t, codecs.size(), 1);
+    const auto& sharding_codec = codecs[0]["configuration"];
 
-    const auto codec = compressor["codec"].get<std::string>();
-    EXPECT(codec == "https://purl.org/zarr/spec/codec/blosc/1.0",
-           "Expected codec to be 'https://purl.org/zarr/spec/codec/blosc/1.0', "
-           "but got '%s'",
-           codec.c_str());
+    const auto& shards = sharding_codec["chunk_shape"];
+    EXPECT_EQ(size_t, shards.size(), 5);
+    EXPECT_EQ(int, shards[0].get<int>(), chunk_timepoints);
+    EXPECT_EQ(int, shards[1].get<int>(), chunk_channels);
+    EXPECT_EQ(int, shards[2].get<int>(), chunk_planes);
+    EXPECT_EQ(int, shards[3].get<int>(), chunk_height);
+    EXPECT_EQ(int, shards[4].get<int>(), chunk_width);
 
-    const auto& configuration = compressor["configuration"];
-    EXPECT_EQ(int, configuration["blocksize"].get<int>(), 0);
-    EXPECT_EQ(int, configuration["clevel"].get<int>(), 3);
-    EXPECT_EQ(int, configuration["shuffle"].get<int>(), 1);
+    const auto& internal_codecs = sharding_codec["codecs"];
+    EXPECT(internal_codecs.size() == 2,
+           "Expected 2 internal codecs, got ",
+           internal_codecs.size());
 
-    const auto cname = configuration["cname"].get<std::string>();
-    EXPECT(cname == "lz4", "Expected cname to be 'lz4', but got '", cname, "'");
+    EXPECT(internal_codecs[0]["name"].get<std::string>() == "bytes",
+           "Expected first codec to be 'bytes', got ",
+           internal_codecs[0]["name"].get<std::string>());
+    EXPECT(internal_codecs[1]["name"].get<std::string>() == "blosc",
+           "Expected second codec to be 'blosc', got ",
+           internal_codecs[1]["name"].get<std::string>());
+
+    const auto& blosc_codec = internal_codecs[1];
+    const auto& blosc_config = blosc_codec["configuration"];
+    EXPECT_EQ(int, blosc_config["blocksize"].get<int>(), 0);
+    EXPECT_EQ(int, blosc_config["clevel"].get<int>(), 3);
+    EXPECT(blosc_config["cname"].get<std::string>() == "lz4",
+           "Expected codec name to be 'lz4', got ",
+           blosc_config["cname"].get<std::string>());
+    EXPECT(blosc_config["shuffle"].get<std::string>() == "shuffle",
+           "Expected shuffle to be 'shuffle', got ",
+           blosc_config["shuffle"].get<std::string>());
+    EXPECT_EQ(int, blosc_config["typesize"].get<int>(), 2);
 }
 
 void
@@ -363,24 +358,13 @@ verify_and_cleanup()
                                           s3_secret_access_key);
     minio::s3::Client client(url, &provider);
 
-    std::string base_metadata_path = TEST "/zarr.json";
-    std::string group_metadata_path = TEST "/meta/root.group.json";
-    std::string array_metadata_path = TEST "/meta/root/0.array.json";
-
-    {
-        EXPECT(object_exists(client, base_metadata_path),
-               "Object does not exist: %s",
-               base_metadata_path.c_str());
-        std::string contents = get_object_contents(client, base_metadata_path);
-        nlohmann::json base_metadata = nlohmann::json::parse(contents);
-
-        verify_base_metadata(base_metadata);
-    }
+    const std::string group_metadata_path = TEST "/zarr.json";
+    const std::string array_metadata_path = TEST "/0/zarr.json";
 
     {
         EXPECT(object_exists(client, group_metadata_path),
-               "Object does not exist: %s",
-               group_metadata_path.c_str());
+               "Object does not exist: ",
+               group_metadata_path);
         std::string contents = get_object_contents(client, group_metadata_path);
         nlohmann::json group_metadata = nlohmann::json::parse(contents);
 
@@ -389,34 +373,33 @@ verify_and_cleanup()
 
     {
         EXPECT(object_exists(client, array_metadata_path),
-               "Object does not exist: %s",
-               array_metadata_path.c_str());
+               "Object does not exist: ",
+               array_metadata_path);
         std::string contents = get_object_contents(client, array_metadata_path);
         nlohmann::json array_metadata = nlohmann::json::parse(contents);
 
         verify_array_metadata(array_metadata);
     }
 
-    CHECK(remove_items(
-      client,
-      { base_metadata_path, group_metadata_path, array_metadata_path }));
+    CHECK(remove_items(client, { group_metadata_path, array_metadata_path }));
 
     const auto chunk_size = chunk_width * chunk_height * chunk_planes *
                             chunk_channels * chunk_timepoints * nbytes_px;
     const auto index_size = chunks_per_shard *
                             sizeof(uint64_t) * // indices are 64 bits
                             2;                 // 2 indices per chunk
+    const auto checksum_size = 4;              // crc32 checksum is 4 bytes
     const auto expected_file_size = shard_width * shard_height * shard_planes *
                                       shard_channels * shard_timepoints *
                                       chunk_size +
-                                    index_size;
+                                    index_size + checksum_size;
 
     // verify and clean up data files
     std::vector<std::string> data_files;
-    std::string data_root = TEST "/data/root/0";
+    std::string data_root = TEST "/0";
 
     for (auto t = 0; t < shards_in_t; ++t) {
-        const auto t_dir = data_root + "/" + ("c" + std::to_string(t));
+        const auto t_dir = data_root + "/c/" + std::to_string(t);
 
         for (auto c = 0; c < shards_in_c; ++c) {
             const auto c_dir = t_dir + "/" + std::to_string(c);
@@ -430,8 +413,8 @@ verify_and_cleanup()
                     for (auto x = 0; x < shards_in_x; ++x) {
                         const auto x_file = y_dir + "/" + std::to_string(x);
                         EXPECT(object_exists(client, x_file),
-                               "Object does not exist: %s",
-                               x_file.c_str());
+                               "Object does not exist: ",
+                               x_file);
                         const auto file_size = get_object_size(client, x_file);
                         EXPECT_LT(size_t, file_size, expected_file_size);
                     }
@@ -475,7 +458,7 @@ main()
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Caught exception: %s", e.what());
+        LOG_ERROR("Caught exception: ", e.what());
     }
 
     return retval;

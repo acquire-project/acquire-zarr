@@ -152,8 +152,8 @@ zarr::ArrayWriter::make_data_sinks_()
             break;
         case ZarrVersion_3:
             parts_along_dimension = shards_along_dimension;
-            data_root = config_.store_path + "/data/root/" +
-                        std::to_string(config_.level_of_detail) + "/c" +
+            data_root = config_.store_path + "/" +
+                        std::to_string(config_.level_of_detail) + "/c/" +
                         std::to_string(append_chunk_index_);
             break;
         default:
@@ -201,9 +201,9 @@ zarr::ArrayWriter::make_metadata_sink_()
                             "/.zarray";
             break;
         case ZarrVersion_3:
-            metadata_path = config_.store_path + "/meta/root/" +
+            metadata_path = config_.store_path + "/" +
                             std::to_string(config_.level_of_detail) +
-                            ".array.json";
+                            "/zarr.json";
             break;
         default:
             LOG_ERROR("Unsupported Zarr version");

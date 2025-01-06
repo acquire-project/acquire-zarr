@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.0.2"
+version = "0.0.4"
 description = "Python bindings for acquire-zarr"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
@@ -30,7 +30,7 @@ testing = [
     "ruff",
     "s3fs",
     "tifffile",
-    "zarr",
+    "zarr==3.0.0rc1",
     "python-dotenv",
 ]
 

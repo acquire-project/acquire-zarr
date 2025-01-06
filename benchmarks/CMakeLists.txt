@@ -14,4 +14,5 @@ target_link_libraries(${tgt} PRIVATE
         acquire-zarr
         nlohmann_json::nlohmann_json
         miniocpp::miniocpp
+        ZLIB::ZLIB
 )
