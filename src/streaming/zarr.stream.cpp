@@ -286,13 +286,10 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 
 template<typename T>
-[[nodiscard]] std::byte*
-scale_image(const std::byte* const src,
-            size_t& bytes_of_src,
-            size_t& width,
-            size_t& height)
+[[nodiscard]] std::vector<std::byte>
+scale_image(std::span<const std::byte> src_, size_t& width, size_t& height)
 {
-    CHECK(src);
+    const auto bytes_of_src = src_.size();
 
     const size_t bytes_of_frame = width * height * sizeof(T);
     EXPECT(bytes_of_src >= bytes_of_frame,
@@ -310,13 +307,9 @@ scale_image(const std::byte* const src,
     const auto size_downscaled =
       static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
 
-    auto* dst = new T[size_downscaled];
-    EXPECT(dst,
-           "Failed to allocate ",
-           size_downscaled,
-           " bytes for destination frame");
-
-    memset(dst, 0, size_downscaled);
+    std::vector<std::byte> dst_(size_downscaled, static_cast<std::byte>(0));
+    auto* dst = reinterpret_cast<T*>(dst_.data());
+    auto* src = reinterpret_cast<const T*>(src_.data());
 
     size_t dst_idx = 0;
     for (auto row = 0; row < height; row += downscale) {
@@ -340,29 +333,25 @@ scale_image(const std::byte* const src,
         }
     }
 
-    bytes_of_src = size_downscaled;
     width = static_cast<size_t>(w_pad) / 2;
     height = static_cast<size_t>(h_pad) / 2;
 
-    return reinterpret_cast<std::byte*>(dst);
+    return dst_;
 }
 
 template<typename T>
 void
-average_two_frames(void* dst_,
-                   size_t bytes_of_dst,
-                   const void* src_,
-                   size_t bytes_of_src)
+average_two_frames(std::span<std::byte>& dst_, std::span<const std::byte> src_)
 {
-    CHECK(dst_);
-    CHECK(src_);
+    const auto bytes_of_dst = dst_.size();
+    const auto bytes_of_src = src_.size();
     EXPECT(bytes_of_dst == bytes_of_src,
            "Expecting %zu bytes in destination, got %zu",
            bytes_of_src,
            bytes_of_dst);
 
-    T* dst = static_cast<T*>(dst_);
-    const T* src = static_cast<const T*>(src_);
+    T* dst = reinterpret_cast<T*>(dst_.data());
+    const T* src = reinterpret_cast<const T*>(src_.data());
 
     const auto num_pixels = bytes_of_src / sizeof(T);
     for (auto i = 0; i < num_pixels; ++i) {
@@ -465,7 +454,7 @@ ZarrStream::append(const void* data_, size_t nbytes)
                 break;
             }
 
-            write_multiscale_frames_(data, bytes_written_this_frame);
+            write_multiscale_frames_({ data, bytes_written_this_frame });
 
             bytes_written += bytes_written_this_frame;
             data += bytes_written_this_frame;
@@ -866,15 +855,15 @@ ZarrStream_s::make_multiscale_metadata_() const
 }
 
 void
-ZarrStream_s::write_multiscale_frames_(const std::byte* data,
-                                       size_t bytes_of_data)
+ZarrStream_s::write_multiscale_frames_(ByteSpan data)
 {
     if (!multiscale_) {
         return;
     }
 
-    std::function<std::byte*(const std::byte*, size_t&, size_t&, size_t&)> scale;
-    std::function<void(void*, size_t, const void*, size_t)> average2;
+    std::function<ByteVector(ByteSpan, size_t&, size_t&)> scale;
+    std::function<void(std::span<std::byte>&, std::span<const std::byte>)>
+      average2;
 
     switch (dtype_) {
         case ZarrDataType_uint8:
@@ -925,30 +914,27 @@ ZarrStream_s::write_multiscale_frames_(const std::byte* data,
     size_t frame_width = dimensions_->width_dim().array_size_px;
     size_t frame_height = dimensions_->height_dim().array_size_px;
 
-    std::byte* dst;
+    ByteVector dst;
     for (auto i = 1; i < writers_.size(); ++i) {
-        dst = scale(data, bytes_of_data, frame_width, frame_height);
+        dst = scale(data, frame_width, frame_height);
 
         // bytes_of data is now downscaled
         // frame_width and frame_height are now the new dimensions
 
         if (scaled_frames_[i]) {
-            average2(dst, bytes_of_data, *scaled_frames_[i], bytes_of_data);
-            std::span frame_data{ reinterpret_cast<const std::byte*>(dst),
-                                  bytes_of_data };
+            std::span frame_data(dst);
+            average2(frame_data, *scaled_frames_[i]);
+
             EXPECT(writers_[i]->write_frame(frame_data),
                    "Failed to write frame to writer %zu",
                    i);
 
             // clean up this LOD
-            delete[] *scaled_frames_[i];
             scaled_frames_[i].reset();
 
             // set up for next iteration
             if (i + 1 < writers_.size()) {
                 data = dst;
-            } else {
-                delete[] dst;
             }
         } else {
             scaled_frames_[i] = dst;
@@ -988,12 +974,6 @@ finalize_stream(struct ZarrStream_s* stream)
     }
     stream->writers_.clear(); // flush before shutting down thread pool
     stream->thread_pool_->await_stop();
-
-    for (auto& [_, frame] : stream->scaled_frames_) {
-        if (frame) {
-            delete[] *frame;
-        }
-    }
 
     return true;
 }
