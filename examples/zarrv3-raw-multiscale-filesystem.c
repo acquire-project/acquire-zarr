@@ -1,6 +1,5 @@
-/// @file zarrv3-raw-multiscale-filesystem.c
-/// @brief Uncompressed streaming to a Zarr V3 store on the filesystem, with
-/// multiple levels of detail.
+/// @file zarr-v3-compressed-filesystem.c
+/// @brief Zarr V3 with LZ4 compression to filesystem
 #include "acquire.zarr.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -64,9 +63,6 @@ main()
 
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
-    // Free Dimension array
-    ZarrStreamSettings_destroy_dimension_array(&settings);
-
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");
         return 1;
