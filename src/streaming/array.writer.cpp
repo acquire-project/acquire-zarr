@@ -360,7 +360,7 @@ zarr::ArrayWriter::compress_buffers_()
                      try {
                          const auto tmp_size =
                            bytes_of_chunk + BLOSC_MAX_OVERHEAD;
-                         ChunkBuffer tmp(tmp_size);
+                         ByteVector tmp(tmp_size);
                          const auto nb =
                            blosc_compress_ctx(params.clevel,
                                               params.shuffle,

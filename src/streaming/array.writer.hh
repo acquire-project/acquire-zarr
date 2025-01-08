@@ -56,11 +56,11 @@ class ArrayWriter
     [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
 
   protected:
-    using ChunkBuffer = std::vector<std::byte>;
+    using ByteVector = std::vector<std::byte>;
     ArrayWriterConfig config_;
 
     /// Chunking
-    std::vector<ChunkBuffer> chunk_buffers_;
+    std::vector<ByteVector> chunk_buffers_;
 
     /// Filesystem
     std::vector<std::unique_ptr<Sink>> data_sinks_;
