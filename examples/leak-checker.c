@@ -3,14 +3,15 @@
 #include "acquire.zarr.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 int
 main()
 {
-    const size_t width = 14192;
-    const size_t height = 10640;
+    const size_t width = 1920;
+    const size_t height = 1080;
 
     // Configure compression
     ZarrCompressionSettings compression = {
@@ -27,6 +28,7 @@ main()
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
+        .multiscale = true
     };
 
     // Set up dimensions (t, y, x)
@@ -71,7 +73,7 @@ main()
 
     // Write frames
     size_t bytes_written;
-    for (int t = 0; t < 50; t++) {
+    for (int t = 0; t < 1000; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
             for (size_t x = 0; x < width; x++) {
