@@ -74,6 +74,7 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
   std::shared_ptr<ThreadPool> thread_pool,
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayWriter(config, thread_pool, s3_connection_pool)
+  , flushed_count_{ 0 }
 {
     const auto number_of_shards = config_.dimensions->number_of_shards();
     const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
@@ -101,8 +102,12 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
 
     // get shard indices for each chunk
     std::vector<std::vector<size_t>> chunk_in_shards(n_shards);
+    const auto chunks_in_memory =
+      config_.dimensions->number_of_chunks_in_memory();
+    auto chunk_group_offset = flushed_count_ * chunks_in_memory;
     for (auto i = 0; i < chunk_buffers_.size(); ++i) {
-        const auto index = config_.dimensions->shard_index_for_chunk(i);
+        const auto index =
+          config_.dimensions->shard_index_for_chunk(i + chunk_group_offset);
         chunk_in_shards[index].push_back(i);
     }
 
@@ -116,25 +121,26 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
 
         EXPECT(thread_pool_->push_job(std::move([&sink = data_sinks_.at(i),
                                                  &chunks,
-                                       &chunk_table,
-                                       file_offset,
-                                       write_table,
-                                       &latch,
-                                       this](std::string& err) {
+                                                 &chunk_table,
+                                                 file_offset,
+                                                 write_table,
+                                                 &latch,
+                                                 chunk_group_offset,
+                                                 this](std::string& err) {
             bool success = false;
 
             try {
                 for (const auto& chunk_idx : chunks) {
                     auto& chunk = chunk_buffers_.at(chunk_idx);
-                    std::span data{ reinterpret_cast<std::byte*>(chunk.data()),
-                                    chunk.size() };
+                    std::span data(chunk);
                     success = sink->write(*file_offset, data);
                     if (!success) {
                         break;
                     }
 
                     const auto internal_idx =
-                      config_.dimensions->shard_internal_index(chunk_idx);
+                      config_.dimensions->shard_internal_index(
+                        chunk_idx + chunk_group_offset);
                     chunk_table.at(2 * internal_idx) = *file_offset;
                     chunk_table.at(2 * internal_idx + 1) = chunk.size();
 
@@ -182,6 +188,9 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
         }
 
         std::fill(shard_file_offsets_.begin(), shard_file_offsets_.end(), 0);
+        flushed_count_ = 0;
+    } else {
+        ++flushed_count_;
     }
 
     return true;
