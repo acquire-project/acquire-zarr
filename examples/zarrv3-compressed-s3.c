@@ -1,5 +1,5 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-compressed-s3.c
+/// @brief Stream data to a Zarr V3 store with Zstd compression data on S3
 #include "acquire.zarr.h"
 
 #include <math.h>
@@ -12,15 +12,23 @@ main()
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
+        .codec = ZarrCompressionCodec_BloscZstd,
         .level = 1,
         .shuffle = 1,
     };
 
+    // Configure S3
+    ZarrS3Settings s3 = {
+        .endpoint = "http://localhost:9000",
+        .bucket_name = "mybucket",
+        .access_key_id = "myaccesskey",
+        .secret_access_key = "mysecretkey"
+    };
+
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed.zarr",
-        .s3_settings = NULL,
+        .store_path = "output_v3_compressed_s3.zarr",
+        .s3_settings = &s3,
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
@@ -32,7 +40,7 @@ main()
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 0,
+        .array_size_px = 0, // Unlimited
         .chunk_size_px = 5,
         .shard_size_chunks = 2,
     };
