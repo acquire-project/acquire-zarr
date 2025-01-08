@@ -6,13 +6,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main() {
+int
+main()
+{
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
         .codec = ZarrCompressionCodec_BloscLZ4,
         .level = 1,
-        .shuffle = 1
+        .shuffle = 1,
     };
 
     // Configure stream settings
@@ -21,50 +23,34 @@ int main() {
         .s3_settings = NULL,
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3
+        .version = ZarrVersion_3,
     };
 
-    // Set up 5D array (t, c, z, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
+    // Set up dimensions (t, y, x)
+    ZarrStreamSettings_create_dimension_array(&settings, 3);
 
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 10,
+        .array_size_px = 0,
         .chunk_size_px = 5,
-        .shard_size_chunks = 2
+        .shard_size_chunks = 2,
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
-        .name = "c",
-        .type = ZarrDimensionType_Channel,
-        .array_size_px = 8,
-        .chunk_size_px = 4,
-        .shard_size_chunks = 2
-    };
-
-    settings.dimensions[2] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 6,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1
-    };
-
-    settings.dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
         .chunk_size_px = 16,
-        .shard_size_chunks = 1
+        .shard_size_chunks = 1,
     };
 
-    settings.dimensions[4] = (ZarrDimensionProperties){
+    settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
         .chunk_size_px = 16,
-        .shard_size_chunks = 2
+        .shard_size_chunks = 2,
     };
 
     // Create stream
@@ -84,12 +70,9 @@ int main() {
 
     // Write frames
     size_t bytes_written;
-    int centerX = width / 2;
-    int centerY = height / 2;
-    for (int t = 0; t < 10; t++) {
+    for (int t = 0; t < 50; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
-            int dy = y - centerY;
             for (size_t x = 0; x < width; x++) {
                 // Create a diagonal pattern that moves with time
                 // and varies intensity based on position
@@ -104,7 +87,10 @@ int main() {
                 }
 
                 // Add some circular features
+                int centerX = width / 2;
+                int centerY = height / 2;
                 int dx = x - centerX;
+                int dy = y - centerY;
                 int radius = (int)sqrt(dx*dx + dy*dy);
 
                 // Modulate the pattern with concentric circles

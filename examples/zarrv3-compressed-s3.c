@@ -19,10 +19,10 @@ main()
 
     // Configure S3
     ZarrS3Settings s3 = {
-        .endpoint = "http://192.168.1.57:9000",
-        .bucket_name = "acquire-test",
-        .access_key_id = "tv4MtRQPbtfwKxMusI0I",
-        .secret_access_key = "W85Cnb4qd7bhPaTsqkt8aEKoO3XtXm49o9nMtD5O",
+        .endpoint = "http://localhost:9000",
+        .bucket_name = "mybucket",
+        .access_key_id = "myaccesskey",
+        .secret_access_key = "mysecretkey"
     };
 
     // Configure stream settings
@@ -34,8 +34,8 @@ main()
         .version = ZarrVersion_3,
     };
 
-    // Set up dimensions (t, z, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 4);
+    // Set up dimensions (t, y, x)
+    ZarrStreamSettings_create_dimension_array(&settings, 3);
 
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
@@ -46,14 +46,6 @@ main()
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 10,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1,
-    };
-
-    settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -61,7 +53,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[3] = (ZarrDimensionProperties){
+    settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -86,7 +78,7 @@ main()
 
     // Write frames
     size_t bytes_written;
-    for (int t = 0; t < 10; t++) {
+    for (int t = 0; t < 50; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
             for (size_t x = 0; x < width; x++) {

@@ -1,6 +1,8 @@
 /// @file zarr-v3-raw-filesystem.c
 /// @brief Basic Zarr V3 streaming to filesystem
 #include "acquire.zarr.h"
+
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -16,34 +18,18 @@ main()
         .version = ZarrVersion_3,
     };
 
-    // Set up 5D array (t, c, z, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
+    // Set up dimensions (t, y, x)
+    ZarrStreamSettings_create_dimension_array(&settings, 3);
 
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 10,
+        .array_size_px = 0,
         .chunk_size_px = 5,
         .shard_size_chunks = 2,
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
-        .name = "c",
-        .type = ZarrDimensionType_Channel,
-        .array_size_px = 8,
-        .chunk_size_px = 4,
-        .shard_size_chunks = 2,
-    };
-
-    settings.dimensions[2] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 6,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1,
-    };
-
-    settings.dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -51,7 +37,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[4] = (ZarrDimensionProperties){
+    settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -76,10 +62,36 @@ main()
 
     // Write frames
     size_t bytes_written;
-    for (int i = 0; i < 1000; i++) {
-        // Fill frame with sample data
-        for (size_t j = 0; j < width * height; j++) {
-            frame[j] = i * 1000 + j;
+    for (int t = 0; t < 50; t++) {
+        // Fill frame with a moving diagonal pattern
+        for (size_t y = 0; y < height; y++) {
+            for (size_t x = 0; x < width; x++) {
+                // Create a diagonal pattern that moves with time
+                // and varies intensity based on position
+                int diagonal = (x + y + t * 8) % 32;
+
+                // Create intensity variation
+                uint16_t intensity;
+                if (diagonal < 16) {
+                    intensity = (uint16_t)((diagonal * 4096)); // Ramp up
+                } else {
+                    intensity = (uint16_t)((31 - diagonal) * 4096); // Ramp down
+                }
+
+                // Add some circular features
+                int centerX = width / 2;
+                int centerY = height / 2;
+                int dx = x - centerX;
+                int dy = y - centerY;
+                int radius = (int)sqrt(dx*dx + dy*dy);
+
+                // Modulate the pattern with concentric circles
+                if (radius % 16 < 8) {
+                    intensity = (uint16_t)(intensity * 0.7);
+                }
+
+                frame[y * width + x] = intensity;
+            }
         }
 
         ZarrStatusCode status = ZarrStream_append(
