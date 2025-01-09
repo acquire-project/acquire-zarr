@@ -5,6 +5,7 @@
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "array.writer.hh"
+#include "definitions.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -27,9 +28,6 @@ struct ZarrStream_s
     size_t append(const void* data, size_t nbytes);
 
   private:
-    using ByteVector = std::vector<std::byte>;
-    using ByteSpan = std::span<const std::byte>;
-
     struct S3Settings
     {
         std::string endpoint;
@@ -107,7 +105,7 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_multiscale_metadata_() const;
 
-    void write_multiscale_frames_(ByteSpan data);
+    void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };

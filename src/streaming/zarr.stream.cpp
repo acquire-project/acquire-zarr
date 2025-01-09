@@ -286,15 +286,16 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 
 template<typename T>
-[[nodiscard]] std::vector<std::byte>
-scale_image(std::span<const std::byte> src_, size_t& width, size_t& height)
+[[nodiscard]] ByteVector
+scale_image(ConstByteSpan src, size_t& width, size_t& height)
 {
-    const auto bytes_of_src = src_.size();
+    const auto bytes_of_src = src.size();
+    const auto bytes_of_frame = width * height * sizeof(T);
 
-    const size_t bytes_of_frame = width * height * sizeof(T);
     EXPECT(bytes_of_src >= bytes_of_frame,
-           "Expecting at least %zu bytes, got %zu",
+           "Expecting at least ",
            bytes_of_frame,
+           " bytes, got ",
            bytes_of_src);
 
     const int downscale = 2;
@@ -307,9 +308,9 @@ scale_image(std::span<const std::byte> src_, size_t& width, size_t& height)
     const auto size_downscaled =
       static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
 
-    std::vector<std::byte> dst_(size_downscaled, static_cast<std::byte>(0));
-    auto* dst = reinterpret_cast<T*>(dst_.data());
-    auto* src = reinterpret_cast<const T*>(src_.data());
+    ByteVector dst(size_downscaled, static_cast<std::byte>(0));
+    auto* dst_as_T = reinterpret_cast<T*>(dst.data());
+    auto* src_as_T = reinterpret_cast<const T*>(src.data());
 
     size_t dst_idx = 0;
     for (auto row = 0; row < height; row += downscale) {
@@ -319,16 +320,16 @@ scale_image(std::span<const std::byte> src_, size_t& width, size_t& height)
             size_t src_idx = row * width + col;
             const bool pad_width = (col == width - 1 && width != w_pad);
 
-            auto here = static_cast<double>(src[src_idx]);
+            auto here = static_cast<double>(src_as_T[src_idx]);
             auto right = static_cast<double>(
-              src[src_idx + (1 - static_cast<int>(pad_width))]);
+              src_as_T[src_idx + (1 - static_cast<int>(pad_width))]);
             auto down = static_cast<double>(
-              src[src_idx + width * (1 - static_cast<int>(pad_height))]);
+              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height))]);
             auto diag = static_cast<double>(
-              src[src_idx + width * (1 - static_cast<int>(pad_height)) +
-                  (1 - static_cast<int>(pad_width))]);
+              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height)) +
+                       (1 - static_cast<int>(pad_width))]);
 
-            dst[dst_idx++] =
+            dst_as_T[dst_idx++] =
               static_cast<T>(factor * (here + right + down + diag));
         }
     }
@@ -336,26 +337,26 @@ scale_image(std::span<const std::byte> src_, size_t& width, size_t& height)
     width = static_cast<size_t>(w_pad) / 2;
     height = static_cast<size_t>(h_pad) / 2;
 
-    return dst_;
+    return dst;
 }
 
 template<typename T>
 void
-average_two_frames(std::span<std::byte>& dst_, std::span<const std::byte> src_)
+average_two_frames(ByteSpan& dst, ConstByteSpan src)
 {
-    const auto bytes_of_dst = dst_.size();
-    const auto bytes_of_src = src_.size();
+    const auto bytes_of_dst = dst.size();
+    const auto bytes_of_src = src.size();
     EXPECT(bytes_of_dst == bytes_of_src,
            "Expecting %zu bytes in destination, got %zu",
            bytes_of_src,
            bytes_of_dst);
 
-    T* dst = reinterpret_cast<T*>(dst_.data());
-    const T* src = reinterpret_cast<const T*>(src_.data());
+    T* dst_as_T = reinterpret_cast<T*>(dst.data());
+    const T* src_as_T = reinterpret_cast<const T*>(src.data());
 
     const auto num_pixels = bytes_of_src / sizeof(T);
     for (auto i = 0; i < num_pixels; ++i) {
-        dst[i] = static_cast<T>(0.5 * (dst[i] + src[i]));
+        dst_as_T[i] = static_cast<T>(0.5 * (dst_as_T[i] + src_as_T[i]));
     }
 }
 } // namespace
@@ -855,15 +856,14 @@ ZarrStream_s::make_multiscale_metadata_() const
 }
 
 void
-ZarrStream_s::write_multiscale_frames_(ByteSpan data)
+ZarrStream_s::write_multiscale_frames_(ConstByteSpan data)
 {
     if (!multiscale_) {
         return;
     }
 
-    std::function<ByteVector(ByteSpan, size_t&, size_t&)> scale;
-    std::function<void(std::span<std::byte>&, std::span<const std::byte>)>
-      average2;
+    std::function<ByteVector(ConstByteSpan, size_t&, size_t&)> scale;
+    std::function<void(ByteSpan&, ConstByteSpan)> average2;
 
     switch (dtype_) {
         case ZarrDataType_uint8:
