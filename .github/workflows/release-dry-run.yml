@@ -1,10 +1,9 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
-      - "nightly"
+  pull_request:
+    branches:
+      - "main"
 
 env:
   BUILD_TYPE: Release
@@ -215,31 +214,3 @@ jobs:
           mkdir -p dist
           mv ${{steps.download.outputs.download-path}}/*/*.whl dist
           find ${{steps.download.outputs.download-path}}/ -type f -name *.tar.gz -exec mv {} dist \; -quit
-
-      - name: Tagged release
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ github.token }}
-          prerelease: false
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
-
-      - name: Nightly release
-        if: ${{ github.ref_name == 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ secrets.PAT }}
-          automatic_release_tag: "nightly"
-          prerelease: true
-          title: "Nightly Release"
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
-
-      - name: Publish wheels and sources
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
