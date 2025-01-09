@@ -16,6 +16,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
   private:
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
+    uint32_t flushed_count_;
 
     ZarrVersion version_() const override { return ZarrVersion_3; }
     bool flush_impl_() override;

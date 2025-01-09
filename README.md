@@ -25,7 +25,8 @@ git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg && ./bootstrap-vcpkg.sh
 ```
 
-and then add the vcpkg directory to your path:
+and then add the vcpkg directory to your path. If you are using `bash`, you can do this by running the following snippet
+from the `vcpkg/` directory:
 
 ```bash
 cat >> ~/.bashrc <<EOF
@@ -34,7 +35,7 @@ export PATH=\$VCPKG_ROOT:\$PATH
 EOF
 ```
 
-If you're using Windows, learn how  to set environment variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
+If you're using Windows, learn how to set environment variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
 You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
 
 ### Configuring
@@ -57,7 +58,7 @@ Aside from the usual CMake options, you can choose to disable tests by setting `
 cmake --preset=default -B /path/to/build -DBUILD_TESTING=OFF /path/to/source
 ```
 
-To build the Python bindings, you can set `BUILD_PYTHON` to `ON`:
+To build the Python bindings, make sure `pybind11` is installed. Then, you can set `BUILD_PYTHON` to `ON`:
 
 ```bash
 cmake --preset=default -B /path/to/build -DBUILD_PYTHON=ON /path/to/source
@@ -70,6 +71,18 @@ After configuring, you can build the library:
 ```bash
 cmake --build /path/to/build
 ```
+
+### Installing for Python
+
+To install the Python bindings, you can run:
+
+```bash
+pip install .
+```
+
+> [!NOTE]
+> It is highly recommended to use virtual environments for Python, e.g. using `venv` or `conda`. In this case, make sure
+> `pybind11` is installed in this environment, and that the environment is activated before installing the bindings.
 
 ## Usage
 

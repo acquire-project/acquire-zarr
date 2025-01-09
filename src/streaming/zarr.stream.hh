@@ -5,12 +5,14 @@
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "array.writer.hh"
+#include "definitions.hh"
 
 #include <nlohmann/json.hpp>
 
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
 #include <optional>
+#include <span>
 
 struct ZarrStream_s
 {
@@ -26,13 +28,15 @@ struct ZarrStream_s
     size_t append(const void* data, size_t nbytes);
 
   private:
-    struct S3Settings {
+    struct S3Settings
+    {
         std::string endpoint;
         std::string bucket_name;
         std::string access_key_id;
         std::string secret_access_key;
     };
-    struct CompressionSettings {
+    struct CompressionSettings
+    {
         ZarrCompressor compressor;
         ZarrCompressionCodec codec;
         uint8_t level;
@@ -60,7 +64,7 @@ struct ZarrStream_s
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
       metadata_sinks_;
 
-    std::unordered_map<size_t, std::optional<std::byte*>> scaled_frames_;
+    std::unordered_map<size_t, std::optional<ByteVector>> scaled_frames_;
 
     bool is_s3_acquisition_() const;
     bool is_compressed_acquisition_() const;
@@ -101,7 +105,7 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_multiscale_metadata_() const;
 
-    void write_multiscale_frames_(const std::byte* data, size_t bytes_of_data);
+    void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };

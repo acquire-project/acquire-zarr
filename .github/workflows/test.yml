@@ -138,7 +138,7 @@ jobs:
         run: python -m pytest -v -k test_stream_data_to_s3
         
 
-  test_python:
+  test-python:
     name: Test Python on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
     strategy:

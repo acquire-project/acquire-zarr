@@ -5,6 +5,7 @@
 #include "s3.connection.hh"
 #include "blosc.compression.params.hh"
 #include "file.sink.hh"
+#include "definitions.hh"
 
 #include <condition_variable>
 #include <filesystem>
@@ -56,11 +57,10 @@ class ArrayWriter
     [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
 
   protected:
-    using ChunkBuffer = std::vector<std::byte>;
     ArrayWriterConfig config_;
 
     /// Chunking
-    std::vector<ChunkBuffer> chunk_buffers_;
+    std::vector<ByteVector> chunk_buffers_;
 
     /// Filesystem
     std::vector<std::unique_ptr<Sink>> data_sinks_;
