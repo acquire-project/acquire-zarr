@@ -120,7 +120,7 @@ jobs:
       matrix:
         platform:
           - "windows-latest"
-          - "ubuntu-latest"
+          - "ubuntu-22.04"
           - "macos-latest" # TODO (aliddell): universal binary?
 
     runs-on: ${{ matrix.platform }}
@@ -156,6 +156,12 @@ jobs:
 
       - name: Build
         run: python -m build
+
+      - name: Fix wheel for manylinux
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        run: |
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
+          rm dist/*-linux_*.whl
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
