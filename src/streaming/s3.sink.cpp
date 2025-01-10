@@ -1,5 +1,6 @@
 #include "macros.hh"
 #include "s3.sink.hh"
+#include <algorithm>
 
 #include <miniocpp/client.h>
 
