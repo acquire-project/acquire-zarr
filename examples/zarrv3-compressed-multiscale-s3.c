@@ -1,8 +1,9 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-compressed-multiscale-s3.c
+/// @brief Multiscale Zarr V3 with compressed data to S3
 #include "acquire.zarr.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,32 +13,49 @@ main()
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
+        .codec = ZarrCompressionCodec_BloscZstd,
         .level = 1,
         .shuffle = 1,
     };
 
+    // Configure S3
+    ZarrS3Settings s3 = {
+        .endpoint = "http://192.168.1.57:9000",
+        .bucket_name = "acquire-test",
+        .access_key_id = "tv4MtRQPbtfwKxMusI0I",
+        .secret_access_key = "W85Cnb4qd7bhPaTsqkt8aEKoO3XtXm49o9nMtD5O",
+    };
+
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed.zarr",
-        .s3_settings = NULL,
+        .store_path = "output_v3_compressed_multiscale_s3.zarr",
+        .s3_settings = &s3,
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
+        .multiscale = true,
     };
 
-    // Set up dimensions (t, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 3);
+    // Set up dimensions (t, z, y, x)
+    ZarrStreamSettings_create_dimension_array(&settings, 4);
 
     settings.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 0,
+        .array_size_px = 0, // Unlimited
         .chunk_size_px = 5,
         .shard_size_chunks = 2,
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
+        .name = "z",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 10,
+        .chunk_size_px = 2,
+        .shard_size_chunks = 1,
+    };
+
+    settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -45,7 +63,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[2] = (ZarrDimensionProperties){
+    settings.dimensions[3] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -70,7 +88,7 @@ main()
 
     // Write frames
     size_t bytes_written;
-    for (int t = 0; t < 50; t++) {
+    for (int t = 0; t < 10; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
             for (size_t x = 0; x < width; x++) {
