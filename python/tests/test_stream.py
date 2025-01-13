@@ -245,15 +245,13 @@ def test_stream_data_to_filesystem(
     del stream  # close the stream, flush the files
 
     group = zarr.open(settings.store_path, mode="r")
-    data = group["0"]
+    array = group["0"]
 
-    assert data.shape == (
-        settings.dimensions[0].chunk_size_px,
-        settings.dimensions[1].array_size_px,
-        settings.dimensions[2].array_size_px,
-    )
+    assert array.shape == data.shape
+    for i in range(array.shape[0]):
+        assert np.array_equal(array[i, :, :], data[i, :, :])
 
-    metadata = data.metadata
+    metadata = array.metadata
     if compression_codec is not None:
         if version == ZarrVersion.V2:
             cname = (
@@ -360,25 +358,22 @@ def test_stream_data_to_s3(
         secret=settings.s3.secret_access_key,
         client_kwargs={"endpoint_url": settings.s3.endpoint},
     )
-    store = s3fs.S3Map(
-        root=f"{s3_settings.bucket_name}/{settings.store_path}", s3=s3
+    store = zarr.storage.FsspecStore.from_url(
+        f"s3://{settings.s3.bucket_name}/{settings.store_path}",
+        storage_options={
+            "key": s3_settings.access_key_id,
+            "secret": s3_settings.secret_access_key,
+            "client_kwargs": {"endpoint_url": s3_settings.endpoint},
+        },
     )
-    cache = (
-        zarr.LRUStoreCache(store, max_size=2**28)
-        if version == ZarrVersion.V2
-        else zarr.LRUStoreCacheV3(store, max_size=2**28)
-    )
-    group = zarr.group(store=cache)
+    group = zarr.group(store=store)
+    array = group["0"]
 
-    data = group["0"]
+    assert array.shape == data.shape
+    for i in range(array.shape[0]):
+        assert np.array_equal(array[i, :, :], data[i, :, :])
 
-    assert data.shape == (
-        settings.dimensions[0].chunk_size_px,
-        settings.dimensions[1].array_size_px,
-        settings.dimensions[2].array_size_px,
-    )
-
-    metadata = data.metadata
+    metadata = array.metadata
     if compression_codec is not None:
         if version == ZarrVersion.V2:
             cname = (

@@ -1,6 +1,7 @@
 /// @file zarrv3-raw-s3.c
 /// @brief Zarr V3 with uncompressed data to S3
 #include "acquire.zarr.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -59,6 +60,8 @@ int main() {
 
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStreamSettings_destroy_dimension_array(&settings);
+
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");
         return 1;
@@ -69,12 +72,40 @@ int main() {
     const size_t height = 48;
     uint16_t* frame = (uint16_t*)malloc(width * height * sizeof(uint16_t));
 
+    int centerX = width / 2;
+    int centerY = height / 2;
+
     // Write frames
     size_t bytes_written;
-    for (int i = 0; i < 10; i++) {
-        // Fill frame with sample data
-        for (size_t j = 0; j < width * height; j++) {
-            frame[j] = i * 1000 + j;
+    for (int t = 0; t < 50; t++) {
+        // Fill frame with a moving diagonal pattern
+        for (size_t y = 0; y < height; y++) {
+            int dy = y - centerY;
+            for (size_t x = 0; x < width; x++) {
+                // Create a diagonal pattern that moves with time
+                // and varies intensity based on position
+                int diagonal = (x + y + t * 8) % 32;
+
+                // Create intensity variation
+                uint16_t intensity;
+                if (diagonal < 16) {
+                    intensity = (uint16_t)((diagonal * 4096)); // Ramp up
+                } else {
+                    intensity = (uint16_t)((31 - diagonal) * 4096); // Ramp down
+                }
+
+                int dx = x - centerX;
+
+                // Add some circular features
+                int radius = (int)sqrt(dx * dx + dy * dy);
+
+                // Modulate the pattern with concentric circles
+                if (radius % 16 < 8) {
+                    intensity = (uint16_t)(intensity * 0.7);
+                }
+
+                frame[y * width + x] = intensity;
+            }
         }
 
         ZarrStatusCode status = ZarrStream_append(
