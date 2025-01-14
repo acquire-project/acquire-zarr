@@ -15,7 +15,7 @@ class ZarrV2ArrayWriter final : public ArrayWriter
 
   private:
     ZarrVersion version_() const override { return ZarrVersion_2; };
-    bool flush_impl_() override;
+    bool compress_and_flush_data_() override;
     bool write_array_metadata_() override;
     bool should_rollover_() const override;
 };

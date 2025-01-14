@@ -90,7 +90,7 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
 }
 
 bool
-zarr::ZarrV3ArrayWriter::flush_impl_()
+zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
 {
     // create shard files if they don't exist
     if (data_sinks_.empty() && !make_data_sinks_()) {
@@ -100,7 +100,7 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
     const auto n_shards = config_.dimensions->number_of_shards();
     CHECK(data_sinks_.size() == n_shards);
 
-    // get shard indices for each chunk
+    // construct shard indices for each chunk
     std::vector<std::vector<size_t>> chunk_in_shards(n_shards);
     const auto chunks_in_memory =
       config_.dimensions->number_of_chunks_in_memory();
@@ -110,6 +110,8 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
           config_.dimensions->shard_index_for_chunk(i + chunk_group_offset);
         chunk_in_shards[index].push_back(i);
     }
+
+    std::atomic<char> all_successful = 1;
 
     // write out chunks to shards
     auto write_table = is_finalizing_ || should_rollover_();
@@ -122,54 +124,69 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
         EXPECT(thread_pool_->push_job(std::move([&sink = data_sinks_.at(i),
                                                  &chunks,
                                                  &chunk_table,
-                                                 file_offset,
-                                                 write_table,
+                                                 &all_successful,
                                                  &latch,
+                                                 write_table,
+                                                 file_offset,
                                                  chunk_group_offset,
                                                  this](std::string& err) {
-            bool success = false;
+            bool success = true;
 
             try {
                 for (const auto& chunk_idx : chunks) {
-                    auto& chunk = chunk_buffers_.at(chunk_idx);
-                    std::span data(chunk);
-                    success = sink->write(*file_offset, data);
-                    if (!success) {
+                    if (!all_successful) {
+                        break;
+                    }
+
+                    // no-op if no compression
+                    if (!compress_buffer_(chunk_idx)) {
+                        err = "Failed to compress buffer";
+                        success = false;
+                        break;
+                    }
+
+                    auto& chunk = chunk_buffers_[chunk_idx];
+                    std::span chunk_data(chunk);
+                    if (!sink->write(*file_offset, chunk_data)) {
+                        err = "Failed to write chunk";
+                        success = false;
                         break;
                     }
 
                     const auto internal_idx =
                       config_.dimensions->shard_internal_index(
                         chunk_idx + chunk_group_offset);
-                    chunk_table.at(2 * internal_idx) = *file_offset;
-                    chunk_table.at(2 * internal_idx + 1) = chunk.size();
+                    chunk_table[2 * internal_idx] = *file_offset;
+                    chunk_table[2 * internal_idx + 1] = chunk.size();
 
                     *file_offset += chunk.size();
                 }
 
                 if (success && write_table) {
-                    const auto* table =
+                    const auto* table_ptr =
                       reinterpret_cast<std::byte*>(chunk_table.data());
-                    std::span data{ table,
-                                    chunk_table.size() * sizeof(uint64_t) };
-                    success = sink->write(*file_offset, data);
-                    EXPECT(success, "Failed to write table");
-
-                    *file_offset += data.size();
+                    const auto table_size =
+                      chunk_table.size() * sizeof(uint64_t);
+                    EXPECT(sink->write(*file_offset, { table_ptr, table_size }),
+                           "Failed to write table");
 
                     // compute crc32 checksum of the table
-                    const auto* utable =
-                      reinterpret_cast<const uint8_t*>(table);
-                    uint32_t crc = crc32c::Crc32c(utable, data.size());
-                    std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
-                                        sizeof(crc) };
-                    success = sink->write(*file_offset, crc_data);
+                    uint32_t checksum = crc32c::Crc32c(
+                      reinterpret_cast<const uint8_t*>(table_ptr), table_size);
+                    EXPECT(
+                      sink->write(*file_offset + table_size,
+                                  { reinterpret_cast<std::byte*>(&checksum),
+                                    sizeof(checksum) }),
+                      "Failed to write checksum");
                 }
             } catch (const std::exception& exc) {
-                err = "Failed to write chunk: " + std::string(exc.what());
+                err = "Failed to flush data: " + std::string(exc.what());
+                success = false;
             }
 
             latch.count_down();
+
+            all_successful.fetch_and(static_cast<char>(success));
             return success;
         })),
                "Failed to push job to thread pool");
@@ -191,7 +208,7 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
         ++flushed_count_;
     }
 
-    return true;
+    return static_cast<bool>(all_successful);
 }
 
 bool

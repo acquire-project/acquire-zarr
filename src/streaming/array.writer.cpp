@@ -400,8 +400,7 @@ zarr::ArrayWriter::flush_()
     }
 
     // compress buffers and write out
-    compress_buffers_();
-    CHECK(flush_impl_());
+    CHECK(compress_and_flush_data_());
 
     const auto should_rollover = should_rollover_();
     if (should_rollover) {
@@ -417,6 +416,43 @@ zarr::ArrayWriter::flush_()
 
     // reset state
     bytes_to_flush_ = 0;
+}
+
+bool
+zarr::ArrayWriter::compress_buffer_(uint32_t index)
+{
+    if (!config_.compression_params.has_value()) {
+        return true;
+    }
+
+    BloscCompressionParams params = config_.compression_params.value();
+    const auto bytes_per_px = bytes_of_type(config_.dtype);
+
+    ByteVector& chunk = chunk_buffers_[index];
+    const size_t bytes_of_chunk = chunk.size();
+
+    try {
+        const auto tmp_size = bytes_of_chunk + BLOSC_MAX_OVERHEAD;
+        ByteVector tmp(tmp_size);
+        const auto nb = blosc_compress_ctx(params.clevel,
+                                           params.shuffle,
+                                           bytes_per_px,
+                                           bytes_of_chunk,
+                                           chunk.data(),
+                                           tmp.data(),
+                                           tmp_size,
+                                           params.codec_id.c_str(),
+                                           0 /* blocksize - 0:automatic */,
+                                           1);
+
+        tmp.resize(nb);
+        chunk.swap(tmp);
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to compress chunk: ", exc.what());
+        return false;
+    }
+
+    return true;
 }
 
 void

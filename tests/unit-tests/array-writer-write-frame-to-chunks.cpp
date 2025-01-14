@@ -15,7 +15,7 @@ class TestWriter : public zarr::ArrayWriter
   private:
     ZarrVersion version_() const override { return ZarrVersionCount; }
     bool should_rollover_() const override { return false; }
-    bool flush_impl_() override { return true; }
+    bool compress_and_flush_data_() override { return true; }
     bool write_array_metadata_() override { return true; }
 };
 } // namespace
