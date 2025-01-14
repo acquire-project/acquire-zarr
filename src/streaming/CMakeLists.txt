@@ -45,7 +45,7 @@ target_include_directories(${tgt}
 target_link_libraries(${tgt} PRIVATE
         blosc_static
         miniocpp::miniocpp
-        ZLIB::ZLIB
+        Crc32c::crc32c
 )
 
 target_compile_definitions(${tgt} PRIVATE

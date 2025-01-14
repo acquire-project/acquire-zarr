@@ -43,7 +43,7 @@ foreach (name ${tests})
     target_link_libraries(${tgt} PRIVATE
             acquire-zarr
             miniocpp::miniocpp
-            ZLIB::ZLIB
+            Crc32c::crc32c
     )
 
     add_test(NAME test-${tgt} COMMAND ${tgt})

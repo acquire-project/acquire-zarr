@@ -4,7 +4,7 @@
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>
-#include <zlib.h> // crc32
+#include <crc32c/crc32c.h>
 
 #include <algorithm> // std::fill
 #include <latch>
@@ -158,11 +158,9 @@ zarr::ZarrV3ArrayWriter::flush_impl_()
                     *file_offset += data.size();
 
                     // compute crc32 checksum of the table
-                    const auto* table_c =
-                      reinterpret_cast<const unsigned char*>(table);
-
-                    uint32_t crc = crc32(0L, Z_NULL, 0);
-                    crc = crc32(crc, table_c, data.size());
+                    const auto* utable =
+                      reinterpret_cast<const uint8_t*>(table);
+                    uint32_t crc = crc32c::Crc32c(utable, data.size());
                     std::span crc_data{ reinterpret_cast<std::byte*>(&crc),
                                         sizeof(crc) };
                     success = sink->write(*file_offset, crc_data);

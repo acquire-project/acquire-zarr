@@ -152,7 +152,7 @@ jobs:
         shell: bash
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build
+        run: python -m pip install -U pip "pybind11[global]" cmake build auditwheel
 
       - name: Build
         run: python -m build
