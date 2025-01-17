@@ -274,6 +274,12 @@ class PyZarrStreamSettings
     ZarrVersion version() const { return version_; }
     void set_version(ZarrVersion version) { version_ = version; }
 
+    unsigned int max_threads() const { return max_threads_; }
+    void set_max_threads(unsigned int max_threads)
+    {
+        max_threads_ = max_threads;
+    }
+
   private:
     std::string store_path_;
     std::optional<std::string> custom_metadata_{ std::nullopt };
@@ -284,6 +290,7 @@ class PyZarrStreamSettings
     bool multiscale_ = false;
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
+    unsigned int max_threads_{ std::thread::hardware_concurrency() };
 };
 
 class PyZarrStream
@@ -304,6 +311,7 @@ class PyZarrStream
             .multiscale = settings.multiscale(),
             .data_type = settings.data_type(),
             .version = settings.version(),
+            .max_threads = settings.max_threads(),
         };
 
         store_path_ = settings.store_path();
@@ -632,6 +640,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                  std::string(data_type_to_str(self.data_type())) +
                  ", version=ZarrVersion." +
                  std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
+                 ", max_threads=" + std::to_string(self.max_threads()) +
                  ")";
                return repr;
            })
@@ -692,7 +701,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrStreamSettings::set_data_type)
       .def_property("version",
                     &PyZarrStreamSettings::version,
-                    &PyZarrStreamSettings::set_version);
+                    &PyZarrStreamSettings::set_version)
+      .def_property("max_threads",
+                    &PyZarrStreamSettings::max_threads,
+                    &PyZarrStreamSettings::set_max_threads);
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())

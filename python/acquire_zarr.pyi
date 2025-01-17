@@ -354,6 +354,7 @@ class StreamSettings:
     s3: Optional[S3Settings]
     store_path: str
     version: ZarrVersion
+    max_threads: int
 
     def __init__(self, **kwargs) -> None:
         ...

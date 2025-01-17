@@ -135,3 +135,10 @@ def test_set_version(settings):
     settings.version = acquire_zarr.ZarrVersion.V3
 
     assert settings.version == acquire_zarr.ZarrVersion.V3
+
+
+def test_set_max_threads(settings):
+    assert settings.max_threads > 0 # depends on your system, but will be nonzero
+
+    settings.max_threads = 4
+    assert settings.max_threads == 4
