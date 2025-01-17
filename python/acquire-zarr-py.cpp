@@ -290,7 +290,7 @@ class PyZarrStreamSettings
     bool multiscale_ = false;
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
-    unsigned int max_threads_{ std::thread::hardware_concurrency() };
+    unsigned int max_threads_{ 0 };
 };
 
 class PyZarrStream
