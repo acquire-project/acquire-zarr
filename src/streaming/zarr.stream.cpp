@@ -265,11 +265,6 @@ validate_settings(const struct ZarrStreamSettings_s* settings)
         }
     }
 
-    if (settings->max_threads == 0) {
-        LOG_ERROR("Invalid number of threads: ", settings->max_threads);
-        return false;
-    }
-
     return true;
 }
 
@@ -380,7 +375,9 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     // spin up thread pool
     const auto max_threads =
-      std::min(settings->max_threads, std::thread::hardware_concurrency());
+      settings->max_threads == 0
+        ? std::thread::hardware_concurrency()
+        : std::min(settings->max_threads, std::thread::hardware_concurrency());
     thread_pool_ = std::make_shared<zarr::ThreadPool>(
       max_threads, [this](const std::string& err) { this->set_error_(err); });
 
