@@ -45,6 +45,7 @@ main()
     ZarrStreamSettings settings;
     memset(&settings, 0, sizeof(settings));
     settings.version = ZarrVersion_2;
+    settings.max_threads = std::thread::hardware_concurrency();
 
     try {
         // try to create a stream with no store path

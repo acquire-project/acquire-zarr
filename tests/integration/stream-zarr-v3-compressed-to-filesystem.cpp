@@ -60,6 +60,7 @@ setup()
         .s3_settings = nullptr,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
+        .max_threads = std::thread::hardware_concurrency(),
     };
 
     ZarrCompressionSettings compression_settings = {

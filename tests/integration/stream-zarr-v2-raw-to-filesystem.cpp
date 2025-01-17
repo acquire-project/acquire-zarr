@@ -45,6 +45,7 @@ setup()
         .compression_settings = nullptr,
         .data_type = ZarrDataType_int32,
         .version = ZarrVersion_2,
+        .max_threads = std::thread::hardware_concurrency(),
     };
 
     CHECK_OK(ZarrStreamSettings_create_dimension_array(&settings, 5));
