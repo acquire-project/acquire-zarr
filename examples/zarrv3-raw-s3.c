@@ -19,7 +19,8 @@ int main() {
         .s3_settings = &s3,
         .compression_settings = NULL,  // No compression
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3
+        .version = ZarrVersion_3,
+        .max_threads = 0, // use all available threads
     };
 
     // Set up dimensions (t, z, y, x)

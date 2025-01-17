@@ -34,6 +34,7 @@ main()
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .multiscale = true,
+        .max_threads = 0, // use all available threads
     };
 
     // Set up dimensions (t, z, y, x)
