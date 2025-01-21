@@ -33,7 +33,7 @@ extern "C"
         bool multiscale; /**< Whether to stream to multiple levels of detail. */
         ZarrDataType data_type; /**< The pixel data type of the dataset. */
         ZarrVersion version; /**< The version of the Zarr format to use. 2 or 3. */
-        unsigned int max_threads; /**< The maximum number of threads to use in the stream. Set to 0 to use all available threads. */
+        unsigned int max_threads; /**< The maximum number of threads to use in the stream. Set to 0 to use the supported number of concurrent threads. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
