@@ -674,8 +674,8 @@ ZarrStream_s::create_metadata_sinks_()
                 return false;
             }
         } else {
-            if (!creator.make_metadata_sinks(
-                  version_, store_path_, metadata_sinks_)) {
+            if (!make_metadata_file_sinks(
+                  version_, store_path_, thread_pool_, metadata_sinks_)) {
                 set_error_("Error creating metadata sinks");
                 return false;
             }

@@ -46,13 +46,11 @@ get_credentials(std::string& endpoint,
 } // namespace
 
 void
-sink_creator_make_v2_metadata_sinks(
-  std::shared_ptr<zarr::ThreadPool> thread_pool)
+make_v2_metadata_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool)
 {
-    zarr::SinkCreator sink_creator(thread_pool, nullptr);
-
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
-    CHECK(sink_creator.make_metadata_sinks(2, test_dir, metadata_sinks));
+    CHECK(make_metadata_file_sinks(
+      ZarrVersion_2, test_dir, thread_pool, metadata_sinks));
 
     CHECK(metadata_sinks.size() == 3);
     CHECK(metadata_sinks.contains(".zattrs"));
@@ -64,7 +62,10 @@ sink_creator_make_v2_metadata_sinks(
         sink.reset(nullptr); // close the file
 
         fs::path file_path(test_dir + "/" + key);
-        CHECK(fs::is_regular_file(file_path));
+        EXPECT(fs::is_regular_file(file_path),
+               "Metadata file ",
+               file_path,
+               " not found.");
         // cleanup
         fs::remove(file_path);
     }
@@ -81,8 +82,8 @@ sink_creator_make_v2_metadata_sinks(
     zarr::SinkCreator sink_creator(thread_pool, connection_pool);
 
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
-    CHECK(
-      sink_creator.make_metadata_sinks(2, bucket_name, test_dir, metadata_sinks));
+    CHECK(sink_creator.make_metadata_sinks(
+      2, bucket_name, test_dir, metadata_sinks));
 
     CHECK(metadata_sinks.size() == 3);
     CHECK(metadata_sinks.contains(".zattrs"));
@@ -110,13 +111,11 @@ sink_creator_make_v2_metadata_sinks(
 }
 
 void
-sink_creator_make_v3_metadata_sinks(
-  std::shared_ptr<zarr::ThreadPool> thread_pool)
+make_v3_metadata_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool)
 {
-    zarr::SinkCreator sink_creator(thread_pool, nullptr);
-
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
-    CHECK(sink_creator.make_metadata_sinks(3, test_dir, metadata_sinks));
+    CHECK(make_metadata_file_sinks(
+      ZarrVersion_3, test_dir, thread_pool, metadata_sinks));
 
     CHECK(metadata_sinks.size() == 2);
     CHECK(metadata_sinks.contains("zarr.json"));
@@ -144,8 +143,8 @@ sink_creator_make_v3_metadata_sinks(
     zarr::SinkCreator sink_creator(thread_pool, connection_pool);
 
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
-    CHECK(
-      sink_creator.make_metadata_sinks(3, bucket_name, test_dir, metadata_sinks));
+    CHECK(sink_creator.make_metadata_sinks(
+      3, bucket_name, test_dir, metadata_sinks));
 
     CHECK(metadata_sinks.size() == 2);
     CHECK(metadata_sinks.contains("zarr.json"));
@@ -180,8 +179,8 @@ main()
       [](const std::string& err) { LOG_ERROR("Failed: ", err.c_str()); });
 
     try {
-        sink_creator_make_v2_metadata_sinks(thread_pool);
-        sink_creator_make_v3_metadata_sinks(thread_pool);
+        make_v2_metadata_file_sinks(thread_pool);
+        make_v3_metadata_file_sinks(thread_pool);
     } catch (const std::exception& e) {
         LOG_ERROR("Failed: ", e.what());
         return 1;

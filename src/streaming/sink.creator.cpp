@@ -38,23 +38,6 @@ zarr::SinkCreator::make_data_sinks(
 bool
 zarr::SinkCreator::make_metadata_sinks(
   size_t version,
-  std::string_view base_path,
-  std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks)
-{
-    if (base_path.starts_with("file://")) {
-        base_path = base_path.substr(7);
-    }
-    EXPECT(!base_path.empty(), "Base path must not be empty.");
-
-    std::vector<std::string> file_paths =
-      make_metadata_sink_paths_(version, base_path, true);
-
-    return make_files_(base_path.data(), file_paths, metadata_sinks);
-}
-
-bool
-zarr::SinkCreator::make_metadata_sinks(
-  size_t version,
   std::string_view bucket_name,
   std::string_view base_path,
   std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks)
@@ -233,57 +216,6 @@ zarr::SinkCreator::make_dirs_(std::queue<std::string>& dir_paths)
                "Failed to push job to thread pool.");
 
         dir_paths.push(dirname);
-    }
-
-    latch.wait();
-
-    return (bool)all_successful;
-}
-
-bool
-zarr::SinkCreator::make_files_(
-  const std::string& base_dir,
-  const std::vector<std::string>& file_paths,
-  std::unordered_map<std::string, std::unique_ptr<Sink>>& sinks)
-{
-    if (file_paths.empty()) {
-        return true;
-    }
-
-    std::atomic<char> all_successful = 1;
-
-    const auto n_files = file_paths.size();
-    std::latch latch(n_files);
-
-    sinks.clear();
-    for (const auto& filename : file_paths) {
-        sinks[filename] = nullptr;
-        std::unique_ptr<Sink>* psink = &sinks[filename];
-
-        const std::string prefix = base_dir.empty() ? "" : base_dir + "/";
-        const auto file_path = prefix + filename;
-
-        EXPECT(thread_pool_->push_job(
-                 [filename = file_path, psink, &latch, &all_successful](
-                   std::string& err) -> bool {
-                     bool success = false;
-
-                     try {
-                         if (all_successful) {
-                             *psink = std::make_unique<FileSink>(filename);
-                         }
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to create file '" + filename +
-                               "': " + exc.what();
-                     }
-
-                     latch.count_down();
-                     all_successful.fetch_and((char)success);
-
-                     return success;
-                 }),
-               "Failed to push job to thread pool.");
     }
 
     latch.wait();

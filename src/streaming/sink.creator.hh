@@ -36,20 +36,6 @@ class SinkCreator
       std::vector<std::unique_ptr<Sink>>& part_sinks);
 
     /**
-     * @brief Create a collection of metadata sinks for a Zarr dataset.
-     * @param[in] version The Zarr version.
-     * @param[in] base_path The base URI for the dataset.
-     * @param[out] metadata_sinks The sinks created, keyed by path.
-     * @return True iff all metadata sinks were created successfully.
-     * @throws std::runtime_error if @p base_uri is not valid, or if, for S3
-     * sinks, the bucket does not exist.
-     */
-    [[nodiscard]] bool make_metadata_sinks(
-      size_t version,
-      std::string_view base_path,
-      std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks);
-
-    /**
      * @brief
      * @param version
      * @param bucket_name
@@ -94,17 +80,6 @@ class SinkCreator
     /// @param[in] dir_paths The directories to create.
     /// @return True iff all directories were created successfully.
     [[nodiscard]] bool make_dirs_(std::queue<std::string>& dir_paths);
-
-    /// @brief Parallel create a collection of files, keyed by path.
-    /// @param[in] base_dir The base directory for the files.
-    /// @param[in] file_paths Paths to the files to create, relative to @p
-    /// base_dir.
-    /// @param[out] sinks The sinks created, keyed by path.
-    /// @return True iff all files were created successfully.
-    [[nodiscard]] bool make_files_(
-      const std::string& base_dir,
-      const std::vector<std::string>& file_paths,
-      std::unordered_map<std::string, std::unique_ptr<Sink>>& sinks);
 
     /// @brief Check whether an S3 bucket exists.
     /// @param[in] bucket_name The name of the bucket to check.

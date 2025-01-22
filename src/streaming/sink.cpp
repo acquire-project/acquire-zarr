@@ -27,6 +27,28 @@ bucket_exists(std::string_view bucket_name,
     return bucket_exists;
 }
 
+std::vector<std::string>
+construct_metadata_paths(ZarrVersion version)
+{
+    std::vector<std::string> paths;
+    switch (version) {
+        case ZarrVersion_2:
+            paths.emplace_back(".zattrs");
+            paths.emplace_back(".zgroup");
+            paths.emplace_back("acquire.json");
+            break;
+        case ZarrVersion_3:
+            paths.emplace_back("zarr.json");
+            paths.emplace_back("acquire.json");
+            break;
+        default:
+            throw std::runtime_error("Invalid Zarr version " +
+                                     std::to_string(static_cast<int>(version)));
+    }
+
+    return paths;
+}
+
 bool
 make_file_sinks(std::vector<std::string>& file_paths,
                 std::shared_ptr<zarr::ThreadPool> thread_pool,
@@ -34,6 +56,12 @@ make_file_sinks(std::vector<std::string>& file_paths,
 {
     if (file_paths.empty()) {
         return true;
+    }
+
+    const auto parents = zarr::get_parent_paths(file_paths);
+    if (!zarr::make_dirs(parents, thread_pool)) {
+        LOG_ERROR("Failed to make parent directories");
+        return false;
     }
 
     std::atomic<char> all_successful = 1;
@@ -66,6 +94,72 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
             return success;
         }),
+               "Failed to push job to thread pool.");
+    }
+
+    latch.wait();
+
+    return (bool)all_successful;
+}
+
+bool
+make_file_sinks(
+  const std::string& base_dir,
+  const std::vector<std::string>& file_paths,
+  std::shared_ptr<zarr::ThreadPool> thread_pool,
+  std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>& sinks)
+{
+    if (file_paths.empty()) {
+        return true;
+    }
+
+    // create the parent directories if they don't exist
+    const std::string prefix = base_dir.empty() ? "" : base_dir + "/";
+    {
+        std::vector<std::string> paths_with_parents(file_paths.size());
+        for (auto i = 0; i < file_paths.size(); ++i) {
+            paths_with_parents[i] = prefix + file_paths[i];
+        }
+
+        if (!zarr::make_dirs(zarr::get_parent_paths(paths_with_parents),
+                             thread_pool)) {
+            LOG_ERROR("Failed to make parent directories");
+            return false;
+        }
+    }
+
+    std::atomic<char> all_successful = 1;
+
+    const auto n_files = file_paths.size();
+    std::latch latch(n_files);
+
+    sinks.clear();
+    for (const auto& filename : file_paths) {
+        sinks[filename] = nullptr;
+        std::unique_ptr<zarr::Sink>* psink = &sinks[filename];
+        const auto file_path = prefix + filename;
+
+        EXPECT(thread_pool->push_job(
+                 [filename = file_path, psink, &latch, &all_successful](
+                   std::string& err) -> bool {
+                     bool success = false;
+
+                     try {
+                         if (all_successful) {
+                             *psink =
+                               std::make_unique<zarr::FileSink>(filename);
+                         }
+                         success = true;
+                     } catch (const std::exception& exc) {
+                         err = "Failed to create file '" + filename +
+                               "': " + exc.what();
+                     }
+
+                     latch.count_down();
+                     all_successful.fetch_and((char)success);
+
+                     return success;
+                 }),
                "Failed to push job to thread pool.");
     }
 
@@ -167,6 +261,11 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
     std::latch latch(unique_paths.size());
     for (const auto& path : unique_paths) {
+        if (path.empty()) {
+            latch.count_down();
+            continue;
+        }
+
         auto job = [&path, &latch, &all_successful](std::string& err) {
             bool success = true;
             if (fs::is_directory(path)) {
@@ -241,15 +340,30 @@ zarr::make_data_file_sinks(std::string_view base_path,
     try {
         paths =
           construct_data_paths(base_path, dimensions, parts_along_dimension);
-        const auto parents = get_parent_paths(paths);
-        EXPECT(make_dirs(parents, thread_pool),
-               "Failed to create directories.");
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to create dataset paths: ", exc.what());
         return false;
     }
 
     return make_file_sinks(paths, thread_pool, part_sinks);
+}
+
+bool
+zarr::make_metadata_file_sinks(
+  ZarrVersion version,
+  std::string_view base_path,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks)
+{
+    if (base_path.starts_with("file://")) {
+        base_path = base_path.substr(7);
+    }
+    EXPECT(!base_path.empty(), "Base path must not be empty.");
+
+    std::vector<std::string> file_paths = construct_metadata_paths(version);
+
+    return make_file_sinks(
+      base_path.data(), file_paths, thread_pool, metadata_sinks);
 }
 
 std::unique_ptr<zarr::Sink>

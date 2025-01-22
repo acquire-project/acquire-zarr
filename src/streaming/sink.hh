@@ -95,6 +95,24 @@ make_data_file_sinks(std::string_view base_path,
                      std::vector<std::unique_ptr<Sink>>& part_sinks);
 
 /**
+ * @brief Create a collection of metadata sinks for a Zarr dataset.
+ * @param[in] version The Zarr version.
+ * @param[in] base_path The base URI for the dataset.
+ * @param[in] thread_pool Pointer to a thread pool object. Used to create files
+ * in parallel.
+ * @param[out] metadata_sinks The sinks created, keyed by path.
+ * @return True iff all metadata sinks were created successfully.
+ * @throws std::runtime_error if @p base_uri is not valid, or if, for S3
+ * sinks, the bucket does not exist.
+ */
+[[nodiscard]] bool
+make_metadata_file_sinks(
+  ZarrVersion version,
+  std::string_view base_path,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks);
+
+/**
  * @brief Create a sink from an S3 bucket name and object key.
  * @param bucket_name The name of the bucket in which the object is stored.
  * @param object_key The key of the object to write to.

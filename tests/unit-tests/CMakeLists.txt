@@ -17,8 +17,8 @@ set(tests
         file-sink-write
         s3-sink-write
         s3-sink-write-multipart
-        sink-creator-make-metadata-sinks
         make-data-sinks
+        make-metadata-sinks
         array-writer-downsample-writer-config
         array-writer-write-frame-to-chunks
         zarrv2-writer-write-even
