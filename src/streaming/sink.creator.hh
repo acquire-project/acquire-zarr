@@ -18,15 +18,6 @@ class SinkCreator
     ~SinkCreator() noexcept = default;
 
     /**
-     * @brief Create a sink from a file path.
-     * @param file_path The path to the file.
-     * @return Pointer to the sink created, or nullptr if the file cannot be
-     * opened.
-     * @throws std::runtime_error if the file path is not valid.
-     */
-    static std::unique_ptr<Sink> make_sink(std::string_view file_path);
-
-    /**
      * @brief Create a sink from an S3 bucket name and object key.
      * @param bucket_name The name of the bucket in which the object is stored.
      * @param object_key The key of the object to write to.

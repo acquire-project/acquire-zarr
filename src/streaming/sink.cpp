@@ -133,3 +133,29 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
     return static_cast<bool>(all_successful);
 }
+
+std::unique_ptr<zarr::Sink>
+zarr::make_file_sink(std::string_view file_path)
+{
+    if (file_path.starts_with("file://")) {
+        file_path = file_path.substr(7);
+    }
+
+    EXPECT(!file_path.empty(), "File path must not be empty.");
+
+    fs::path path(file_path);
+    EXPECT(!path.empty(), "Invalid file path: ", file_path);
+
+    fs::path parent_path = path.parent_path();
+
+    if (!fs::is_directory(parent_path)) {
+        std::error_code ec;
+        if (!fs::create_directories(parent_path, ec)) {
+            LOG_ERROR(
+              "Failed to create directory '", parent_path, "': ", ec.message());
+            return nullptr;
+        }
+    }
+
+    return std::make_unique<FileSink>(file_path);
+}

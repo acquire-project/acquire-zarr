@@ -62,4 +62,14 @@ get_parent_paths(const std::vector<std::string>& file_paths);
 bool
 make_dirs(const std::vector<std::string>& dir_paths,
           std::shared_ptr<ThreadPool> thread_pool);
+
+/**
+ * @brief Create a file sink from a path.
+ * @param file_path The path to the file.
+ * @return Pointer to the sink created, or nullptr if the file cannot be
+ * opened.
+ * @throws std::runtime_error if the file path is not valid.
+ */
+std::unique_ptr<Sink>
+make_file_sink(std::string_view file_path);
 } // namespace zarr
