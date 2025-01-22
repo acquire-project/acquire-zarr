@@ -1,5 +1,6 @@
 #pragma once
 
+#include "s3.connection.hh"
 #include "thread.pool.hh"
 #include "zarr.dimension.hh"
 
@@ -72,4 +73,19 @@ make_dirs(const std::vector<std::string>& dir_paths,
  */
 std::unique_ptr<Sink>
 make_file_sink(std::string_view file_path);
+
+/**
+ * @brief Create a sink from an S3 bucket name and object key.
+ * @param bucket_name The name of the bucket in which the object is stored.
+ * @param object_key The key of the object to write to.
+ * @param connection_pool Pointer to a pool of existing S3 connections.
+ * @return Pointer to the sink created, or nullptr if the bucket does not
+ * exist.
+ * @throws std::runtime_error if the bucket name or object key is not valid,
+ * or if there is no connection pool.
+ */
+std::unique_ptr<Sink>
+make_s3_sink(std::string_view bucket_name,
+             std::string_view object_key,
+             std::shared_ptr<S3ConnectionPool> connection_pool);
 } // namespace zarr

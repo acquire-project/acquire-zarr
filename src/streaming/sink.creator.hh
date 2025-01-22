@@ -18,18 +18,6 @@ class SinkCreator
     ~SinkCreator() noexcept = default;
 
     /**
-     * @brief Create a sink from an S3 bucket name and object key.
-     * @param bucket_name The name of the bucket in which the object is stored.
-     * @param object_key The key of the object to write to.
-     * @return Pointer to the sink created, or nullptr if the bucket does not
-     * exist.
-     * @throws std::runtime_error if the bucket name or object key is not valid,
-     * or if there is no connection pool.
-     */
-    std::unique_ptr<Sink> make_sink(std::string_view bucket_name,
-                                    std::string_view object_key);
-
-    /**
      * @brief Create a collection of file sinks for a Zarr dataset.
      * @param[in] base_path The path to the base directory for the dataset.
      * @param[in] dimensions The dimensions of the dataset.

@@ -19,21 +19,6 @@ zarr::SinkCreator::SinkCreator(
 {
 }
 
-std::unique_ptr<zarr::Sink>
-zarr::SinkCreator::make_sink(std::string_view bucket_name,
-                             std::string_view object_key)
-{
-    EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
-    EXPECT(!object_key.empty(), "Object key must not be empty.");
-    EXPECT(connection_pool_, "S3 connection pool not provided.");
-    if (!bucket_exists_(bucket_name)) {
-        LOG_ERROR("Bucket '", bucket_name, "' does not exist.");
-        return nullptr;
-    }
-
-    return std::make_unique<S3Sink>(bucket_name, object_key, connection_pool_);
-}
-
 bool
 zarr::SinkCreator::make_data_sinks(
   std::string_view base_path,

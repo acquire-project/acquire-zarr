@@ -11,6 +11,23 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+bool
+bucket_exists(std::string_view bucket_name,
+              std::shared_ptr<zarr::S3ConnectionPool> connection_pool)
+{
+    CHECK(!bucket_name.empty());
+    EXPECT(connection_pool, "S3 connection pool not provided.");
+
+    auto conn = connection_pool->get_connection();
+    bool bucket_exists = conn->bucket_exists(bucket_name);
+
+    connection_pool->return_connection(std::move(conn));
+
+    return bucket_exists;
+}
+} // namespace
+
 bool
 zarr::finalize_sink(std::unique_ptr<zarr::Sink>&& sink)
 {
@@ -158,4 +175,20 @@ zarr::make_file_sink(std::string_view file_path)
     }
 
     return std::make_unique<FileSink>(file_path);
+}
+
+std::unique_ptr<zarr::Sink>
+zarr::make_s3_sink(std::string_view bucket_name,
+                   std::string_view object_key,
+                   std::shared_ptr<S3ConnectionPool> connection_pool)
+{
+    EXPECT(!object_key.empty(), "Object key must not be empty.");
+
+    // bucket name and connection pool are checked in bucket_exists
+    if (!bucket_exists(bucket_name, connection_pool)) {
+        LOG_ERROR("Bucket '", bucket_name, "' does not exist.");
+        return nullptr;
+    }
+
+    return std::make_unique<S3Sink>(bucket_name, object_key, connection_pool);
 }
