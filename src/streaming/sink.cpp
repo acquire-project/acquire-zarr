@@ -26,6 +26,53 @@ bucket_exists(std::string_view bucket_name,
 
     return bucket_exists;
 }
+
+bool
+make_file_sinks(std::vector<std::string>& file_paths,
+                std::shared_ptr<zarr::ThreadPool> thread_pool,
+                std::vector<std::unique_ptr<zarr::Sink>>& sinks)
+{
+    if (file_paths.empty()) {
+        return true;
+    }
+
+    std::atomic<char> all_successful = 1;
+
+    const auto n_files = file_paths.size();
+    sinks.resize(n_files);
+    std::fill(sinks.begin(), sinks.end(), nullptr);
+    std::latch latch(n_files);
+
+    for (auto i = 0; i < n_files; ++i) {
+        const auto filename = file_paths[i];
+
+        std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
+
+        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
+                                       std::string& err) -> bool {
+            bool success = false;
+
+            try {
+                if (all_successful) {
+                    *psink = std::make_unique<zarr::FileSink>(filename);
+                }
+                success = true;
+            } catch (const std::exception& exc) {
+                err = "Failed to create file '" + filename + "': " + exc.what();
+            }
+
+            latch.count_down();
+            all_successful.fetch_and((char)success);
+
+            return success;
+        }),
+               "Failed to push job to thread pool.");
+    }
+
+    latch.wait();
+
+    return (bool)all_successful;
+}
 } // namespace
 
 bool
@@ -175,6 +222,34 @@ zarr::make_file_sink(std::string_view file_path)
     }
 
     return std::make_unique<FileSink>(file_path);
+}
+
+bool
+zarr::make_data_file_sinks(std::string_view base_path,
+                           const ArrayDimensions& dimensions,
+                           const DimensionPartsFun& parts_along_dimension,
+                           std::shared_ptr<ThreadPool> thread_pool,
+                           std::vector<std::unique_ptr<Sink>>& part_sinks)
+{
+    if (base_path.starts_with("file://")) {
+        base_path = base_path.substr(7);
+    }
+
+    EXPECT(!base_path.empty(), "Base path must not be empty.");
+
+    std::vector<std::string> paths;
+    try {
+        paths =
+          construct_data_paths(base_path, dimensions, parts_along_dimension);
+        const auto parents = get_parent_paths(paths);
+        EXPECT(make_dirs(parents, thread_pool),
+               "Failed to create directories.");
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to create dataset paths: ", exc.what());
+        return false;
+    }
+
+    return make_file_sinks(paths, thread_pool, part_sinks);
 }
 
 std::unique_ptr<zarr::Sink>

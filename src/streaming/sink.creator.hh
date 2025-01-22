@@ -18,23 +18,6 @@ class SinkCreator
     ~SinkCreator() noexcept = default;
 
     /**
-     * @brief Create a collection of file sinks for a Zarr dataset.
-     * @param[in] base_path The path to the base directory for the dataset.
-     * @param[in] dimensions The dimensions of the dataset.
-     * @param[in] parts_along_dimension Function to determine the number of
-     * parts (i.e., shards or chunks) along a dimension.
-     * @param[out] part_sinks The sinks created.
-     * @return True iff all file sinks were created successfully.
-     * @throws std::runtime_error if @p base_path is not valid, or if the number
-     * of parts along a dimension is zero.
-     */
-    [[nodiscard]] bool make_data_sinks(
-      std::string_view base_path,
-      const ArrayDimensions* dimensions,
-      const DimensionPartsFun& parts_along_dimension,
-      std::vector<std::unique_ptr<Sink>>& part_sinks);
-
-    /**
      * @brief Create a collection of S3 sinks for a Zarr dataset.
      * @param[in] bucket_name The name of the bucket in which the dataset is
      * stored.
@@ -111,14 +94,6 @@ class SinkCreator
     /// @param[in] dir_paths The directories to create.
     /// @return True iff all directories were created successfully.
     [[nodiscard]] bool make_dirs_(std::queue<std::string>& dir_paths);
-
-    /// @brief Parallel create a collection of files.
-    /// @param[in,out] file_paths The files to create. Unlike `make_dirs_`,
-    /// this function drains the queue.
-    /// @param[out] files The files created.
-    /// @return True iff all files were created successfully.
-    [[nodiscard]] bool make_files_(std::queue<std::string>& file_paths,
-                                   std::vector<std::unique_ptr<Sink>>& sinks);
 
     /// @brief Parallel create a collection of files, keyed by path.
     /// @param[in] base_dir The base directory for the files.

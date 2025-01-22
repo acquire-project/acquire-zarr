@@ -165,10 +165,11 @@ zarr::ArrayWriter::make_data_sinks_()
                       *config_.bucket_name);
             return false;
         }
-    } else if (!creator.make_data_sinks(data_root,
-                                        config_.dimensions.get(),
-                                        parts_along_dimension,
-                                        data_sinks_)) {
+    } else if (!make_data_file_sinks(data_root,
+                                     *config_.dimensions,
+                                     parts_along_dimension,
+                                     thread_pool_,
+                                     data_sinks_)) {
         LOG_ERROR("Failed to create data sinks in ", data_root);
         return false;
     }

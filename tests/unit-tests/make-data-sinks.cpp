@@ -48,20 +48,25 @@ get_credentials(std::string& endpoint,
 } // namespace
 
 void
-sink_creator_make_chunk_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
-                              const ArrayDimensions* dimensions)
+make_chunk_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
+                      const ArrayDimensions& dimensions)
 {
     zarr::SinkCreator sink_creator(thread_pool, nullptr);
 
     // create the sinks, then let them go out of scope to close the handles
     {
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(
-          test_dir, dimensions, zarr::chunks_along_dimension, sinks));
+        CHECK(zarr::make_data_file_sinks(test_dir,
+                                         dimensions,
+                                         zarr::chunks_along_dimension,
+                                         thread_pool,
+                                         sinks));
     }
 
-    const auto chunks_in_y = zarr::chunks_along_dimension(dimensions->height_dim());
-    const auto chunks_in_x = zarr::chunks_along_dimension(dimensions->width_dim());
+    const auto chunks_in_y =
+      zarr::chunks_along_dimension(dimensions.height_dim());
+    const auto chunks_in_x =
+      zarr::chunks_along_dimension(dimensions.width_dim());
 
     const fs::path base_path(test_dir);
     for (auto i = 0; i < chunks_in_y; ++i) {
@@ -108,8 +113,10 @@ sink_creator_make_chunk_sinks(
         }
     }
 
-    const auto chunks_in_y = zarr::chunks_along_dimension(dimensions->height_dim());
-    const auto chunks_in_x = zarr::chunks_along_dimension(dimensions->width_dim());
+    const auto chunks_in_y =
+      zarr::chunks_along_dimension(dimensions->height_dim());
+    const auto chunks_in_x =
+      zarr::chunks_along_dimension(dimensions->width_dim());
 
     auto conn = connection_pool->get_connection();
 
@@ -134,20 +141,25 @@ sink_creator_make_chunk_sinks(
 }
 
 void
-sink_creator_make_shard_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
-                              const ArrayDimensions* dimensions)
+make_shard_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
+                      const ArrayDimensions& dimensions)
 {
     zarr::SinkCreator sink_creator(thread_pool, nullptr);
 
     // create the sinks, then let them go out of scope to close the handles
     {
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(sink_creator.make_data_sinks(
-          test_dir, dimensions, zarr::shards_along_dimension, sinks));
+        CHECK(make_data_file_sinks(test_dir,
+                                   dimensions,
+                                   zarr::shards_along_dimension,
+                                   thread_pool,
+                                   sinks));
     }
 
-    const auto shards_in_y = zarr::shards_along_dimension(dimensions->height_dim());
-    const auto shards_in_x = zarr::shards_along_dimension(dimensions->width_dim());
+    const auto shards_in_y =
+      zarr::shards_along_dimension(dimensions.height_dim());
+    const auto shards_in_x =
+      zarr::shards_along_dimension(dimensions.width_dim());
 
     const fs::path base_path(test_dir);
     for (auto i = 0; i < shards_in_y; ++i) {
@@ -194,8 +206,10 @@ sink_creator_make_shard_sinks(
         }
     }
 
-    const auto shards_in_y = zarr::shards_along_dimension(dimensions->height_dim());
-    const auto shards_in_x = zarr::shards_along_dimension(dimensions->width_dim());
+    const auto shards_in_y =
+      zarr::shards_along_dimension(dimensions->height_dim());
+    const auto shards_in_x =
+      zarr::shards_along_dimension(dimensions->width_dim());
 
     auto conn = connection_pool->get_connection();
 
@@ -247,8 +261,8 @@ main()
       [](const std::string& err) { LOG_ERROR("Failed: ", err.c_str()); });
 
     try {
-        sink_creator_make_chunk_sinks(thread_pool, &dimensions);
-        sink_creator_make_shard_sinks(thread_pool, &dimensions);
+        make_chunk_file_sinks(thread_pool, dimensions);
+        make_shard_file_sinks(thread_pool, dimensions);
     } catch (const std::exception& e) {
         LOG_ERROR("Failed: ", e.what());
         return 1;

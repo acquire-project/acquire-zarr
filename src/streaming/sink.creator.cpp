@@ -21,31 +21,6 @@ zarr::SinkCreator::SinkCreator(
 
 bool
 zarr::SinkCreator::make_data_sinks(
-  std::string_view base_path,
-  const ArrayDimensions* dimensions,
-  const DimensionPartsFun& parts_along_dimension,
-  std::vector<std::unique_ptr<Sink>>& part_sinks)
-{
-    if (base_path.starts_with("file://")) {
-        base_path = base_path.substr(7);
-    }
-
-    EXPECT(!base_path.empty(), "Base path must not be empty.");
-
-    std::queue<std::string> paths;
-    try {
-        paths = make_data_sink_paths_(
-          base_path, dimensions, parts_along_dimension, true);
-    } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to create dataset paths: ", exc.what());
-        return false;
-    }
-
-    return make_files_(paths, part_sinks);
-}
-
-bool
-zarr::SinkCreator::make_data_sinks(
   std::string_view bucket_name,
   std::string_view base_path,
   const ArrayDimensions* dimensions,
@@ -258,55 +233,6 @@ zarr::SinkCreator::make_dirs_(std::queue<std::string>& dir_paths)
                "Failed to push job to thread pool.");
 
         dir_paths.push(dirname);
-    }
-
-    latch.wait();
-
-    return (bool)all_successful;
-}
-
-bool
-zarr::SinkCreator::make_files_(std::queue<std::string>& file_paths,
-                               std::vector<std::unique_ptr<Sink>>& sinks)
-{
-    if (file_paths.empty()) {
-        return true;
-    }
-
-    std::atomic<char> all_successful = 1;
-
-    const auto n_files = file_paths.size();
-    sinks.resize(n_files);
-    std::fill(sinks.begin(), sinks.end(), nullptr);
-    std::latch latch(n_files);
-
-    for (auto i = 0; i < n_files; ++i) {
-        const auto filename = file_paths.front();
-        file_paths.pop();
-
-        std::unique_ptr<Sink>* psink = sinks.data() + i;
-
-        EXPECT(thread_pool_->push_job(
-                 [filename, psink, &latch, &all_successful](
-                   std::string& err) -> bool {
-                     bool success = false;
-
-                     try {
-                         if (all_successful) {
-                             *psink = std::make_unique<FileSink>(filename);
-                         }
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to create file '" + filename +
-                               "': " + exc.what();
-                     }
-
-                     latch.count_down();
-                     all_successful.fetch_and((char)success);
-
-                     return success;
-                 }),
-               "Failed to push job to thread pool.");
     }
 
     latch.wait();
