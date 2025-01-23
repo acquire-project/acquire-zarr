@@ -1,5 +1,7 @@
 #pragma once
 
+#include "definitions.hh"
+
 #include <cstdint>
 #include <mutex>
 #include <span>
@@ -21,8 +23,7 @@ class VectorizedFileWriter
     explicit VectorizedFileWriter(const std::string& path);
     ~VectorizedFileWriter();
 
-    bool write_vectors(const std::vector<std::span<std::byte>>& buffers,
-                       size_t offset);
+    bool write_vectors(const std::vector<ByteSpan>& buffers, size_t offset);
 
     std::mutex& mutex() { return mutex_; }
 
