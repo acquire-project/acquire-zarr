@@ -18,24 +18,6 @@ class SinkCreator
     ~SinkCreator() noexcept = default;
 
     /**
-     * @brief Create a collection of S3 sinks for a Zarr dataset.
-     * @param[in] bucket_name The name of the bucket in which the dataset is
-     * stored.
-     * @param[in] base_path The path to the base directory for the dataset.
-     * @param[in] dimensions The dimensions of the dataset.
-     * @param[in] parts_along_dimension Function to determine the number of
-     * parts (i.e., shards or chunks) along a dimension.
-     * @param[out] part_sinks The sinks created.
-     * @return True iff all file sinks were created successfully.
-     */
-    [[nodiscard]] bool make_data_sinks(
-      std::string_view bucket_name,
-      std::string_view base_path,
-      const ArrayDimensions* dimensions,
-      const DimensionPartsFun& parts_along_dimension,
-      std::vector<std::unique_ptr<Sink>>& part_sinks);
-
-    /**
      * @brief
      * @param version
      * @param bucket_name

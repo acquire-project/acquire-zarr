@@ -20,22 +20,6 @@ zarr::SinkCreator::SinkCreator(
 }
 
 bool
-zarr::SinkCreator::make_data_sinks(
-  std::string_view bucket_name,
-  std::string_view base_path,
-  const ArrayDimensions* dimensions,
-  const DimensionPartsFun& parts_along_dimension,
-  std::vector<std::unique_ptr<Sink>>& part_sinks)
-{
-    EXPECT(!base_path.empty(), "Base path must not be empty.");
-
-    auto paths = make_data_sink_paths_(
-      base_path, dimensions, parts_along_dimension, false);
-
-    return make_s3_objects_(bucket_name, paths, part_sinks);
-}
-
-bool
 zarr::SinkCreator::make_metadata_sinks(
   size_t version,
   std::string_view bucket_name,
@@ -235,35 +219,6 @@ zarr::SinkCreator::bucket_exists_(std::string_view bucket_name)
     connection_pool_->return_connection(std::move(conn));
 
     return bucket_exists;
-}
-
-bool
-zarr::SinkCreator::make_s3_objects_(std::string_view bucket_name,
-                                    std::queue<std::string>& object_keys,
-                                    std::vector<std::unique_ptr<Sink>>& sinks)
-{
-    if (object_keys.empty()) {
-        return true;
-    }
-
-    if (bucket_name.empty()) {
-        LOG_ERROR("Bucket name not provided.");
-        return false;
-    }
-    if (!connection_pool_) {
-        LOG_ERROR("S3 connection pool not provided.");
-        return false;
-    }
-
-    const auto n_objects = object_keys.size();
-    sinks.resize(n_objects);
-    for (auto i = 0; i < n_objects; ++i) {
-        sinks[i] = std::make_unique<S3Sink>(
-          bucket_name, object_keys.front(), connection_pool_);
-        object_keys.pop();
-    }
-
-    return true;
 }
 
 bool

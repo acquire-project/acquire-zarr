@@ -127,4 +127,24 @@ make_s3_sink(std::string_view bucket_name,
              std::string_view object_key,
              std::shared_ptr<S3ConnectionPool> connection_pool);
 
+/**
+ * @brief Create a collection of S3 sinks for a Zarr dataset.
+ * @param[in] bucket_name The name of the bucket in which the dataset is
+ * stored.
+ * @param[in] base_path The path to the base directory for the dataset.
+ * @param[in] dimensions The dimensions of the dataset.
+ * @param[in] parts_along_dimension Function to determine the number of
+ * parts (i.e., shards or chunks) along a dimension.
+ * @param[in] connection_pool Pointer to a pool of existing S3 connections.
+ * @param[out] part_sinks The sinks created.
+ * @return True iff all file sinks were created successfully.
+ */
+[[nodiscard]] bool
+make_data_s3_sinks(std::string_view bucket_name,
+                   std::string_view base_path,
+                   const ArrayDimensions& dimensions,
+                   const DimensionPartsFun& parts_along_dimension,
+                   std::shared_ptr<S3ConnectionPool> connection_pool,
+                   std::vector<std::unique_ptr<Sink>>& part_sinks);
+
 } // namespace zarr

@@ -154,11 +154,12 @@ zarr::ArrayWriter::make_data_sinks_()
     SinkCreator creator(thread_pool_, s3_connection_pool_);
 
     if (is_s3_array_()) {
-        if (!creator.make_data_sinks(*config_.bucket_name,
-                                     data_root,
-                                     config_.dimensions.get(),
-                                     parts_along_dimension,
-                                     data_sinks_)) {
+        if (!make_data_s3_sinks(*config_.bucket_name,
+                                data_root,
+                                *config_.dimensions,
+                                parts_along_dimension,
+                                s3_connection_pool_,
+                                data_sinks_)) {
             LOG_ERROR("Failed to create data sinks in ",
                       data_root,
                       " for bucket ",
