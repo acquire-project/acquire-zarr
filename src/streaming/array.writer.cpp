@@ -96,7 +96,7 @@ zarr::ArrayWriter::ArrayWriter(
 }
 
 size_t
-zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
+zarr::ArrayWriter::write_frame(ConstByteSpan data)
 {
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
@@ -217,7 +217,7 @@ zarr::ArrayWriter::make_buffers_() noexcept
 }
 
 size_t
-zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
+zarr::ArrayWriter::write_frame_to_chunks_(ConstByteSpan data)
 {
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_.dtype);

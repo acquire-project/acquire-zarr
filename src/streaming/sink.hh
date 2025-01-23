@@ -1,5 +1,7 @@
 #pragma once
 
+#include "definitions.hh"
+
 #include <cstddef> // size_t, std::byte
 #include <memory>  // std::unique_ptr
 #include <span>    // std::span
@@ -17,8 +19,7 @@ class Sink
      * @param bytes_of_buf The number of bytes to write from @p buf.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] virtual bool write(size_t offset,
-                                     std::span<const std::byte> buf) = 0;
+    [[nodiscard]] virtual bool write(size_t offset, ConstByteSpan buf) = 0;
 
   protected:
     [[nodiscard]] virtual bool flush_() = 0;

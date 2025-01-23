@@ -10,7 +10,7 @@ zarr::FileSink::FileSink(std::string_view filename)
 }
 
 bool
-zarr::FileSink::write(size_t offset, std::span<const std::byte> data)
+zarr::FileSink::write(size_t offset, ConstByteSpan data)
 {
     const auto bytes_of_buf = data.size();
     if (data.data() == nullptr || bytes_of_buf == 0) {

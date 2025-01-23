@@ -51,7 +51,7 @@ zarr::S3Sink::flush_()
 }
 
 bool
-zarr::S3Sink::write(size_t offset, std::span<const std::byte> data)
+zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 {
     if (data.data() == nullptr || data.empty()) {
         return true;
