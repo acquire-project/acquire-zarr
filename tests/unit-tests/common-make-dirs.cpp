@@ -1,5 +1,5 @@
 #include "unit.test.macros.hh"
-#include "sink.hh"
+#include "zarr.common.hh"
 
 #include <filesystem>
 
