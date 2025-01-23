@@ -30,6 +30,13 @@ class Sink
     friend bool finalize_sink(std::unique_ptr<Sink>&& sink);
 };
 
+/**
+ * @brief Finalize and destroy the Sink @p sink.
+ * @note @p sink is no longer accessible after a successful call to this
+ * function.
+ * @param[in] sink The Sink to finalize.
+ * @return True if and only if the Sink was finalized successfully.
+ */
 bool
 finalize_sink(std::unique_ptr<Sink>&& sink);
 
