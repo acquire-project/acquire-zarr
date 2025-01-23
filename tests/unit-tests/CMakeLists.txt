@@ -28,6 +28,7 @@ set(tests
         zarrv3-writer-write-ragged-append-dim
         zarrv3-writer-write-ragged-internal-dim
         vectorized-file-write
+        partial-append
 )
 
 foreach (name ${tests})
