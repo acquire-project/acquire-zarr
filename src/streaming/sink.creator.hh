@@ -17,41 +17,9 @@ class SinkCreator
                 std::shared_ptr<S3ConnectionPool> connection_pool);
     ~SinkCreator() noexcept = default;
 
-    /**
-     * @brief
-     * @param version
-     * @param bucket_name
-     * @param base_path
-     * @param metadata_sinks
-     * @return
-     * @throws std::runtime_error if @p version is invalid, if @p bucket_name is
-     * empty or does not exist, or if @p base_path is empty.
-     */
-    [[nodiscard]] bool make_metadata_sinks(
-      size_t version,
-      std::string_view bucket_name,
-      std::string_view base_path,
-      std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks);
-
   private:
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> connection_pool_; // could be null
-
-    /**
-     * @brief Construct the paths for a Zarr dataset.
-     * @param base_path The base path for the dataset.
-     * @param dimensions The dimensions of the dataset.
-     * @param parts_along_dimension Function to determine the number of parts
-     * @param create_directories Whether to create intermediate directories.
-     * @return A queue of paths to the dataset components.
-     * @throws std::runtime_error if intermediate directories cannot be created,
-     * or if the number of parts along a dimension is zero.
-     */
-    std::queue<std::string> make_data_sink_paths_(
-      std::string_view base_path,
-      const ArrayDimensions* dimensions,
-      const DimensionPartsFun& parts_along_dimension,
-      bool create_directories);
 
     std::vector<std::string> make_metadata_sink_paths_(
       size_t version,

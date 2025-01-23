@@ -201,7 +201,7 @@ bool
 make_s3_sinks(
   std::string_view bucket_name,
   std::string_view base_path,
-  std::vector<std::string>& object_keys,
+  const std::vector<std::string>& object_keys,
   std::shared_ptr<zarr::S3ConnectionPool> connection_pool,
   std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>& sinks)
 {
@@ -420,7 +420,7 @@ zarr::make_metadata_file_sinks(
     }
     EXPECT(!base_path.empty(), "Base path must not be empty.");
 
-    std::vector<std::string> file_paths = construct_metadata_paths(version);
+    const auto file_paths = construct_metadata_paths(version);
 
     return make_file_sinks(
       base_path.data(), file_paths, thread_pool, metadata_sinks);
@@ -457,4 +457,24 @@ zarr::make_data_s3_sinks(std::string_view bucket_name,
       construct_data_paths(base_path, dimensions, parts_along_dimension);
 
     return make_s3_sinks(bucket_name, paths, connection_pool, part_sinks);
+}
+
+bool
+zarr::make_metadata_s3_sinks(
+  ZarrVersion version,
+  std::string_view bucket_name,
+  std::string_view base_path,
+  std::shared_ptr<S3ConnectionPool> connection_pool,
+  std::unordered_map<std::string, std::unique_ptr<Sink>>& metadata_sinks)
+{
+    EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
+    EXPECT(!base_path.empty(), "Base path must not be empty.");
+    if (!bucket_exists(bucket_name, connection_pool)) {
+        LOG_ERROR("Bucket '", bucket_name, "' does not exist.");
+        return false;
+    }
+
+    const auto file_paths = construct_metadata_paths(version);
+    return make_s3_sinks(
+      bucket_name, base_path, file_paths, connection_pool, metadata_sinks);
 }
