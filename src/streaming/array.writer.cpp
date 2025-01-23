@@ -2,7 +2,7 @@
 #include "array.writer.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
-#include "sink.creator.hh"
+#include "sink.hh"
 
 #include <cmath>
 #include <functional>
@@ -150,8 +150,6 @@ zarr::ArrayWriter::make_data_sinks_()
 {
     const auto data_root = data_root_();
     const auto parts_along_dimension = parts_along_dimension_();
-
-    SinkCreator creator(thread_pool_, s3_connection_pool_);
 
     if (is_s3_array_()) {
         if (!make_data_s3_sinks(*config_.bucket_name,

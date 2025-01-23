@@ -1,4 +1,4 @@
-#include "sink.creator.hh"
+#include "sink.hh"
 #include "s3.connection.hh"
 #include "unit.test.macros.hh"
 
@@ -79,8 +79,6 @@ make_v2_metadata_s3_sinks(
   std::shared_ptr<zarr::S3ConnectionPool> connection_pool,
   const std::string& bucket_name)
 {
-    zarr::SinkCreator sink_creator(thread_pool, connection_pool);
-
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
     CHECK(zarr::make_metadata_s3_sinks(
       ZarrVersion_2, bucket_name, test_dir, connection_pool, metadata_sinks));
@@ -140,8 +138,6 @@ make_v3_metadata_s3_sinks(
   std::shared_ptr<zarr::S3ConnectionPool> connection_pool,
   const std::string& bucket_name)
 {
-    zarr::SinkCreator sink_creator(thread_pool, connection_pool);
-
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>> metadata_sinks;
     CHECK(zarr::make_metadata_s3_sinks(
       ZarrVersion_3, bucket_name, test_dir, connection_pool, metadata_sinks));

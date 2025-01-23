@@ -4,7 +4,7 @@
 #include "zarr.common.hh"
 #include "zarrv2.array.writer.hh"
 #include "zarrv3.array.writer.hh"
-#include "sink.creator.hh"
+#include "sink.hh"
 
 #include <blosc.h>
 
@@ -662,8 +662,6 @@ ZarrStream_s::create_scaled_frames_()
 bool
 ZarrStream_s::create_metadata_sinks_()
 {
-    zarr::SinkCreator creator(thread_pool_, s3_connection_pool_);
-
     try {
         if (s3_connection_pool_) {
             if (!make_metadata_s3_sinks(version_,
