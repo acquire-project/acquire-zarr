@@ -42,7 +42,8 @@ void
 verify_file_data(const ZarrStreamSettings& settings)
 {
     std::vector<uint8_t> buffer;
-    const size_t row_size = 64, num_rows = 48;
+    const size_t row_size = settings.dimensions[2].array_size_px,
+                 num_rows = settings.dimensions[1].array_size_px;
 
     fs::path chunk_path = fs::path(settings.store_path) / "0" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(chunk_path));
@@ -178,7 +179,6 @@ main()
         // allocate dimensions
         configure_stream_dimensions(&settings);
         stream = ZarrStream_create(&settings);
-        ZarrStreamSettings_destroy_dimension_array(&settings);
 
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));
@@ -206,20 +206,16 @@ main()
                                        data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
+        verify_file_data(settings);
+
         retval = 0;
     } catch (const std::exception& exception) {
         LOG_ERROR(exception.what());
     }
 
     // cleanup
+    ZarrStreamSettings_destroy_dimension_array(&settings);
     ZarrStream_destroy(stream);
-
-    try {
-        verify_file_data(settings);
-    } catch (const std::exception& exception) {
-        LOG_ERROR(exception.what());
-        retval = 1;
-    }
 
     std::error_code ec;
     if (fs::is_directory(settings.store_path) &&
