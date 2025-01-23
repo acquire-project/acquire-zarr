@@ -12,6 +12,9 @@ class FileSink : public Sink
     explicit FileSink(std::string_view filename);
 
     bool write(size_t offset, ConstByteSpan data) override;
+    bool write_vectors(size_t offset,
+                       const std::vector<ConstByteSpan>& data) override;
+
 
   protected:
     bool flush_() override;
