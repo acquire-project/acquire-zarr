@@ -2,6 +2,7 @@
 
 #include "sink.hh"
 
+#include <mutex>
 #include <string_view>
 
 namespace zarr {
