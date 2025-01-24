@@ -3,7 +3,7 @@
 
 #include <filesystem>
 
-#ifdef WIN32_
+#ifdef _WIN32
 #include <windows.h>
 #else
 #include <cstring>
@@ -15,7 +15,7 @@
 namespace fs = std::filesystem;
 
 namespace {
-#ifdef WIN32_
+#ifdef _WIN32
 std::string
 get_last_error_as_string()
 {
@@ -101,17 +101,33 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
     auto* end = cur + data.size();
 
     int retries = 0;
-    OVERLAPPED ovl = file->overlapped;
+    OVERLAPPED overlapped = { 0 };
+    overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+
     while (cur < end && retries < 3) {
         DWORD written = 0;
         DWORD remaining = (DWORD)(end - cur); // may truncate
-        ovl.Pointer = (void*)offset;
-        WriteFile(*fd, cur, (DWORD)remaining, 0, &ovl);
-        CHECK(GetOverlappedResult(*fd, &ovl, &written, TRUE));
+        overlapped.Pointer = (void*)offset;
+        if (!WriteFile(*fd, cur, (DWORD)remaining, nullptr, &overlapped) &&
+            GetLastError() != ERROR_IO_PENDING) {
+            const auto err = get_last_error_as_string();
+            LOG_ERROR("Failed to write to file: ", err);
+            CloseHandle(overlapped.hEvent);
+            return false;
+        }
+
+        if (!GetOverlappedResult(*fd, &overlapped, &written, TRUE)) {
+            LOG_ERROR("Failed to get overlapped result: ",
+                      get_last_error_as_string());
+            CloseHandle(overlapped.hEvent);
+            return false;
+        }
         retries += (written == 0);
         offset += written;
         cur += written;
     }
+
+    CloseHandle(overlapped.hEvent);
     return (retries < 3);
 }
 
@@ -209,7 +225,6 @@ destroy_handle(void** handle)
 }
 
 zarr::FileSink::FileSink(std::string_view filename)
-//  : file_(filename.data(), std::ios::binary | std::ios::trunc)
 {
     std::string file_path{ filename };
     init_handle(&handle_, file_path);
