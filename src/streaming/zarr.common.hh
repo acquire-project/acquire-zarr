@@ -1,7 +1,8 @@
 #pragma once
 
-#include "zarr.dimension.hh"
 #include "acquire.zarr.h"
+#include "thread.pool.hh"
+#include "zarr.dimension.hh"
 
 namespace zarr {
 /**
@@ -60,4 +61,35 @@ chunks_along_dimension(const ZarrDimension& dimension);
  */
 uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
+
+/**
+ * @brief Construct paths for data sinks, given the dimensions and a function
+ * to determine the number of parts along a dimension.
+ * @param base_path The base path for the dataset.
+ * @param dimensions The dimensions of the dataset.
+ * @param parts_along_dimension Function to determine the number of parts
+ */
+std::vector<std::string>
+construct_data_paths(std::string_view base_path,
+                     const ArrayDimensions& dimensions,
+                     const DimensionPartsFun& parts_along_dimension);
+
+/**
+ * @brief Get unique paths to the parent directories of each file in @p
+ * file_paths.
+ * @param file_paths Collection of paths to files.
+ * @return Collection of unique parent directories.
+ */
+std::vector<std::string>
+get_parent_paths(const std::vector<std::string>& file_paths);
+
+/**
+ * @brief Parallel create directories for a collection of paths.
+ * @param dir_paths The directories to create.
+ * @param thread_pool The thread pool to use for parallel creation.
+ * @return True iff all directories were created successfully.
+ */
+bool
+make_dirs(const std::vector<std::string>& dir_paths,
+          std::shared_ptr<ThreadPool> thread_pool);
 } // namespace zarr

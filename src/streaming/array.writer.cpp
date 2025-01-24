@@ -2,7 +2,7 @@
 #include "array.writer.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
-#include "sink.creator.hh"
+#include "sink.hh"
 
 #include <cmath>
 #include <functional>
@@ -151,24 +151,24 @@ zarr::ArrayWriter::make_data_sinks_()
     const auto data_root = data_root_();
     const auto parts_along_dimension = parts_along_dimension_();
 
-    SinkCreator creator(thread_pool_, s3_connection_pool_);
-
     if (is_s3_array_()) {
-        if (!creator.make_data_sinks(*config_.bucket_name,
-                                     data_root,
-                                     config_.dimensions.get(),
-                                     parts_along_dimension,
-                                     data_sinks_)) {
+        if (!make_data_s3_sinks(*config_.bucket_name,
+                                data_root,
+                                *config_.dimensions,
+                                parts_along_dimension,
+                                s3_connection_pool_,
+                                data_sinks_)) {
             LOG_ERROR("Failed to create data sinks in ",
                       data_root,
                       " for bucket ",
                       *config_.bucket_name);
             return false;
         }
-    } else if (!creator.make_data_sinks(data_root,
-                                        config_.dimensions.get(),
-                                        parts_along_dimension,
-                                        data_sinks_)) {
+    } else if (!make_data_file_sinks(data_root,
+                                     *config_.dimensions,
+                                     parts_along_dimension,
+                                     thread_pool_,
+                                     data_sinks_)) {
         LOG_ERROR("Failed to create data sinks in ", data_root);
         return false;
     }
@@ -184,13 +184,10 @@ zarr::ArrayWriter::make_metadata_sink_()
     }
 
     const auto metadata_path = metadata_path_();
-
-    if (is_s3_array_()) {
-        SinkCreator creator(thread_pool_, s3_connection_pool_);
-        metadata_sink_ = creator.make_sink(*config_.bucket_name, metadata_path);
-    } else {
-        metadata_sink_ = zarr::SinkCreator::make_sink(metadata_path);
-    }
+    metadata_sink_ =
+      is_s3_array_()
+        ? make_s3_sink(*config_.bucket_name, metadata_path, s3_connection_pool_)
+        : make_file_sink(metadata_path);
 
     if (!metadata_sink_) {
         LOG_ERROR("Failed to create metadata sink: ", metadata_path);
