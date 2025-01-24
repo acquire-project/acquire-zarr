@@ -36,13 +36,13 @@ zarr::SinkCreator::make_sink(std::string_view file_path)
     if (!fs::is_directory(parent_path)) {
         std::error_code ec;
         if (!fs::create_directories(parent_path, ec)) {
-            LOG_ERROR("Failed to create directory '", parent_path, "': ",
-                      ec.message());
+            LOG_ERROR(
+              "Failed to create directory '", parent_path, "': ", ec.message());
             return nullptr;
         }
     }
 
-    return std::make_unique<FileSink>(file_path);
+    return std::make_unique<FileSink>(file_path, false);
 }
 
 std::unique_ptr<zarr::Sink>
@@ -152,7 +152,7 @@ zarr::SinkCreator::make_data_sink_paths_(
     }
 
     // create intermediate paths
-    for (auto i = 1;                // skip the last dimension
+    for (auto i = 1;                  // skip the last dimension
          i < dimensions->ndims() - 1; // skip the x dimension
          ++i) {
         const auto& dim = dimensions->at(i);
@@ -221,8 +221,7 @@ zarr::SinkCreator::make_metadata_sink_paths_(size_t version,
     if (create_directories) {
         std::queue<std::string> dir_paths;
         dir_paths.emplace(base_path);
-        EXPECT(make_dirs_(dir_paths),
-               "Failed to create metadata directories.");
+        EXPECT(make_dirs_(dir_paths), "Failed to create metadata directories.");
         dir_paths.pop(); // remove the base path
 
         std::unordered_set<std::string> parent_paths;
@@ -262,40 +261,39 @@ zarr::SinkCreator::make_dirs_(std::queue<std::string>& dir_paths)
         const auto dirname = dir_paths.front();
         dir_paths.pop();
 
-        EXPECT(thread_pool_->push_job(
-                 [dirname, &latch, &all_successful](std::string& err) -> bool {
-                     if (dirname.empty()) {
-                         err = "Directory name must not be empty.";
-                         latch.count_down();
-                         all_successful.fetch_and(0);
-                         return false;
-                     }
+        EXPECT(thread_pool_->push_job([dirname, &latch, &all_successful](
+                                        std::string& err) -> bool {
+            if (dirname.empty()) {
+                err = "Directory name must not be empty.";
+                latch.count_down();
+                all_successful.fetch_and(0);
+                return false;
+            }
 
-                     if (fs::is_directory(dirname)) {
-                         latch.count_down();
-                         return true;
-                     } else if (fs::exists(dirname)) {
-                         err =
-                           "'" + dirname + "' exists but is not a directory";
-                         latch.count_down();
-                         all_successful.fetch_and(0);
-                         return false;
-                     }
+            if (fs::is_directory(dirname)) {
+                latch.count_down();
+                return true;
+            } else if (fs::exists(dirname)) {
+                err = "'" + dirname + "' exists but is not a directory";
+                latch.count_down();
+                all_successful.fetch_and(0);
+                return false;
+            }
 
-                     if (all_successful) {
-                         std::error_code ec;
-                         if (!fs::create_directories(dirname, ec)) {
-                             err = "Failed to create directory '" + dirname +
-                                   "': " + ec.message();
-                             latch.count_down();
-                             all_successful.fetch_and(0);
-                             return false;
-                         }
-                     }
+            if (all_successful) {
+                std::error_code ec;
+                if (!fs::create_directories(dirname, ec)) {
+                    err = "Failed to create directory '" + dirname +
+                          "': " + ec.message();
+                    latch.count_down();
+                    all_successful.fetch_and(0);
+                    return false;
+                }
+            }
 
-                     latch.count_down();
-                     return true;
-                 }),
+            latch.count_down();
+            return true;
+        }),
                "Failed to push job to thread pool.");
 
         dir_paths.push(dirname);
@@ -327,27 +325,27 @@ zarr::SinkCreator::make_files_(std::queue<std::string>& file_paths,
 
         std::unique_ptr<Sink>* psink = sinks.data() + i;
 
-        EXPECT(thread_pool_->push_job(
-                 [filename, psink, &latch, &all_successful](
-                   std::string& err) -> bool {
-                     bool success = false;
+        EXPECT(
+          thread_pool_->push_job([filename, psink, &latch, &all_successful](
+                                   std::string& err) -> bool {
+              bool success = false;
 
-                     try {
-                         if (all_successful) {
-                             *psink = std::make_unique<FileSink>(filename);
-                         }
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to create file '" + filename +
-                               "': " + exc.what();
-                     }
+              try {
+                  if (all_successful) {
+                      *psink = std::make_unique<FileSink>(filename, false);
+                  }
+                  success = true;
+              } catch (const std::exception& exc) {
+                  err =
+                    "Failed to create file '" + filename + "': " + exc.what();
+              }
 
-                     latch.count_down();
-                     all_successful.fetch_and((char)success);
+              latch.count_down();
+              all_successful.fetch_and((char)success);
 
-                     return success;
-                 }),
-               "Failed to push job to thread pool.");
+              return success;
+          }),
+          "Failed to push job to thread pool.");
     }
 
     latch.wait();
@@ -385,7 +383,8 @@ zarr::SinkCreator::make_files_(
 
                      try {
                          if (all_successful) {
-                             *psink = std::make_unique<FileSink>(filename);
+                             *psink =
+                               std::make_unique<FileSink>(filename, false);
                          }
                          success = true;
                      } catch (const std::exception& exc) {

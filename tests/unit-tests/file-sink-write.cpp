@@ -17,7 +17,8 @@ main()
         CHECK(!fs::exists(tmp_path));
         {
             char str[] = "Hello, Acquire!";
-            auto sink = std::make_unique<zarr::FileSink>(tmp_path.string());
+            auto sink =
+              std::make_unique<zarr::FileSink>(tmp_path.string(), false);
 
             std::span data = { reinterpret_cast<std::byte*>(str),
                                sizeof(str) - 1 };

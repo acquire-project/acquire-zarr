@@ -69,19 +69,30 @@ get_sector_size(const std::string& path)
 }
 
 void
-init_handle(void** handle, const std::string& filename)
+init_handle(void** handle, const std::string& filename, bool vectorized)
 {
     EXPECT(handle, "Expected nonnull pointer to file handle.");
     HANDLE* fd = new HANDLE;
 
-    *fd = CreateFileA(filename.c_str(),
-                      GENERIC_WRITE,
-                      0, // No sharing
-                      nullptr,
-                      OPEN_ALWAYS,
-                      FILE_FLAG_OVERLAPPED | FILE_FLAG_NO_BUFFERING |
-                        FILE_FLAG_SEQUENTIAL_SCAN,
-                      nullptr);
+    if (vectorized) {
+        *fd = CreateFileA(filename.c_str(),
+                          GENERIC_WRITE,
+                          0, // No sharing
+                          nullptr,
+                          OPEN_ALWAYS,
+                          FILE_FLAG_OVERLAPPED | FILE_FLAG_NO_BUFFERING |
+                            FILE_FLAG_SEQUENTIAL_SCAN,
+                          nullptr);
+    } else {
+        *fd = CreateFileA(filename.c_str(),
+                          GENERIC_WRITE,
+                          0, // No sharing
+                          nullptr,
+                          OPEN_ALWAYS,
+                          FILE_FLAG_OVERLAPPED,
+                          nullptr);
+    }
+
     if (*fd == INVALID_HANDLE_VALUE) {
         const auto err = get_last_error_as_string();
         delete handle;
@@ -157,7 +168,7 @@ get_last_error_as_string()
 }
 
 void
-init_handle(void** handle, const std::string& filename)
+init_handle(void** handle, const std::string& filename, bool)
 {
     EXPECT(handle, "Expected nonnull pointer file handle.");
     auto* fd = new int;
@@ -224,10 +235,10 @@ destroy_handle(void** handle)
 #endif
 }
 
-zarr::FileSink::FileSink(std::string_view filename)
+zarr::FileSink::FileSink(std::string_view filename, bool vectorized)
 {
     std::string file_path{ filename };
-    init_handle(&handle_, file_path);
+    init_handle(&handle_, file_path, vectorized);
 }
 
 zarr::FileSink::~FileSink()
