@@ -93,8 +93,14 @@ bool
 zarr::S3Sink::write_vectors(size_t offset,
                             const std::vector<ConstByteSpan>& data)
 {
-    LOG_ERROR("Not yet implemented.");
-    return false;
+    for (const auto& buf : data) {
+        if (!write(offset, buf)) {
+            return false;
+        }
+
+        offset += buf.size();
+    }
+    return true;
 }
 
 bool
