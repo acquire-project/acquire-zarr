@@ -143,6 +143,70 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
 }
 
 bool
+seek_and_write_vectors(void** handle,
+                       size_t offset,
+                       const std::vector<ConstByteSpan>& buffers)
+{
+    bool retval = true;
+    auto* fd = reinterpret_cast<HANDLE*>(*handle);
+
+    size_t total_bytes_to_write = 0;
+    for (const auto& buffer : buffers) {
+        total_bytes_to_write += buffer.size();
+    }
+
+    const size_t nbytes_aligned = align_size_(total_bytes_to_write);
+    CHECK(nbytes_aligned >= total_bytes_to_write);
+
+    auto* aligned_ptr =
+      static_cast<std::byte*>(_aligned_malloc(nbytes_aligned, page_size_));
+    if (!aligned_ptr) {
+        return false;
+    }
+
+    auto* cur = aligned_ptr;
+    for (const auto& buffer : buffers) {
+        std::copy(buffer.begin(), buffer.end(), cur);
+        cur += buffer.size();
+    }
+
+    std::vector<FILE_SEGMENT_ELEMENT> segments(nbytes_aligned / page_size_);
+
+    cur = aligned_ptr;
+    for (auto& segment : segments) {
+        memset(&segment, 0, sizeof(segment));
+        segment.Buffer = PtrToPtr64(cur);
+        cur += page_size_;
+    }
+
+    OVERLAPPED overlapped = { 0 };
+    overlapped.Offset = static_cast<DWORD>(offset & 0xFFFFFFFF);
+    overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32);
+    overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+
+    DWORD bytes_written;
+
+    if (!WriteFileGather(
+          *fd, segments.data(), nbytes_aligned, nullptr, &overlapped)) {
+        if (GetLastError() != ERROR_IO_PENDING) {
+            LOG_ERROR("Failed to write file: ", get_last_error_as_string());
+            retval = false;
+        }
+
+        // Wait for the operation to complete
+        if (!GetOverlappedResult(*fd, &overlapped, &bytes_written, TRUE)) {
+            LOG_ERROR("Failed to get overlapped result: ",
+                      get_last_error_as_string());
+            retval = false;
+        }
+    }
+
+    _aligned_free(aligned_ptr);
+
+    return retval;
+}
+
+bool
 flush_file(void** handle)
 {
     CHECK(handle);
@@ -208,6 +272,45 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
 }
 
 bool
+seek_and_write_vectors(void** handle,
+                       size_t offset,
+                       const std::vector<ConstByteSpan>& buffers)
+{
+    bool retval = true;
+
+    CHECK(handle);
+    auto* fd = reinterpret_cast<int*>(*handle);
+
+    std::vector<struct iovec> iovecs(buffers.size());
+
+    for (auto i = 0; i < buffers.size(); ++i) {
+        auto* iov = &iovecs[i];
+        memset(iov, 0, sizeof(struct iovec));
+        iov->iov_base =
+          const_cast<void*>(static_cast<const void*>(buffers[i].data()));
+        iov->iov_len = buffers[i].size();
+    }
+
+    ssize_t total_bytes = 0;
+    for (const auto& buffer : buffers) {
+        total_bytes += static_cast<ssize_t>(buffer.size());
+    }
+
+    ssize_t bytes_written = pwritev(*fd,
+                                    iovecs.data(),
+                                    static_cast<int>(iovecs.size()),
+                                    static_cast<int>(offset));
+
+    if (bytes_written != total_bytes) {
+        auto error = get_last_error_as_string();
+        LOG_ERROR("Failed to write file: ", error);
+        retval = false;
+    }
+
+    return retval;
+}
+
+bool
 flush_file(void** handle)
 {
     CHECK(handle);
@@ -261,8 +364,7 @@ bool
 zarr::FileSink::write_vectors(size_t offset,
                               const std::vector<ConstByteSpan>& data)
 {
-    LOG_ERROR("Not yet implemented.");
-    return false;
+    return seek_and_write_vectors(&handle_, offset, data);
 }
 
 bool

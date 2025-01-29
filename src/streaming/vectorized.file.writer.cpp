@@ -113,7 +113,7 @@ zarr::VectorizedFileWriter::~VectorizedFileWriter()
 
 bool
 zarr::VectorizedFileWriter::write_vectors(const std::vector<ByteSpan>& buffers,
-  size_t offset)
+                                          size_t offset)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     bool retval{ true };
