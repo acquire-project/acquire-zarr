@@ -29,7 +29,8 @@ class Sink
      * @param bufs The buffers to write to the sink.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] virtual bool write_vectors(size_t offset, const std::vector<ConstByteSpan>& bufs) = 0;
+    [[nodiscard]] virtual bool write_vectors(size_t offset,
+      const std::vector<ByteSpan>& bufs) = 0;
 
   protected:
     [[nodiscard]] virtual bool flush_() = 0;

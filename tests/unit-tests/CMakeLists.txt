@@ -15,6 +15,7 @@ set(tests
         s3-connection-put-object
         s3-connection-upload-multipart-object
         file-sink-write
+        file-sink-write-vectors
         s3-sink-write
         s3-sink-write-multipart
         make-data-sinks
@@ -27,7 +28,6 @@ set(tests
         zarrv3-writer-write-even
         zarrv3-writer-write-ragged-append-dim
         zarrv3-writer-write-ragged-internal-dim
-        vectorized-file-write
         partial-append
 )
 

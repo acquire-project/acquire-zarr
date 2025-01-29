@@ -14,7 +14,7 @@ class FileSink : public Sink
 
     bool write(size_t offset, ConstByteSpan data) override;
     bool write_vectors(size_t offset,
-                       const std::vector<ConstByteSpan>& data) override;
+                       const std::vector<ByteSpan>& data) override;
 
   protected:
     bool flush_() override;

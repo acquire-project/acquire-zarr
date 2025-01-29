@@ -90,8 +90,7 @@ zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
-zarr::S3Sink::write_vectors(size_t offset,
-                            const std::vector<ConstByteSpan>& data)
+zarr::S3Sink::write_vectors(size_t offset, const std::vector<ByteSpan>& data)
 {
     for (const auto& buf : data) {
         if (!write(offset, buf)) {

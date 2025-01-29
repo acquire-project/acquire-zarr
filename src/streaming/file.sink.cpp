@@ -145,7 +145,7 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
 bool
 seek_and_write_vectors(void** handle,
                        size_t offset,
-                       const std::vector<ConstByteSpan>& buffers)
+                       const std::vector<ByteSpan>& buffers)
 {
     bool retval = true;
     auto* fd = reinterpret_cast<HANDLE*>(*handle);
@@ -274,7 +274,7 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
 bool
 seek_and_write_vectors(void** handle,
                        size_t offset,
-                       const std::vector<ConstByteSpan>& buffers)
+                       const std::vector<ByteSpan>& buffers)
 {
     bool retval = true;
 
@@ -361,8 +361,7 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
-zarr::FileSink::write_vectors(size_t offset,
-                              const std::vector<ConstByteSpan>& data)
+zarr::FileSink::write_vectors(size_t offset, const std::vector<ByteSpan>& data)
 {
     return seek_and_write_vectors(&handle_, offset, data);
 }
