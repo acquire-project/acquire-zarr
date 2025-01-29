@@ -16,6 +16,62 @@ namespace fs = std::filesystem;
 
 namespace {
 #ifdef _WIN32
+static size_t page_size_ = 0;
+static size_t sector_size_ = 0;
+
+size_t
+get_page_size()
+{
+    if (page_size_ == 0) {
+        SYSTEM_INFO system_info;
+        GetSystemInfo(&system_info);
+        page_size_ = system_info.dwPageSize;
+    }
+    return page_size_;
+}
+
+size_t
+get_sector_size()
+{
+    if (sector_size_ == 0) {
+        char volume_path[MAX_PATH];
+        if (!GetVolumePathNameA("C:\\", volume_path, MAX_PATH)) {
+            return 0;
+        }
+
+        DWORD sectors_per_cluster;
+        DWORD bytes_per_sector;
+        DWORD number_of_free_clusters;
+        DWORD total_number_of_clusters;
+
+        if (!GetDiskFreeSpaceA(volume_path,
+                               &sectors_per_cluster,
+                               &bytes_per_sector,
+                               &number_of_free_clusters,
+                               &total_number_of_clusters)) {
+            return 0;
+        }
+
+        sector_size_ = bytes_per_sector;
+    }
+    return sector_size_;
+}
+
+size_t
+align_to_page(size_t size)
+{
+    const auto page_size = get_page_size();
+    return (size + page_size - 1) & ~(page_size - 1);
+}
+
+size_t
+align_size(size_t size)
+{
+    size = align_to_page(size);
+    const auto sector_size = get_sector_size();
+    return (size + sector_size - 1) & ~(sector_size - 1);
+}
+
 std::string
 get_last_error_as_string()
 {
@@ -41,31 +97,6 @@ get_last_error_as_string()
     LocalFree(messageBuffer);
 
     return message;
-}
-
-size_t
-get_sector_size(const std::string& path)
-{
-    // Get volume root path
-    char volume_path[MAX_PATH];
-    if (!GetVolumePathNameA(path.c_str(), volume_path, MAX_PATH)) {
-        return 0;
-    }
-
-    DWORD sectors_per_cluster;
-    DWORD bytes_per_sector;
-    DWORD number_of_free_clusters;
-    DWORD total_number_of_clusters;
-
-    if (!GetDiskFreeSpaceA(volume_path,
-                           &sectors_per_cluster,
-                           &bytes_per_sector,
-                           &number_of_free_clusters,
-                           &total_number_of_clusters)) {
-        return 0;
-    }
-
-    return bytes_per_sector;
 }
 
 void
@@ -150,16 +181,18 @@ seek_and_write_vectors(void** handle,
     bool retval = true;
     auto* fd = reinterpret_cast<HANDLE*>(*handle);
 
+    const auto page_size = get_page_size();
+
     size_t total_bytes_to_write = 0;
     for (const auto& buffer : buffers) {
         total_bytes_to_write += buffer.size();
     }
 
-    const size_t nbytes_aligned = align_size_(total_bytes_to_write);
+    const size_t nbytes_aligned = align_size(total_bytes_to_write);
     CHECK(nbytes_aligned >= total_bytes_to_write);
 
     auto* aligned_ptr =
-      static_cast<std::byte*>(_aligned_malloc(nbytes_aligned, page_size_));
+      static_cast<std::byte*>(_aligned_malloc(nbytes_aligned, page_size));
     if (!aligned_ptr) {
         return false;
     }
@@ -170,13 +203,13 @@ seek_and_write_vectors(void** handle,
         cur += buffer.size();
     }
 
-    std::vector<FILE_SEGMENT_ELEMENT> segments(nbytes_aligned / page_size_);
+    std::vector<FILE_SEGMENT_ELEMENT> segments(nbytes_aligned / page_size);
 
     cur = aligned_ptr;
     for (auto& segment : segments) {
         memset(&segment, 0, sizeof(segment));
         segment.Buffer = PtrToPtr64(cur);
-        cur += page_size_;
+        cur += page_size;
     }
 
     OVERLAPPED overlapped = { 0 };
