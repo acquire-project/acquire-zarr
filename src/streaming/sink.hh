@@ -37,7 +37,9 @@ finalize_sink(std::unique_ptr<Sink>&& sink);
  * to determine the number of parts along a dimension.
  * @param base_path The base path for the dataset.
  * @param dimensions The dimensions of the dataset.
- * @param parts_along_dimension Function to determine the number of parts
+ * @param parts_along_dimension Function to determine the number of parts along
+ * a dimension.
+ * @return A vector of paths for the data sinks.
  */
 std::vector<std::string>
 construct_data_paths(std::string_view base_path,
