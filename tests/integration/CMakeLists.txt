@@ -9,6 +9,7 @@ set(tests
         stream-zarr-v3-compressed-to-filesystem
         stream-zarr-v3-raw-to-s3
         stream-zarr-v3-compressed-to-s3
+        stream-zarr-v3-multi-frame-append
 )
 
 foreach (name ${tests})

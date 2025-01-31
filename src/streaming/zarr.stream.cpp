@@ -447,12 +447,11 @@ ZarrStream::append(const void* data_, size_t nbytes)
             // ready to flush the frame buffer
             if (frame_buffer_offset_ == bytes_of_frame) {
                 const size_t bytes_written_this_frame =
-                  writers_[0]->write_frame({ data, bytes_of_frame });
+                  writers_[0]->write_frame(frame_buffer_);
                 if (bytes_written_this_frame == 0) {
                     break;
                 }
 
-                bytes_written += bytes_to_copy;
                 data += bytes_to_copy;
                 frame_buffer_offset_ = 0;
             }

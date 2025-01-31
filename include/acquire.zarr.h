@@ -87,7 +87,8 @@ extern "C"
 
     /**
      * @brief Destroy a Zarr stream.
-     * @details This function frees the memory allocated for the Zarr stream.
+     * @details This function waits for all pending writes to complete and frees the 
+     * memory allocated for the Zarr stream.
      * @param stream The Zarr stream struct to destroy.
      */
     void ZarrStream_destroy(ZarrStream* stream);
@@ -95,11 +96,12 @@ extern "C"
     /**
      * @brief Append data to the Zarr stream.
      * @details This function will block while chunks are compressed and written
-     * to the store. It will return when all data has been written.
+     * to the store. It will return when all data has been written. Multiple frames
+     * can be appended in a single call.
      * @param[in, out] stream The Zarr stream struct.
      * @param[in] data The data to append.
-     * @param[in] bytes_in The number of bytes in @p data. It should be at least
-     * the size of a single frame.
+     * @param[in] bytes_in The number of bytes in @p data. This can be any
+     * nonnegative integer. On a value of 0, this function will immediately return.
      * @param[out] bytes_out The number of bytes written to the stream.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
