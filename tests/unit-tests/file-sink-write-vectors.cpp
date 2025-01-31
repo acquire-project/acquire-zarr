@@ -1,9 +1,10 @@
-#include "vectorized.file.writer.hh"
+#include "file.sink.hh"
 #include "unit.test.macros.hh"
 
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -11,7 +12,7 @@ size_t
 write_to_file(const std::string& filename)
 {
     size_t file_size = 0;
-    zarr::VectorizedFileWriter writer(filename);
+    zarr::FileSink sink(filename, true);
 
     std::vector<std::vector<std::byte>> data(10);
     std::vector<std::span<std::byte>> spans(10);
@@ -22,7 +23,7 @@ write_to_file(const std::string& filename)
         file_size += data[i].size();
         spans[i] = data[i];
     }
-    CHECK(writer.write_vectors(spans, 0));
+    CHECK(sink.write_vectors(0, spans));
 
     // write more data
     for (auto i = 0; i < 10; ++i) {
@@ -30,7 +31,7 @@ write_to_file(const std::string& filename)
         std::fill(vec.begin(), vec.end(), std::byte(i + 10));
         spans[i] = vec;
     }
-    CHECK(writer.write_vectors(spans, file_size));
+    CHECK(sink.write_vectors(file_size, spans));
 
     return 2 * file_size;
 }

@@ -3,6 +3,8 @@
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>
+
+#include <fstream>
 #include <filesystem>
 
 namespace fs = std::filesystem;

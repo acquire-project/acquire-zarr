@@ -2,21 +2,28 @@
 
 #include "sink.hh"
 
-#include <fstream>
+#include <mutex>
 #include <string_view>
 
 namespace zarr {
 class FileSink : public Sink
 {
   public:
-    explicit FileSink(std::string_view filename);
+    FileSink(std::string_view filename, bool vectorized);
+    ~FileSink() override;
 
-    bool write(size_t offset, std::span<const std::byte> data) override;
+    bool write(size_t offset, ConstByteSpan data) override;
+    bool write_vectors(size_t offset,
+                       const std::vector<ByteSpan>& data) override;
 
   protected:
     bool flush_() override;
 
   private:
-    std::ofstream file_;
+    std::mutex mutex_;
+    size_t page_size_;
+    size_t sector_size_;
+
+    void* handle_;
 };
 } // namespace zarr

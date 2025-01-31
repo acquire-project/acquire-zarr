@@ -83,7 +83,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
             try {
                 if (all_successful) {
-                    *psink = std::make_unique<zarr::FileSink>(filename);
+                    *psink = std::make_unique<zarr::FileSink>(filename, false);
                 }
                 success = true;
             } catch (const std::exception& exc) {
@@ -147,8 +147,8 @@ make_file_sinks(
 
                      try {
                          if (all_successful) {
-                             *psink =
-                               std::make_unique<zarr::FileSink>(filename);
+                             *psink = std::make_unique<zarr::FileSink>(filename,
+                                                                       false);
                          }
                          success = true;
                      } catch (const std::exception& exc) {
@@ -377,7 +377,7 @@ zarr::make_file_sink(std::string_view file_path)
         }
     }
 
-    return std::make_unique<FileSink>(file_path);
+    return std::make_unique<FileSink>(file_path, false);
 }
 
 bool

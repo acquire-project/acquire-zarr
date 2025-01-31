@@ -1,5 +1,6 @@
 #pragma once
 
+#include "definitions.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
 #include "zarr.dimension.hh"
@@ -18,11 +19,18 @@ class Sink
      * @brief Write data to the sink.
      * @param offset The offset in the sink to write to.
      * @param buf The buffer to write to the sink.
-     * @param bytes_of_buf The number of bytes to write from @p buf.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] virtual bool write(size_t offset,
-                                     std::span<const std::byte> buf) = 0;
+    [[nodiscard]] virtual bool write(size_t offset, ConstByteSpan buf) = 0;
+
+    /**
+     * @brief Write several data buffers to the sink.
+     * @param offset The offset in the sink to write to.
+     * @param bufs The buffers to write to the sink.
+     * @return True if the write was successful, false otherwise.
+     */
+    [[nodiscard]] virtual bool write_vectors(size_t offset,
+      const std::vector<ByteSpan>& bufs) = 0;
 
   protected:
     [[nodiscard]] virtual bool flush_() = 0;

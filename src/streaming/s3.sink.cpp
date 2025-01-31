@@ -51,7 +51,7 @@ zarr::S3Sink::flush_()
 }
 
 bool
-zarr::S3Sink::write(size_t offset, std::span<const std::byte> data)
+zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 {
     if (data.data() == nullptr || data.empty()) {
         return true;
@@ -86,6 +86,19 @@ zarr::S3Sink::write(size_t offset, std::span<const std::byte> data)
         }
     }
 
+    return true;
+}
+
+bool
+zarr::S3Sink::write_vectors(size_t offset, const std::vector<ByteSpan>& data)
+{
+    for (const auto& buf : data) {
+        if (!write(offset, buf)) {
+            return false;
+        }
+
+        offset += buf.size();
+    }
     return true;
 }
 
