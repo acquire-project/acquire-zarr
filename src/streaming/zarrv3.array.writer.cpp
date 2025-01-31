@@ -1,6 +1,6 @@
 #include "macros.hh"
 #include "zarrv3.array.writer.hh"
-#include "sink.creator.hh"
+#include "sink.hh"
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>

@@ -1,8 +1,13 @@
 #include "macros.hh"
 #include "zarr.common.hh"
 
+#include <filesystem>
+#include <latch>
 #include <queue>
 #include <stdexcept>
+#include <unordered_set>
+
+namespace fs = std::filesystem;
 
 std::string
 zarr::trim(std::string_view s)

@@ -17,8 +17,8 @@ set(tests
         file-sink-write
         s3-sink-write
         s3-sink-write-multipart
-        sink-creator-make-metadata-sinks
-        sink-creator-make-data-sinks
+        make-data-sinks
+        make-metadata-sinks
         array-writer-downsample-writer-config
         array-writer-write-frame-to-chunks
         zarrv2-writer-write-even
@@ -52,9 +52,9 @@ foreach (name ${tests})
     add_test(NAME test-${tgt} COMMAND ${tgt})
 
     set(test_labels "anyplatform;unit-tests;acquire-zarr")
-    if(name MATCHES ".*s3.*")
+    if (name MATCHES ".*s3.*")
         list(APPEND test_labels "s3")
-    endif()
+    endif ()
 
     set_tests_properties(test-${tgt} PROPERTIES LABELS "${test_labels}")
 endforeach ()

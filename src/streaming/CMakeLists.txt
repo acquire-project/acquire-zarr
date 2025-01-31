@@ -21,8 +21,6 @@ add_library(${tgt}
         file.sink.cpp
         s3.sink.hh
         s3.sink.cpp
-        sink.creator.hh
-        sink.creator.cpp
         array.writer.hh
         array.writer.cpp
         zarrv2.array.writer.hh
