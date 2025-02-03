@@ -559,19 +559,29 @@ PYBIND11_MODULE(acquire_zarr, m)
            [](const PyZarrDimensionProperties& self) { return self.repr(); })
       .def_property("name",
                     &PyZarrDimensionProperties::name,
-                    &PyZarrDimensionProperties::set_name)
+                    &PyZarrDimensionProperties::set_name,
+                    "The name of the dimension.")
       .def_property("kind",
                     &PyZarrDimensionProperties::type,
-                    &PyZarrDimensionProperties::set_type)
+                    &PyZarrDimensionProperties::set_type,
+                    "The type of the dimension. Can be one of the following:\n"
+                    "  - DimensionType.SPACE\n"
+                    "  - DimensionType.CHANNEL\n"
+                    "  - DimensionType.TIME\n"
+                    "  - DimensionType.OTHER")
       .def_property("array_size_px",
                     &PyZarrDimensionProperties::array_size_px,
-                    &PyZarrDimensionProperties::set_array_size_px)
+                    &PyZarrDimensionProperties::set_array_size_px,
+                    "The size of the array along this dimension, in pixels.")
       .def_property("chunk_size_px",
                     &PyZarrDimensionProperties::chunk_size_px,
-                    &PyZarrDimensionProperties::set_chunk_size_px)
+                    &PyZarrDimensionProperties::set_chunk_size_px,
+                    "The size of each chunk along this dimension, in pixels.")
       .def_property("shard_size_chunks",
                     &PyZarrDimensionProperties::shard_size_chunks,
-                    &PyZarrDimensionProperties::set_shard_size_chunks);
+                    &PyZarrDimensionProperties::set_shard_size_chunks,
+                    "The number of chunks in a shard along this dimension.")
+      .doc() = "Properties of a dimension of the Zarr array.";
 
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
