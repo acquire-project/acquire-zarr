@@ -105,15 +105,35 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
 }
 
 void
-zarr::ZarrV3ArrayWriter::defragment_chunks_()
+zarr::ZarrV3ArrayWriter::defragment_chunks_(uint32_t shard_index)
 {
     if (!config_.compression_params) {
         return;
     }
 
     const auto nbytes_chunk = bytes_to_allocate_per_chunk_();
-    const auto n_chunks = config_.dimensions->number_of_chunks_in_memory();
-    const auto n_shards = shard_buffers_.size();
+    const auto n_chunks_total =
+      config_.dimensions->number_of_chunks_in_memory();
+    const auto n_shards = config_.dimensions->number_of_shards();
+    const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
+
+    std::vector<uint32_t> chunks_in_shard;
+    std::vector<uint32_t> internal_indices;
+
+    for (auto i = 0; i < n_chunks_total; ++i) {
+        if (config_.dimensions->shard_index_for_chunk(i) == shard_index) {
+            chunks_in_shard.push_back(i);
+            internal_indices.push_back(
+              config_.dimensions->shard_internal_index(i));
+        }
+    }
+
+    const auto argsorted_indices = argsort(internal_indices);
+    if (!std::is_sorted(argsorted_indices.begin(), argsorted_indices.end())) {
+        std::vector tmp_copy(chunks_in_shard);
+    }
+
+    ///
 
     std::vector<std::vector<uint32_t>> shard_indices(n_shards);
     std::vector<std::vector<size_t>> chunk_internal_indices(n_shards);
