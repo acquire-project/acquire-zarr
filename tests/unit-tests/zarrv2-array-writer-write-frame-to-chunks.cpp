@@ -1,29 +1,6 @@
-#include "array.writer.hh"
+#include "zarrv2.array.writer.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
-
-namespace {
-class TestWriter : public zarr::ArrayWriter
-{
-  public:
-    TestWriter(zarr::ArrayWriterConfig&& array_spec,
-               std::shared_ptr<zarr::ThreadPool> thread_pool)
-      : zarr::ArrayWriter(std::move(array_spec), thread_pool)
-    {
-    }
-
-  private:
-    std::string data_root_() const override { return ""; }
-    std::string metadata_path_() const override { return ""; }
-    const DimensionPartsFun parts_along_dimension_() const override
-    {
-        return {};
-    }
-    bool should_rollover_() const override { return false; }
-    bool compress_and_flush_data_() override { return true; }
-    bool write_array_metadata_() override { return true; }
-};
-} // namespace
 
 int
 main()
@@ -68,7 +45,7 @@ main()
             .compression_params = std::nullopt,
         };
 
-        TestWriter writer(std::move(config), thread_pool);
+        zarr::ZarrV2ArrayWriter writer(std::move(config), thread_pool);
 
         const size_t frame_size = array_width * array_height * nbytes_px;
         std::vector data_(frame_size, std::byte(0));

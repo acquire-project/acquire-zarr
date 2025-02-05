@@ -92,6 +92,28 @@ zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
     return chunks_along_dimension;
 }
 
+void
+zarr::ZarrV2ArrayWriter::make_buffers_() noexcept
+{
+    LOG_DEBUG("Creating chunk buffers");
+
+    const size_t n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    chunk_buffers_.resize(n_chunks); // no-op if already the correct size
+
+    const auto n_bytes = bytes_to_allocate_per_chunk_();
+
+    for (auto& buf : chunk_buffers_) {
+        buf.resize(n_bytes);
+        std::fill(buf.begin(), buf.end(), std::byte(0));
+    }
+}
+
+BytePtr
+zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
+{
+    return chunk_buffers_[index].data();
+}
+
 bool
 zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
 {

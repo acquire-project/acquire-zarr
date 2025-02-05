@@ -60,6 +60,21 @@ shuffle_to_string(uint8_t shuffle)
                                      std::to_string(shuffle));
     }
 }
+
+template<typename T>
+std::vector<size_t>
+argsort(const std::vector<T>& arr)
+{
+    std::vector<size_t> indices(arr.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::stable_sort(
+      indices.begin(), indices.end(), [&arr](size_t left, size_t right) {
+          return arr[left] < arr[right];
+      });
+
+    return indices;
+}
 } // namespace
 
 zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
@@ -89,6 +104,51 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
     }
 }
 
+void
+zarr::ZarrV3ArrayWriter::defragment_chunks_()
+{
+    if (!config_.compression_params) {
+        return;
+    }
+
+    const auto nbytes_chunk = bytes_to_allocate_per_chunk_();
+    const auto n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    const auto n_shards = shard_buffers_.size();
+
+    std::vector<std::vector<uint32_t>> shard_indices(n_shards);
+    std::vector<std::vector<size_t>> chunk_internal_indices(n_shards);
+    for (auto chunk = 0; chunk < n_chunks; ++chunk) {
+        const auto shard = config_.dimensions->shard_index_for_chunk(chunk);
+        const auto index = config_.dimensions->shard_internal_index(chunk);
+        shard_indices[shard].push_back(chunk);
+        chunk_internal_indices[shard].push_back(index);
+    }
+
+    for (auto shard = 0; shard < shard_indices.size(); ++shard) {
+        auto& buffer = shard_buffers_[shard];
+
+        auto& chunk_indices = shard_indices[shard];
+        auto sorted_indices = argsort(chunk_internal_indices[shard]);
+
+        std::vector tmp_copy(chunk_indices);
+        for (auto i = 0; i < chunk_indices.size(); ++i) {
+            chunk_indices[i] = tmp_copy[sorted_indices[i]];
+        }
+
+        for (auto c_idx = 1; c_idx < chunk_indices.size(); ++c_idx) {
+            const auto prev_chunk = chunk_indices[c_idx - 1];
+            const auto this_chunk = chunk_indices[c_idx];
+            const auto chunk_size = chunk_sizes_compressed_[this_chunk];
+            const auto offset_to_copy_to = chunk_sizes_compressed_[prev_chunk];
+            const auto offset_to_copy_from = c_idx * nbytes_chunk;
+
+            std::copy(buffer.begin() + offset_to_copy_from,
+                      buffer.begin() + offset_to_copy_from + chunk_size,
+                      buffer.begin() + offset_to_copy_to);
+        }
+    }
+}
+
 std::string
 zarr::ZarrV3ArrayWriter::data_root_() const
 {
@@ -109,6 +169,33 @@ zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
     return shards_along_dimension;
 }
 
+void
+zarr::ZarrV3ArrayWriter::make_buffers_() noexcept
+{
+    LOG_DEBUG("Creating shard buffers");
+
+    const size_t n_shards = config_.dimensions->number_of_shards();
+    shard_buffers_.resize(n_shards); // no-op if already the correct size
+
+    const auto n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    const auto n_bytes = bytes_to_allocate_per_chunk_();
+
+    for (auto& buf : shard_buffers_) {
+        buf.resize(n_chunks * n_bytes);
+        std::fill(buf.begin(), buf.end(), std::byte(0));
+    }
+}
+
+BytePtr
+zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
+{
+    index = config_.dimensions->shard_index_for_chunk(index);
+    const auto internal_index = config_.dimensions->shard_internal_index(index);
+    const auto n_bytes = bytes_to_allocate_per_chunk_();
+
+    return shard_buffers_[index].data() + internal_index * n_bytes;
+}
+
 bool
 zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
 {
@@ -125,7 +212,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
     const auto chunks_in_memory =
       config_.dimensions->number_of_chunks_in_memory();
     auto chunk_group_offset = flushed_count_ * chunks_in_memory;
-    for (auto i = 0; i < chunk_buffers_.size(); ++i) {
+    for (auto i = 0; i < shard_buffers_.size(); ++i) {
         const auto index =
           config_.dimensions->shard_index_for_chunk(i + chunk_group_offset);
         chunk_in_shards[index].push_back(i);
@@ -165,7 +252,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                         break;
                     }
 
-                    auto& chunk = chunk_buffers_[chunk_idx];
+                    auto& chunk = shard_buffers_[chunk_idx];
                     std::span chunk_data(chunk);
                     if (!sink->write(*file_offset, chunk_data)) {
                         err = "Failed to write chunk";
