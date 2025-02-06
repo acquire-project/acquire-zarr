@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14828041.svg)](https://doi.org/10.5281/zenodo.14828041)
+
 from python.tests.test_stream import store_path
 
 # Acquire Zarr streaming library
