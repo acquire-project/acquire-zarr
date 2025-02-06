@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14828041.svg)](https://doi.org/10.5281/zenodo.14828041)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14828040.svg)](https://doi.org/10.5281/zenodo.14828040)
 
 from python.tests.test_stream import store_path
 
