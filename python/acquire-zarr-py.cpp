@@ -564,11 +564,12 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("kind",
                     &PyZarrDimensionProperties::type,
                     &PyZarrDimensionProperties::set_type,
-                    "The type of the dimension. Can be one of the following:\n"
-                    "  - DimensionType.SPACE\n"
-                    "  - DimensionType.CHANNEL\n"
-                    "  - DimensionType.TIME\n"
-                    "  - DimensionType.OTHER")
+                    R"pbdoc(The type of the dimension. Can be one of the following:
+
+                      * DimensionType.SPACE
+                      * DimensionType.CHANNEL
+                      * DimensionType.TIME
+                      * DimensionType.OTHER)pbdoc")
       .def_property("array_size_px",
                     &PyZarrDimensionProperties::array_size_px,
                     &PyZarrDimensionProperties::set_array_size_px,
@@ -581,8 +582,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrDimensionProperties::shard_size_chunks,
                     &PyZarrDimensionProperties::set_shard_size_chunks,
                     "The number of chunks in a shard along this dimension.")
-      .doc() = "Properties of a dimension of the Zarr array.";
-
+      .doc() = R"pbdoc(Properties of a dimension of the Zarr array.)pbdoc";
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
           PyZarrStreamSettings settings;
