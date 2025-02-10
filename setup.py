@@ -43,9 +43,9 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_dir)
 
         if self.compiler.compiler_type == "msvc":
-            built_ext = str(Path(build_dir) / "python" / cfg / "acquire_zarr*.pyd")
+            built_ext = str(Path(build_dir) / "python" / cfg  / "__init__*.pyd")
         else:
-            built_ext = str(Path(build_dir) / "python" / "acquire_zarr*.so")
+            built_ext = str(Path(build_dir) / "python"  / "__init__*.so")
         matching_files = glob.glob(built_ext)
         if not matching_files:
             raise RuntimeError(f"Could not find any files matching {built_ext}")
@@ -67,6 +67,6 @@ class CMakeBuild(build_ext):
 
 
 setup(
-    ext_modules=[CMakeExtension("acquire_zarr")],
+    ext_modules=[CMakeExtension("acquire_zarr.__init__")],
     cmdclass=dict(build_ext=CMakeBuild),
 )

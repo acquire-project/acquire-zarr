@@ -51,3 +51,8 @@ testpaths = [
 
 [tool.setuptools]
 zip-safe = false
+packages = ["acquire_zarr"]
+package-dir = { "" = "python" }
+
+[tool.setuptools.package-data]
+acquire_zarr = ["*.pyi", "py.typed"]
