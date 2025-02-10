@@ -75,11 +75,13 @@ def s3_settings():
     ):
         yield None
     else:
+        region = os.environ["ZARR_S3_REGION"] if "ZARR_S3_REGION" in os.environ else None
         yield S3Settings(
             endpoint=os.environ["ZARR_S3_ENDPOINT"],
             bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
             access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
             secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
+            region=region,
         )
 
 

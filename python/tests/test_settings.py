@@ -39,6 +39,7 @@ def test_set_s3_settings(settings):
         bucket_name="bar",
         access_key_id="baz",
         secret_access_key="qux",
+        region="quux",
     )
     settings.s3 = s3_settings
 
@@ -47,6 +48,7 @@ def test_set_s3_settings(settings):
     assert settings.s3.bucket_name == "bar"
     assert settings.s3.access_key_id == "baz"
     assert settings.s3.secret_access_key == "qux"
+    assert settings.s3.region == "quux"
 
 
 def test_set_compression_settings(settings):
