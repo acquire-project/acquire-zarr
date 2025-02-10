@@ -9,7 +9,8 @@ bool
 get_credentials(std::string& endpoint,
                 std::string& bucket_name,
                 std::string& access_key_id,
-                std::string& secret_access_key)
+                std::string& secret_access_key,
+                std::optional<std::string>& region)
 {
     char* env = nullptr;
     if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
@@ -36,6 +37,11 @@ get_credentials(std::string& endpoint,
     }
     secret_access_key = env;
 
+    env = std::getenv("ZARR_S3_REGION");
+    if (env) {
+        region = env;
+    }
+
     return true;
 }
 } // namespace
@@ -45,9 +51,12 @@ main()
 {
     std::string s3_endpoint, bucket_name, s3_access_key_id,
       s3_secret_access_key;
-
-    if (!get_credentials(
-          s3_endpoint, bucket_name, s3_access_key_id, s3_secret_access_key)) {
+    std::optional<std::string> s3_region;
+    if (!get_credentials(s3_endpoint,
+                         bucket_name,
+                         s3_access_key_id,
+                         s3_secret_access_key,
+                         s3_region)) {
         LOG_WARNING("Failed to get credentials. Skipping test.");
         return 0;
     }
@@ -56,8 +65,18 @@ main()
     const std::string object_name = "test-object";
 
     try {
-        auto pool = std::make_shared<zarr::S3ConnectionPool>(
-          1, s3_endpoint, s3_access_key_id, s3_secret_access_key);
+        std::shared_ptr<zarr::S3ConnectionPool> pool;
+        if (s3_region) {
+            pool =
+              std::make_shared<zarr::S3ConnectionPool>(1,
+                                                       s3_endpoint,
+                                                       s3_access_key_id,
+                                                       s3_secret_access_key,
+                                                       *s3_region);
+        } else {
+            pool = std::make_shared<zarr::S3ConnectionPool>(
+              1, s3_endpoint, s3_access_key_id, s3_secret_access_key);
+        }
 
         auto conn = pool->get_connection();
         if (!conn->is_connection_valid()) {

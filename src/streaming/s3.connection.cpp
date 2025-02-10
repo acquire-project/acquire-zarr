@@ -21,6 +21,22 @@ zarr::S3Connection::S3Connection(const std::string& endpoint,
     CHECK(client_);
 }
 
+zarr::S3Connection::S3Connection(const std::string& endpoint,
+                                 const std::string& access_key_id,
+                                 const std::string& secret_access_key,
+                                 const std::string& region)
+{
+    minio::s3::BaseUrl url(endpoint);
+    url.https = endpoint.starts_with("https");
+    url.region = region;
+
+    provider_ = std::make_unique<minio::creds::StaticProvider>(
+      access_key_id, secret_access_key);
+    client_ = std::make_unique<minio::s3::Client>(url, provider_.get());
+
+    CHECK(client_);
+}
+
 bool
 zarr::S3Connection::is_connection_valid()
 {
@@ -226,6 +242,27 @@ zarr::S3ConnectionPool::S3ConnectionPool(size_t n_connections,
         if (connection->is_connection_valid()) {
             connections_.push_back(std::make_unique<S3Connection>(
               endpoint, access_key_id, secret_access_key));
+        }
+    }
+
+    CHECK(!connections_.empty());
+}
+
+zarr::S3ConnectionPool::S3ConnectionPool(size_t n_connections,
+                                         const std::string& endpoint,
+                                         const std::string& access_key_id,
+                                         const std::string& secret_access_key,
+                                         const std::string& region)
+{
+    LOG_DEBUG("Setting region to ", region);
+
+    for (auto i = 0; i < n_connections; ++i) {
+        auto connection = std::make_unique<S3Connection>(
+          endpoint, access_key_id, secret_access_key, region);
+
+        if (connection->is_connection_valid()) {
+            connections_.push_back(std::make_unique<S3Connection>(
+              endpoint, access_key_id, secret_access_key, region));
         }
     }
 

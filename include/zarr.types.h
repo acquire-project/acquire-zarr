@@ -90,6 +90,7 @@ extern "C"
         const char* bucket_name;
         const char* access_key_id;
         const char* secret_access_key;
+        const char* region;
     } ZarrS3Settings;
 
     /**
@@ -111,7 +112,7 @@ extern "C"
      */
     typedef struct
     {
-        const char* name; /**< Name of the dimension */
+        const char* name;       /**< Name of the dimension */
         ZarrDimensionType type; /**< Type of the dimension */
         uint32_t array_size_px; /**< Size of the array along this dimension in
                                        pixels */

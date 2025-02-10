@@ -16,7 +16,8 @@ bool
 get_credentials(std::string& endpoint,
                 std::string& bucket_name,
                 std::string& access_key_id,
-                std::string& secret_access_key)
+                std::string& secret_access_key,
+                std::optional<std::string>& region)
 {
     char* env = nullptr;
     if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
@@ -42,6 +43,11 @@ get_credentials(std::string& endpoint,
         return false;
     }
     secret_access_key = env;
+
+    env = std::getenv("ZARR_S3_REGION");
+    if (env) {
+        region = env;
+    }
 
     return true;
 }
@@ -256,14 +262,28 @@ main()
 
     std::string s3_endpoint, bucket_name, s3_access_key_id,
       s3_secret_access_key;
-    if (!get_credentials(
-          s3_endpoint, bucket_name, s3_access_key_id, s3_secret_access_key)) {
+    std::optional<std::string> s3_region;
+    if (!get_credentials(s3_endpoint,
+                         bucket_name,
+                         s3_access_key_id,
+                         s3_secret_access_key,
+                         s3_region)) {
         LOG_WARNING("Failed to get credentials. Skipping S3 portion of test.");
         return 0;
     }
 
-    auto connection_pool = std::make_shared<zarr::S3ConnectionPool>(
-      4, s3_endpoint, s3_access_key_id, s3_secret_access_key);
+    std::shared_ptr<zarr::S3ConnectionPool> connection_pool;
+    if (s3_region) {
+        connection_pool =
+          std::make_shared<zarr::S3ConnectionPool>(4,
+                                                   s3_endpoint,
+                                                   s3_access_key_id,
+                                                   s3_secret_access_key,
+                                                   *s3_region);
+    } else {
+        connection_pool = std::make_shared<zarr::S3ConnectionPool>(
+          4, s3_endpoint, s3_access_key_id, s3_secret_access_key);
+    }
 
     try {
         sink_creator_make_chunk_sinks(

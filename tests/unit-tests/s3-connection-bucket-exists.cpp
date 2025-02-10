@@ -2,14 +2,15 @@
 #include "unit.test.macros.hh"
 
 #include <cstdlib>
-#include <string_view>
+#include <optional>
 
 namespace {
 bool
 get_credentials(std::string& endpoint,
                 std::string& bucket_name,
                 std::string& access_key_id,
-                std::string& secret_access_key)
+                std::string& secret_access_key,
+                std::optional<std::string>& region)
 {
     char* env = nullptr;
     if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
@@ -36,6 +37,11 @@ get_credentials(std::string& endpoint,
     }
     secret_access_key = env;
 
+    env = std::getenv("ZARR_S3_REGION");
+    if (env) {
+        region = env;
+    }
+
     return true;
 }
 } // namespace
@@ -45,8 +51,12 @@ main()
 {
     std::string s3_endpoint, bucket_name, s3_access_key_id,
       s3_secret_access_key;
-    if (!get_credentials(
-          s3_endpoint, bucket_name, s3_access_key_id, s3_secret_access_key)) {
+    std::optional<std::string> s3_region;
+    if (!get_credentials(s3_endpoint,
+                         bucket_name,
+                         s3_access_key_id,
+                         s3_secret_access_key,
+                         s3_region)) {
         LOG_WARNING("Failed to get credentials. Skipping test.");
         return 0;
     }
@@ -54,21 +64,26 @@ main()
     int retval = 1;
 
     try {
-        zarr::S3Connection conn{ s3_endpoint,
-                                 s3_access_key_id,
-                                 s3_secret_access_key };
+        std::unique_ptr<zarr::S3Connection> conn;
+        if (s3_region) {
+            conn = std::make_unique<zarr::S3Connection>(
+              s3_endpoint, s3_access_key_id, s3_secret_access_key, *s3_region);
+        } else {
+            conn = std::make_unique<zarr::S3Connection>(
+              s3_endpoint, s3_access_key_id, s3_secret_access_key);
+        }
 
-        if (!conn.is_connection_valid()) {
+        if (!conn->is_connection_valid()) {
             LOG_ERROR("Failed to connect to S3.");
             return 1;
         }
 
-        if (conn.bucket_exists("")) {
+        if (conn->bucket_exists("")) {
             LOG_ERROR("False positive response for empty bucket name.");
             return 1;
         }
 
-        CHECK(conn.bucket_exists(bucket_name));
+        CHECK(conn->bucket_exists(bucket_name));
 
         retval = 0;
     } catch (const std::exception& e) {

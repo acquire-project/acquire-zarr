@@ -7,7 +7,8 @@
 #include <vector>
 
 namespace {
-std::string s3_endpoint, s3_bucket_name, s3_access_key_id, s3_secret_access_key;
+std::string s3_endpoint, s3_bucket_name, s3_access_key_id, s3_secret_access_key,
+  s3_region;
 
 const unsigned int array_width = 64, array_height = 48, array_planes = 6,
                    array_channels = 8, array_timepoints = 10;
@@ -74,6 +75,11 @@ get_credentials()
         return false;
     }
     s3_secret_access_key = env;
+
+    env = std::getenv("ZARR_S3_REGION");
+    if (env) {
+        s3_region = env;
+    }
 
     return true;
 }
@@ -181,6 +187,10 @@ setup()
         .access_key_id = s3_access_key_id.c_str(),
         .secret_access_key = s3_secret_access_key.c_str(),
     };
+    if (!s3_region.empty()) {
+        s3_settings.region = s3_region.c_str();
+    }
+
     settings.s3_settings = &s3_settings;
 
     ZarrCompressionSettings compression_settings = {
@@ -195,19 +205,30 @@ setup()
 
     ZarrDimensionProperties* dim;
     dim = settings.dimensions;
-    *dim = DIM("t", ZarrDimensionType_Time, array_timepoints, chunk_timepoints, shard_timepoints);
+    *dim = DIM("t",
+               ZarrDimensionType_Time,
+               array_timepoints,
+               chunk_timepoints,
+               shard_timepoints);
 
     dim = settings.dimensions + 1;
-    *dim = DIM("c", ZarrDimensionType_Channel, array_channels, chunk_channels, shard_channels);
+    *dim = DIM("c",
+               ZarrDimensionType_Channel,
+               array_channels,
+               chunk_channels,
+               shard_channels);
 
     dim = settings.dimensions + 2;
-    *dim = DIM("z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
+    *dim = DIM(
+      "z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
 
     dim = settings.dimensions + 3;
-    *dim = DIM("y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
+    *dim = DIM(
+      "y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
 
     dim = settings.dimensions + 4;
-    *dim = DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
+    *dim =
+      DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
     auto* stream = ZarrStream_create(&settings);
     ZarrStreamSettings_destroy_dimension_array(&settings);
@@ -242,18 +263,21 @@ verify_group_metadata(const nlohmann::json& meta)
     name = axes[1]["name"];
     type = axes[1]["type"];
     EXPECT(name == "c", "Expected name to be 'c', but got '", name, "'");
-    EXPECT(type == "channel", "Expected type to be 'channel', but got '", type, "'");
+    EXPECT(
+      type == "channel", "Expected type to be 'channel', but got '", type, "'");
 
     name = axes[2]["name"];
     type = axes[2]["type"];
     EXPECT(name == "z", "Expected name to be 'z', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
 
     name = axes[3]["name"];
     type = axes[3]["type"];
     unit = axes[3]["unit"];
     EXPECT(name == "y", "Expected name to be 'y', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
     EXPECT(unit == "micrometer",
            "Expected unit to be 'micrometer', but got '",
            unit,
@@ -263,7 +287,8 @@ verify_group_metadata(const nlohmann::json& meta)
     type = axes[4]["type"];
     unit = axes[4]["unit"];
     EXPECT(name == "x", "Expected name to be 'x', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
     EXPECT(unit == "micrometer",
            "Expected unit to be 'micrometer', but got '",
            unit,
@@ -277,7 +302,8 @@ verify_group_metadata(const nlohmann::json& meta)
       datasets["coordinateTransformations"][0];
 
     type = coordinate_transformations["type"].get<std::string>();
-    EXPECT(type == "scale", "Expected type to be 'scale', but got '", type, "'");
+    EXPECT(
+      type == "scale", "Expected type to be 'scale', but got '", type, "'");
 
     const auto scale = coordinate_transformations["scale"];
     EXPECT_EQ(size_t, scale.size(), 5);
