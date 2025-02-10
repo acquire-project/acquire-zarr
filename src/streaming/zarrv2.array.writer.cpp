@@ -98,11 +98,11 @@ zarr::ZarrV2ArrayWriter::make_buffers_() noexcept
     LOG_DEBUG("Creating chunk buffers");
 
     const size_t n_chunks = config_.dimensions->number_of_chunks_in_memory();
-    chunk_buffers_.resize(n_chunks); // no-op if already the correct size
+    data_buffers_.resize(n_chunks); // no-op if already the correct size
 
     const auto n_bytes = bytes_to_allocate_per_chunk_();
 
-    for (auto& buf : chunk_buffers_) {
+    for (auto& buf : data_buffers_) {
         buf.resize(n_bytes);
         std::fill(buf.begin(), buf.end(), std::byte(0));
     }
@@ -111,7 +111,7 @@ zarr::ZarrV2ArrayWriter::make_buffers_() noexcept
 BytePtr
 zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
 {
-    return chunk_buffers_[index].data();
+    return data_buffers_[index].data();
 }
 
 bool
@@ -123,7 +123,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
         return false;
     }
 
-    const auto n_chunks = chunk_buffers_.size();
+    const auto n_chunks = data_buffers_.size();
     CHECK(data_sinks_.size() == n_chunks);
 
     std::atomic<char> all_successful = 1;
@@ -142,7 +142,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                               compress_buffer_(i), // no-op if no compression
                               "Failed to compress buffer");
 
-                            auto& chunk = chunk_buffers_[i];
+                            auto& chunk = data_buffers_[i];
                             auto& sink = data_sinks_[i];
 
                             if (!sink->write(

@@ -104,70 +104,109 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
     }
 }
 
-void
-zarr::ZarrV3ArrayWriter::defragment_chunks_(uint32_t shard_index)
+std::vector<size_t>
+zarr::ZarrV3ArrayWriter::compress_chunks_in_shard_(uint32_t shard_index)
 {
+    const auto n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    const auto bytes_of_chunk = config_.dimensions->bytes_per_chunk();
+
+    std::vector<size_t> sizes(n_chunks, bytes_of_chunk);
+
     if (!config_.compression_params) {
-        return;
+        return sizes;
     }
 
-    const auto nbytes_chunk = bytes_to_allocate_per_chunk_();
-    const auto n_chunks_total =
-      config_.dimensions->number_of_chunks_in_memory();
-    const auto n_shards = config_.dimensions->number_of_shards();
-    const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
+    const auto bytes_of_chunk_with_overhead =
+      bytes_of_chunk + BLOSC_MAX_OVERHEAD;
 
-    std::vector<uint32_t> chunks_in_shard;
-    std::vector<uint32_t> internal_indices;
+    auto& shard = data_buffers_[shard_index];
 
-    for (auto i = 0; i < n_chunks_total; ++i) {
-        if (config_.dimensions->shard_index_for_chunk(i) == shard_index) {
-            chunks_in_shard.push_back(i);
-            internal_indices.push_back(
-              config_.dimensions->shard_internal_index(i));
-        }
+    const auto params = *config_.compression_params;
+    const auto bytes_per_px = bytes_of_type(config_.dtype);
+
+    size_t offset = 0;
+
+    ByteVector tmp(bytes_of_chunk_with_overhead);
+    for (auto i = 0; i < n_chunks; ++i) {
+        const auto* chunk_ptr = get_chunk_data_(i);
+        const auto nb = blosc_compress_ctx(params.clevel,
+                                           params.shuffle,
+                                           bytes_per_px,
+                                           bytes_of_chunk,
+                                           chunk_ptr,
+                                           tmp.data(),
+                                           bytes_of_chunk_with_overhead,
+                                           params.codec_id.c_str(),
+                                           0 /* blocksize - 0:automatic */,
+                                           1);
+
+        EXPECT(nb > 0, "Compression for chunk ", i, " failed.");
+
+        // nb larger than this value will overwrite the next chunk
+        CHECK(nb <= bytes_of_chunk_with_overhead);
+        std::copy(tmp.begin(), tmp.begin() + nb, shard.data() + offset);
+
+        sizes[i] = nb;
+        offset += nb;
     }
 
-    const auto argsorted_indices = argsort(internal_indices);
-    if (!std::is_sorted(argsorted_indices.begin(), argsorted_indices.end())) {
-        std::vector tmp_copy(chunks_in_shard);
-    }
-
-    ///
-
-    std::vector<std::vector<uint32_t>> shard_indices(n_shards);
-    std::vector<std::vector<size_t>> chunk_internal_indices(n_shards);
-    for (auto chunk = 0; chunk < n_chunks; ++chunk) {
-        const auto shard = config_.dimensions->shard_index_for_chunk(chunk);
-        const auto index = config_.dimensions->shard_internal_index(chunk);
-        shard_indices[shard].push_back(chunk);
-        chunk_internal_indices[shard].push_back(index);
-    }
-
-    for (auto shard = 0; shard < shard_indices.size(); ++shard) {
-        auto& buffer = shard_buffers_[shard];
-
-        auto& chunk_indices = shard_indices[shard];
-        auto sorted_indices = argsort(chunk_internal_indices[shard]);
-
-        std::vector tmp_copy(chunk_indices);
-        for (auto i = 0; i < chunk_indices.size(); ++i) {
-            chunk_indices[i] = tmp_copy[sorted_indices[i]];
-        }
-
-        for (auto c_idx = 1; c_idx < chunk_indices.size(); ++c_idx) {
-            const auto prev_chunk = chunk_indices[c_idx - 1];
-            const auto this_chunk = chunk_indices[c_idx];
-            const auto chunk_size = chunk_sizes_compressed_[this_chunk];
-            const auto offset_to_copy_to = chunk_sizes_compressed_[prev_chunk];
-            const auto offset_to_copy_from = c_idx * nbytes_chunk;
-
-            std::copy(buffer.begin() + offset_to_copy_from,
-                      buffer.begin() + offset_to_copy_from + chunk_size,
-                      buffer.begin() + offset_to_copy_to);
-        }
-    }
+    return sizes;
 }
+
+// size_t
+// zarr::ZarrV3ArrayWriter::defragment_chunks_in_shard_(uint32_t shard_index)
+//{
+//     const auto chunks_per_shard = config_.dimensions->chunks_per_shard();
+//     const auto nbytes_chunk = bytes_to_allocate_per_chunk_();
+//
+//     if (!config_.compression_params) {
+//         return chunks_per_shard * nbytes_chunk;
+//     }
+//
+//     const auto n_shards = config_.dimensions->number_of_shards();
+//     CHECK(shard_index < n_shards);
+//     const auto n_chunks_total =
+//       config_.dimensions->number_of_chunks_in_memory();
+//
+//     std::vector<uint32_t> chunks_in_shard;
+//     std::vector<uint32_t> internal_indices;
+//
+//     for (auto i = 0; i < n_chunks_total; ++i) {
+//         if (config_.dimensions->shard_index_for_chunk(i) == shard_index) {
+//             chunks_in_shard.push_back(i);
+//             internal_indices.push_back(
+//               config_.dimensions->shard_internal_index(i));
+//         }
+//     }
+//
+//     const auto argsorted_indices = argsort(internal_indices);
+//     if (!std::is_sorted(argsorted_indices.begin(), argsorted_indices.end()))
+//     {
+//         std::vector tmp_copy(chunks_in_shard);
+//         for (auto i = 0; i < chunks_in_shard.size(); ++i) {
+//             chunks_in_shard[i] = tmp_copy[argsorted_indices[i]];
+//         }
+//     }
+//
+//     // size of first chunk in shard
+//     size_t shard_size = chunk_sizes_compressed_[chunks_in_shard[0]];
+//
+//     auto& buffer = shard_buffers_[shard_index];
+//     for (auto i = 1; i < chunks_per_shard; ++i) {
+//         const auto prev_chunk = chunks_in_shard[i - 1];
+//         const auto this_chunk = chunks_in_shard[i];
+//         const auto chunk_size = chunk_sizes_compressed_[this_chunk];
+//         const auto offset_to_copy_from = i * nbytes_chunk;
+//
+//         std::copy(buffer.begin() + offset_to_copy_from,
+//                   buffer.begin() + offset_to_copy_from + chunk_size,
+//                   buffer.begin() + shard_size);
+//
+//         shard_size += chunk_size;
+//     }
+//
+//     return shard_size;
+// }
 
 std::string
 zarr::ZarrV3ArrayWriter::data_root_() const
@@ -195,12 +234,12 @@ zarr::ZarrV3ArrayWriter::make_buffers_() noexcept
     LOG_DEBUG("Creating shard buffers");
 
     const size_t n_shards = config_.dimensions->number_of_shards();
-    shard_buffers_.resize(n_shards); // no-op if already the correct size
+    data_buffers_.resize(n_shards); // no-op if already the correct size
 
     const auto n_chunks = config_.dimensions->number_of_chunks_in_memory();
     const auto n_bytes = bytes_to_allocate_per_chunk_();
 
-    for (auto& buf : shard_buffers_) {
+    for (auto& buf : data_buffers_) {
         buf.resize(n_chunks * n_bytes);
         std::fill(buf.begin(), buf.end(), std::byte(0));
     }
@@ -213,7 +252,7 @@ zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
     const auto internal_index = config_.dimensions->shard_internal_index(index);
     const auto n_bytes = bytes_to_allocate_per_chunk_();
 
-    return shard_buffers_[index].data() + internal_index * n_bytes;
+    return data_buffers_[index].data() + internal_index * n_bytes;
 }
 
 bool
@@ -232,7 +271,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
     const auto chunks_in_memory =
       config_.dimensions->number_of_chunks_in_memory();
     auto chunk_group_offset = flushed_count_ * chunks_in_memory;
-    for (auto i = 0; i < shard_buffers_.size(); ++i) {
+    for (auto i = 0; i < data_buffers_.size(); ++i) {
         const auto index =
           config_.dimensions->shard_index_for_chunk(i + chunk_group_offset);
         chunk_in_shards[index].push_back(i);
@@ -253,6 +292,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                                                  &chunk_table,
                                                  &all_successful,
                                                  &latch,
+                                                 i,
                                                  write_table,
                                                  file_offset,
                                                  chunk_group_offset,
@@ -260,33 +300,35 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
             bool success = true;
 
             try {
-                for (const auto& chunk_idx : chunks) {
+                const auto chunk_sizes = compress_chunks_in_shard_(i);
+                auto shard_size = 0;
+                for (const auto& chunk_size : chunk_sizes) {
+                    shard_size += chunk_size;
+                }
+
+                std::span shard_data(data_buffers_[i].data(), shard_size);
+                success = sink->write(*file_offset, shard_data);
+                if (!success) {
+                    err = "Failed to write shard";
+                    return false;
+                }
+
+                // update the chunk table
+                for (auto j = 0; j < chunks.size(); ++j) {
                     if (!all_successful) {
                         break;
                     }
 
-                    // no-op if no compression
-                    if (!compress_buffer_(chunk_idx)) {
-                        err = "Failed to compress buffer";
-                        success = false;
-                        break;
-                    }
-
-                    auto& chunk = shard_buffers_[chunk_idx];
-                    std::span chunk_data(chunk);
-                    if (!sink->write(*file_offset, chunk_data)) {
-                        err = "Failed to write chunk";
-                        success = false;
-                        break;
-                    }
+                    const auto chunk_idx = chunks[j];
+                    const auto chunk_size = chunk_sizes[j];
 
                     const auto internal_idx =
                       config_.dimensions->shard_internal_index(
                         chunk_idx + chunk_group_offset);
                     chunk_table[2 * internal_idx] = *file_offset;
-                    chunk_table[2 * internal_idx + 1] = chunk.size();
+                    chunk_table[2 * internal_idx + 1] = chunk_size;
 
-                    *file_offset += chunk.size();
+                    *file_offset += chunk_size;
                 }
 
                 if (success && write_table) {

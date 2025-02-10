@@ -13,12 +13,11 @@ struct ZarrV3ArrayWriter : public ArrayWriter
                       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    std::vector<ByteVector> shard_buffers_;
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
     uint32_t flushed_count_;
 
-    void defragment_chunks_(uint32_t shard_index);
+    std::vector<size_t> compress_chunks_in_shard_(uint32_t shard_index);
 
     std::string data_root_() const override;
     std::string metadata_path_() const override;

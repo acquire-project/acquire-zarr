@@ -57,6 +57,7 @@ class ArrayWriter
     [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
 
   protected:
+    std::vector<ByteVector> data_buffers_;
     ArrayWriterConfig config_;
 
     /// Filesystem

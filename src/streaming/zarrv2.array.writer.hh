@@ -14,8 +14,6 @@ class ZarrV2ArrayWriter final : public ArrayWriter
                       std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    std::vector<ByteVector> chunk_buffers_;
-
     std::string data_root_() const override;
     std::string metadata_path_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;

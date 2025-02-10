@@ -113,7 +113,9 @@ zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
         return 0;
     }
 
-    make_buffers_();
+    if (data_buffers_.empty()) {
+        make_buffers_();
+    }
 
     // split the incoming frame into tiles and write them to the chunk
     // buffers
