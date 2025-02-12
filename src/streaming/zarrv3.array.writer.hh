@@ -17,7 +17,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     std::vector<std::vector<uint64_t>> shard_tables_;
     uint32_t flushed_count_;
 
-    std::vector<size_t> compress_chunks_in_shard_(uint32_t shard_index);
+    size_t defragment_chunks_in_shard_(uint32_t shard_index);
 
     std::string data_root_() const override;
     std::string metadata_path_() const override;

@@ -306,7 +306,7 @@ zarr::ArrayWriter::should_flush_() const
 }
 
 bool
-zarr::ArrayWriter::compress_buffer_(uint32_t index)
+zarr::ArrayWriter::compress_chunk_(uint32_t index)
 {
     if (!config_.compression_params.has_value()) {
         return true;

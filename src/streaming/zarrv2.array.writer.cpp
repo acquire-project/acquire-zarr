@@ -142,7 +142,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                     try {
                         if (all_successful) {
                             EXPECT(
-                              compress_buffer_(i), // no-op if no compression
+                              compress_chunk_(i), // no-op if no compression
                               "Failed to compress buffer");
 
                             auto& chunk = data_buffers_[i];

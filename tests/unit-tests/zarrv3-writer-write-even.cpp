@@ -163,10 +163,8 @@ main()
                                 sizeof(uint64_t) * // indices are 64 bits
                                 2;                 // 2 indices per chunk
         const auto checksum_size = 4;              // CRC32 checksum is 4 bytes
-        const auto expected_file_size = shard_width * shard_height *
-                                          shard_planes * shard_channels *
-                                          shard_timepoints * chunk_size +
-                                        index_size + checksum_size;
+        const auto expected_file_size =
+          chunks_per_shard * chunk_size + index_size + checksum_size;
 
         const fs::path data_root =
           base_dir / std::to_string(config.level_of_detail);
