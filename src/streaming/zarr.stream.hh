@@ -34,6 +34,7 @@ struct ZarrStream_s
         std::string bucket_name;
         std::string access_key_id;
         std::string secret_access_key;
+        std::optional<std::string> region;
     };
     struct CompressionSettings
     {

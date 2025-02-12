@@ -21,7 +21,8 @@ def main():
         endpoint="http://localhost:9000",
         bucket_name="mybucket",
         access_key_id="myaccesskey",
-        secret_access_key="mysecretkey"
+        secret_access_key="mysecretkey",
+        region="us-east-2"
     )
 
     # Configure compression
