@@ -106,6 +106,9 @@ zarr::ZarrV2ArrayWriter::make_buffers_() noexcept
         buf.resize(n_bytes);
         std::fill(buf.begin(), buf.end(), std::byte(0));
     }
+
+    std::fill(
+      chunk_sizes_compressed_.begin(), chunk_sizes_compressed_.end(), n_bytes);
 }
 
 BytePtr
@@ -145,10 +148,9 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                             auto& chunk = data_buffers_[i];
                             auto& sink = data_sinks_[i];
 
-                            if (!sink->write(
-                                  0,
-                                  { reinterpret_cast<std::byte*>(chunk.data()),
-                                    chunk.size() })) {
+                            std::span chunk_data(chunk.data(),
+                                                 chunk_sizes_compressed_[i]);
+                            if (!sink->write(0, chunk_data)) {
                                 err = "Failed to write chunk";
                                 success = false;
                             }
