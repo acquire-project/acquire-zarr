@@ -22,5 +22,6 @@ target_include_directories(acquire_zarr PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(acquire_zarr PRIVATE acquire-zarr)
 
 set_target_properties(acquire_zarr PROPERTIES
+        OUTPUT_NAME "__init__"
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )

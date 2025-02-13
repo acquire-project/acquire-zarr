@@ -507,6 +507,10 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
             .secret_access_key =
               zarr::trim(settings->s3_settings->secret_access_key),
         };
+
+        if (settings->s3_settings->region) {
+            s3_settings_->region = zarr::trim(settings->s3_settings->region);
+        }
     }
 
     if (is_compressed_acquisition(settings)) {
@@ -546,11 +550,20 @@ ZarrStream_s::create_store_()
     if (is_s3_acquisition_()) {
         // spin up S3 connection pool
         try {
-            s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
-              std::thread::hardware_concurrency(),
-              s3_settings_->endpoint,
-              s3_settings_->access_key_id,
-              s3_settings_->secret_access_key);
+            if (s3_settings_->region.has_value()) {
+                s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
+                  std::thread::hardware_concurrency(),
+                  s3_settings_->endpoint,
+                  s3_settings_->access_key_id,
+                  s3_settings_->secret_access_key,
+                  *s3_settings_->region);
+            } else {
+                s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
+                  std::thread::hardware_concurrency(),
+                  s3_settings_->endpoint,
+                  s3_settings_->access_key_id,
+                  s3_settings_->secret_access_key);
+            }
         } catch (const std::exception& e) {
             set_error_("Error creating S3 connection pool: " +
                        std::string(e.what()));

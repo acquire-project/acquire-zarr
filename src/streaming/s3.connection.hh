@@ -18,6 +18,11 @@ class S3Connection
                  const std::string& access_key_id,
                  const std::string& secret_access_key);
 
+    S3Connection(const std::string& endpoint,
+                 const std::string& access_key_id,
+                 const std::string& secret_access_key,
+                 const std::string& region);
+
     /**
      * @brief Test a connection by listing all buckets at this connection's
      * endpoint.
@@ -123,6 +128,13 @@ class S3ConnectionPool
                      const std::string& endpoint,
                      const std::string& access_key_id,
                      const std::string& secret_access_key);
+
+    S3ConnectionPool(size_t n_connections,
+                     const std::string& endpoint,
+                     const std::string& access_key_id,
+                     const std::string& secret_access_key,
+                     const std::string& region);
+
     ~S3ConnectionPool();
 
     std::unique_ptr<S3Connection> get_connection();

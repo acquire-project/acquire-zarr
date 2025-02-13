@@ -135,15 +135,22 @@ class PyZarrS3Settings
     }
     const std::string& secret_access_key() const { return secret_access_key_; }
 
+    void set_region(const std::string& region) { region_ = region; }
+    const std::optional<std::string>& region() const { return region_; }
+
     std::string repr() const
     {
-        auto secret_access_key = secret_access_key_.size() < 6
-                                   ? secret_access_key_
-                                   : secret_access_key_.substr(0, 5) + "...";
+        const auto secret_access_key =
+          secret_access_key_.size() < 6
+            ? secret_access_key_
+            : secret_access_key_.substr(0, 5) + "...";
+        const auto region =
+          region_.has_value() ? ("'" + region_.value() + "'") : "None";
 
         return "S3Settings(endpoint='" + endpoint_ + "', bucket_name='" +
                bucket_name_ + "', access_key_id='" + access_key_id_ +
-               "', secret_access_key='" + secret_access_key + "')";
+               "', secret_access_key='" + secret_access_key +
+               "', region=" + region + ")";
     }
 
   private:
@@ -151,6 +158,7 @@ class PyZarrS3Settings
     std::string bucket_name_;
     std::string access_key_id_;
     std::string secret_access_key_;
+    std::optional<std::string> region_;
 };
 
 class PyZarrCompressionSettings
@@ -336,6 +344,13 @@ class PyZarrStream
             s3_secret_access_key_ = s3.secret_access_key();
             s3_settings.secret_access_key = s3_secret_access_key_.c_str();
 
+            if (s3.region().has_value()) {
+                s3_region_ = s3.region().value();
+                s3_settings.region = s3_region_.c_str();
+            } else {
+                s3_settings.region = nullptr;
+            }
+
             stream_settings.s3_settings = &s3_settings;
         }
 
@@ -416,6 +431,7 @@ class PyZarrStream
     std::string s3_bucket_name_;
     std::string s3_access_key_id_;
     std::string s3_secret_access_key_;
+    std::string s3_region_;
 };
 
 PYBIND11_MODULE(acquire_zarr, m)
@@ -493,6 +509,8 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("secret_access_key"))
               settings.set_secret_access_key(
                 kwargs["secret_access_key"].cast<std::string>());
+          if (kwargs.contains("region"))
+              settings.set_region(kwargs["region"].cast<std::string>());
           return settings;
       }))
       .def("__repr__", [](const PyZarrS3Settings& self) { return self.repr(); })
@@ -507,7 +525,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrS3Settings::set_access_key_id)
       .def_property("secret_access_key",
                     &PyZarrS3Settings::secret_access_key,
-                    &PyZarrS3Settings::set_secret_access_key);
+                    &PyZarrS3Settings::set_secret_access_key)
+      .def_property(
+        "region", &PyZarrS3Settings::region, &PyZarrS3Settings::set_region);
 
     py::class_<PyZarrCompressionSettings>(
       m, "CompressionSettings", py::dynamic_attr())
@@ -640,8 +660,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                  std::string(data_type_to_str(self.data_type())) +
                  ", version=ZarrVersion." +
                  std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
-                 ", max_threads=" + std::to_string(self.max_threads()) +
-                 ")";
+                 ", max_threads=" + std::to_string(self.max_threads()) + ")";
                return repr;
            })
       .def_property("store_path",

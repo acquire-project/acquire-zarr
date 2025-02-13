@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.1.0"
+version = "0.2.0"
 description = "Performant streaming to Zarr storage, on filesystem or cloud"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
@@ -51,3 +51,8 @@ testpaths = [
 
 [tool.setuptools]
 zip-safe = false
+packages = ["acquire_zarr"]
+package-dir = { "" = "python" }
+
+[tool.setuptools.package-data]
+acquire_zarr = ["*.pyi", "py.typed"]

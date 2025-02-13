@@ -336,6 +336,7 @@ class S3Settings:
     bucket_name: str
     endpoint: str
     secret_access_key: str
+    region: Optional[str]
 
     def __init__(self, **kwargs) -> None:
         ...
