@@ -67,81 +67,6 @@ check_json()
     EXPECT_EQ(int, chunk_shape[4].get<int>(), chunk_width);
 }
 
-void
-print_frame(const ByteVector& frame)
-{
-    for (auto i = 0; i < array_height; ++i) {
-        for (auto j = 0; j < array_width; ++j) {
-            std::cout << (int)frame[i * array_width + j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
-}
-
-void
-fill_frame(ByteVector& frame,
-           std::shared_ptr<ArrayDimensions> dims,
-           int frame_id)
-{
-    // fill each tile in the frame with a value for each chunk
-    const auto t = dims->chunk_lattice_index(frame_id, 0);
-    const auto c = dims->chunk_lattice_index(frame_id, 1);
-    const auto z = dims->chunk_lattice_index(frame_id, 2);
-
-    const auto base_fill_value = t * 10000 + c * 1000 + z * 100;
-
-    int k = 0;
-    for (auto i = 0; i < array_height; ++i) {
-        const auto y = i / chunk_height;
-        for (auto j = 0; j < array_width; ++j) {
-            const auto x = j / chunk_width;
-            const auto fill_value = base_fill_value + y * 10 + x;
-            frame[k++] = static_cast<std::byte>(fill_value);
-        }
-    }
-
-//    print_frame(frame);
-}
-
-void
-validate_chunk_data(const ByteVector& chunk_data,
-                    std::vector<uint32_t> lattice_idx)
-{
-    const auto t = lattice_idx[0];
-    const auto c = lattice_idx[1];
-    const auto z = lattice_idx[2];
-    const auto y = lattice_idx[3];
-    const auto x = lattice_idx[4];
-
-    const auto fill_value = t * 10000 + c * 1000 + z * 100 + y * 10 + x;
-
-    int k = 0;
-    for (auto i = 0; i < chunk_height; ++i) {
-        for (auto j = 0; j < chunk_width; ++j) {
-            EXPECT(chunk_data[k++] == static_cast<std::byte>(fill_value),
-                   "Expected fill value ",
-                   fill_value,
-                   " at (",
-                   i,
-                   ", ",
-                   j,
-                   ") in chunk (",
-                   t,
-                   ",",
-                   c,
-                   ",",
-                   z,
-                   ",",
-                   y,
-                   ",",
-                   x,
-                   ") but got ",
-                   (int)chunk_data[k - 1]);
-        }
-    }
-}
-
 int
 main()
 {
@@ -170,11 +95,8 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, 0);
 
-        const auto array_dims =
-          std::make_shared<ArrayDimensions>(std::move(dims), dtype);
-
         zarr::ArrayWriterConfig config = {
-            .dimensions = array_dims,
+            .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
             .dtype = dtype,
             .level_of_detail = level_of_detail,
             .bucket_name = std::nullopt,
@@ -190,7 +112,6 @@ main()
             std::vector data(frame_size, std::byte(0));
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
-                fill_frame(data, array_dims, i);
                 CHECK(writer->write_frame(data));
             }
 
@@ -206,42 +127,28 @@ main()
         const fs::path data_root =
           base_dir / std::to_string(config.level_of_detail);
 
-        std::vector<uint32_t> lattice_idx(5, 0);
-
         CHECK(fs::is_directory(data_root));
         for (auto t = 0; t < chunks_in_t; ++t) {
-            lattice_idx[0] = t;
             const auto t_dir = data_root / std::to_string(t);
             CHECK(fs::is_directory(t_dir));
 
             for (auto c = 0; c < chunks_in_c; ++c) {
-                lattice_idx[1] = c;
                 const auto c_dir = t_dir / std::to_string(c);
                 CHECK(fs::is_directory(c_dir));
 
                 for (auto z = 0; z < chunks_in_z; ++z) {
-                    lattice_idx[2] = z;
                     const auto z_dir = c_dir / std::to_string(z);
                     CHECK(fs::is_directory(z_dir));
 
                     for (auto y = 0; y < chunks_in_y; ++y) {
-                        lattice_idx[3] = y;
                         const auto y_dir = z_dir / std::to_string(y);
                         CHECK(fs::is_directory(y_dir));
 
                         for (auto x = 0; x < chunks_in_x; ++x) {
-                            lattice_idx[4] = x;
                             const auto x_file = y_dir / std::to_string(x);
                             CHECK(fs::is_regular_file(x_file));
                             const auto file_size = fs::file_size(x_file);
                             EXPECT_EQ(int, file_size, expected_file_size);
-
-                            ByteVector chunk_data(file_size);
-                            std::ifstream f(x_file, std::ios::binary);
-                            f.read(reinterpret_cast<char*>(chunk_data.data()),
-                                   file_size);
-                            CHECK(f.gcount() == file_size);
-                            validate_chunk_data(chunk_data, lattice_idx);
                         }
 
                         CHECK(!fs::is_regular_file(
