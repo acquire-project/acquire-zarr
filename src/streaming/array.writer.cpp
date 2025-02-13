@@ -252,8 +252,8 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
         // TODO (aliddell): we can optimize this when tiles_per_frame_x_ is 1
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
-            auto chunk_begin = get_chunk_data_(c);
-            const auto chunk_end = chunk_begin + bytes_per_chunk;
+            auto chunk_ptr = get_chunk_data_(c);
+            const auto chunk_end = chunk_ptr + bytes_per_chunk;
 
             for (auto k = 0; k < tile_rows; ++k) {
                 const auto frame_row = i * tile_rows + k;
@@ -274,17 +274,17 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
                     }
 
                     // copy region
-                    if (nbytes > std::distance(chunk_begin, chunk_end)) {
+                    if (nbytes > std::distance(chunk_ptr, chunk_end)) {
                         LOG_ERROR("Buffer overflow");
                         return bytes_written;
                     }
                     std::copy(data.begin() + region_start,
                               data.begin() + region_stop,
-                              chunk_begin);
+                              chunk_ptr);
 
                     bytes_written += (region_stop - region_start);
                 }
-                chunk_begin += static_cast<long long>(bytes_per_row);
+                chunk_ptr += static_cast<long long>(bytes_per_row);
             }
         }
     }

@@ -68,14 +68,26 @@ check_json()
 }
 
 void
+print_frame(const ByteVector& frame)
+{
+    for (auto i = 0; i < array_height; ++i) {
+        for (auto j = 0; j < array_width; ++j) {
+            std::cout << (int)frame[i * array_width + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+void
 fill_frame(ByteVector& frame,
            std::shared_ptr<ArrayDimensions> dims,
            int frame_id)
 {
     // fill each tile in the frame with a value for each chunk
-    const auto z = dims->chunk_lattice_index(frame_id, 2);
-    const auto c = dims->chunk_lattice_index(frame_id, 1);
     const auto t = dims->chunk_lattice_index(frame_id, 0);
+    const auto c = dims->chunk_lattice_index(frame_id, 1);
+    const auto z = dims->chunk_lattice_index(frame_id, 2);
 
     const auto base_fill_value = t * 10000 + c * 1000 + z * 100;
 
@@ -84,10 +96,12 @@ fill_frame(ByteVector& frame,
         const auto y = i / chunk_height;
         for (auto j = 0; j < array_width; ++j) {
             const auto x = j / chunk_width;
-            const auto fill_value = y * 10 + x;
+            const auto fill_value = base_fill_value + y * 10 + x;
             frame[k++] = static_cast<std::byte>(fill_value);
         }
     }
+
+//    print_frame(frame);
 }
 
 void
