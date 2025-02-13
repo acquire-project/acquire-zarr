@@ -252,23 +252,24 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
         chunk_latches.emplace(i, chunks.size());
 
         for (const auto& chunk : chunks) {
-            EXPECT(thread_pool_->push_job(
-              std::move([&chunk_latch = chunk_latches.at(i), chunk, this](
-                          std::string& err) {
-                  bool success = true;
-                  try {
-                      EXPECT(compress_chunk_(chunk),
-                             "Failed to compress chunk ",
-                             chunk);
-                  } catch (const std::exception& exc) {
-                      err =
-                        "Failed to compress chunk: " + std::string(exc.what());
-                      success = false;
-                  }
+            EXPECT(thread_pool_->push_job(std::move(
+                     [&chunk_latch = chunk_latches.at(i), chunk, this](
+                       std::string& err) {
+                         bool success = true;
+                         try {
+                             EXPECT(compress_chunk_(chunk),
+                                    "Failed to compress chunk ",
+                                    chunk);
+                         } catch (const std::exception& exc) {
+                             err = "Failed to compress chunk: " +
+                                   std::string(exc.what());
+                             success = false;
+                         }
 
-                  chunk_latch.count_down();
-                  return success;
-              })));
+                         chunk_latch.count_down();
+                         return success;
+                     })),
+                   "Failed to push job to thread pool");
         }
     }
 
@@ -329,25 +330,24 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                        "Failed to write table");
 
                 // compute crc32 checksum of the table
-                    uint32_t checksum = crc32c::Crc32c(
-                      reinterpret_cast<const uint8_t*>(table_ptr), table_size);
-                    EXPECT(
-                      sink->write(*file_offset + table_size,
-                                  { reinterpret_cast<std::byte*>(&checksum),
-                                    sizeof(checksum) }),
-                      "Failed to write checksum");
-                }
-            } catch (const std::exception& exc) {
-                err = "Failed to flush data: " + std::string(exc.what());
-                success = false;
+                uint32_t checksum = crc32c::Crc32c(
+                  reinterpret_cast<const uint8_t*>(table_ptr), table_size);
+                EXPECT(sink->write(*file_offset + table_size,
+                                   { reinterpret_cast<std::byte*>(&checksum),
+                                     sizeof(checksum) }),
+                       "Failed to write checksum");
             }
+        } catch (const std::exception& exc) {
+            err = "Failed to flush data: " + std::string(exc.what());
+            success = false;
+        }
 
-            shard_latch.count_down();
+        shard_latch.count_down();
 
-            all_successful.fetch_and(static_cast<char>(success));
-            //            return success;
-            //        })),
-            //               "Failed to push job to thread pool");
+        all_successful.fetch_and(static_cast<char>(success));
+        //            return success;
+        //        })),
+        //               "Failed to push job to thread pool");
     }
 
     // wait for all threads to finish
