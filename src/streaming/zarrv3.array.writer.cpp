@@ -206,11 +206,15 @@ zarr::ZarrV3ArrayWriter::make_buffers_() noexcept
 BytePtr
 zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
 {
-    index = config_.dimensions->shard_index_for_chunk(index);
-    const auto internal_index = config_.dimensions->shard_internal_index(index);
-    const auto n_bytes = bytes_to_allocate_per_chunk_();
+    const auto shard_idx = config_.dimensions->shard_index_for_chunk(index);
+    auto& shard = data_buffers_[shard_idx];
 
-    return data_buffers_[index].data() + internal_index * n_bytes;
+    const auto internal_idx = config_.dimensions->shard_internal_index(index);
+    const auto n_bytes = bytes_to_allocate_per_chunk_();
+    const auto offset = internal_idx * n_bytes;
+
+    CHECK(offset < shard.size());
+    return shard.data() + offset;
 }
 
 bool
