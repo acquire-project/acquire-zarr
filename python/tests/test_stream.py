@@ -252,10 +252,8 @@ def test_stream_data_to_filesystem(
     array = group["0"]
 
     assert array.shape == data.shape
-    assert np.array_equal(array[0, :, :], data[31, :, :])
-    assert np.array_equal(array[32, :, :], data[-1, :, :])
-    # for i in range(array.shape[0]):
-    #     assert np.array_equal(array[i, :, :], data[i, :, :])
+    for i in range(array.shape[0]):
+        assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
     if compression_codec is not None:
@@ -371,10 +369,8 @@ def test_stream_data_to_s3(
     array = group["0"]
 
     assert array.shape == data.shape
-    assert np.array_equal(array[0, :, :], data[31, :, :])
-    assert np.array_equal(array[32, :, :], data[-1, :, :])
-    # for i in range(array.shape[0]):
-    #     assert np.array_equal(array[i, :, :], data[i, :, :])
+    for i in range(array.shape[0]):
+        assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
     if compression_codec is not None:

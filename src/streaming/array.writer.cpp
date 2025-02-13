@@ -252,7 +252,7 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
         // TODO (aliddell): we can optimize this when tiles_per_frame_x_ is 1
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
-            auto chunk_ptr = get_chunk_data_(c);
+            auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
             const auto chunk_end = chunk_ptr + bytes_per_chunk;
 
             for (auto k = 0; k < tile_rows; ++k) {
