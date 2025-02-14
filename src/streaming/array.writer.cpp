@@ -252,8 +252,8 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
         // TODO (aliddell): we can optimize this when tiles_per_frame_x_ is 1
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
-            auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
-            const auto chunk_end = chunk_ptr + bytes_per_chunk;
+            auto chunk = get_chunk_data_(c);
+            auto chunk_it = chunk.begin() + chunk_offset;
 
             for (auto k = 0; k < tile_rows; ++k) {
                 const auto frame_row = i * tile_rows + k;
@@ -274,17 +274,17 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
                     }
 
                     // copy region
-                    if (nbytes > std::distance(chunk_ptr, chunk_end)) {
+                    if (nbytes > std::distance(chunk_it, chunk.end())) {
                         LOG_ERROR("Buffer overflow");
                         return bytes_written;
                     }
                     std::copy(data.begin() + region_start,
                               data.begin() + region_stop,
-                              chunk_ptr);
+                              chunk_it);
 
                     bytes_written += (region_stop - region_start);
                 }
-                chunk_ptr += static_cast<long long>(bytes_per_row);
+                chunk_it += static_cast<long long>(bytes_per_row);
             }
         }
     }
@@ -315,8 +315,8 @@ zarr::ArrayWriter::compress_chunk_(uint32_t index)
     BloscCompressionParams params = config_.compression_params.value();
     const auto bytes_per_px = bytes_of_type(config_.dtype);
 
-    auto* chunk_ptr = get_chunk_data_(index);
-    const size_t bytes_of_chunk = config_.dimensions->bytes_per_chunk();
+    auto chunk = get_chunk_data_(index);
+    const size_t bytes_of_chunk = chunk.size();
 
     try {
         const auto tmp_size = bytes_to_allocate_per_chunk_();
@@ -325,7 +325,7 @@ zarr::ArrayWriter::compress_chunk_(uint32_t index)
                                            params.shuffle,
                                            bytes_per_px,
                                            bytes_of_chunk,
-                                           chunk_ptr,
+                                           chunk.data(),
                                            tmp.data(),
                                            tmp_size,
                                            params.codec_id.c_str(),
@@ -335,7 +335,7 @@ zarr::ArrayWriter::compress_chunk_(uint32_t index)
         tmp.resize(nb);
 
         // copy the temporary buffer back to the original chunk pointer
-        std::copy(tmp.begin(), tmp.end(), chunk_ptr);
+        std::copy(tmp.begin(), tmp.end(), chunk.begin());
         chunk_sizes_compressed_[index] = nb;
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to compress chunk: ", exc.what());

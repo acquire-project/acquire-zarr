@@ -111,10 +111,10 @@ zarr::ZarrV2ArrayWriter::make_buffers_()
       chunk_sizes_compressed_.begin(), chunk_sizes_compressed_.end(), n_bytes);
 }
 
-BytePtr
+ByteSpan
 zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
 {
-    return data_buffers_[index].data();
+    return { data_buffers_[index] };
 }
 
 bool
