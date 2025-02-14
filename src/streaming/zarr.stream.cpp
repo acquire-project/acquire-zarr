@@ -430,10 +430,11 @@ ZarrStream::append(const void* data_, size_t nbytes)
     auto* data = static_cast<const std::byte*>(data_);
 
     const size_t bytes_of_frame = frame_buffer_.size();
-    size_t bytes_written = 0;
+    size_t bytes_written = 0; // bytes written out of the input data
 
     while (bytes_written < nbytes) {
         const size_t bytes_remaining = nbytes - bytes_written;
+
         if (frame_buffer_offset_ > 0) { // add to / finish a partial frame
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset_, bytes_remaining);
@@ -446,10 +447,8 @@ ZarrStream::append(const void* data_, size_t nbytes)
 
             // ready to flush the frame buffer
             if (frame_buffer_offset_ == bytes_of_frame) {
-                const size_t bytes_written_this_frame =
-                  writers_[0]->write_frame(frame_buffer_);
-                if (bytes_written_this_frame == 0) {
-                    break;
+                if (write_frame_(frame_buffer_) < bytes_of_frame) {
+                    break; // critical error
                 }
 
                 data += bytes_to_copy;
@@ -460,16 +459,12 @@ ZarrStream::append(const void* data_, size_t nbytes)
             frame_buffer_offset_ = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            const size_t bytes_written_this_frame =
-              writers_[0]->write_frame({ data, bytes_of_frame });
-            if (bytes_written_this_frame == 0) {
-                break;
+            if (write_frame_({ data, bytes_of_frame }) < bytes_of_frame) {
+                break; // critical error
             }
 
-            write_multiscale_frames_({ data, bytes_written_this_frame });
-
-            bytes_written += bytes_written_this_frame;
-            data += bytes_written_this_frame;
+            bytes_written += bytes_of_frame;
+            data += bytes_of_frame;
         }
     }
 
@@ -876,6 +871,22 @@ ZarrStream_s::make_multiscale_metadata_() const
     }
 
     return multiscales;
+}
+
+size_t
+ZarrStream_s::write_frame_(ConstByteSpan data)
+{
+    const auto bytes_of_full_frame = frame_buffer_.size();
+    const auto n_bytes = writers_[0]->write_frame(data);
+    EXPECT(n_bytes == bytes_of_full_frame, "");
+
+    if (n_bytes != data.size()) {
+        set_error_("Incomplete write to full-resolution array.");
+        return n_bytes;
+    }
+
+    write_multiscale_frames_(data);
+    return n_bytes;
 }
 
 void

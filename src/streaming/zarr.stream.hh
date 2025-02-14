@@ -106,6 +106,7 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_multiscale_metadata_() const;
 
+    size_t write_frame_(ConstByteSpan data);
     void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
