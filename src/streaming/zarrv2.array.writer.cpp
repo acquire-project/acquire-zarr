@@ -93,7 +93,7 @@ zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
 }
 
 void
-zarr::ZarrV2ArrayWriter::make_buffers_() noexcept
+zarr::ZarrV2ArrayWriter::make_buffers_()
 {
     LOG_DEBUG("Creating chunk buffers");
 

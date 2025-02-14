@@ -116,8 +116,8 @@ main()
             
             // Fill multi-frame buffer with test pattern
             for (size_t f = 0; f < frames_per_append; ++f) {
-                const size_t frame_offset = f * array_width * array_height;
-                const uint16_t frame_value = static_cast<uint16_t>(i + f);
+                const auto frame_offset = f * array_width * array_height;
+                const auto frame_value = static_cast<uint16_t>(i + f);
                 std::fill(multi_frame_data.begin() + frame_offset,
                          multi_frame_data.begin() + frame_offset + (array_width * array_height),
                          frame_value);

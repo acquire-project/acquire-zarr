@@ -92,7 +92,7 @@ class ArrayWriter
 
     [[nodiscard]] bool make_data_sinks_();
     [[nodiscard]] bool make_metadata_sink_();
-    virtual void make_buffers_() noexcept = 0;
+    virtual void make_buffers_() = 0;
 
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
     virtual BytePtr get_chunk_data_(uint32_t index) = 0;
