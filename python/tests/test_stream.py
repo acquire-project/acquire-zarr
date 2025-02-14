@@ -68,10 +68,10 @@ def settings():
 def s3_settings():
     dotenv.load_dotenv()
     if (
-            "ZARR_S3_ENDPOINT" not in os.environ
-            or "ZARR_S3_BUCKET_NAME" not in os.environ
-            or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
-            or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
+        "ZARR_S3_ENDPOINT" not in os.environ
+        or "ZARR_S3_BUCKET_NAME" not in os.environ
+        or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
+        or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
     ):
         yield None
     else:
@@ -154,10 +154,10 @@ def validate_v3_metadata(store_path: Path):
     ],
 )
 def test_create_stream(
-        settings: StreamSettings,
-        store_path: Path,
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -185,41 +185,41 @@ def test_create_stream(
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_filesystem(
-        settings: StreamSettings,
-        store_path: Path,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    store_path: Path,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
     settings.version = version
@@ -286,42 +286,42 @@ def test_stream_data_to_filesystem(
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_s3(
-        settings: StreamSettings,
-        s3_settings: Optional[S3Settings],
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    s3_settings: Optional[S3Settings],
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     if s3_settings is None:
         pytest.skip("S3 settings not set")
