@@ -57,10 +57,8 @@ class ArrayWriter
     [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
 
   protected:
-    ArrayWriterConfig config_;
-
-    /// Buffering
     std::vector<ByteVector> data_buffers_;
+    ArrayWriterConfig config_;
 
     /// Filesystem
     std::vector<std::unique_ptr<Sink>> data_sinks_;
@@ -96,12 +94,11 @@ class ArrayWriter
     [[nodiscard]] bool make_metadata_sink_();
     virtual void make_buffers_() = 0;
 
-    virtual ByteSpan get_chunk_data_(uint32_t index) = 0;
+    size_t write_frame_to_chunks_(std::span<const std::byte> data);
+    virtual BytePtr get_chunk_data_(uint32_t index) = 0;
 
     bool should_flush_() const;
     virtual bool should_rollover_() const = 0;
-
-    size_t write_frame_to_chunks_(std::span<const std::byte> data);
 
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
     [[nodiscard]] bool compress_chunk_(uint32_t index);
