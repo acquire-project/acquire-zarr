@@ -156,22 +156,22 @@ main()
     for (const auto& chunk : CHUNK_CONFIGS) {
 
         // V2 configurations (no sharding)
-//        for (const auto& compression : { "none", "lz4", "zstd" }) {
-//            configs.push_back({ chunk, 2, compression, "filesystem", 1, 1 });
-//
-//            if (std::getenv("ZARR_S3_ENDPOINT")) {
-//                configs.push_back({ chunk,
-//                                    2,
-//                                    compression,
-//                                    "s3",
-//                                    1,
-//                                    1,
-//                                    std::getenv("ZARR_S3_ENDPOINT"),
-//                                    std::getenv("ZARR_S3_BUCKET_NAME"),
-//                                    std::getenv("ZARR_S3_ACCESS_KEY_ID"),
-//                                    std::getenv("ZARR_S3_SECRET_ACCESS_KEY") });
-//            }
-//        }
+        for (const auto& compression : { "none", "lz4", "zstd" }) {
+            configs.push_back({ chunk, 2, compression, "filesystem", 1, 1 });
+
+            if (std::getenv("ZARR_S3_ENDPOINT")) {
+                configs.push_back({ chunk,
+                                    2,
+                                    compression,
+                                    "s3",
+                                    1,
+                                    1,
+                                    std::getenv("ZARR_S3_ENDPOINT"),
+                                    std::getenv("ZARR_S3_BUCKET_NAME"),
+                                    std::getenv("ZARR_S3_ACCESS_KEY_ID"),
+                                    std::getenv("ZARR_S3_SECRET_ACCESS_KEY") });
+            }
+        }
 
         unsigned int max_cps_y = (ARRAY_HEIGHT + chunk.y - 1) / chunk.y;
         unsigned int max_cps_x = (ARRAY_WIDTH + chunk.x - 1) / chunk.x;
