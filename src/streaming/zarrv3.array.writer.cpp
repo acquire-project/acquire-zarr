@@ -140,12 +140,14 @@ zarr::ZarrV3ArrayWriter::defragment_chunks_in_shard_(uint32_t shard_index)
             chunks_in_shard[i] = tmp_copy[argsorted_indices[i]];
         }
     }
+    EXPECT(chunks_in_shard.size() <= n_chunks_in_memory,
+           "Too many chunks in shard");
 
     // size of first chunk in shard
     size_t shard_size = chunk_sizes_compressed_[chunks_in_shard[0]];
 
     auto& buffer = data_buffers_[shard_index];
-    for (auto i = 1; i < n_chunks_in_memory; ++i) {
+    for (auto i = 1; i < chunks_in_shard.size(); ++i) {
         const auto this_chunk = chunks_in_shard[i];
         const auto chunk_size = chunk_sizes_compressed_[this_chunk];
         const auto offset_to_copy_from = i * nbytes_chunk;
