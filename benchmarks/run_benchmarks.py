@@ -20,8 +20,10 @@ COMPRESSION_TYPES = ["none", "lz4", "zstd"]
 ARRAY_WIDTH = 1920
 ARRAY_HEIGHT = 1080
 
+outfile = None
 
-def calculate_max_cps(chunk_size, array_size):
+
+def max_cps(chunk_size, array_size):
     """Calculate maximum chunks per shard."""
     return math.ceil(array_size / chunk_size)
 
@@ -64,11 +66,18 @@ def get_executable():
     return "./benchmark"
 
 
+def write_out(msg):
+    """Write message to output file and terminal (if not redirected)."""
+    if sys.stdout.isatty():
+        print(msg)
+    print(msg, file=outfile)
+
+
 def main():
     # Setup benchmark executable
     executable = get_executable()
-    if not Path(executable).exists():
-        print(f"Error: {executable} not found", file=sys.stderr)
+    if not Path(executable).is_file():
+        print(f"Error: '{executable}' not found", file=sys.stderr)
         sys.exit(1)
 
     # Get S3 configuration if available
@@ -81,15 +90,14 @@ def main():
             "--s3-secret-key", os.getenv("ZARR_S3_SECRET_ACCESS_KEY")
         ]
 
-    # Get header from a dummy run
-    cmd = [executable, "--chunk", "1,1,1,1,1", "--version", "2",
-           "--compression", "none", "--storage", "filesystem"]
-    success, header = run_benchmark(cmd)
-    if not success:
-        print("Failed to get CSV header", file=sys.stderr)
-        sys.exit(1)
+    outfile_path = f"zarr_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    print(f"Writing output to {outfile_path}", file=sys.stderr)
 
-    print(header)  # Print header to stdout
+    global outfile
+    outfile = open(f"zarr_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "w")
+
+    # print header
+    write_out("chunk_size,zarr_version,compression,storage,chunks_per_shard_y,chunks_per_shard_x,time_seconds,run")
 
     # Run V2 benchmarks
     for chunk in CHUNK_CONFIGS:
@@ -102,9 +110,10 @@ def main():
                 "--compression", compression,
                 "--storage", "filesystem"
             ]
-            success, output = run_benchmark(cmd)
-            if success and output:
-                print(output)
+            for run in range(5):
+                success, output = run_benchmark(cmd)
+                if success and output:
+                    write_out(output + f",{run + 1}")
 
             # S3 storage if configured
             if s3_args:
@@ -115,9 +124,10 @@ def main():
                           "--compression", compression,
                           "--storage", "s3"
                       ] + s3_args
-                success, output = run_benchmark(cmd)
-                if success and output:
-                    print(output)
+                for run in range(5):
+                    success, output = run_benchmark(cmd)
+                    if success and output:
+                        write_out(output + f",{run + 1}")
 
     # Run V3 benchmarks with sharding
     for chunk in CHUNK_CONFIGS:
@@ -126,8 +136,8 @@ def main():
         chunk_y, chunk_x = chunk_dims[3], chunk_dims[4]
 
         # Calculate maximum chunks per shard
-        max_cps_y = calculate_max_cps(chunk_y, ARRAY_HEIGHT)
-        max_cps_x = calculate_max_cps(chunk_x, ARRAY_WIDTH)
+        max_cps_y = max_cps(chunk_y, ARRAY_HEIGHT)
+        max_cps_x = max_cps(chunk_x, ARRAY_WIDTH)
 
         # Test different shard configurations
         cps_y = 1
@@ -145,9 +155,10 @@ def main():
                         "--shard-y", str(cps_y),
                         "--shard-x", str(cps_x)
                     ]
-                    success, output = run_benchmark(cmd)
-                    if success and output:
-                        print(output)
+                    for run in range(5):
+                        success, output = run_benchmark(cmd)
+                        if success and output:
+                            write_out(output + f",{run + 1}")
 
                     # S3 storage if configured
                     if s3_args:
@@ -160,12 +171,16 @@ def main():
                                   "--shard-y", str(cps_y),
                                   "--shard-x", str(cps_x)
                               ] + s3_args
-                        success, output = run_benchmark(cmd)
-                        if success and output:
-                            print(output)
+                        for run in range(5):
+                            success, output = run_benchmark(cmd)
+                            if success and output:
+                                write_out(output + f",{run + 1}")
 
                 cps_x *= 2
             cps_y *= 2
+
+    if outfile is not None:
+        outfile.close()
 
 
 if __name__ == "__main__":
@@ -173,4 +188,6 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nBenchmark interrupted by user", file=sys.stderr)
+        if outfile is not None:
+            outfile.close()
         sys.exit(1)

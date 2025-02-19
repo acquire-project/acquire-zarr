@@ -20,12 +20,20 @@ struct ChunkConfig
 
 struct BenchmarkConfig
 {
-    ChunkConfig chunk{};
-    int zarr_version{ 3 };
+    BenchmarkConfig()
+      : chunk({ 1, 1, 1, 1, 1 })
+      , zarr_version(3)
+      , chunks_per_shard_x(0)
+      , chunks_per_shard_y(0)
+    {
+    }
+
+    ChunkConfig chunk;
+    int zarr_version;
     std::string compression;
     std::string storage;
-    unsigned int chunks_per_shard_x{ 1 };
-    unsigned int chunks_per_shard_y{ 1 };
+    unsigned int chunks_per_shard_x;
+    unsigned int chunks_per_shard_y;
     std::string s3_endpoint;
     std::string s3_bucket;
     std::string s3_access_key;
