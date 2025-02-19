@@ -192,7 +192,7 @@ class PyZarrCompressionSettings
   private:
     ZarrCompressor compressor_{ ZarrCompressor_None };
     ZarrCompressionCodec codec_{ ZarrCompressionCodec_None };
-    uint8_t level_{ 0 };
+    uint8_t level_{ 1 };
     uint8_t shuffle_{ 0 };
 };
 
