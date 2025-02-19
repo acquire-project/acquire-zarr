@@ -72,5 +72,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# Test/example output
+# Test/example/benchmark output
 *.zarr
+*.csv
