@@ -71,7 +71,6 @@ class ArrayWriter
     std::mutex buffers_mutex_;
 
     /// Bookkeeping
-    std::vector<size_t> chunk_sizes_compressed_;
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
     uint32_t append_chunk_index_;

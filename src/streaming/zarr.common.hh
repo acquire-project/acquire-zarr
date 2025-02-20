@@ -3,6 +3,8 @@
 #include "acquire.zarr.h"
 #include "thread.pool.hh"
 #include "zarr.dimension.hh"
+#include "definitions.hh"
+#include "blosc.compression.params.hh"
 
 namespace zarr {
 /**
@@ -61,4 +63,19 @@ chunks_along_dimension(const ZarrDimension& dimension);
  */
 uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
+
+/**
+ * @brief Compress a buffer in place.
+ * @param buffer The buffer to compress.
+ * @param bytes_of_content The number of bytes of content in the buffer. Must be
+ * less than or equal to the size of the buffer, less BLOSC_MAX_OVERHEAD.
+ * @param params The compression parameters.
+ * @param typesize The size of the data type.
+ * @return The size of the compressed buffer, or -1 if compression failed.
+ */
+int
+compress_buffer_in_place(ByteSpan buffer,
+                         size_t bytes_of_content,
+                         const zarr::BloscCompressionParams& params,
+                         size_t typesize);
 } // namespace zarr

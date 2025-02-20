@@ -3,6 +3,12 @@
 #include "array.writer.hh"
 
 namespace zarr {
+struct Shard
+{
+    std::vector<uint64_t> chunk_offsets;
+    std::vector<uint64_t> chunk_sizes;
+};
+
 struct ZarrV3ArrayWriter : public ArrayWriter
 {
   public:
@@ -15,6 +21,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
   private:
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
+    std::vector<Shard> shards_;
     uint32_t flushed_count_;
 
     size_t defragment_chunks_in_shard_(uint32_t shard_index);
