@@ -75,14 +75,16 @@ def s3_settings():
     ):
         yield None
     else:
-        region = os.environ["ZARR_S3_REGION"] if "ZARR_S3_REGION" in os.environ else None
-        yield S3Settings(
+        settings = S3Settings(
             endpoint=os.environ["ZARR_S3_ENDPOINT"],
             bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
             access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
             secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
-            region=region,
         )
+        if "ZARR_S3_REGION" in os.environ:
+            settings.region = os.environ["ZARR_S3_REGION"]
+
+        yield settings
 
 
 @pytest.fixture(scope="function")
@@ -236,7 +238,7 @@ def test_stream_data_to_filesystem(
         0,
         255,
         (
-            settings.dimensions[0].chunk_size_px,
+            2 * settings.dimensions[0].chunk_size_px,
             settings.dimensions[1].array_size_px,
             settings.dimensions[2].array_size_px,
         ),
@@ -345,7 +347,7 @@ def test_stream_data_to_s3(
         0,
         65535,
         (
-            settings.dimensions[0].chunk_size_px,
+            2 * settings.dimensions[0].chunk_size_px,
             settings.dimensions[1].array_size_px,
             settings.dimensions[2].array_size_px,
         ),

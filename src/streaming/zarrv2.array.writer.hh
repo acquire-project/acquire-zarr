@@ -17,6 +17,8 @@ class ZarrV2ArrayWriter final : public ArrayWriter
     std::string data_root_() const override;
     std::string metadata_path_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;
+    void make_buffers_() override;
+    BytePtr get_chunk_data_(uint32_t index) override;
     bool compress_and_flush_data_() override;
     bool write_array_metadata_() override;
     bool should_rollover_() const override;

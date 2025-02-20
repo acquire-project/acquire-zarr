@@ -92,6 +92,31 @@ zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
     return chunks_along_dimension;
 }
 
+void
+zarr::ZarrV2ArrayWriter::make_buffers_()
+{
+    LOG_DEBUG("Creating chunk buffers");
+
+    const size_t n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    data_buffers_.resize(n_chunks); // no-op if already the correct size
+
+    const auto n_bytes = bytes_to_allocate_per_chunk_();
+
+    for (auto& buf : data_buffers_) {
+        buf.resize(n_bytes);
+        std::fill(buf.begin(), buf.end(), std::byte(0));
+    }
+
+    std::fill(
+      chunk_sizes_compressed_.begin(), chunk_sizes_compressed_.end(), n_bytes);
+}
+
+BytePtr
+zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
+{
+    return data_buffers_[index].data();
+}
+
 bool
 zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
 {
@@ -101,7 +126,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
         return false;
     }
 
-    const auto n_chunks = chunk_buffers_.size();
+    const auto n_chunks = data_buffers_.size();
     CHECK(data_sinks_.size() == n_chunks);
 
     std::atomic<char> all_successful = 1;
@@ -117,16 +142,15 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                     try {
                         if (all_successful) {
                             EXPECT(
-                              compress_buffer_(i), // no-op if no compression
+                              compress_chunk_(i), // no-op if no compression
                               "Failed to compress buffer");
 
-                            auto& chunk = chunk_buffers_[i];
+                            auto& chunk = data_buffers_[i];
                             auto& sink = data_sinks_[i];
 
-                            if (!sink->write(
-                                  0,
-                                  { reinterpret_cast<std::byte*>(chunk.data()),
-                                    chunk.size() })) {
+                            std::span chunk_data(chunk.data(),
+                                                 chunk_sizes_compressed_[i]);
+                            if (!sink->write(0, chunk_data)) {
                                 err = "Failed to write chunk";
                                 success = false;
                             }

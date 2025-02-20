@@ -1,37 +1,33 @@
 #include "acquire.zarr.h"
 #include <chrono>
-#include <fstream>
 #include <vector>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <cmath>
-
-#define DIM(name_, type_, array_size, chunk_size, shard_size)                  \
-    { .name = (name_),                                                         \
-      .type = (type_),                                                         \
-      .array_size_px = (array_size),                                           \
-      .chunk_size_px = (chunk_size),                                           \
-      .shard_size_chunks = (shard_size) }
+#include <string>
+#include <sstream>
 
 namespace fs = std::filesystem;
+
+const unsigned int ARRAY_WIDTH = 1920, ARRAY_HEIGHT = 1080, ARRAY_PLANES = 6,
+                   ARRAY_CHANNELS = 3, ARRAY_TIMEPOINTS = 10;
 
 struct ChunkConfig
 {
     unsigned int t, c, z, y, x;
 };
 
-const std::vector<ChunkConfig> CHUNK_CONFIGS = { { 1, 1, 64, 64, 64 },
-                                                 { 1, 1, 128, 128, 128 },
-                                                 { 1, 1, 256, 256, 256 } };
-
-const unsigned int ARRAY_WIDTH = 1920, ARRAY_HEIGHT = 1080, ARRAY_PLANES = 6,
-                   ARRAY_CHANNELS = 3, ARRAY_TIMEPOINTS = 10;
-
-const unsigned int NUM_RUNS = 5;
-
 struct BenchmarkConfig
 {
+    BenchmarkConfig()
+      : chunk({ 1, 1, 1, 1, 1 })
+      , zarr_version(3)
+      , chunks_per_shard_x(0)
+      , chunks_per_shard_y(0)
+    {
+    }
+
     ChunkConfig chunk;
     int zarr_version;
     std::string compression;
@@ -96,22 +92,31 @@ setup_stream(const BenchmarkConfig& config)
     ZarrStreamSettings_create_dimension_array(&settings, 5);
     auto* dims = settings.dimensions;
 
-    dims[0] =
-      DIM("t", ZarrDimensionType_Time, ARRAY_TIMEPOINTS, config.chunk.t, 1);
-    dims[1] =
-      DIM("c", ZarrDimensionType_Channel, ARRAY_CHANNELS, config.chunk.c, 1);
-    dims[2] =
-      DIM("z", ZarrDimensionType_Space, ARRAY_PLANES, config.chunk.z, 1);
-    dims[3] = DIM("y",
-                  ZarrDimensionType_Space,
-                  ARRAY_HEIGHT,
-                  config.chunk.y,
-                  config.chunks_per_shard_y);
-    dims[4] = DIM("x",
-                  ZarrDimensionType_Space,
-                  ARRAY_WIDTH,
-                  config.chunk.x,
-                  config.chunks_per_shard_x);
+    dims[0] = { .name = "t",
+                .type = ZarrDimensionType_Time,
+                .array_size_px = ARRAY_TIMEPOINTS,
+                .chunk_size_px = config.chunk.t,
+                .shard_size_chunks = 1 };
+    dims[1] = { .name = "c",
+                .type = ZarrDimensionType_Channel,
+                .array_size_px = ARRAY_CHANNELS,
+                .chunk_size_px = config.chunk.c,
+                .shard_size_chunks = 1 };
+    dims[2] = { .name = "z",
+                .type = ZarrDimensionType_Space,
+                .array_size_px = ARRAY_PLANES,
+                .chunk_size_px = config.chunk.z,
+                .shard_size_chunks = 1 };
+    dims[3] = { .name = "y",
+                .type = ZarrDimensionType_Space,
+                .array_size_px = ARRAY_HEIGHT,
+                .chunk_size_px = config.chunk.y,
+                .shard_size_chunks = config.chunks_per_shard_y };
+    dims[4] = { .name = "x",
+                .type = ZarrDimensionType_Space,
+                .array_size_px = ARRAY_WIDTH,
+                .chunk_size_px = config.chunk.x,
+                .shard_size_chunks = config.chunks_per_shard_x };
 
     return ZarrStream_create(&settings);
 }
@@ -120,8 +125,10 @@ double
 run_benchmark(const BenchmarkConfig& config)
 {
     auto* stream = setup_stream(config);
-    if (!stream)
+    if (!stream) {
+        std::cerr << "Failed to create ZarrStream\n";
         return -1.0;
+    }
 
     const size_t frame_size = ARRAY_WIDTH * ARRAY_HEIGHT * sizeof(uint16_t);
     std::vector<uint16_t> frame(ARRAY_WIDTH * ARRAY_HEIGHT, 0);
@@ -132,6 +139,7 @@ run_benchmark(const BenchmarkConfig& config)
     for (int i = 0; i < num_frames; ++i) {
         if (ZarrStream_append(stream, frame.data(), frame_size, &bytes_out) !=
             ZarrStatusCode_Success) {
+            std::cerr << "Failed to append frame " << i << "\n";
             ZarrStream_destroy(stream);
             return -1.0;
         }
@@ -145,89 +153,153 @@ run_benchmark(const BenchmarkConfig& config)
     return elapsed;
 }
 
-int
-main()
+void
+print_usage(const char* program_name)
 {
-    std::ofstream csv("zarr_benchmarks.csv");
-    csv << "chunk_size,zarr_version,compression,storage,chunks_per_shard_y,"
-           "chunks_per_shard_x,run,time_seconds\n";
+    std::cerr
+      << "Usage: " << program_name << " [OPTIONS]\n"
+      << "Options:\n"
+      << "  --chunk t,c,z,y,x    Chunk dimensions (required)\n"
+      << "  --version VERSION    Zarr version (2 or 3, required)\n"
+      << "  --compression TYPE   Compression type (none/lz4/zstd, required)\n"
+      << "  --storage TYPE      Storage type (filesystem/s3, required)\n"
+      << "  --shard-y NUM       Chunks per shard Y (required for v3)\n"
+      << "  --shard-x NUM       Chunks per shard X (required for v3)\n"
+      << "  --s3-endpoint URL   S3 endpoint (required for s3 storage)\n"
+      << "  --s3-bucket NAME    S3 bucket name (required for s3 storage)\n"
+      << "  --s3-access-key ID  S3 access key (required for s3 storage)\n"
+      << "  --s3-secret-key KEY S3 secret key (required for s3 storage)\n\n"
+      << "Output is written to stdout in CSV format. Values are:\n"
+      << "  Chunk dimensions (t,c,z,y,x), Zarr version, Compression type,\n"
+      << "  Storage type, Chunks per shard in Y, Chunks per shard in X, Time "
+         "(s)\n";
+}
 
-    std::vector<BenchmarkConfig> configs;
-    for (const auto& chunk : CHUNK_CONFIGS) {
+bool
+parse_chunk_config(const std::string& chunk_str, ChunkConfig& config)
+{
+    std::stringstream ss(chunk_str);
+    std::string item;
+    std::vector<unsigned int> values;
 
-        // V2 configurations (no sharding)
-        for (const auto& compression : { "none", "lz4", "zstd" }) {
-            configs.push_back({ chunk, 2, compression, "filesystem", 1, 1 });
-
-            if (std::getenv("ZARR_S3_ENDPOINT")) {
-                configs.push_back({ chunk,
-                                    2,
-                                    compression,
-                                    "s3",
-                                    1,
-                                    1,
-                                    std::getenv("ZARR_S3_ENDPOINT"),
-                                    std::getenv("ZARR_S3_BUCKET_NAME"),
-                                    std::getenv("ZARR_S3_ACCESS_KEY_ID"),
-                                    std::getenv("ZARR_S3_SECRET_ACCESS_KEY") });
-            }
-        }
-
-        unsigned int max_cps_y = (ARRAY_HEIGHT + chunk.y - 1) / chunk.y;
-        unsigned int max_cps_x = (ARRAY_WIDTH + chunk.x - 1) / chunk.x;
-
-        // V3 configurations (with sharding)
-        for (unsigned int cps_y = 1; cps_y <= max_cps_y; cps_y *= 2) {
-            for (unsigned int cps_x = 1; cps_x <= max_cps_x; cps_x *= 2) {
-                for (const auto& compression : { "none", "lz4", "zstd" }) {
-                    configs.push_back(
-                      { chunk, 3, compression, "filesystem", cps_x, cps_y });
-
-                    if (std::getenv("ZARR_S3_ENDPOINT")) {
-                        configs.push_back(
-                          { chunk,
-                            3,
-                            compression,
-                            "s3",
-                            cps_x,
-                            cps_y,
-                            std::getenv("ZARR_S3_ENDPOINT"),
-                            std::getenv("ZARR_S3_BUCKET_NAME"),
-                            std::getenv("ZARR_S3_ACCESS_KEY_ID"),
-                            std::getenv("ZARR_S3_SECRET_ACCESS_KEY") });
-                    }
-                }
-            }
+    while (std::getline(ss, item, ',')) {
+        try {
+            values.push_back(std::stoul(item));
+        } catch (...) {
+            return false;
         }
     }
 
-    for (const auto& config : configs) {
+    if (values.size() != 5)
+        return false;
+
+    config.t = values[0];
+    config.c = values[1];
+    config.z = values[2];
+    config.y = values[3];
+    config.x = values[4];
+    return true;
+}
+
+int
+main(int argc, char* argv[])
+{
+    BenchmarkConfig config;
+    bool has_chunk = false;
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "--chunk" && i + 1 < argc) {
+            if (!parse_chunk_config(argv[++i], config.chunk)) {
+                std::cerr << "Invalid chunk configuration\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+            has_chunk = true;
+        } else if (arg == "--version" && i + 1 < argc) {
+            config.zarr_version = std::stoi(argv[++i]);
+            if (config.zarr_version != 2 && config.zarr_version != 3) {
+                std::cerr << "Invalid Zarr version: " << config.zarr_version
+                          << "\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "--compression" && i + 1 < argc) {
+            config.compression = argv[++i];
+            if (config.compression != "none" && config.compression != "lz4" &&
+                config.compression != "zstd") {
+                std::cerr << "Invalid compression type: '" << config.compression
+                          << "'. Use 'none', 'lz4', or 'zstd'\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "--storage" && i + 1 < argc) {
+            config.storage = argv[++i];
+            if (config.storage != "filesystem" && config.storage != "s3") {
+                std::cerr << "Invalid storage type\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "--shard-y" && i + 1 < argc) {
+            config.chunks_per_shard_y = std::stoul(argv[++i]);
+        } else if (arg == "--shard-x" && i + 1 < argc) {
+            config.chunks_per_shard_x = std::stoul(argv[++i]);
+        } else if (arg == "--s3-endpoint" && i + 1 < argc) {
+            config.s3_endpoint = argv[++i];
+        } else if (arg == "--s3-bucket" && i + 1 < argc) {
+            config.s3_bucket = argv[++i];
+        } else if (arg == "--s3-access-key" && i + 1 < argc) {
+            config.s3_access_key = argv[++i];
+        } else if (arg == "--s3-secret-key" && i + 1 < argc) {
+            config.s3_secret_key = argv[++i];
+        } else if (arg == "--help") {
+            print_usage(argv[0]);
+            return 0;
+        } else {
+            std::cerr << "Unknown or incomplete argument: " << arg << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    // Validate required arguments
+    if (!has_chunk || config.compression.empty() || config.storage.empty()) {
+        std::cerr << "Missing required arguments\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    // Validate S3-specific requirements
+    if (config.storage == "s3" &&
+        (config.s3_endpoint.empty() || config.s3_bucket.empty() ||
+         config.s3_access_key.empty() || config.s3_secret_key.empty())) {
+        std::cerr << "Missing required S3 configuration\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    // Run benchmark
+    double time = run_benchmark(config);
+
+    if (time >= 0) {
         std::string chunk_str = std::to_string(config.chunk.t) + "x" +
                                 std::to_string(config.chunk.c) + "x" +
                                 std::to_string(config.chunk.z) + "x" +
                                 std::to_string(config.chunk.y) + "x" +
                                 std::to_string(config.chunk.x);
 
-        for (unsigned int run = 1; run <= NUM_RUNS; ++run) {
-            std::cout << "Benchmarking " << chunk_str << " Zarr V"
-                      << config.zarr_version
-                      << ", compression: " << config.compression
-                      << ", storage: " << config.storage
-                      << ", CPS (y): " << config.chunks_per_shard_y
-                      << ", CPS (x): " << config.chunks_per_shard_x << ", (run "
-                      << run << " / " << NUM_RUNS << ")...";
-            double time = run_benchmark(config);
-            std::cout << " " << time << "s\n";
-            if (time >= 0) {
-                csv << chunk_str << "," << config.zarr_version << ","
-                    << config.compression << "," << config.storage << ","
-                    << config.chunks_per_shard_y << ","
-                    << config.chunks_per_shard_x << "," << run << ","
-                    << std::fixed << std::setprecision(3) << time << "\n";
-            }
-            csv.flush();
-        }
+        // Write results to stdout
+        std::cout << chunk_str << "," << config.zarr_version << ","
+                  << config.compression << "," << config.storage << ","
+                  << config.chunks_per_shard_y << ","
+                  << config.chunks_per_shard_x << "," << std::fixed
+                  << std::setprecision(3) << time << "\n";
+
+        std::cerr << "Benchmark completed in " << time << "s\n";
+        return 0;
     }
 
-    return 0;
+    std::cerr << "Benchmark failed\n";
+    return 1;
 }

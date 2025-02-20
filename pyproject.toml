@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.2.0"
+version = "0.2.1"
 description = "Performant streaming to Zarr storage, on filesystem or cloud"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
@@ -30,7 +30,7 @@ testing = [
     "ruff",
     "s3fs",
     "tifffile",
-    "zarr==3.0.0rc1",
+    "zarr==3.0.0",
     "python-dotenv",
 ]
 

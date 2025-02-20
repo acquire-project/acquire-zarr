@@ -57,10 +57,8 @@ class ArrayWriter
     [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
 
   protected:
+    std::vector<ByteVector> data_buffers_;
     ArrayWriterConfig config_;
-
-    /// Chunking
-    std::vector<ByteVector> chunk_buffers_;
 
     /// Filesystem
     std::vector<std::unique_ptr<Sink>> data_sinks_;
@@ -71,12 +69,21 @@ class ArrayWriter
     std::mutex buffers_mutex_;
 
     /// Bookkeeping
+    std::vector<size_t> chunk_sizes_compressed_;
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
     uint32_t append_chunk_index_;
     bool is_finalizing_;
 
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
+
+    /**
+     * @brief Compute the number of bytes to allocate for a single chunk.
+     * @note Allocate the usual chunk size, plus the maximum Blosc overhead if
+     * we're compressing.
+     * @return The number of bytes to allocate per chunk.
+     */
+    size_t bytes_to_allocate_per_chunk_() const;
 
     bool is_s3_array_() const;
     virtual std::string data_root_() const = 0;
@@ -85,15 +92,16 @@ class ArrayWriter
 
     [[nodiscard]] bool make_data_sinks_();
     [[nodiscard]] bool make_metadata_sink_();
-    void make_buffers_() noexcept;
+    virtual void make_buffers_() = 0;
+
+    size_t write_frame_to_chunks_(std::span<const std::byte> data);
+    virtual BytePtr get_chunk_data_(uint32_t index) = 0;
 
     bool should_flush_() const;
     virtual bool should_rollover_() const = 0;
 
-    size_t write_frame_to_chunks_(std::span<const std::byte> data);
-
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
-    [[nodiscard]] bool compress_buffer_(uint32_t index);
+    [[nodiscard]] bool compress_chunk_(uint32_t index);
     void rollover_();
 
     [[nodiscard]] virtual bool write_array_metadata_() = 0;
@@ -103,5 +111,6 @@ class ArrayWriter
     friend bool finalize_array(std::unique_ptr<ArrayWriter>&& writer);
 };
 
-bool finalize_array(std::unique_ptr<ArrayWriter>&& writer);
+bool
+finalize_array(std::unique_ptr<ArrayWriter>&& writer);
 } // namespace zarr
