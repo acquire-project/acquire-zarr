@@ -60,21 +60,6 @@ shuffle_to_string(uint8_t shuffle)
                                      std::to_string(shuffle));
     }
 }
-
-template<typename T>
-std::vector<size_t>
-argsort(const std::vector<T>& arr)
-{
-    std::vector<size_t> indices(arr.size());
-    std::iota(indices.begin(), indices.end(), 0);
-
-    std::stable_sort(
-      indices.begin(), indices.end(), [&arr](size_t left, size_t right) {
-          return arr[left] < arr[right];
-      });
-
-    return indices;
-}
 } // namespace
 
 zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
