@@ -58,10 +58,9 @@ make_v2_metadata_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool)
     CHECK(make_metadata_file_sinks(
       ZarrVersion_2, test_dir, thread_pool, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 3);
+    CHECK(metadata_sinks.size() == 2);
     CHECK(metadata_sinks.contains(".zattrs"));
     CHECK(metadata_sinks.contains(".zgroup"));
-    CHECK(metadata_sinks.contains("acquire.json"));
 
     for (auto& [key, sink] : metadata_sinks) {
         CHECK(sink);
@@ -89,10 +88,9 @@ make_v2_metadata_s3_sinks(
     CHECK(zarr::make_metadata_s3_sinks(
       ZarrVersion_2, bucket_name, test_dir, connection_pool, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 3);
+    CHECK(metadata_sinks.size() == 2);
     CHECK(metadata_sinks.contains(".zattrs"));
     CHECK(metadata_sinks.contains(".zgroup"));
-    CHECK(metadata_sinks.contains("acquire.json"));
 
     auto conn = connection_pool->get_connection();
 
@@ -121,9 +119,8 @@ make_v3_metadata_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool)
     CHECK(make_metadata_file_sinks(
       ZarrVersion_3, test_dir, thread_pool, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 2);
+    CHECK(metadata_sinks.size() == 1);
     CHECK(metadata_sinks.contains("zarr.json"));
-    CHECK(metadata_sinks.contains("acquire.json"));
 
     for (auto& [key, sink] : metadata_sinks) {
         CHECK(sink);
@@ -148,9 +145,8 @@ make_v3_metadata_s3_sinks(
     CHECK(zarr::make_metadata_s3_sinks(
       ZarrVersion_3, bucket_name, test_dir, connection_pool, metadata_sinks));
 
-    CHECK(metadata_sinks.size() == 2);
+    CHECK(metadata_sinks.size() == 1);
     CHECK(metadata_sinks.contains("zarr.json"));
-    CHECK(metadata_sinks.contains("acquire.json"));
 
     auto conn = connection_pool->get_connection();
 

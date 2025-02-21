@@ -50,7 +50,7 @@ struct ZarrStream_s
     std::string store_path_;
     std::optional<S3Settings> s3_settings_;
     std::optional<CompressionSettings> compression_settings_;
-    std::string custom_metadata_;
+    std::optional<std::string> custom_metadata_;
     ZarrDataType dtype_;
     std::shared_ptr<ArrayDimensions> dimensions_;
     bool multiscale_;

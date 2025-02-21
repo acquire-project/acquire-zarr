@@ -495,8 +495,6 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     store_path_ = zarr::trim(settings->store_path);
     if (settings->custom_metadata) {
         custom_metadata_ = zarr::trim(settings->custom_metadata);
-    } else {
-        custom_metadata_ = "{}";
     }
 
     if (is_s3_acquisition(settings)) {
@@ -777,16 +775,41 @@ ZarrStream_s::write_group_metadata_()
 bool
 ZarrStream_s::write_external_metadata_()
 {
-    if (custom_metadata_.empty()) {
+    if (!custom_metadata_) {
         return true;
     }
 
-    auto metadata = nlohmann::json::parse(custom_metadata_,
-                                          nullptr, // callback
-                                          false,   // allow exceptions
-                                          true     // ignore comments
+    const auto metadata = nlohmann::json::parse(*custom_metadata_,
+                                                nullptr, // callback
+                                                false,   // allow exceptions
+                                                true     // ignore comments
     );
-    std::string metadata_key = "acquire.json";
+    if (metadata.is_discarded()) {
+        set_error_("Invalid JSON: '" + *custom_metadata_ + "'");
+        return false;
+    }
+
+    const std::string metadata_key = "acquire.json";
+
+    // create metadata sink
+    if (!metadata_sinks_.contains(metadata_key)) {
+        std::string base_path = store_path_;
+        if (base_path.starts_with("file://")) {
+            base_path = base_path.substr(7);
+        }
+        const auto prefix = base_path.empty() ? "" : base_path + "/";
+        const auto sink_path = prefix + metadata_key;
+
+        if (is_s3_acquisition_()) {
+            metadata_sinks_.emplace(
+              metadata_key,
+              zarr::make_s3_sink(
+                s3_settings_->bucket_name, sink_path, s3_connection_pool_));
+        } else {
+            metadata_sinks_.emplace(metadata_key,
+                                    zarr::make_file_sink(sink_path));
+        }
+    }
 
     const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
     if (!sink) {

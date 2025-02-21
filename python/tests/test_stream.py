@@ -257,7 +257,7 @@ def test_stream_data_to_filesystem(
         for dim in settings.dimensions:
             shard_size_bytes *= dim.shard_size_chunks
             table_size_bytes *= dim.shard_size_chunks
-    shard_size_bytes = shard_size_bytes + table_size_bytes
+    shard_size_bytes = shard_size_bytes + table_size_bytes + 4 # 4 bytes for crc32c checksum
 
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
