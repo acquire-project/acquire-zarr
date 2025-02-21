@@ -68,14 +68,18 @@ def settings():
 def s3_settings():
     dotenv.load_dotenv()
     if (
-            "ZARR_S3_ENDPOINT" not in os.environ
-            or "ZARR_S3_BUCKET_NAME" not in os.environ
-            or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
-            or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
+        "ZARR_S3_ENDPOINT" not in os.environ
+        or "ZARR_S3_BUCKET_NAME" not in os.environ
+        or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
+        or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
     ):
         yield None
     else:
-        region = os.environ["ZARR_S3_REGION"] if "ZARR_S3_REGION" in os.environ else None
+        region = (
+            os.environ["ZARR_S3_REGION"]
+            if "ZARR_S3_REGION" in os.environ
+            else None
+        )
         yield S3Settings(
             endpoint=os.environ["ZARR_S3_ENDPOINT"],
             bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
@@ -152,10 +156,10 @@ def validate_v3_metadata(store_path: Path):
     ],
 )
 def test_create_stream(
-        settings: StreamSettings,
-        store_path: Path,
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -183,41 +187,41 @@ def test_create_stream(
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_filesystem(
-        settings: StreamSettings,
-        store_path: Path,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    store_path: Path,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
     settings.version = version
@@ -257,7 +261,9 @@ def test_stream_data_to_filesystem(
         for dim in settings.dimensions:
             shard_size_bytes *= dim.shard_size_chunks
             table_size_bytes *= dim.shard_size_chunks
-    shard_size_bytes = shard_size_bytes + table_size_bytes + 4 # 4 bytes for crc32c checksum
+    shard_size_bytes = (
+        shard_size_bytes + table_size_bytes + 4
+    )  # 4 bytes for crc32c checksum
 
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
@@ -281,7 +287,9 @@ def test_stream_data_to_filesystem(
 
             # check that the data is compressed
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
-            assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").stat().st_size <= chunk_size_bytes
+            assert (
+                store_path / "test.zarr" / "0" / "0" / "0" / "0"
+            ).stat().st_size <= chunk_size_bytes
         else:
             cname = (
                 zblosc.BloscCname.lz4
@@ -293,59 +301,69 @@ def test_stream_data_to_filesystem(
             assert blosc_codec.clevel == 1
             assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
-            assert (store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0").is_file()
-            assert (store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0").stat().st_size <= shard_size_bytes
+            assert (
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).is_file()
+            assert (
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).stat().st_size <= shard_size_bytes
     else:
         if version == ZarrVersion.V2:
             assert metadata.compressor is None
 
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
-            assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").stat().st_size == chunk_size_bytes
+            assert (
+                store_path / "test.zarr" / "0" / "0" / "0" / "0"
+            ).stat().st_size == chunk_size_bytes
         else:
             assert len(metadata.codecs[0].codecs) == 1
 
-            assert (store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0").is_file()
-            assert (store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0").stat().st_size == shard_size_bytes
+            assert (
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).is_file()
+            assert (
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_s3(
-        settings: StreamSettings,
-        s3_settings: Optional[S3Settings],
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    s3_settings: Optional[S3Settings],
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     if s3_settings is None:
         pytest.skip("S3 settings not set")

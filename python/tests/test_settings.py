@@ -70,7 +70,7 @@ def test_set_compression_settings(settings):
     assert settings.compression is not None
     assert settings.compression.compressor == acquire_zarr.Compressor.BLOSC1
     assert (
-            settings.compression.codec == acquire_zarr.CompressionCodec.BLOSC_ZSTD
+        settings.compression.codec == acquire_zarr.CompressionCodec.BLOSC_ZSTD
     )
     assert settings.compression.level == 5
     assert settings.compression.shuffle == 2
@@ -146,7 +146,7 @@ def test_set_version(settings):
 
 def test_set_max_threads(settings):
     assert (
-            settings.max_threads > 0
+        settings.max_threads > 0
     )  # depends on your system, but will be nonzero
 
     settings.max_threads = 4
