@@ -423,21 +423,22 @@ zarr::ZarrV3ArrayWriter::write_array_metadata_()
     using json = nlohmann::json;
 
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
+    const auto& dims = config_.dimensions;
 
     size_t append_size = frames_written_;
-    for (auto i = config_.dimensions->ndims() - 3; i > 0; --i) {
-        const auto& dim = config_.dimensions->at(i);
+    for (auto i = dims->ndims() - 3; i > 0; --i) {
+        const auto& dim = dims->at(i);
         const auto& array_size_px = dim.array_size_px;
         CHECK(array_size_px);
         append_size = (append_size + array_size_px - 1) / array_size_px;
     }
     array_shape.push_back(append_size);
 
-    const auto& final_dim = config_.dimensions->final_dim();
+    const auto& final_dim = dims->final_dim();
     chunk_shape.push_back(final_dim.chunk_size_px);
     shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
-    for (auto i = 1; i < config_.dimensions->ndims(); ++i) {
-        const auto& dim = config_.dimensions->at(i);
+    for (auto i = 1; i < dims->ndims(); ++i) {
+        const auto& dim = dims->at(i);
         array_shape.push_back(dim.array_size_px);
         chunk_shape.push_back(dim.chunk_size_px);
         shard_shape.push_back(dim.shard_size_chunks * chunk_shape.back());
