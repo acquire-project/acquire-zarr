@@ -303,40 +303,6 @@ zarr::ArrayWriter::should_flush_() const
     return frames_written_ % frames_before_flush == 0;
 }
 
-int
-zarr::ArrayWriter::compress_chunk_(uint32_t index)
-{
-    if (!config_.compression_params.has_value()) {
-        return bytes_to_allocate_per_chunk_();
-    }
-
-    BloscCompressionParams params = config_.compression_params.value();
-    const auto bytes_per_px = bytes_of_type(config_.dtype);
-
-    auto* chunk_ptr = get_chunk_data_(index);
-    const size_t bytes_of_chunk = config_.dimensions->bytes_per_chunk();
-
-    const auto tmp_size = bytes_to_allocate_per_chunk_();
-    ByteVector tmp(tmp_size);
-    const auto nb = blosc_compress_ctx(params.clevel,
-                                       params.shuffle,
-                                       bytes_per_px,
-                                       bytes_of_chunk,
-                                       chunk_ptr,
-                                       tmp.data(),
-                                       tmp_size,
-                                       params.codec_id.c_str(),
-                                       0 /* blocksize - 0:automatic */,
-                                       1);
-
-    tmp.resize(nb);
-
-    // copy the temporary buffer back to the original chunk pointer
-    std::copy(tmp.begin(), tmp.end(), chunk_ptr);
-
-    return nb;
-}
-
 void
 zarr::ArrayWriter::close_sinks_()
 {

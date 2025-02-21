@@ -103,14 +103,6 @@ class ArrayWriter
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
 
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
-
-    /**
-     * @brief Compress the chunk at index @p index.
-     * @param index The index of the chunk to compress.
-     * @return The size of the compressed chunk, in bytes. If compression fails,
-     * this function will return 0.
-     */
-    [[nodiscard]] int compress_chunk_(uint32_t index);
     void rollover_();
 
     [[nodiscard]] virtual bool write_array_metadata_() = 0;

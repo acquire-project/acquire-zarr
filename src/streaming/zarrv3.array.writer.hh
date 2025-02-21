@@ -22,7 +22,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
     std::vector<Shard> shards_;
-    uint32_t flushed_count_;
+    uint32_t current_layer_;
 
     size_t defragment_chunks_in_shard_(uint32_t shard_index);
 
