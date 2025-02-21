@@ -98,23 +98,23 @@ zarr::shards_along_dimension(const ZarrDimension& dimension)
 }
 
 int
-zarr::compress_buffer_in_place(ByteSpan buffer,
+zarr::compress_buffer_in_place(BytePtr buffer,
+                               size_t bytes_of_buffer,
                                size_t bytes_of_content,
                                const zarr::BloscCompressionParams& params,
                                size_t typesize)
 {
-    const auto nbytes_buffer = buffer.size();
-    EXPECT(bytes_of_content + BLOSC_MAX_OVERHEAD <= nbytes_buffer,
+    EXPECT(bytes_of_content + BLOSC_MAX_OVERHEAD <= bytes_of_buffer,
            "Buffer too small for compression.");
-    ByteVector tmp(nbytes_buffer);
 
+    ByteVector tmp(bytes_of_buffer);
     auto nbytes_compressed = blosc_compress_ctx(params.clevel,
                                                 params.shuffle,
                                                 typesize,
                                                 bytes_of_content,
-                                                buffer.data(),
+                                                buffer,
                                                 tmp.data(),
-                                                nbytes_buffer,
+                                                bytes_of_buffer,
                                                 params.codec_id.c_str(),
                                                 0 /* blocksize - 0:automatic */,
                                                 1);
@@ -124,7 +124,7 @@ zarr::compress_buffer_in_place(ByteSpan buffer,
         return -1;
     }
 
-    std::copy(tmp.begin(), tmp.begin() + nbytes_compressed, buffer.begin());
+    std::copy(tmp.begin(), tmp.begin() + nbytes_compressed, buffer);
 
     return nbytes_compressed;
 }

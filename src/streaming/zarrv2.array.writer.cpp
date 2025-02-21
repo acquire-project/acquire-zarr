@@ -141,7 +141,8 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                     }
 
                     const auto params = config_.compression_params;
-                    auto bytes_of_chunk = config_.dimensions->bytes_per_chunk();
+                    auto bytes_of_raw_chunk =
+                      config_.dimensions->bytes_per_chunk();
 
                     auto* chunk_ptr = get_chunk_data_(i);
 
@@ -151,18 +152,19 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                               bytes_of_type(config_.dtype);
 
                             const int nb = compress_buffer_in_place(
-                              { chunk_ptr, bytes_to_allocate_per_chunk_() },
-                              bytes_of_chunk,
+                              chunk_ptr,
+                              bytes_to_allocate_per_chunk_(),
+                              bytes_of_raw_chunk,
                               *params,
                               bytes_per_px);
                             EXPECT(nb > 0, "Failed to compress chunk ", i);
 
-                            bytes_of_chunk = nb;
+                            bytes_of_raw_chunk = nb;
                         }
 
                         auto& sink = data_sinks_[i];
 
-                        std::span chunk_data(chunk_ptr, bytes_of_chunk);
+                        std::span chunk_data(chunk_ptr, bytes_of_raw_chunk);
                         if (!sink->write(0, chunk_data)) {
                             err = "Failed to write chunk";
                             success = false;
