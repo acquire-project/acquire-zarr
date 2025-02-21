@@ -170,6 +170,12 @@ ArrayDimensions::chunks_per_shard() const
 }
 
 uint32_t
+ArrayDimensions::layers_per_shard() const
+{
+    return dims_[0].shard_size_chunks;
+}
+
+uint32_t
 ArrayDimensions::shard_index_for_chunk(uint32_t chunk_index) const
 {
     // make chunk strides

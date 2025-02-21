@@ -96,6 +96,14 @@ class ArrayDimensions
     uint32_t chunks_per_shard() const;
 
     /**
+     * @brief Get the number of chunk layers in a single shard.
+     * @note The number of chunks per shard is the product of the number of
+     * chunks in memory and the number of layers per shard.
+     * @return The number of layers in a shard.
+     */
+    uint32_t layers_per_shard() const;
+
+    /**
      * @brief Get the shard index for a given chunk index, given array dimensions.
      * @param chunk_index The index of the chunk.
      * @return The index of the shard containing the chunk.
