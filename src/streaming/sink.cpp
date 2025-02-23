@@ -36,11 +36,9 @@ construct_metadata_paths(ZarrVersion version)
         case ZarrVersion_2:
             paths.emplace_back(".zattrs");
             paths.emplace_back(".zgroup");
-            paths.emplace_back("acquire.json");
             break;
         case ZarrVersion_3:
             paths.emplace_back("zarr.json");
-            paths.emplace_back("acquire.json");
             break;
         default:
             throw std::runtime_error("Invalid Zarr version " +

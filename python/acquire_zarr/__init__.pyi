@@ -19,7 +19,8 @@ __all__ = ['CompressionCodec', 'CompressionSettings', 'Compressor', 'DataType', 
 
 class CompressionCodec:
     """Codec to use for compression, if any.
-    Members:
+
+    Attributes:
       NONE: No compression
       BLOSC_LZ4: LZ4 compression using Blosc
       BLOSC_ZSTD: Zstd compression using Blosc
@@ -87,7 +88,7 @@ class Compressor:
     """
     Compressor to use, if any.
 
-    Members:
+    Attributes:
       NONE: No compression.
       BLOSC1: Blosc compressor.
     """
@@ -139,7 +140,7 @@ class DataType:
     """
     Data type used in the stream.
 
-    Members:
+    Attributes:
       UINT8: Unsigned 8-bit integer.
       UINT16: Unsigned 16-bit integer.
       UINT32: Unsigned 32-bit integer.
@@ -221,7 +222,8 @@ class Dimension:
 class DimensionType:
     """
     Type of dimension.
-    Members:
+
+    Attributes:
       SPACE: Spatial dimension.
       CHANNEL: Channel dimension.
       TIME: Time dimension.
@@ -276,7 +278,8 @@ class DimensionType:
 class LogLevel:
     """
     Severity level to filter logs by.
-    Members:
+
+    Attributes:
       DEBUG: Detailed information for debugging purposes.
       INFO: Informational messages.
       WARNING: Warnings.
@@ -378,7 +381,8 @@ class ZarrStream:
 class ZarrVersion:
     """
     Zarr format version.
-    Members:
+
+    Attributes:
       V2: Zarr format version 2
       V3: Zarr format version 3
     """
