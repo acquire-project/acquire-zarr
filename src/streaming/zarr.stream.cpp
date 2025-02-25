@@ -742,7 +742,8 @@ ZarrStream_s::write_group_metadata_()
 
         metadata_key = ".zgroup";
     } else {
-        metadata["attributes"]["multiscales"] = make_multiscale_metadata_();
+        const auto multiscales = make_multiscale_metadata_();
+        metadata["attributes"]["ome"]["multiscales"] = multiscales;
         metadata["zarr_format"] = 3;
         metadata["consolidated_metadata"] = nullptr;
         metadata["node_type"] = "group";
@@ -827,7 +828,10 @@ nlohmann::json
 ZarrStream_s::make_multiscale_metadata_() const
 {
     nlohmann::json multiscales;
-    multiscales[0]["version"] = "0.4";
+    multiscales[0]["version"] = version_ == ZarrVersion_2
+                                  ? "0.4" // 0.5 does not support Zarr V2
+                                  : "0.5";
+    multiscales[0]["name"] = "/";
 
     auto& axes = multiscales[0]["axes"];
     for (auto i = 0; i < dimensions_->ndims(); ++i) {

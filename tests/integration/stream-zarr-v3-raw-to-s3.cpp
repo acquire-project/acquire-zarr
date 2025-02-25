@@ -233,7 +233,7 @@ verify_group_metadata(const nlohmann::json& meta)
            "Expected consolidated_metadata to be null");
 
     // multiscales metadata
-    const auto multiscales = meta["attributes"]["multiscales"][0];
+    const auto multiscales = meta["attributes"]["ome"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
     EXPECT_EQ(size_t, axes.size(), 5);

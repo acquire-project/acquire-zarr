@@ -68,19 +68,30 @@ setup()
 
     ZarrDimensionProperties* dim;
     dim = settings.dimensions;
-    *dim = DIM("t", ZarrDimensionType_Time, array_timepoints, chunk_timepoints, shard_timepoints);
+    *dim = DIM("t",
+               ZarrDimensionType_Time,
+               array_timepoints,
+               chunk_timepoints,
+               shard_timepoints);
 
     dim = settings.dimensions + 1;
-    *dim = DIM("c", ZarrDimensionType_Channel, array_channels, chunk_channels, shard_channels);
+    *dim = DIM("c",
+               ZarrDimensionType_Channel,
+               array_channels,
+               chunk_channels,
+               shard_channels);
 
     dim = settings.dimensions + 2;
-    *dim = DIM("z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
+    *dim = DIM(
+      "z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
 
     dim = settings.dimensions + 3;
-    *dim = DIM("y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
+    *dim = DIM(
+      "y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
 
     dim = settings.dimensions + 4;
-    *dim = DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
+    *dim =
+      DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
     auto* stream = ZarrStream_create(&settings);
     ZarrStreamSettings_destroy_dimension_array(&settings);
@@ -101,7 +112,7 @@ verify_group_metadata(const nlohmann::json& meta)
            "Expected consolidated_metadata to be null");
 
     // multiscales metadata
-    const auto multiscales = meta["attributes"]["multiscales"][0];
+    const auto multiscales = meta["attributes"]["ome"]["multiscales"][0];
 
     const auto axes = multiscales["axes"];
     EXPECT_EQ(size_t, axes.size(), 5);
@@ -115,18 +126,21 @@ verify_group_metadata(const nlohmann::json& meta)
     name = axes[1]["name"];
     type = axes[1]["type"];
     EXPECT(name == "c", "Expected name to be 'c', but got '", name, "'");
-    EXPECT(type == "channel", "Expected type to be 'channel', but got '", type, "'");
+    EXPECT(
+      type == "channel", "Expected type to be 'channel', but got '", type, "'");
 
     name = axes[2]["name"];
     type = axes[2]["type"];
     EXPECT(name == "z", "Expected name to be 'z', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
 
     name = axes[3]["name"];
     type = axes[3]["type"];
     unit = axes[3]["unit"];
     EXPECT(name == "y", "Expected name to be 'y', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
     EXPECT(unit == "micrometer",
            "Expected unit to be 'micrometer', but got '",
            unit,
@@ -136,7 +150,8 @@ verify_group_metadata(const nlohmann::json& meta)
     type = axes[4]["type"];
     unit = axes[4]["unit"];
     EXPECT(name == "x", "Expected name to be 'x', but got '", name, "'");
-    EXPECT(type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(
+      type == "space", "Expected type to be 'space', but got '", type, "'");
     EXPECT(unit == "micrometer",
            "Expected unit to be 'micrometer', but got '",
            unit,
@@ -150,7 +165,8 @@ verify_group_metadata(const nlohmann::json& meta)
       datasets["coordinateTransformations"][0];
 
     type = coordinate_transformations["type"].get<std::string>();
-    EXPECT(type == "scale", "Expected type to be 'scale', but got '", type, "'");
+    EXPECT(
+      type == "scale", "Expected type to be 'scale', but got '", type, "'");
 
     const auto scale = coordinate_transformations["scale"];
     EXPECT_EQ(size_t, scale.size(), 5);
