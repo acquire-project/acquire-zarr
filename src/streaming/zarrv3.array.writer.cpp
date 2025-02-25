@@ -97,7 +97,7 @@ zarr::ZarrV3ArrayWriter::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
     CHECK(shard_index < dims->number_of_shards());
 
     const auto chunks_per_shard = dims->chunks_per_shard();
-    const auto n_layers = dims->layers_per_shard();
+    const auto n_layers = dims->chunk_layers_per_shard();
 
     const auto chunks_per_layer = chunks_per_shard / n_layers;
     const auto layer_offset = current_layer_ * chunks_per_layer;
@@ -184,7 +184,7 @@ zarr::ZarrV3ArrayWriter::make_buffers_()
 
     const auto n_bytes = bytes_to_allocate_per_chunk_();
 
-    const auto n_layers = dims->layers_per_shard();
+    const auto n_layers = dims->chunk_layers_per_shard();
     EXPECT(n_layers > 0, "Shard size of 0 in append dimension");
 
     const auto n_chunks = dims->chunks_per_shard() / n_layers;
@@ -225,7 +225,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
     CHECK(data_sinks_.size() == n_shards);
 
     const auto chunks_in_memory = dims->number_of_chunks_in_memory();
-    const auto n_layers = dims->layers_per_shard();
+    const auto n_layers = dims->chunk_layers_per_shard();
     CHECK(n_layers > 0);
 
     const auto chunks_per_layer = dims->chunks_per_shard() / n_layers;

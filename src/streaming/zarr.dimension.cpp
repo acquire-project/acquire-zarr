@@ -170,7 +170,7 @@ ArrayDimensions::chunks_per_shard() const
 }
 
 uint32_t
-ArrayDimensions::layers_per_shard() const
+ArrayDimensions::chunk_layers_per_shard() const
 {
     return dims_[0].shard_size_chunks;
 }
