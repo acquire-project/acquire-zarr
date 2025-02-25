@@ -104,7 +104,7 @@ struct ZarrStream_s
     [[nodiscard]] bool write_external_metadata_();
 
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
-    [[nodiscard]] nlohmann::json make_multiscale_metadata_() const;
+    [[nodiscard]] nlohmann::json make_ome_metadata_() const;
 
     size_t write_frame_(ConstByteSpan data);
     void write_multiscale_frames_(ConstByteSpan data);

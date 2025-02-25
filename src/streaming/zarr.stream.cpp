@@ -699,7 +699,7 @@ ZarrStream_s::write_base_metadata_()
     std::string metadata_key;
 
     if (version_ == 2) {
-        metadata["multiscales"] = make_multiscale_metadata_();
+        metadata["multiscales"] = make_ome_metadata_();
 
         metadata_key = ".zattrs";
     } else {
@@ -742,8 +742,8 @@ ZarrStream_s::write_group_metadata_()
 
         metadata_key = ".zgroup";
     } else {
-        const auto multiscales = make_multiscale_metadata_();
-        metadata["attributes"]["ome"]["multiscales"] = multiscales;
+        const auto multiscales = make_ome_metadata_();
+        metadata["attributes"]["ome"] = multiscales;
         metadata["zarr_format"] = 3;
         metadata["consolidated_metadata"] = nullptr;
         metadata["node_type"] = "group";
@@ -825,13 +825,9 @@ ZarrStream_s::write_external_metadata_()
 }
 
 nlohmann::json
-ZarrStream_s::make_multiscale_metadata_() const
+ZarrStream_s::make_ome_metadata_() const
 {
     nlohmann::json multiscales;
-    multiscales[0]["version"] = version_ == ZarrVersion_2
-                                  ? "0.4" // 0.5 does not support Zarr V2
-                                  : "0.5";
-    multiscales[0]["name"] = "/";
 
     auto& axes = multiscales[0]["axes"];
     for (auto i = 0; i < dimensions_->ndims(); ++i) {
@@ -897,7 +893,19 @@ ZarrStream_s::make_multiscale_metadata_() const
         };
     }
 
-    return multiscales;
+
+    if (version_ == ZarrVersion_2) {
+        multiscales[0]["version"] = "0.4";
+        multiscales[0]["name"] = "/";
+        return multiscales;
+    }
+
+    nlohmann::json ome;
+    ome["version"] = "0.5";
+    ome["name"] = "/";
+    ome["multiscales"] = multiscales;
+
+    return ome;
 }
 
 size_t

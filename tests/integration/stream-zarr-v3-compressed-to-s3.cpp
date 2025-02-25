@@ -248,9 +248,10 @@ verify_group_metadata(const nlohmann::json& meta)
     EXPECT(meta["consolidated_metadata"].is_null(),
            "Expected consolidated_metadata to be null");
 
-    // multiscales metadata
-    const auto multiscales = meta["attributes"]["ome"]["multiscales"][0];
-    const auto ngff_version = multiscales["version"].get<std::string>();
+    // OME metadata
+    const auto ome = meta["attributes"]["ome"];
+    const auto multiscales = ome["multiscales"][0];
+    const auto ngff_version = ome["version"].get<std::string>();
     EXPECT(ngff_version == "0.5",
            "Expected version to be '0.5', but got '",
            ngff_version,
