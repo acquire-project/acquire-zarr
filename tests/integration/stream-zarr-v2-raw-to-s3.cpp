@@ -209,6 +209,11 @@ void
 verify_base_metadata(const nlohmann::json& meta)
 {
     const auto multiscales = meta["multiscales"][0];
+    const auto ngff_version = multiscales["version"].get<std::string>();
+    EXPECT(ngff_version == "0.4",
+           "Expected version to be '0.4', but got '",
+           ngff_version,
+           "'");
 
     const auto axes = multiscales["axes"];
     EXPECT_EQ(size_t, axes.size(), 5);
