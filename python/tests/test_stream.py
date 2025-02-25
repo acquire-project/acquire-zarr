@@ -128,7 +128,7 @@ def validate_v3_metadata(store_path: Path):
         assert data["node_type"] == "group"
         assert data["consolidated_metadata"] is None
 
-        axes = data["attributes"]["multiscales"][0]["axes"]
+        axes = data["attributes"]["ome"]["multiscales"][0]["axes"]
         assert axes[0]["name"] == "t"
         assert axes[0]["type"] == "time"
 
