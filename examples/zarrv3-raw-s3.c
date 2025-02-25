@@ -8,9 +8,9 @@ int main() {
     // Configure S3
     ZarrS3Settings s3 = {
         .endpoint = "http://localhost:9000",
-        .bucket_name = "acquire-test",
-        .access_key_id = "A2KA3o0MNtZQZWiVC5my",
-        .secret_access_key = "Kt8898E4KhMNyX4HeSVQNaz8QBRbcmyIbQwNCEzw"
+        .bucket_name = "mybucket",
+        .access_key_id = "myaccesskey",
+        .secret_access_key = "mysecretkey"
     };
 
     // Configure stream settings
