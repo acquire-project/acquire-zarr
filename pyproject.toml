@@ -30,7 +30,7 @@ testing = [
     "ruff",
     "s3fs",
     "tifffile",
-    "zarr==3.0.0",
+    "zarr",
     "python-dotenv",
 ]
 
