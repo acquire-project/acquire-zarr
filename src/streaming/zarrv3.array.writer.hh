@@ -17,6 +17,8 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     std::vector<std::vector<uint64_t>> shard_tables_;
     uint32_t current_layer_;
 
+    std::unordered_map<std::string, std::unique_ptr<Sink>> s3_data_sinks_;
+
     size_t compute_chunk_offsets_and_defrag_(uint32_t shard_index);
 
     std::string data_root_() const override;
@@ -26,6 +28,7 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     BytePtr get_chunk_data_(uint32_t index) override;
     bool compress_and_flush_data_() override;
     bool write_array_metadata_() override;
+    void close_sinks_() override;
     bool should_rollover_() const override;
 };
 } // namespace zarr
