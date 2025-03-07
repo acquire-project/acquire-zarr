@@ -13,10 +13,10 @@ namespace {
 const std::string test_path =
   (fs::temp_directory_path() / (TEST ".zarr")).string();
 
-const unsigned int array_width = 64, array_height = 48, array_planes = 6,
+const unsigned int array_width = 2048, array_height = 2048, array_planes = 6,
                    array_channels = 8, array_timepoints = 10;
 
-const unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2,
+const unsigned int chunk_width = 64, chunk_height = 64, chunk_planes = 2,
                    chunk_channels = 4, chunk_timepoints = 5;
 
 const unsigned int chunks_in_x =
