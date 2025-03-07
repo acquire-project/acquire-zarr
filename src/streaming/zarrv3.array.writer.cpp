@@ -10,6 +10,7 @@
 
 #include <algorithm> // std::fill
 #include <latch>
+#include <semaphore>
 #include <stdexcept>
 
 #ifdef max
@@ -317,6 +318,8 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
 
     // wait for the chunks in each shard to finish compressing, then defragment
     // and write the shard
+    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
+      MAX_CONCURRENT_FILES);
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const auto& data_path = data_paths_[shard_idx];
         EXPECT(thread_pool_->push_job(
@@ -329,6 +332,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                             shard_ptr = data_buffers_[shard_idx].data(),
                             bucket_name,
                             connection_pool,
+                            &semaphore,
                             &shard_latch,
                             &chunk_latch = chunk_latches.at(shard_idx),
                             &all_successful,
@@ -336,26 +340,32 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                      chunk_latch.wait();
 
                      bool success = true;
-
                      std::unique_ptr<Sink> sink;
-                     if (s3_data_sinks_.contains(data_path)) {
-                         sink = std::move(s3_data_sinks_[data_path]);
-                     } else if (is_s3) {
-                         sink = make_s3_sink(
-                           *bucket_name, data_path, connection_pool);
-                     } else {
-                         sink = make_file_sink(data_path, *file_offset == 0);
-                     }
 
                      try {
                          // defragment chunks in shard
                          const auto shard_size =
                            compute_chunk_offsets_and_defrag_(shard_idx);
 
+                         semaphore.acquire();
+                         if (s3_data_sinks_.contains(data_path)) {
+                             sink = std::move(s3_data_sinks_[data_path]);
+                         } else if (is_s3) {
+                             sink = make_s3_sink(
+                               *bucket_name, data_path, connection_pool);
+                         } else {
+                             sink =
+                               make_file_sink(data_path, *file_offset == 0);
+                         }
+
                          std::span shard_data(shard_ptr, shard_size);
                          success = sink->write(*file_offset, shard_data);
                          if (!success) {
-                             err = "Failed to write shard";
+                             semaphore.release();
+
+                             err = "Failed to write shard at path " + data_path;
+                             shard_latch.count_down();
+                             all_successful = 0;
                              return false;
                          }
 
@@ -380,22 +390,23 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                                         sizeof(checksum) }),
                                     "Failed to write checksum");
                          }
+                         if (!is_s3) {
+                             EXPECT(finalize_sink(std::move(sink)),
+                                    "Failed to finalize sink at path ",
+                                    data_path);
+                         }
                      } catch (const std::exception& exc) {
                          err =
                            "Failed to flush data: " + std::string(exc.what());
                          success = false;
                      }
+                     semaphore.release();
 
-                     if (is_s3) {
-                         if (!s3_data_sinks_.contains(data_path)) {
-                             s3_data_sinks_.emplace(data_path, std::move(sink));
-                         } else {
-                             s3_data_sinks_[data_path] = std::move(sink);
-                         }
-                     } else {
-                         EXPECT(finalize_sink(std::move(sink)),
-                                "Failed to finalize sink at path ",
-                                data_path);
+                     // save the S3 sink for later
+                     if (is_s3 && !s3_data_sinks_.contains(data_path)) {
+                         s3_data_sinks_.emplace(data_path, std::move(sink));
+                     } else if (is_s3) {
+                         s3_data_sinks_[data_path] = std::move(sink);
                      }
 
                      shard_latch.count_down();
