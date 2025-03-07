@@ -803,7 +803,7 @@ ZarrStream_s::write_external_metadata_()
                 s3_settings_->bucket_name, sink_path, s3_connection_pool_));
         } else {
             metadata_sinks_.emplace(metadata_key,
-                                    zarr::make_file_sink(sink_path));
+                                    zarr::make_file_sink(sink_path, true));
         }
     }
 

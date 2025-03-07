@@ -198,7 +198,7 @@ zarr::ArrayWriter::make_metadata_sink_()
     metadata_sink_ =
       is_s3_array_()
         ? make_s3_sink(*config_.bucket_name, metadata_path, s3_connection_pool_)
-        : make_file_sink(metadata_path);
+        : make_file_sink(metadata_path, true);
 
     if (!metadata_sink_) {
         LOG_ERROR("Failed to create metadata sink: ", metadata_path);

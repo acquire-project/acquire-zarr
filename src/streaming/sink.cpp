@@ -81,7 +81,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
             try {
                 if (all_successful) {
-                    *psink = std::make_unique<zarr::FileSink>(filename);
+                    *psink = std::make_unique<zarr::FileSink>(filename, true);
                 }
                 success = true;
             } catch (const std::exception& exc) {
@@ -146,7 +146,7 @@ make_file_sinks(
                      try {
                          if (all_successful) {
                              *psink =
-                               std::make_unique<zarr::FileSink>(filename);
+                               std::make_unique<zarr::FileSink>(filename, true);
                          }
                          success = true;
                      } catch (const std::exception& exc) {
@@ -351,9 +351,8 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     return static_cast<bool>(all_successful);
 }
 
-
 std::unique_ptr<zarr::Sink>
-zarr::make_file_sink(std::string_view file_path)
+zarr::make_file_sink(std::string_view file_path, bool truncate)
 {
     if (file_path.starts_with("file://")) {
         file_path = file_path.substr(7);
@@ -375,7 +374,7 @@ zarr::make_file_sink(std::string_view file_path)
         }
     }
 
-    return std::make_unique<FileSink>(file_path);
+    return std::make_unique<FileSink>(file_path, truncate);
 }
 
 bool

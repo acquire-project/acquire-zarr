@@ -9,7 +9,7 @@ namespace zarr {
 class FileSink : public Sink
 {
   public:
-    explicit FileSink(std::string_view filename);
+    FileSink(std::string_view filename, bool truncate = true);
 
     bool write(size_t offset, std::span<const std::byte> data) override;
 
