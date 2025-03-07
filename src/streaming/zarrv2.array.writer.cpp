@@ -193,7 +193,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                         }
                     }
 
-                    std::unique_ptr<Sink> sink = nullptr;
+                    std::unique_ptr<Sink> sink;
                     semaphore.acquire();
                     try {
                         if (is_s3) {
