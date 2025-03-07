@@ -1,4 +1,5 @@
 #include "file.sink.hh"
+#include "macros.hh"
 
 #include <filesystem>
 
@@ -7,6 +8,7 @@ namespace fs = std::filesystem;
 zarr::FileSink::FileSink(std::string_view filename)
 : file_(filename.data(), std::ios::binary | std::ios::trunc)
 {
+    EXPECT(file_.is_open(), "Failed to open file ", filename);
 }
 
 bool
