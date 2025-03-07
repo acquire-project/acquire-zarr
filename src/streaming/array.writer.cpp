@@ -156,35 +156,13 @@ zarr::ArrayWriter::is_s3_array_() const
     return config_.bucket_name.has_value();
 }
 
-bool
-zarr::ArrayWriter::make_data_sinks_()
+void
+zarr::ArrayWriter::make_data_paths_()
 {
-    const auto data_root = data_root_();
-    const auto parts_along_dimension = parts_along_dimension_();
-
-    if (is_s3_array_()) {
-        if (!make_data_s3_sinks(*config_.bucket_name,
-                                data_root,
-                                *config_.dimensions,
-                                parts_along_dimension,
-                                s3_connection_pool_,
-                                data_sinks_)) {
-            LOG_ERROR("Failed to create data sinks in ",
-                      data_root,
-                      " for bucket ",
-                      *config_.bucket_name);
-            return false;
-        }
-    } else if (!make_data_file_sinks(data_root,
-                                     *config_.dimensions,
-                                     parts_along_dimension,
-                                     thread_pool_,
-                                     data_sinks_)) {
-        LOG_ERROR("Failed to create data sinks in ", data_root);
-        return false;
+    if (data_paths_.empty()) {
+        data_paths_ = construct_data_paths(
+          data_root_(), *config_.dimensions, parts_along_dimension_());
     }
-
-    return true;
 }
 
 bool
@@ -319,6 +297,7 @@ zarr::ArrayWriter::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
+    data_paths_.clear();
     close_sinks_();
     ++append_chunk_index_;
 }

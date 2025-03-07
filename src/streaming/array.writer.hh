@@ -63,6 +63,7 @@ class ArrayWriter
     std::vector<ByteVector> data_buffers_;
 
     /// Filesystem
+    std::vector<std::string> data_paths_;
     std::vector<std::unique_ptr<Sink>> data_sinks_;
     std::unique_ptr<Sink> metadata_sink_;
 
@@ -91,7 +92,7 @@ class ArrayWriter
     virtual std::string metadata_path_() const = 0;
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
-    [[nodiscard]] bool make_data_sinks_();
+    void make_data_paths_();
     [[nodiscard]] bool make_metadata_sink_();
     virtual void make_buffers_() = 0;
 
