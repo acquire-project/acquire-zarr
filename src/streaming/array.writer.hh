@@ -64,7 +64,6 @@ class ArrayWriter
 
     /// Filesystem
     std::vector<std::string> data_paths_;
-    std::vector<std::unique_ptr<Sink>> data_sinks_;
     std::unique_ptr<Sink> metadata_sink_;
 
     /// Multithreading
@@ -108,7 +107,7 @@ class ArrayWriter
 
     [[nodiscard]] virtual bool write_array_metadata_() = 0;
 
-    void close_sinks_();
+    virtual void close_sinks_() = 0;
 
     friend bool finalize_array(std::unique_ptr<ArrayWriter>&& writer);
 };

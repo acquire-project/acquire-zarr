@@ -282,22 +282,10 @@ zarr::ArrayWriter::should_flush_() const
 }
 
 void
-zarr::ArrayWriter::close_sinks_()
-{
-    for (auto i = 0; i < data_sinks_.size(); ++i) {
-        EXPECT(finalize_sink(std::move(data_sinks_[i])),
-               "Failed to finalize sink ",
-               i);
-    }
-    data_sinks_.clear();
-}
-
-void
 zarr::ArrayWriter::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
-    data_paths_.clear();
     close_sinks_();
     ++append_chunk_index_;
 }

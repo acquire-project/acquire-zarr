@@ -152,11 +152,11 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
               thread_pool_->push_job(
                 std::move([bytes_per_px,
                            bytes_of_raw_chunk,
+                           &compression_params,
                            is_s3,
                            &data_path = data_paths_[i],
                            chunk_ptr = get_chunk_data_(i),
                            &bucket_name,
-                           &compression_params,
                            connection_pool,
                            &semaphore,
                            &latch,
@@ -296,6 +296,12 @@ zarr::ZarrV2ArrayWriter::write_array_metadata_()
     std::span data{ reinterpret_cast<std::byte*>(metadata_str.data()),
                     metadata_str.size() };
     return metadata_sink_->write(0, data);
+}
+
+void
+zarr::ZarrV2ArrayWriter::close_sinks_()
+{
+    data_paths_.clear();
 }
 
 bool

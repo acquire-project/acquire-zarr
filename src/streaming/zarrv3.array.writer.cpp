@@ -497,6 +497,18 @@ zarr::ZarrV3ArrayWriter::write_array_metadata_()
     return metadata_sink_->write(0, data);
 }
 
+void
+zarr::ZarrV3ArrayWriter::close_sinks_()
+{
+    data_paths_.clear();
+
+    for (auto& [path, sink] : s3_data_sinks_) {
+        EXPECT(
+          finalize_sink(std::move(sink)), "Failed to finalize sink at ", path);
+    }
+    s3_data_sinks_.clear();
+}
+
 bool
 zarr::ZarrV3ArrayWriter::should_rollover_() const
 {

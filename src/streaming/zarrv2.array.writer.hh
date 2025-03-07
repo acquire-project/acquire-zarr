@@ -21,6 +21,7 @@ class ZarrV2ArrayWriter final : public ArrayWriter
     BytePtr get_chunk_data_(uint32_t index) override;
     bool compress_and_flush_data_() override;
     bool write_array_metadata_() override;
+    void close_sinks_() override;
     bool should_rollover_() const override;
 };
 } // namespace zarr
