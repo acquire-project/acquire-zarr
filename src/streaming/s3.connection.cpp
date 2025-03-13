@@ -4,8 +4,17 @@
 #include <miniocpp/utils.h>
 
 #include <list>
+#include <regex>
 #include <sstream>
 #include <string_view>
+
+namespace {
+bool
+has_port(const std::string& endpoint)
+{
+    return std::regex_search(endpoint, std::regex(":[0-9]+"));
+}
+} // namespace
 
 zarr::S3Connection::S3Connection(const std::string& endpoint,
                                  const std::string& access_key_id,
@@ -13,6 +22,9 @@ zarr::S3Connection::S3Connection(const std::string& endpoint,
 {
     minio::s3::BaseUrl url(endpoint);
     url.https = endpoint.starts_with("https");
+    if (!has_port(endpoint)) {
+        url.port = url.https ? 443 : 80;
+    }
 
     provider_ = std::make_unique<minio::creds::StaticProvider>(
       access_key_id, secret_access_key);
@@ -28,6 +40,9 @@ zarr::S3Connection::S3Connection(const std::string& endpoint,
 {
     minio::s3::BaseUrl url(endpoint);
     url.https = endpoint.starts_with("https");
+    if (!has_port(endpoint)) {
+        url.port = url.https ? 443 : 80;
+    }
     url.region = region;
 
     provider_ = std::make_unique<minio::creds::StaticProvider>(
