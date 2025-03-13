@@ -4,6 +4,7 @@
 #include <miniocpp/utils.h>
 
 #include <list>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <string_view>
@@ -14,17 +15,29 @@ has_port(const std::string& endpoint)
 {
     return std::regex_search(endpoint, std::regex(":[0-9]+"));
 }
-} // namespace
 
-zarr::S3Connection::S3Connection(const std::string& endpoint,
-                                 const std::string& access_key_id,
-                                 const std::string& secret_access_key)
+minio::s3::BaseUrl
+make_url(const std::string& endpoint, std::optional<std::string> region)
 {
     minio::s3::BaseUrl url(endpoint);
     url.https = endpoint.starts_with("https");
     if (!has_port(endpoint)) {
         url.port = url.https ? 443 : 80;
     }
+
+    if (region) {
+        url.region = *region;
+    }
+
+    return url;
+}
+} // namespace
+
+zarr::S3Connection::S3Connection(const std::string& endpoint,
+                                 const std::string& access_key_id,
+                                 const std::string& secret_access_key)
+{
+    auto url = make_url(endpoint, std::nullopt);
 
     provider_ = std::make_unique<minio::creds::StaticProvider>(
       access_key_id, secret_access_key);
@@ -38,12 +51,7 @@ zarr::S3Connection::S3Connection(const std::string& endpoint,
                                  const std::string& secret_access_key,
                                  const std::string& region)
 {
-    minio::s3::BaseUrl url(endpoint);
-    url.https = endpoint.starts_with("https");
-    if (!has_port(endpoint)) {
-        url.port = url.https ? 443 : 80;
-    }
-    url.region = region;
+    auto url = make_url(endpoint, region);
 
     provider_ = std::make_unique<minio::creds::StaticProvider>(
       access_key_id, secret_access_key);
