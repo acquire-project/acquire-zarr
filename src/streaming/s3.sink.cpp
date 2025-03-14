@@ -2,9 +2,6 @@
 #include "s3.sink.hh"
 #include <algorithm>
 
-#include <miniocpp/client.h>
-#include <miniocpp/types.h>
-
 #ifdef min
 #undef min
 #endif
@@ -195,14 +192,8 @@ zarr::S3Sink::finalize_multipart_upload_()
 
     const auto& upload_id = multipart_upload_->upload_id;
     const auto& parts = multipart_upload_->parts;
-
-    std::list<minio::s3::Part> s3_parts;
-    for (const auto& part : parts) {
-        minio::s3::Part s3_part(part.number, part.etag);
-        s3_parts.push_back(s3_part);
-    }
     bool retval = connection->complete_multipart_object(
-      bucket_name_, object_key_, upload_id, s3_parts);
+      bucket_name_, object_key_, upload_id, parts);
 
     connection_pool_->return_connection(std::move(connection));
 

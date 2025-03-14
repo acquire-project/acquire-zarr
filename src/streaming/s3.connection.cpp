@@ -1,7 +1,9 @@
 #include "macros.hh"
 #include "s3.connection.hh"
 
+#include <miniocpp/client.h>
 #include <miniocpp/utils.h>
+#include <miniocpp/types.h>
 
 #include <list>
 #include <regex>
@@ -32,15 +34,33 @@ make_url(const std::string& endpoint, std::optional<std::string> region)
 }
 } // namespace
 
+class zarr::S3Client : public minio::s3::Client
+{
+  public:
+    using minio::s3::Client::Client;
+};
+
+class zarr::S3StaticProvider : public minio::creds::StaticProvider
+{
+  public:
+    using minio::creds::StaticProvider::StaticProvider;
+};
+
 zarr::S3Connection::S3Connection(const S3Settings& settings)
 {
     auto url = make_url(settings.endpoint, settings.region);
 
-    provider_ = std::make_unique<minio::creds::StaticProvider>(
-      settings.access_key_id, settings.secret_access_key);
-    client_ = std::make_unique<minio::s3::Client>(url, provider_.get());
+    provider_ =
+      new S3StaticProvider(settings.access_key_id, settings.secret_access_key);
+    client_ = new S3Client(url, provider_);
 
     CHECK(client_);
+}
+
+zarr::S3Connection::~S3Connection()
+{
+    delete client_;
+    delete provider_;
 }
 
 bool
@@ -203,11 +223,10 @@ zarr::S3Connection::upload_multipart_object_part(std::string_view bucket_name,
 }
 
 bool
-zarr::S3Connection::complete_multipart_object(
-  std::string_view bucket_name,
-  std::string_view object_name,
-  std::string_view upload_id,
-  const std::list<minio::s3::Part>& parts)
+zarr::S3Connection::complete_multipart_object(std::string_view bucket_name,
+                                              std::string_view object_name,
+                                              std::string_view upload_id,
+                                              const std::vector<S3Part>& parts)
 {
     EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
     EXPECT(!object_name.empty(), "Object name must not be empty.");
@@ -220,7 +239,12 @@ zarr::S3Connection::complete_multipart_object(
     args.bucket = bucket_name;
     args.object = object_name;
     args.upload_id = upload_id;
-    args.parts = parts;
+
+    for (const auto& part : parts) {
+        minio::s3::Part s3_part(part.number, part.etag);
+        s3_part.size = part.size;
+        args.parts.push_back(s3_part);
+    }
 
     auto response = client_->CompleteMultipartUpload(args);
     if (!response) {

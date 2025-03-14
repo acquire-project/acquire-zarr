@@ -9,11 +9,6 @@
 #include <vector>
 
 namespace zarr {
-struct S3Part {
-    unsigned int number;
-    std::string etag;
-};
-
 class S3Sink : public Sink
 {
   public:

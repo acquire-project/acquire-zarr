@@ -1,7 +1,5 @@
 #pragma once
 
-#include <miniocpp/client.h>
-
 #include <condition_variable>
 #include <list>
 #include <memory>
@@ -21,10 +19,20 @@ struct S3Settings
     std::optional<std::string> region;
 };
 
+struct S3Part {
+    unsigned int number;
+    std::string etag;
+    size_t size;
+};
+
+class S3Client;
+class S3StaticProvider;
+
 class S3Connection
 {
   public:
     explicit S3Connection(const S3Settings& settings);
+    ~S3Connection();
 
     /**
      * @brief Test a connection by listing all buckets at this connection's
@@ -111,17 +119,17 @@ class S3Connection
     /// @param bucket_name The name of the bucket containing the object.
     /// @param object_name The name of the object.
     /// @param upload_id The upload id of the multipart object.
-    /// @param parts List of the parts making up the object.
+    /// @param parts Vector of the parts making up the object.
     /// @returns True if the object was successfully completed, otherwise false.
     [[nodiscard]] bool complete_multipart_object(
       std::string_view bucket_name,
       std::string_view object_name,
       std::string_view upload_id,
-      const std::list<minio::s3::Part>& parts);
+      const std::vector<S3Part>& parts);
 
   private:
-    std::unique_ptr<minio::s3::Client> client_;
-    std::unique_ptr<minio::creds::StaticProvider> provider_;
+    S3Client* client_;
+    S3StaticProvider* provider_;
 };
 
 class S3ConnectionPool
