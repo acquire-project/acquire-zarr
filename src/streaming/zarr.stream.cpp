@@ -543,20 +543,8 @@ ZarrStream_s::create_store_()
     if (is_s3_acquisition_()) {
         // spin up S3 connection pool
         try {
-            if (s3_settings_->region.has_value()) {
-                s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
-                  std::thread::hardware_concurrency(),
-                  s3_settings_->endpoint,
-                  s3_settings_->access_key_id,
-                  s3_settings_->secret_access_key,
-                  *s3_settings_->region);
-            } else {
-                s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
-                  std::thread::hardware_concurrency(),
-                  s3_settings_->endpoint,
-                  s3_settings_->access_key_id,
-                  s3_settings_->secret_access_key);
-            }
+            s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
+              std::thread::hardware_concurrency(), *s3_settings_);
         } catch (const std::exception& e) {
             set_error_("Error creating S3 connection pool: " +
                        std::string(e.what()));
@@ -892,7 +880,6 @@ ZarrStream_s::make_ome_metadata_() const
             { "kwargs", { "cval", 0 } },
         };
     }
-
 
     if (version_ == ZarrVersion_2) {
         multiscales[0]["version"] = "0.4";

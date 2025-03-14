@@ -13,40 +13,36 @@ namespace {
 const std::string test_dir = TEST "-data";
 
 bool
-get_credentials(std::string& endpoint,
-                std::string& bucket_name,
-                std::string& access_key_id,
-                std::string& secret_access_key,
-                std::optional<std::string>& region)
+get_settings(zarr::S3Settings& settings)
 {
     char* env = nullptr;
     if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
         LOG_ERROR("ZARR_S3_ENDPOINT not set.");
         return false;
     }
-    endpoint = env;
+    settings.endpoint = env;
 
     if (!(env = std::getenv("ZARR_S3_BUCKET_NAME"))) {
         LOG_ERROR("ZARR_S3_BUCKET_NAME not set.");
         return false;
     }
-    bucket_name = env;
+    settings.bucket_name = env;
 
     if (!(env = std::getenv("ZARR_S3_ACCESS_KEY_ID"))) {
         LOG_ERROR("ZARR_S3_ACCESS_KEY_ID not set.");
         return false;
     }
-    access_key_id = env;
+    settings.access_key_id = env;
 
     if (!(env = std::getenv("ZARR_S3_SECRET_ACCESS_KEY"))) {
         LOG_ERROR("ZARR_S3_SECRET_ACCESS_KEY not set.");
         return false;
     }
-    secret_access_key = env;
+    settings.secret_access_key = env;
 
     env = std::getenv("ZARR_S3_REGION");
     if (env) {
-        region = env;
+        settings.region = env;
     }
 
     return true;
@@ -266,36 +262,19 @@ main()
         return 1;
     }
 
-    std::string s3_endpoint, bucket_name, s3_access_key_id,
-      s3_secret_access_key;
-    std::optional<std::string> s3_region;
-    if (!get_credentials(s3_endpoint,
-                         bucket_name,
-                         s3_access_key_id,
-                         s3_secret_access_key,
-                         s3_region)) {
+    zarr::S3Settings settings;
+    if (!get_settings(settings)) {
         LOG_WARNING("Failed to get credentials. Skipping S3 portion of test.");
         return 0;
     }
 
-    std::shared_ptr<zarr::S3ConnectionPool> connection_pool;
-    if (s3_region) {
-        connection_pool =
-          std::make_shared<zarr::S3ConnectionPool>(4,
-                                                   s3_endpoint,
-                                                   s3_access_key_id,
-                                                   s3_secret_access_key,
-                                                   *s3_region);
-    } else {
-        connection_pool = std::make_shared<zarr::S3ConnectionPool>(
-          4, s3_endpoint, s3_access_key_id, s3_secret_access_key);
-    }
+    auto connection_pool = std::make_shared<zarr::S3ConnectionPool>(4, settings);
 
     try {
         make_chunk_s3_sinks(
-          thread_pool, connection_pool, bucket_name, dimensions);
+          thread_pool, connection_pool, settings.bucket_name, dimensions);
         make_shard_s3_sinks(
-          thread_pool, connection_pool, bucket_name, dimensions);
+          thread_pool, connection_pool, settings.bucket_name, dimensions);
     } catch (const std::exception& e) {
         LOG_ERROR("Failed: ", e.what());
         return 1;

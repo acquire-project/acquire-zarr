@@ -6,22 +6,25 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <span>
 #include <vector>
 
 namespace zarr {
+struct S3Settings
+{
+    std::string endpoint;
+    std::string bucket_name;
+    std::string access_key_id;
+    std::string secret_access_key;
+    std::optional<std::string> region;
+};
+
 class S3Connection
 {
   public:
-    S3Connection(const std::string& endpoint,
-                 const std::string& access_key_id,
-                 const std::string& secret_access_key);
-
-    S3Connection(const std::string& endpoint,
-                 const std::string& access_key_id,
-                 const std::string& secret_access_key,
-                 const std::string& region);
+    explicit S3Connection(const S3Settings& settings);
 
     /**
      * @brief Test a connection by listing all buckets at this connection's
@@ -124,17 +127,7 @@ class S3Connection
 class S3ConnectionPool
 {
   public:
-    S3ConnectionPool(size_t n_connections,
-                     const std::string& endpoint,
-                     const std::string& access_key_id,
-                     const std::string& secret_access_key);
-
-    S3ConnectionPool(size_t n_connections,
-                     const std::string& endpoint,
-                     const std::string& access_key_id,
-                     const std::string& secret_access_key,
-                     const std::string& region);
-
+    S3ConnectionPool(size_t n_connections, const S3Settings& settings);
     ~S3ConnectionPool();
 
     std::unique_ptr<S3Connection> get_connection();
@@ -145,6 +138,6 @@ class S3ConnectionPool
     std::mutex connections_mutex_;
     std::condition_variable cv_;
 
-    std::atomic<bool> is_accepting_connections_{true};
+    std::atomic<bool> is_accepting_connections_{ true };
 };
 } // namespace zarr
