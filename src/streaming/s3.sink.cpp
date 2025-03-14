@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <miniocpp/client.h>
+#include <miniocpp/types.h>
 
 #ifdef min
 #undef min
@@ -155,7 +156,7 @@ zarr::S3Sink::flush_part_()
     try {
         auto& parts = multipart_upload_->parts;
 
-        minio::s3::Part part;
+        S3Part part;
         part.number = static_cast<unsigned int>(parts.size()) + 1;
 
         std::span data(reinterpret_cast<uint8_t*>(part_buffer_.data()),
@@ -195,8 +196,13 @@ zarr::S3Sink::finalize_multipart_upload_()
     const auto& upload_id = multipart_upload_->upload_id;
     const auto& parts = multipart_upload_->parts;
 
+    std::list<minio::s3::Part> s3_parts;
+    for (const auto& part : parts) {
+        minio::s3::Part s3_part(part.number, part.etag);
+        s3_parts.push_back(s3_part);
+    }
     bool retval = connection->complete_multipart_object(
-      bucket_name_, object_key_, upload_id, parts);
+      bucket_name_, object_key_, upload_id, s3_parts);
 
     connection_pool_->return_connection(std::move(connection));
 

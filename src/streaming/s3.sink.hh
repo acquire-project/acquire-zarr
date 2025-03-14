@@ -3,13 +3,17 @@
 #include "sink.hh"
 #include "s3.connection.hh"
 
-#include <miniocpp/types.h>
-
 #include <array>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace zarr {
+struct S3Part {
+    unsigned int number;
+    std::string etag;
+};
+
 class S3Sink : public Sink
 {
   public:
@@ -26,7 +30,7 @@ class S3Sink : public Sink
     struct MultiPartUpload
     {
         std::string upload_id;
-        std::list<minio::s3::Part> parts;
+        std::vector<S3Part> parts;
     };
 
     static constexpr size_t max_part_size_ = 5 << 20;
