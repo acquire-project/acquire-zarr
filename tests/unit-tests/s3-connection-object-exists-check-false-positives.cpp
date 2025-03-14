@@ -7,40 +7,36 @@
 
 namespace {
 bool
-get_credentials(std::string& endpoint,
-                std::string& bucket_name,
-                std::string& access_key_id,
-                std::string& secret_access_key,
-                std::optional<std::string>& region)
+get_settings(zarr::S3Settings& settings)
 {
     char* env = nullptr;
     if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
         LOG_ERROR("ZARR_S3_ENDPOINT not set.");
         return false;
     }
-    endpoint = env;
+    settings.endpoint = env;
 
     if (!(env = std::getenv("ZARR_S3_BUCKET_NAME"))) {
         LOG_ERROR("ZARR_S3_BUCKET_NAME not set.");
         return false;
     }
-    bucket_name = env;
+    settings.bucket_name = env;
 
     if (!(env = std::getenv("ZARR_S3_ACCESS_KEY_ID"))) {
         LOG_ERROR("ZARR_S3_ACCESS_KEY_ID not set.");
         return false;
     }
-    access_key_id = env;
+    settings.access_key_id = env;
 
     if (!(env = std::getenv("ZARR_S3_SECRET_ACCESS_KEY"))) {
         LOG_ERROR("ZARR_S3_SECRET_ACCESS_KEY not set.");
         return false;
     }
-    secret_access_key = env;
+    settings.secret_access_key = env;
 
     env = std::getenv("ZARR_S3_REGION");
     if (env) {
-        region = env;
+        settings.region = env;
     }
 
     return true;
@@ -50,14 +46,8 @@ get_credentials(std::string& endpoint,
 int
 main()
 {
-    std::string s3_endpoint, bucket_name, s3_access_key_id,
-      s3_secret_access_key;
-    std::optional<std::string> s3_region;
-    if (!get_credentials(s3_endpoint,
-                         bucket_name,
-                         s3_access_key_id,
-                         s3_secret_access_key,
-                         s3_region)) {
+    zarr::S3Settings settings;
+    if (!get_settings(settings)) {
         LOG_WARNING("Failed to get credentials. Skipping test.");
         return 0;
     }
@@ -66,28 +56,21 @@ main()
     const std::string object_name = "test-object";
 
     try {
-        std::unique_ptr<zarr::S3Connection> conn;
-        if (s3_region) {
-            conn = std::make_unique<zarr::S3Connection>(
-              s3_endpoint, s3_access_key_id, s3_secret_access_key, *s3_region);
-        } else {
-            conn = std::make_unique<zarr::S3Connection>(
-              s3_endpoint, s3_access_key_id, s3_secret_access_key);
-        }
+        auto conn = std::make_unique<zarr::S3Connection>(settings);
 
         if (!conn->is_connection_valid()) {
             LOG_ERROR("Failed to connect to S3.");
             return 1;
         }
 
-        CHECK(conn->bucket_exists(bucket_name));
+        CHECK(conn->bucket_exists(settings.bucket_name));
 
         if (conn->object_exists("", object_name)) {
             LOG_ERROR("False positive for empty bucket name.");
             return 1;
         }
 
-        if (conn->object_exists(bucket_name, "")) {
+        if (conn->object_exists(settings.bucket_name, "")) {
             LOG_ERROR("False positive for empty object name.");
             return 1;
         }

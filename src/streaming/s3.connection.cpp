@@ -4,7 +4,6 @@
 #include <miniocpp/utils.h>
 
 #include <list>
-#include <optional>
 #include <regex>
 #include <sstream>
 #include <string_view>
@@ -33,28 +32,12 @@ make_url(const std::string& endpoint, std::optional<std::string> region)
 }
 } // namespace
 
-zarr::S3Connection::S3Connection(const std::string& endpoint,
-                                 const std::string& access_key_id,
-                                 const std::string& secret_access_key)
+zarr::S3Connection::S3Connection(const S3Settings& settings)
 {
-    auto url = make_url(endpoint, std::nullopt);
+    auto url = make_url(settings.endpoint, settings.region);
 
     provider_ = std::make_unique<minio::creds::StaticProvider>(
-      access_key_id, secret_access_key);
-    client_ = std::make_unique<minio::s3::Client>(url, provider_.get());
-
-    CHECK(client_);
-}
-
-zarr::S3Connection::S3Connection(const std::string& endpoint,
-                                 const std::string& access_key_id,
-                                 const std::string& secret_access_key,
-                                 const std::string& region)
-{
-    auto url = make_url(endpoint, region);
-
-    provider_ = std::make_unique<minio::creds::StaticProvider>(
-      access_key_id, secret_access_key);
+      settings.access_key_id, settings.secret_access_key);
     client_ = std::make_unique<minio::s3::Client>(url, provider_.get());
 
     CHECK(client_);
@@ -254,38 +237,17 @@ zarr::S3Connection::complete_multipart_object(
 }
 
 zarr::S3ConnectionPool::S3ConnectionPool(size_t n_connections,
-                                         const std::string& endpoint,
-                                         const std::string& access_key_id,
-                                         const std::string& secret_access_key)
+                                         const S3Settings& settings)
 {
-    for (auto i = 0; i < n_connections; ++i) {
-        auto connection = std::make_unique<S3Connection>(
-          endpoint, access_key_id, secret_access_key);
-
-        if (connection->is_connection_valid()) {
-            connections_.push_back(std::make_unique<S3Connection>(
-              endpoint, access_key_id, secret_access_key));
-        }
+    if (settings.region) {
+        LOG_DEBUG("Setting region to ", *settings.region);
     }
 
-    CHECK(!connections_.empty());
-}
-
-zarr::S3ConnectionPool::S3ConnectionPool(size_t n_connections,
-                                         const std::string& endpoint,
-                                         const std::string& access_key_id,
-                                         const std::string& secret_access_key,
-                                         const std::string& region)
-{
-    LOG_DEBUG("Setting region to ", region);
-
     for (auto i = 0; i < n_connections; ++i) {
-        auto connection = std::make_unique<S3Connection>(
-          endpoint, access_key_id, secret_access_key, region);
+        auto connection = std::make_unique<S3Connection>(settings);
 
         if (connection->is_connection_valid()) {
-            connections_.push_back(std::make_unique<S3Connection>(
-              endpoint, access_key_id, secret_access_key, region));
+            connections_.push_back(std::make_unique<S3Connection>(settings));
         }
     }
 
