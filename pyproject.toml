@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.2.3"
+version = "0.2.4"
 description = "Performant streaming to Zarr storage, on filesystem or cloud"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
