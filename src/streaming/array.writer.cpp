@@ -210,7 +210,7 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
     const auto bytes_per_chunk = dimensions->bytes_per_chunk();
     const auto bytes_per_row = tile_cols * bytes_per_px;
 
-    std::atomic<size_t> bytes_written = 0;
+    size_t bytes_written = 0;
 
     const auto n_tiles_x = (frame_cols + tile_cols - 1) / tile_cols;
     const auto n_tiles_y = (frame_rows + tile_rows - 1) / tile_rows;
@@ -227,43 +227,32 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
 
     const auto* data_ptr = data.data();
 
-    std::vector<std::pair<int, int>> tile_indices;
-    tile_indices.reserve(n_tiles_y * n_tiles_x);
+#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
     for (auto i = 0; i < n_tiles_y; ++i) {
         for (auto j = 0; j < n_tiles_x; ++j) {
-            tile_indices.emplace_back(i, j);
+            const auto c = group_offset + i * n_tiles_x + j;
+            auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
+
+            for (auto k = 0; k < tile_rows; ++k) {
+                const auto frame_row = i * tile_rows + k;
+                if (frame_row < frame_rows) {
+                    const auto frame_col = j * tile_cols;
+
+                    const auto region_width =
+                      std::min(frame_col + tile_cols, frame_cols) - frame_col;
+
+                    const auto region_start = static_cast<long long>(
+                      bytes_per_px * (frame_row * frame_cols + frame_col));
+                    const auto nbytes =
+                      static_cast<long long>(region_width * bytes_per_px);
+
+                    memcpy(chunk_ptr, data_ptr + region_start, nbytes);
+                    bytes_written += nbytes;
+                }
+                chunk_ptr += static_cast<long long>(bytes_per_row);
+            }
         }
     }
-
-    std::for_each(
-      std::execution::par,
-      tile_indices.begin(),
-      tile_indices.end(),
-      [&](const auto& idx) {
-          auto i = idx.first;
-          auto j = idx.second;
-          const auto c = group_offset + i * n_tiles_x + j;
-          auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
-
-          for (auto k = 0; k < tile_rows; ++k) {
-              const auto frame_row = i * tile_rows + k;
-              if (frame_row < frame_rows) {
-                  const auto frame_col = j * tile_cols;
-
-                  const auto region_width =
-                    std::min(frame_col + tile_cols, frame_cols) - frame_col;
-
-                  const auto region_start = static_cast<long long>(
-                    bytes_per_px * (frame_row * frame_cols + frame_col));
-                  const auto nbytes =
-                    static_cast<long long>(region_width * bytes_per_px);
-
-                  memcpy(chunk_ptr, data_ptr + region_start, nbytes);
-                  bytes_written.fetch_add(nbytes);
-              }
-              chunk_ptr += static_cast<long long>(bytes_per_row);
-          }
-      });
 
     return bytes_written;
 }

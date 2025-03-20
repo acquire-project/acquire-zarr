@@ -8,6 +8,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(blosc CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
 find_package(Crc32c CONFIG REQUIRED)
+find_package(OpenMP REQUIRED)
 
 include(cmake/aq_require.cmake)
 include(cmake/git-versioning.cmake)

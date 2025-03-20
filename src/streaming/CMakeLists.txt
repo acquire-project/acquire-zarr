@@ -44,6 +44,7 @@ target_link_libraries(${tgt} PRIVATE
         blosc_static
         miniocpp::miniocpp
         Crc32c::crc32c
+        OpenMP::OpenMP_CXX
 )
 
 target_compile_definitions(${tgt} PRIVATE
