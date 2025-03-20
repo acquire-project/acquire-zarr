@@ -190,7 +190,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
                                  sink = make_s3_sink(
                                    *bucket_name, data_path, connection_pool);
                              } else {
-                                 sink = make_file_sink(data_path, true);
+                                 sink = make_file_sink(data_path);
                              }
 
                              // write the chunk to the sink

@@ -9,7 +9,8 @@ namespace zarr {
 class FileSink : public Sink
 {
   public:
-    FileSink(std::string_view filename, bool truncate = true);
+    FileSink(std::string_view filename);
+    ~FileSink() override;
 
     bool write(size_t offset, ConstByteSpan data) override;
 
@@ -17,6 +18,10 @@ class FileSink : public Sink
     bool flush_() override;
 
   private:
-    std::ofstream file_;
+    std::mutex mutex_;
+    size_t page_size_;
+    size_t sector_size_;
+
+    void* handle_;
 };
 } // namespace zarr

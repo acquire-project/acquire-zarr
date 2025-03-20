@@ -76,13 +76,12 @@ make_dirs(const std::vector<std::string>& dir_paths,
 /**
  * @brief Create a file sink from a path.
  * @param file_path The path to the file.
- * @param truncate If true, the file is truncated to zero length.
  * @return Pointer to the sink created, or nullptr if the file cannot be
  * opened.
  * @throws std::runtime_error if the file path is not valid.
  */
-std::unique_ptr<Sink>
-make_file_sink(std::string_view file_path, bool truncate);
+std::unique_ptr<zarr::Sink>
+make_file_sink(std::string_view file_path);
 
 /**
  * @brief Create a collection of file sinks for a Zarr dataset.

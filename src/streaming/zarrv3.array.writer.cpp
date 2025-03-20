@@ -354,8 +354,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
                              sink = make_s3_sink(
                                *bucket_name, data_path, connection_pool);
                          } else {
-                             sink =
-                               make_file_sink(data_path, *file_offset == 0);
+                             sink = make_file_sink(data_path);
                          }
 
                          std::span shard_data(shard_ptr, shard_size);
