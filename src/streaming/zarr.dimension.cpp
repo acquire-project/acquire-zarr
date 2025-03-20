@@ -6,8 +6,34 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
                                  ZarrDataType dtype)
   : dims_(std::move(dims))
   , dtype_(dtype)
+  , chunks_per_shard_(1)
+  , number_of_shards_(1)
+  , bytes_per_chunk_(zarr::bytes_of_type(dtype))
+  , number_of_chunks_in_memory_(1)
 {
     EXPECT(dims_.size() > 2, "Array must have at least three dimensions.");
+
+    for (const auto& d : dims_) {
+        bytes_per_chunk_ *= d.chunk_size_px;
+    }
+
+    for (auto i = 1; i < ndims(); ++i) {
+        number_of_chunks_in_memory_ *= zarr::chunks_along_dimension(dims_[i]);
+    }
+
+    for (const auto& dim : dims_) {
+        chunks_per_shard_ *= dim.shard_size_chunks;
+    }
+
+    for (auto i = 1; i < ndims(); ++i) {
+        const auto& dim = dims_[i];
+        number_of_shards_ *= zarr::shards_along_dimension(dim);
+    }
+
+    for (auto i = 0; i < chunks_per_shard_ * number_of_shards_; ++i) {
+        shard_indices_.insert_or_assign(i, shard_index_for_chunk_(i));
+        shard_internal_indices_.insert_or_assign(i, shard_internal_index_(i));
+    }
 }
 
 size_t
@@ -127,46 +153,25 @@ ArrayDimensions::chunk_internal_offset(uint64_t frame_id) const
 uint32_t
 ArrayDimensions::number_of_chunks_in_memory() const
 {
-    uint32_t n_chunks = 1;
-    for (auto i = 1; i < ndims(); ++i) {
-        n_chunks *= zarr::chunks_along_dimension(dims_[i]);
-    }
-
-    return n_chunks;
+    return number_of_chunks_in_memory_;
 }
 
 size_t
 ArrayDimensions::bytes_per_chunk() const
 {
-    auto n_bytes = zarr::bytes_of_type(dtype_);
-    for (const auto& d : dims_) {
-        n_bytes *= d.chunk_size_px;
-    }
-
-    return n_bytes;
+    return bytes_per_chunk_;
 }
 
 uint32_t
 ArrayDimensions::number_of_shards() const
 {
-    size_t n_shards = 1;
-    for (auto i = 1; i < ndims(); ++i) {
-        const auto& dim = dims_[i];
-        n_shards *= zarr::shards_along_dimension(dim);
-    }
-
-    return n_shards;
+    return number_of_shards_;
 }
 
 uint32_t
 ArrayDimensions::chunks_per_shard() const
 {
-    size_t n_chunks = 1;
-    for (const auto& dim : dims_) {
-        n_chunks *= dim.shard_size_chunks;
-    }
-
-    return n_chunks;
+    return chunks_per_shard_;
 }
 
 uint32_t
@@ -177,6 +182,18 @@ ArrayDimensions::chunk_layers_per_shard() const
 
 uint32_t
 ArrayDimensions::shard_index_for_chunk(uint32_t chunk_index) const
+{
+    return shard_indices_.at(chunk_index);
+}
+
+uint32_t
+ArrayDimensions::shard_internal_index(uint32_t chunk_index) const
+{
+    return shard_internal_indices_.at(chunk_index);
+}
+
+uint32_t
+ArrayDimensions::shard_index_for_chunk_(uint32_t chunk_index) const
 {
     // make chunk strides
     std::vector<uint64_t> chunk_strides;
@@ -200,7 +217,8 @@ ArrayDimensions::shard_index_for_chunk(uint32_t chunk_index) const
     std::vector<uint32_t> shard_strides(ndims(), 1);
     for (auto i = ndims() - 1; i > 0; --i) {
         const auto& dim = dims_[i];
-        shard_strides[i-1] = shard_strides[i] * zarr::shards_along_dimension(dim);
+        shard_strides[i - 1] =
+          shard_strides[i] * zarr::shards_along_dimension(dim);
     }
 
     std::vector<uint32_t> shard_lattice_indices;
@@ -218,7 +236,7 @@ ArrayDimensions::shard_index_for_chunk(uint32_t chunk_index) const
 }
 
 uint32_t
-ArrayDimensions::shard_internal_index(uint32_t chunk_index) const
+ArrayDimensions::shard_internal_index_(uint32_t chunk_index) const
 {
     // make chunk strides
     std::vector<uint64_t> chunk_strides;

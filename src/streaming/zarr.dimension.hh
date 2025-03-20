@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 struct ZarrDimension
@@ -120,6 +121,18 @@ class ArrayDimensions
   private:
     std::vector<ZarrDimension> dims_;
     ZarrDataType dtype_;
+
+    size_t bytes_per_chunk_;
+
+    uint32_t number_of_chunks_in_memory_;
+    uint32_t chunks_per_shard_;
+    uint32_t number_of_shards_;
+
+    std::unordered_map<uint32_t, uint32_t> shard_indices_;
+    std::unordered_map<uint32_t, uint32_t> shard_internal_indices_;
+
+    uint32_t shard_index_for_chunk_(uint32_t chunk_index) const;
+    uint32_t shard_internal_index_(uint32_t chunk_index) const;
 };
 
 using DimensionPartsFun = std::function<size_t(const ZarrDimension&)>;
