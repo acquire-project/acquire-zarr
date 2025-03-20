@@ -402,9 +402,13 @@ class PyZarrStream
         auto buf = image_data.request();
         auto* ptr = (uint8_t*)buf.ptr;
 
+        py::gil_scoped_release release;
+
         size_t bytes_out;
         auto status = ZarrStream_append(
           stream_.get(), ptr, buf.itemsize * buf.size, &bytes_out);
+
+        py::gil_scoped_acquire acquire;
 
         if (status != ZarrStatusCode_Success) {
             std::string err = "Failed to append data to Zarr stream: " +
