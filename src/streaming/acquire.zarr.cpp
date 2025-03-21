@@ -158,17 +158,6 @@ extern "C"
         }
 
         delete stream;
-
-        // reset OpenMP thread states
-#ifdef _OPENMP
-#pragma omp parallel
-        {
-        }
-
-        int old_max = omp_get_max_threads();
-        omp_set_num_threads(1);
-        omp_set_num_threads(old_max);
-#endif
     }
 
     ZarrStatusCode ZarrStream_append(struct ZarrStream_s* stream,
