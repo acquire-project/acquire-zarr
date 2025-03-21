@@ -226,13 +226,14 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
       static_cast<long long>(dimensions->chunk_internal_offset(frame_id));
 
     const auto* data_ptr = data.data();
+    const auto data_size = data.size();
 
 #pragma omp parallel for collapse(2) reduction(+ : bytes_written)
     for (auto i = 0; i < n_tiles_y; ++i) {
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
-            auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
-            const auto chunk_end = chunk_ptr + bytes_per_chunk;
+            const auto chunk_start = get_chunk_data_(c);
+            auto chunk_pos = chunk_offset;
 
             for (auto k = 0; k < tile_rows; ++k) {
                 const auto frame_row = i * tile_rows + k;
@@ -242,22 +243,21 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
                     const auto region_width =
                       std::min(frame_col + tile_cols, frame_cols) - frame_col;
 
-                    const auto region_start = static_cast<long long>(
-                      bytes_per_px * (frame_row * frame_cols + frame_col));
-                    const auto nbytes =
-                      static_cast<long long>(region_width * bytes_per_px);
-                    const auto region_stop = region_start + nbytes;
-                    EXPECT(region_stop <= data.size(), "Buffer overflow");
+                    const auto region_start =
+                      bytes_per_px * (frame_row * frame_cols + frame_col);
+                    const auto nbytes = region_width * bytes_per_px;
 
                     // copy region
-                    EXPECT(nbytes <= chunk_end - chunk_ptr, "Buffer overflow");
-                    std::copy(data.begin() + region_start,
-                              data.begin() + region_stop,
-                              chunk_ptr);
-
-                    bytes_written += (region_stop - region_start);
+                    EXPECT(region_start + nbytes <= data_size,
+                           "Buffer overflow");
+                    EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
+                           "Buffer overflow");
+                    memcpy(chunk_start + chunk_pos,
+                           data_ptr + region_start,
+                           nbytes);
+                    bytes_written += nbytes;
                 }
-                chunk_ptr += static_cast<long long>(bytes_per_row);
+                chunk_pos += bytes_per_row;
             }
         }
     }
