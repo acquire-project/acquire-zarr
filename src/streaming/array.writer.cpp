@@ -9,6 +9,8 @@
 #include <functional>
 #include <stdexcept>
 
+#include <omp.h>
+
 #ifdef min
 #undef min
 #endif
@@ -210,8 +212,6 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
     const auto bytes_per_chunk = dimensions->bytes_per_chunk();
     const auto bytes_per_row = tile_cols * bytes_per_px;
 
-    size_t bytes_written = 0;
-
     const auto n_tiles_x = (frame_cols + tile_cols - 1) / tile_cols;
     const auto n_tiles_y = (frame_rows + tile_rows - 1) / tile_rows;
 
@@ -228,37 +228,39 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
     const auto* data_ptr = data.data();
     const auto data_size = data.size();
 
-#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
-    for (auto i = 0; i < n_tiles_y; ++i) {
-        for (auto j = 0; j < n_tiles_x; ++j) {
-            const auto c = group_offset + i * n_tiles_x + j;
-            const auto chunk_start = get_chunk_data_(c);
-            auto chunk_pos = chunk_offset;
+    size_t bytes_written = 0;
+    const auto n_tiles = n_tiles_x * n_tiles_y;
 
-            for (auto k = 0; k < tile_rows; ++k) {
-                const auto frame_row = i * tile_rows + k;
-                if (frame_row < frame_rows) {
-                    const auto frame_col = j * tile_cols;
+#pragma omp parallel for reduction(+ : bytes_written)
+    for (auto tile = 0; tile < n_tiles; ++tile) {
+        const auto i = tile / n_tiles_x;
+        const auto j = tile % n_tiles_x;
 
-                    const auto region_width =
-                      std::min(frame_col + tile_cols, frame_cols) - frame_col;
+        const auto c = group_offset + i * n_tiles_x + j;
+        const auto chunk_start = get_chunk_data_(c);
+        auto chunk_pos = chunk_offset;
 
-                    const auto region_start =
-                      bytes_per_px * (frame_row * frame_cols + frame_col);
-                    const auto nbytes = region_width * bytes_per_px;
+        for (auto k = 0; k < tile_rows; ++k) {
+            const auto frame_row = i * tile_rows + k;
+            if (frame_row < frame_rows) {
+                const auto frame_col = j * tile_cols;
 
-                    // copy region
-                    EXPECT(region_start + nbytes <= data_size,
-                           "Buffer overflow");
-                    EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
-                           "Buffer overflow");
-                    memcpy(chunk_start + chunk_pos,
-                           data_ptr + region_start,
-                           nbytes);
-                    bytes_written += nbytes;
-                }
-                chunk_pos += bytes_per_row;
+                const auto region_width =
+                  std::min(frame_col + tile_cols, frame_cols) - frame_col;
+
+                const auto region_start =
+                  bytes_per_px * (frame_row * frame_cols + frame_col);
+                const auto nbytes = region_width * bytes_per_px;
+
+                // copy region
+                EXPECT(region_start + nbytes <= data_size, "Buffer overflow");
+                EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
+                       "Buffer overflow");
+                memcpy(
+                  chunk_start + chunk_pos, data_ptr + region_start, nbytes);
+                bytes_written += nbytes;
             }
+            chunk_pos += bytes_per_row;
         }
     }
 
