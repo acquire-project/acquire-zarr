@@ -4,8 +4,6 @@
 
 #include <cstdint> // uint32_t
 
-#include <omp.h>
-
 extern "C"
 {
     const char* Zarr_get_api_version()

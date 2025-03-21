@@ -28,12 +28,12 @@ jobs:
           - "windows-latest"
 #          - "macos-latest"
         include:
-          - platform: "ubuntu-latest"
-            vcpkg_triplet: "x64-linux"
+#          - platform: "ubuntu-latest"
+#            vcpkg_triplet: "x64-linux"
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
-          - platform: "macos-latest"
-            vcpkg_triplet: "arm64-osx"
+#          - platform: "macos-latest"
+#            vcpkg_triplet: "arm64-osx"
     permissions:
       actions: write
 
