@@ -31,6 +31,13 @@ from acquire_zarr import (
 )
 
 
+@pytest.fixture(autouse=True)
+def cleanup_between_tests():
+    yield
+    import gc
+    gc.collect()
+
+
 @pytest.fixture(scope="function")
 def settings():
     s = StreamSettings()
