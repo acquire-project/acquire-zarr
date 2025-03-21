@@ -231,7 +231,7 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-#pragma omp parallel for reduction(+ : bytes_written)
+#pragma omp parallel for reduction(+ : bytes_written) num_threads(2)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto i = tile / n_tiles_x;
         const auto j = tile % n_tiles_x;
