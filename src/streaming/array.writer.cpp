@@ -227,11 +227,12 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
 
     const auto* data_ptr = data.data();
 
-//#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
+#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
     for (auto i = 0; i < n_tiles_y; ++i) {
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
             auto chunk_ptr = get_chunk_data_(c) + chunk_offset;
+            const auto chunk_end = chunk_ptr + bytes_per_chunk;
 
             for (auto k = 0; k < tile_rows; ++k) {
                 const auto frame_row = i * tile_rows + k;
@@ -245,9 +246,16 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
                       bytes_per_px * (frame_row * frame_cols + frame_col));
                     const auto nbytes =
                       static_cast<long long>(region_width * bytes_per_px);
+                    const auto region_stop = region_start + nbytes;
+                    EXPECT(region_stop <= data.size(), "Buffer overflow");
 
-                    memcpy(chunk_ptr, data_ptr + region_start, nbytes);
-                    bytes_written += nbytes;
+                    // copy region
+                    EXPECT(nbytes <= chunk_end - chunk_ptr, "Buffer overflow");
+                    std::copy(data.begin() + region_start,
+                              data.begin() + region_stop,
+                              chunk_ptr);
+
+                    bytes_written += (region_stop - region_start);
                 }
                 chunk_ptr += static_cast<long long>(bytes_per_row);
             }
