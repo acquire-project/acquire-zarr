@@ -72,7 +72,8 @@ main()
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          1, [](const std::string& err) { LOG_ERROR("Error: ", err);
+          std::thread::hardware_concurrency(), [](const std::string& err) {
+              LOG_ERROR("Error: ", err);
           });
 
         std::vector<ZarrDimension> dims;

@@ -77,6 +77,11 @@ struct ZarrStream_s
     void commit_settings_(const struct ZarrStreamSettings_s* settings);
 
     /**
+     * @brief Spin up the thread pool.
+     */
+    void start_thread_pool_(uint32_t max_threads);
+
+    /**
      * @brief Set an error message.
      * @param msg The error message to set.
      */
