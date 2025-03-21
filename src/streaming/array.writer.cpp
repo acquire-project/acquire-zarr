@@ -227,7 +227,7 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
 
     const auto* data_ptr = data.data();
 
-#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
+//#pragma omp parallel for collapse(2) reduction(+ : bytes_written)
     for (auto i = 0; i < n_tiles_y; ++i) {
         for (auto j = 0; j < n_tiles_x; ++j) {
             const auto c = group_offset + i * n_tiles_x + j;
