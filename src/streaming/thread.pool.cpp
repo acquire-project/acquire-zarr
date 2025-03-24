@@ -8,7 +8,7 @@ zarr::ThreadPool::ThreadPool(unsigned int n_threads, ErrorCallback&& err)
     const auto max_threads = std::max(std::thread::hardware_concurrency(), 1u);
     n_threads = std::clamp(n_threads, 1u, max_threads);
 
-    for (auto i = 0; i < n_threads; ++i) {
+    for (auto i = 0; i < 1; ++i) { // TODO (aliddell): reductio ad absurdum
         threads_.emplace_back([this] { process_tasks_(); });
     }
 }
