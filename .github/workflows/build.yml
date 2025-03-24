@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - "main"
+  pull_request: # TODO (aliddell): remove
+    branches:
+      - "main"
 
 jobs:
-  windows-and-linux-build:
+  build:
     name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
     strategy:
       matrix:
@@ -16,11 +19,17 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-latest"
+          - "macos-latest" # arm
+          - "macos-latest-large" # x86_64
         include:
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
+          - platform: "macos-latest"
+            vcpkg_triplet: "arm64-osx"
+          - platform: "macos-latest-large"
+            vcpkg_triplet: "x64-osx"
 
     runs-on: ${{ matrix.platform }}
 
@@ -38,12 +47,17 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
           ./vcpkg integrate install
         shell: bash
+
+      - name: Install OpenMP
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install libomp
 
       - name: CMake
         run: |
@@ -57,62 +71,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.platform}} ${{matrix.build_type}} binaries
-          path: ${{github.workspace}}/*.zip
-
-  mac-build:
-    strategy:
-      matrix:
-        build_type:
-          - "Debug"
-          - "Release"
-
-    runs-on: "macos-latest"
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-macos-latest-${{ matrix.build_type }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
-
-      - name: Build for x64
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=x64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-x64 -B ${{github.workspace}}/build-x64 -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_OSX_ARCHITECTURES="x86_64" -DBUILD_TESTING=OFF
-          cmake --build ${{github.workspace}}/build-x64 --config ${{matrix.build_type}}
-
-      - name: Build for arm64
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=arm64-osx -DVCPKG_INSTALLED_DIR=${{github.workspace}}/vcpkg-arm64 -B ${{github.workspace}}/build-arm64 -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_OSX_ARCHITECTURES="arm64" -DBUILD_TESTING=OFF
-          cmake --build ${{github.workspace}}/build-arm64 --config ${{matrix.build_type}}
-
-      - name: Create a universal binary
-        run: |
-          cp -r ${{github.workspace}}/build-x64 ${{github.workspace}}/build && cd ${{github.workspace}}/build
-          for filename in $(find . -type f -exec grep -H "build-x64" {} \; | awk '{print $1}' | sed -e 's/:.*//' | sort -u); do sed -i.bak -e "s/build-x64/build/g" $filename && rm ${filename}.bak; done
-          for lib in `find . -type f \( -name "*.so" -o -name "*.a" \)`; do rm $lib && lipo -create ../build-x64/${lib} ../build-arm64/${lib} -output $lib; done
-
-      - name: Package
-        run: |
-          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-latest ${{matrix.build_type}} binaries
+          name: ${{matrix.platform == 'macos-latest' && 'macos-arm64' || (matrix.platform == 'macos-latest-large' && 'macos-x86_64' || matrix.platform)}} ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
 
   build-wheel:
@@ -121,7 +80,14 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-22.04"
-          - "macos-latest" # TODO (aliddell): universal binary?
+          - "macos-latest" # arm
+          - "macos-latest-large" # x86_64
+        python:
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
 
     runs-on: ${{ matrix.platform }}
 
@@ -140,11 +106,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python }}
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
