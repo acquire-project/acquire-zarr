@@ -527,15 +527,32 @@ ZarrStream_s::start_thread_pool_(uint32_t max_threads)
     max_threads =
       max_threads == 0 ? std::thread::hardware_concurrency() : max_threads;
     if (max_threads == 0) {
-        LOG_WARNING("Cannot determine hardware concurrency, using 2 threads");
-        max_threads = 2;
+        LOG_WARNING("Unable to determine hardware concurrency, using 1 thread");
+        max_threads = 1;
     }
 
+    const auto open_sinks = version_ == ZarrVersion_2
+                              ? dimensions_->number_of_chunks_in_memory()
+                              : dimensions_->number_of_shards();
+
+    const auto min_io_threads = std::max(1u, max_threads / 4);
+    const auto io_threads = std::min(min_io_threads, open_sinks);
+    const auto omp_threads =
+      std::min(max_threads - io_threads, std::min(8u, 3 * max_threads / 4));
+
+    omp_set_num_threads(omp_threads);
+
+    const auto thread_pool_size =
+      std::min(max_threads - omp_threads, open_sinks);
+
     thread_pool_ = std::make_shared<zarr::ThreadPool>(
-      max_threads,
+      thread_pool_size,
       [this](const std::string& err) { this->set_error_(err); });
 
-    LOG_DEBUG("Allocating ", max_threads, " threads for Zarr stream");
+    LOG_DEBUG("Thread allocation: " + std::to_string(omp_threads) +
+              " for OpenMP, " + std::to_string(thread_pool_size) +
+              " for I/O thread pool (from " + std::to_string(max_threads) +
+              " available)");
 }
 
 void
