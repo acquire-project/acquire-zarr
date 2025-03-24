@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - "main"
-  pull_request: # TODO (aliddell): remove
-    branches:
-      - "main"
 
 jobs:
   build:
@@ -82,12 +79,6 @@ jobs:
           - "ubuntu-22.04"
           - "macos-latest" # arm
           - "macos-13" # x86_64
-        python:
-          - "3.9"
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
 
     runs-on: ${{ matrix.platform }}
 
@@ -95,7 +86,7 @@ jobs:
       actions: write
 
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel-${{ matrix.python }}
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
@@ -106,7 +97,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python }}
+          python-version: 3.13
 
       - name: Install vcpkg
         run: |
