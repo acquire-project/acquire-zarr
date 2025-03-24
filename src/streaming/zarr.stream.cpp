@@ -531,26 +531,8 @@ ZarrStream_s::start_thread_pool_(uint32_t max_threads)
         max_threads = 1;
     }
 
-    const auto open_sinks = version_ == ZarrVersion_2
-                              ? dimensions_->number_of_chunks_in_memory()
-                              : dimensions_->number_of_shards();
-
-    const auto min_io_threads = std::max(1u, max_threads / 4);
-    const auto io_threads = std::min(min_io_threads, open_sinks);
-    const auto omp_threads =
-      std::min(max_threads - io_threads, std::min(8u, 3 * max_threads / 4));
-
-    const auto thread_pool_size =
-      std::min(max_threads - omp_threads, open_sinks);
-
     thread_pool_ = std::make_shared<zarr::ThreadPool>(
-      thread_pool_size,
-      [this](const std::string& err) { this->set_error_(err); });
-
-    LOG_DEBUG("Thread allocation: " + std::to_string(omp_threads) +
-              " for OpenMP, " + std::to_string(thread_pool_size) +
-              " for I/O thread pool (from " + std::to_string(max_threads) +
-              " available)");
+      max_threads, [this](const std::string& err) { this->set_error_(err); });
 }
 
 void
