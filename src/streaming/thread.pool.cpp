@@ -29,12 +29,12 @@ bool
 zarr::ThreadPool::push_job(Task&& job)
 {
     std::unique_lock lock(jobs_mutex_);
-    if (!is_accepting_jobs_) {
+    if (!accepting_jobs) {
         return false;
     }
 
     jobs_.push(std::move(job));
-    cv_.notify_one();
+    jobs_cv_.notify_one();
 
     return true;
 }
@@ -44,9 +44,9 @@ zarr::ThreadPool::await_stop() noexcept
 {
     {
         std::scoped_lock lock(jobs_mutex_);
-        is_accepting_jobs_ = false;
+        accepting_jobs = false;
 
-        cv_.notify_all();
+        jobs_cv_.notify_all();
     }
 
     // spin down threads
@@ -72,7 +72,7 @@ zarr::ThreadPool::pop_from_job_queue_() noexcept
 bool
 zarr::ThreadPool::should_stop_() const noexcept
 {
-    return !is_accepting_jobs_ && jobs_.empty();
+    return !accepting_jobs && jobs_.empty();
 }
 
 void
@@ -80,7 +80,7 @@ zarr::ThreadPool::process_tasks_()
 {
     while (true) {
         std::unique_lock lock(jobs_mutex_);
-        cv_.wait(lock, [&] { return should_stop_() || !jobs_.empty(); });
+        jobs_cv_.wait(lock, [&] { return should_stop_() || !jobs_.empty(); });
 
         if (should_stop_()) {
             break;
@@ -93,4 +93,10 @@ zarr::ThreadPool::process_tasks_()
             }
         }
     }
+}
+
+uint32_t
+zarr::ThreadPool::n_threads() const
+{
+    return threads_.size();
 }

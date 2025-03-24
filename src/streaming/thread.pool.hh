@@ -39,15 +39,22 @@ class ThreadPool
      */
     void await_stop() noexcept;
 
+    /**
+     * @brief Get the number of threads running.
+     * @return The number of threads running.
+     */
+    uint32_t n_threads() const;
+
   private:
     ErrorCallback error_handler_;
 
     std::vector<std::thread> threads_;
+
+    std::atomic<bool> accepting_jobs{ true };
     std::mutex jobs_mutex_;
-    std::condition_variable cv_;
+    std::condition_variable jobs_cv_;
     std::queue<Task> jobs_;
 
-    std::atomic<bool> is_accepting_jobs_{ true };
 
     std::optional<ThreadPool::Task> pop_from_job_queue_() noexcept;
     [[nodiscard]] bool should_stop_() const noexcept;
