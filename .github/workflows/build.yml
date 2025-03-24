@@ -55,7 +55,7 @@ jobs:
         shell: bash
 
       - name: Install OpenMP
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-latest' || matrix.platform == 'macos-13'
         run: |
           brew install libomp
 
@@ -95,7 +95,7 @@ jobs:
       actions: write
 
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel-${{ matrix.python }}
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
