@@ -20,7 +20,7 @@ jobs:
           - "windows-latest"
           - "ubuntu-latest"
           - "macos-latest" # arm
-          - "macos-latest-large" # x86_64
+          - "macos-13" # x86_64
         include:
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
@@ -28,7 +28,7 @@ jobs:
             vcpkg_triplet: "x64-linux"
           - platform: "macos-latest"
             vcpkg_triplet: "arm64-osx"
-          - platform: "macos-latest-large"
+          - platform: "macos-13"
             vcpkg_triplet: "x64-osx"
 
     runs-on: ${{ matrix.platform }}
@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.platform == 'macos-latest' && 'macos-arm64' || (matrix.platform == 'macos-latest-large' && 'macos-x86_64' || matrix.platform)}} ${{matrix.build_type}} binaries
+          name: ${{matrix.platform == 'macos-latest' && 'macos-arm64' || (matrix.platform == 'macos-13' && 'macos-x86_64' || matrix.platform)}} ${{matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
 
   build-wheel:
@@ -81,7 +81,7 @@ jobs:
           - "windows-latest"
           - "ubuntu-22.04"
           - "macos-latest" # arm
-          - "macos-latest-large" # x86_64
+          - "macos-13" # x86_64
         python:
           - "3.9"
           - "3.10"
