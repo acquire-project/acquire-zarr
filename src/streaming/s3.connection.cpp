@@ -21,6 +21,7 @@ make_url(const std::string& endpoint, std::optional<std::string> region)
     minio::s3::BaseUrl url(endpoint);
     url.https = endpoint.starts_with("https");
     if (!has_port(endpoint)) {
+        // https://docs.aws.amazon.com/filegateway/latest/files3/Requirements.html#requirements-network
         url.port = url.https ? 443 : 80;
     }
 
