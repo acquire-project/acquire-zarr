@@ -67,7 +67,7 @@ main()
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          std::thread::hardware_concurrency(), [](const std::string& err) {
+          1, [](const std::string& err) {
               LOG_ERROR("Error: ", err);
           });
 

@@ -540,8 +540,6 @@ ZarrStream_s::start_thread_pool_(uint32_t max_threads)
     const auto omp_threads =
       std::min(max_threads - io_threads, std::min(8u, 3 * max_threads / 4));
 
-    omp_set_num_threads(omp_threads);
-
     const auto thread_pool_size =
       std::min(max_threads - omp_threads, open_sinks);
 
