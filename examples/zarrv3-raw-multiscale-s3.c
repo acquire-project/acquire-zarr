@@ -1,27 +1,27 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-raw-multiscale-s3.c
+/// @brief Uncompressed streaming to a Zarr V3 store on S3, with multiple
+/// levels of detail.
 #include "acquire.zarr.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 int
-main()
-{
-    // Configure compression
-    ZarrCompressionSettings compression = {
-        .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
-        .level = 1,
-        .shuffle = 1,
+main() {
+    // Configure S3
+    ZarrS3Settings s3 = {
+        .endpoint = "http://172.29.214.117:9000",
+        .bucket_name = "acquire-test",
+        .access_key_id = "FBvQC8u3w86djMBmTNEd",
+        .secret_access_key = "HAQ6zpagN4em2CGoWgsZcX5R3antE29Gbh4SkHAb",
     };
 
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed_filesystem.zarr",
-        .s3_settings = NULL,
-        .compression_settings = &compression,
-        .multiscale = false,
+        .store_path = "output_v3_raw_multiscale_s3.zarr",
+        .s3_settings = &s3,
+        .compression_settings = NULL,
+        .multiscale = true,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads

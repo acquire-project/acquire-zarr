@@ -1,5 +1,6 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file zarrv3-compressed-multiscale-filesystem.c
+/// @brief Compressed streaming to a Zarr V3 store on the filesystem, with
+/// multiple levels of detail.
 #include "acquire.zarr.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -11,17 +12,17 @@ main()
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
+        .codec = ZarrCompressionCodec_BloscZstd,
         .level = 1,
         .shuffle = 1,
     };
 
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed_filesystem.zarr",
+        .store_path = "output_v3_compressed_multiscale_filesystem.zarr",
         .s3_settings = NULL,
         .compression_settings = &compression,
-        .multiscale = false,
+        .multiscale = true,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads

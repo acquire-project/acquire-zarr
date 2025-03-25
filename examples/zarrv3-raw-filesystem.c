@@ -1,8 +1,7 @@
 /// @file zarr-v3-raw-filesystem.c
-/// @brief Basic Zarr V3 streaming to filesystem
+/// @brief Uncompressed Zarr V3 streaming to filesystem
 #include "acquire.zarr.h"
-
-#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -11,9 +10,10 @@ main()
 {
     // Configure stream settings
     ZarrStreamSettings settings = {
-        .store_path = "output_v3.zarr",
+        .store_path = "output_v3_raw_filesystem.zarr",
         .s3_settings = NULL,
         .compression_settings = NULL,
+        .multiscale = false,
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
@@ -26,24 +26,24 @@ main()
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0,
-        .chunk_size_px = 5,
-        .shard_size_chunks = 2,
+        .chunk_size_px = 64,
+        .shard_size_chunks = 1,
     };
 
     settings.dimensions[1] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
-        .array_size_px = 48,
-        .chunk_size_px = 16,
-        .shard_size_chunks = 1,
+        .array_size_px = 2048,
+        .chunk_size_px = 64,
+        .shard_size_chunks = 16,
     };
 
     settings.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
-        .array_size_px = 64,
-        .chunk_size_px = 16,
-        .shard_size_chunks = 2,
+        .array_size_px = 2048,
+        .chunk_size_px = 64,
+        .shard_size_chunks = 16,
     };
 
     // Create stream
@@ -57,50 +57,21 @@ main()
     }
 
     // Create sample data
-    const size_t width = 64;
-    const size_t height = 48;
+    const size_t width = 2048;
+    const size_t height = 2048;
     uint16_t* frame = (uint16_t*)malloc(width * height * sizeof(uint16_t));
+    for (int i = 0; i < width * height; ++i) {
+        frame[i] = (uint16_t)(i % 65536); // Fill with sample data
+    }
 
     // Write frames
     size_t bytes_written;
-    for (int t = 0; t < 50; t++) {
-        // Fill frame with a moving diagonal pattern
-        for (size_t y = 0; y < height; y++) {
-            for (size_t x = 0; x < width; x++) {
-                // Create a diagonal pattern that moves with time
-                // and varies intensity based on position
-                int diagonal = (x + y + t * 8) % 32;
-
-                // Create intensity variation
-                uint16_t intensity;
-                if (diagonal < 16) {
-                    intensity = (uint16_t)((diagonal * 4096)); // Ramp up
-                } else {
-                    intensity = (uint16_t)((31 - diagonal) * 4096); // Ramp down
-                }
-
-                // Add some circular features
-                int centerX = width / 2;
-                int centerY = height / 2;
-                int dx = x - centerX;
-                int dy = y - centerY;
-                int radius = (int)sqrt(dx*dx + dy*dy);
-
-                // Modulate the pattern with concentric circles
-                if (radius % 16 < 8) {
-                    intensity = (uint16_t)(intensity * 0.7);
-                }
-
-                frame[y * width + x] = intensity;
-            }
-        }
-
+    for (int t = 0; t < 1024; t++) {
         ZarrStatusCode status = ZarrStream_append(
           stream, frame, width * height * sizeof(uint16_t), &bytes_written);
 
         if (status != ZarrStatusCode_Success) {
-            fprintf(stderr,
-                    "Failed to append frame: %s\n",
+            fprintf(stderr, "Failed to append frame: %s\n",
                     Zarr_get_status_message(status));
             break;
         }
