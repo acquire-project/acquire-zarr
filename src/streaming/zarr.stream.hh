@@ -28,14 +28,6 @@ struct ZarrStream_s
     size_t append(const void* data, size_t nbytes);
 
   private:
-    struct S3Settings
-    {
-        std::string endpoint;
-        std::string bucket_name;
-        std::string access_key_id;
-        std::string secret_access_key;
-        std::optional<std::string> region;
-    };
     struct CompressionSettings
     {
         ZarrCompressor compressor;
@@ -48,7 +40,7 @@ struct ZarrStream_s
 
     ZarrVersion version_;
     std::string store_path_;
-    std::optional<S3Settings> s3_settings_;
+    std::optional<zarr::S3Settings> s3_settings_;
     std::optional<CompressionSettings> compression_settings_;
     std::optional<std::string> custom_metadata_;
     ZarrDataType dtype_;
