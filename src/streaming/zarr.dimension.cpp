@@ -13,21 +13,15 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
 {
     EXPECT(dims_.size() > 2, "Array must have at least three dimensions.");
 
-    for (const auto& d : dims_) {
-        bytes_per_chunk_ *= d.chunk_size_px;
-    }
-
-    for (auto i = 1; i < ndims(); ++i) {
-        number_of_chunks_in_memory_ *= zarr::chunks_along_dimension(dims_[i]);
-    }
-
-    for (const auto& dim : dims_) {
-        chunks_per_shard_ *= dim.shard_size_chunks;
-    }
-
-    for (auto i = 1; i < ndims(); ++i) {
+    for (auto i = 0; i < dims_.size(); ++i) {
         const auto& dim = dims_[i];
-        number_of_shards_ *= zarr::shards_along_dimension(dim);
+        bytes_per_chunk_ *= dim.chunk_size_px;
+        chunks_per_shard_ *= dim.shard_size_chunks;
+
+        if (i > 0) {
+            number_of_chunks_in_memory_ *= zarr::chunks_along_dimension(dim);
+            number_of_shards_ *= zarr::shards_along_dimension(dim);
+        }
     }
 
     for (auto i = 0; i < chunks_per_shard_ * number_of_shards_; ++i) {

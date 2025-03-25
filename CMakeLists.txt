@@ -10,7 +10,7 @@ include(cmake/ide.cmake)
 include(cmake/install-prefix.cmake)
 include(cmake/wsl.cmake)
 include(cmake/simd.cmake)
-include(cmake/macos-toolchain.cmake)
+include(cmake/openmp.cmake)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(blosc CONFIG REQUIRED)

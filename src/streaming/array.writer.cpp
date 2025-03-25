@@ -9,7 +9,7 @@
 #include <functional>
 #include <stdexcept>
 
-#ifdef min
+#if defined(min) || defined(max)
 #undef min
 #undef max
 #endif
@@ -230,20 +230,24 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
+    // Using the entire thread pool breaks in CI due to a likely resource
+    // contention. Using 75% of the thread pool should be enough to avoid, but
+    // we should still find a fix if we can.
 #pragma omp parallel for reduction(+ : bytes_written)                          \
   num_threads(std::max(3 * thread_pool_->n_threads() / 4, 1u))
     for (auto tile = 0; tile < n_tiles; ++tile) {
-        const auto i = tile / n_tiles_x;
-        const auto j = tile % n_tiles_x;
+        const auto tile_idx_y = tile / n_tiles_x;
+        const auto tile_idx_x = tile % n_tiles_x;
 
-        const auto c = group_offset + i * n_tiles_x + j;
-        const auto chunk_start = get_chunk_data_(c);
+        const auto chunk_idx =
+          group_offset + tile_idx_y * n_tiles_x + tile_idx_x;
+        const auto chunk_start = get_chunk_data_(chunk_idx);
         auto chunk_pos = chunk_offset;
 
         for (auto k = 0; k < tile_rows; ++k) {
-            const auto frame_row = i * tile_rows + k;
+            const auto frame_row = tile_idx_y * tile_rows + k;
             if (frame_row < frame_rows) {
-                const auto frame_col = j * tile_cols;
+                const auto frame_col = tile_idx_x * tile_cols;
 
                 const auto region_width =
                   std::min(frame_col + tile_cols, frame_cols) - frame_col;
@@ -253,9 +257,20 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
                 const auto nbytes = region_width * bytes_per_px;
 
                 // copy region
-                EXPECT(region_start + nbytes <= data_size, "Buffer overflow");
+                EXPECT(region_start + nbytes <= data_size,
+                       "Buffer overflow in framme. Region start: ",
+                       region_start,
+                       " nbytes: ",
+                       nbytes,
+                       " data size: ",
+                       data_size);
                 EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
-                       "Buffer overflow");
+                       "Buffer overflow in chunk. Chunk pos: ",
+                       chunk_pos,
+                       " nbytes: ",
+                       nbytes,
+                       " bytes per chunk: ",
+                       bytes_per_chunk);
                 memcpy(
                   chunk_start + chunk_pos, data_ptr + region_start, nbytes);
                 bytes_written += nbytes;

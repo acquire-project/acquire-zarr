@@ -43,6 +43,12 @@ EOF
 If you're using Windows, learn how to set environment variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
 You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
 
+On the Mac, you will also need to install OpenMP using Homebrew:
+
+```bash
+brew install libomp
+```
+
 ### Configuring
 
 To build the library, you can use CMake:

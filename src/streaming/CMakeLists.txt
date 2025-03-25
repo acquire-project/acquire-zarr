@@ -1,5 +1,11 @@
 set(tgt acquire-zarr)
 
+if (WIN32)
+    set(PLATFORM_FILE_SINK_CPP win32/file.sink.impl.cpp)
+else ()
+    set(PLATFORM_FILE_SINK_CPP posix/file.sink.impl.cpp)
+endif ()
+
 add_library(${tgt}
         macros.hh
         acquire.zarr.cpp
@@ -19,6 +25,7 @@ add_library(${tgt}
         sink.cpp
         file.sink.hh
         file.sink.cpp
+        ${PLATFORM_FILE_SINK_CPP}
         s3.sink.hh
         s3.sink.cpp
         array.writer.hh
