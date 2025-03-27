@@ -13,6 +13,7 @@
 #include <memory>  // unique_ptr
 #include <optional>
 #include <span>
+#include <string_view>
 
 struct ZarrStream_s
 {
@@ -26,6 +27,16 @@ struct ZarrStream_s
      * @return The number of bytes appended.
      */
     size_t append(const void* data, size_t nbytes);
+
+    /**
+     * @brief Write custom metadata to the stream.
+     * @param custom_metadata JSON-formatted custom metadata to write.
+     * @param overwrite If true, overwrite any existing custom metadata. Otherwise,
+     * fail if custom metadata has already been written.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
+                                         bool overwrite);
 
   private:
     struct CompressionSettings
@@ -42,7 +53,6 @@ struct ZarrStream_s
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
     std::optional<CompressionSettings> compression_settings_;
-    std::optional<std::string> custom_metadata_;
     ZarrDataType dtype_;
     std::shared_ptr<ArrayDimensions> dimensions_;
     bool multiscale_;
@@ -96,9 +106,6 @@ struct ZarrStream_s
 
     /** @brief Write Zarr group metadata. */
     [[nodiscard]] bool write_group_metadata_();
-
-    /** @brief Write external metadata. */
-    [[nodiscard]] bool write_external_metadata_();
 
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;

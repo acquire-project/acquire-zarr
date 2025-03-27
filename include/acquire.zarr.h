@@ -25,7 +25,6 @@ extern "C"
     typedef struct ZarrStreamSettings_s
     {
         const char* store_path; /**< Path to the store. Filesystem path or S3 key prefix. */
-        const char* custom_metadata; /**< JSON-formatted custom metadata to be stored with the dataset. */
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
         ZarrCompressionSettings* compression_settings; /**< Optional chunk compression settings for the store. */
         ZarrDimensionProperties* dimensions; /**< The properties of each dimension in the dataset. */
@@ -109,6 +108,19 @@ extern "C"
                                      const void* data,
                                      size_t bytes_in,
                                      size_t* bytes_out);
+
+    /**
+     * @brief Write custom metadata to the Zarr stream.
+     * @param stream The Zarr stream struct.
+     * @param custom_metadata JSON-formatted custom metadata to be written to the dataset.
+     * @param overwrite If true, overwrite any existing custom metadata. Otherwise,
+     * if custom_metadata is not empty and the stream has already written custom
+     * metadata, this function will return an error.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
+                                                    const char* custom_metadata,
+                                                    bool overwrite);
 
 #ifdef __cplusplus
 }
