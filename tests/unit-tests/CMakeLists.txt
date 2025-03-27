@@ -29,6 +29,7 @@ set(tests
         zarrv3-writer-write-ragged-append-dim
         zarrv3-writer-write-ragged-internal-dim
         partial-append
+        frame-queue
 )
 
 foreach (name ${tests})
