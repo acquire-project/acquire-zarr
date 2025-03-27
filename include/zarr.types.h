@@ -22,6 +22,7 @@ extern "C"
         ZarrStatusCode_IOError,
         ZarrStatusCode_CompressionError,
         ZarrStatusCode_InvalidSettings,
+        ZarrStatusCode_WillNotOverwrite,
         ZarrStatusCodeCount,
     } ZarrStatusCode;
 
