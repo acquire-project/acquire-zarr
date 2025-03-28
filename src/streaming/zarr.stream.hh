@@ -1,11 +1,12 @@
 #pragma once
 
-#include "zarr.dimension.hh"
-#include "thread.pool.hh"
-#include "s3.connection.hh"
-#include "sink.hh"
 #include "array.writer.hh"
 #include "definitions.hh"
+#include "frame.queue.hh"
+#include "s3.connection.hh"
+#include "sink.hh"
+#include "thread.pool.hh"
+#include "zarr.dimension.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -49,6 +50,7 @@ struct ZarrStream_s
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
+    std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
@@ -81,6 +83,9 @@ struct ZarrStream_s
 
     /** @brief Create the data store. */
     [[nodiscard]] bool create_store_();
+
+    /** @brief Initialize the frame queue. */
+    [[nodiscard]] bool init_frame_queue_();
 
     /** @brief Create the writers. */
     [[nodiscard]] bool create_writers_();

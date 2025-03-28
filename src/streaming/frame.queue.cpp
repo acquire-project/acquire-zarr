@@ -1,9 +1,14 @@
 #include "frame.queue.hh"
+#include "macros.hh"
+
+#include <stdexcept>
 
 zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
   : buffer_(num_frames + 1) // allocate one extra slot to distinguish full/empty
   , capacity_(num_frames + 1) // allocate one extra slot to distinguish full/empty
 {
+    EXPECT(num_frames > 0, "FrameQueue must have at least one frame.");
+
     for (auto& frame : buffer_) {
         frame.data.reserve(avg_frame_size);
         frame.ready.store(false, std::memory_order_relaxed);

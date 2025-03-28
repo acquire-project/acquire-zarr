@@ -387,6 +387,9 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     // create the data store
     EXPECT(create_store_(), error_);
 
+    // initialize the frame queue
+    EXPECT(init_frame_queue_(), error_);
+
     // allocate writers
     EXPECT(create_writers_(), error_);
 
@@ -584,6 +587,30 @@ ZarrStream_s::create_store_()
                 return false;
             }
         }
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::init_frame_queue_()
+{
+    if (frame_queue_) {
+        return true; // already initialized
+    }
+
+    const auto frame_size = dimensions_->width_dim().array_size_px *
+                            dimensions_->height_dim().array_size_px *
+                            zarr::bytes_of_type(dtype_);
+
+    const auto frame_count = std::max(1ULL, (4ULL << 30) / frame_size);
+
+    try {
+        frame_queue_ =
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size);
+    } catch (const std::exception& e) {
+        set_error_("Error creating frame queue: " + std::string(e.what()));
+        return false;
     }
 
     return true;
