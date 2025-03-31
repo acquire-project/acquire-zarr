@@ -481,7 +481,7 @@ def test_write_custom_metadata(
     assert stream
 
     metadata = json.dumps({"foo": "bar"})
-    assert stream.write_custom_metadata(metadata)
+    assert stream.write_custom_metadata(metadata, True)
 
     # don't allow overwriting the metadata
     metadata = json.dumps({"baz": "qux"})
