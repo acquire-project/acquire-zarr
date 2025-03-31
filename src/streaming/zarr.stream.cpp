@@ -487,7 +487,7 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
         return ZarrStatusCode_WillNotOverwrite;
     }
 
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
+    const auto& sink = metadata_sinks_.at(metadata_key);
     if (!sink) {
         LOG_ERROR("Metadata sink '" + metadata_key + "' not found");
         return ZarrStatusCode_InternalError;

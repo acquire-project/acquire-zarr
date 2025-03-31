@@ -402,7 +402,7 @@ class PyZarrStream
         }
     }
 
-    bool write_custom_metadata(py::str custom_metadata, bool overwrite = false)
+    bool write_custom_metadata(py::str custom_metadata, bool overwrite)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
@@ -721,7 +721,7 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
            py::arg("custom_metadata"),
-           py::arg("overwrite") = false)
+           py::arg("overwrite"))
       .def("is_active", &PyZarrStream::is_active);
 
     m.def(
