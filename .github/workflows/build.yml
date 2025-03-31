@@ -42,6 +42,11 @@ jobs:
         with:
           submodules: true
 
+      - name: actions-setup-cmake
+        uses: jwlawson/actions-setup-cmake@v2.0.2
+        with:
+          cmake-version: "3.31.x"
+
       - name: Install vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
