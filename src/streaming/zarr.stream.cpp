@@ -648,7 +648,7 @@ ZarrStream_s::init_frame_queue_()
                             dimensions_->height_dim().array_size_px *
                             zarr::bytes_of_type(dtype_);
 
-    const auto frame_count = std::max(1ULL, (4ULL << 30) / frame_size);
+    const auto frame_count = std::max(1ULL, (2ULL << 30) / frame_size);
 
     try {
         frame_queue_ =
