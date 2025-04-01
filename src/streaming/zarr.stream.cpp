@@ -138,10 +138,10 @@ validate_compression_settings(const ZarrCompressionSettings* settings)
 }
 
 [[nodiscard]] bool
-validate_custom_metadata(const char* metadata)
+validate_custom_metadata(std::string_view metadata)
 {
-    if (metadata == nullptr || !*metadata) {
-        return true; // custom metadata is optional
+    if (metadata.empty()) {
+        return false;
     }
 
     // parse the JSON
@@ -231,10 +231,6 @@ validate_settings(const struct ZarrStreamSettings_s* settings)
 
     if (is_compressed_acquisition(settings) &&
         !validate_compression_settings(settings->compression_settings)) {
-        return false;
-    }
-
-    if (!validate_custom_metadata(settings->custom_metadata)) {
         return false;
     }
 
@@ -403,9 +399,6 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     // write group metadata
     EXPECT(write_group_metadata_(), error_);
-
-    // write external metadata
-    EXPECT(write_external_metadata_(), error_);
 }
 
 size_t
@@ -461,6 +454,61 @@ ZarrStream::append(const void* data_, size_t nbytes)
     return bytes_written;
 }
 
+ZarrStatusCode
+ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
+                                    bool overwrite)
+{
+    if (!validate_custom_metadata(custom_metadata)) {
+        LOG_ERROR("Invalid custom metadata: '", custom_metadata, "'");
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    // check if we have already written custom metadata
+    const std::string metadata_key = "acquire.json";
+    if (!metadata_sinks_.contains(metadata_key)) { // create metadata sink
+        std::string base_path = store_path_;
+        if (base_path.starts_with("file://")) {
+            base_path = base_path.substr(7);
+        }
+        const auto prefix = base_path.empty() ? "" : base_path + "/";
+        const auto sink_path = prefix + metadata_key;
+
+        if (is_s3_acquisition_()) {
+            metadata_sinks_.emplace(
+              metadata_key,
+              zarr::make_s3_sink(
+                s3_settings_->bucket_name, sink_path, s3_connection_pool_));
+        } else {
+            metadata_sinks_.emplace(metadata_key,
+                                    zarr::make_file_sink(sink_path));
+        }
+    } else if (!overwrite) { // custom metadata already written, don't overwrite
+        LOG_ERROR("Custom metadata already written, use overwrite flag");
+        return ZarrStatusCode_WillNotOverwrite;
+    }
+
+    const auto& sink = metadata_sinks_.at(metadata_key);
+    if (!sink) {
+        LOG_ERROR("Metadata sink '" + metadata_key + "' not found");
+        return ZarrStatusCode_InternalError;
+    }
+
+    const auto metadata_json = nlohmann::json::parse(custom_metadata,
+                                                     nullptr, // callback
+                                                     false, // allow exceptions
+                                                     true   // ignore comments
+    );
+
+    const auto metadata_str = metadata_json.dump(4);
+    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
+                    metadata_str.size() };
+    if (!sink->write(0, data)) {
+        LOG_ERROR("Error writing custom metadata");
+        return ZarrStatusCode_IOError;
+    }
+    return ZarrStatusCode_Success;
+}
+
 bool
 ZarrStream_s::is_s3_acquisition_() const
 {
@@ -478,9 +526,6 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
-    if (settings->custom_metadata) {
-        custom_metadata_ = zarr::trim(settings->custom_metadata);
-    }
 
     if (is_s3_acquisition(settings)) {
         s3_settings_ = {
@@ -754,62 +799,6 @@ ZarrStream_s::write_group_metadata_()
                     metadata_str.size() };
     if (!sink->write(0, data)) {
         set_error_("Error writing group metadata");
-        return false;
-    }
-
-    return true;
-}
-
-bool
-ZarrStream_s::write_external_metadata_()
-{
-    if (!custom_metadata_) {
-        return true;
-    }
-
-    const auto metadata = nlohmann::json::parse(*custom_metadata_,
-                                                nullptr, // callback
-                                                false,   // allow exceptions
-                                                true     // ignore comments
-    );
-    if (metadata.is_discarded()) {
-        set_error_("Invalid JSON: '" + *custom_metadata_ + "'");
-        return false;
-    }
-
-    const std::string metadata_key = "acquire.json";
-
-    // create metadata sink
-    if (!metadata_sinks_.contains(metadata_key)) {
-        std::string base_path = store_path_;
-        if (base_path.starts_with("file://")) {
-            base_path = base_path.substr(7);
-        }
-        const auto prefix = base_path.empty() ? "" : base_path + "/";
-        const auto sink_path = prefix + metadata_key;
-
-        if (is_s3_acquisition_()) {
-            metadata_sinks_.emplace(
-              metadata_key,
-              zarr::make_s3_sink(
-                s3_settings_->bucket_name, sink_path, s3_connection_pool_));
-        } else {
-            metadata_sinks_.emplace(metadata_key,
-                                    zarr::make_file_sink(sink_path));
-        }
-    }
-
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        set_error_("Metadata sink '" + metadata_key + "'not found");
-        return false;
-    }
-
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!sink->write(0, data)) {
-        set_error_("Error writing external metadata");
         return false;
     }
 

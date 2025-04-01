@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pickle import FALSE
 
 import dotenv
 import json
@@ -114,10 +115,7 @@ def validate_v2_metadata(store_path: Path):
         data = json.load(fh)
         assert data["zarr_format"] == 2
 
-    assert (store_path / "acquire.json").is_file()
-    with open(store_path / "acquire.json", "r") as fh:
-        data = json.load(fh)
-        assert data["foo"] == "bar"
+    assert not (store_path / "acquire.json").is_file()
 
 
 def validate_v3_metadata(store_path: Path):
@@ -140,10 +138,7 @@ def validate_v3_metadata(store_path: Path):
         assert axes[2]["type"] == "space"
         assert axes[2]["unit"] == "micrometer"
 
-    assert (store_path / "acquire.json").is_file()
-    with open(store_path / "acquire.json", "r") as fh:
-        data = json.load(fh)
-        assert data["foo"] == "bar"
+    assert not (store_path / "acquire.json").is_file()
 
 
 @pytest.mark.parametrize(
@@ -462,3 +457,48 @@ def test_stream_data_to_s3(
 def test_set_log_level(level: LogLevel):
     set_log_level(level)
     assert get_log_level() == level
+
+
+@pytest.mark.parametrize(
+    ("version", "overwrite"),
+    [
+        (ZarrVersion.V2, False),
+        (ZarrVersion.V2, True),
+        (ZarrVersion.V3, False),
+        (ZarrVersion.V3, True),
+    ],
+)
+def test_write_custom_metadata(
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
+    overwrite: bool,
+):
+    settings.store_path = str(store_path / f"{request.node.name}.zarr")
+    settings.version = version
+    stream = ZarrStream(settings)
+    assert stream
+
+    metadata = json.dumps({"foo": "bar"})
+    assert stream.write_custom_metadata(metadata, True)
+
+    # don't allow overwriting the metadata
+    metadata = json.dumps({"baz": "qux"})
+    overwrite_result = stream.write_custom_metadata(
+        metadata, overwrite=overwrite
+    )
+    assert overwrite_result == overwrite
+
+    del stream
+
+    assert (Path(settings.store_path) / "acquire.json").is_file()
+    with open(Path(settings.store_path) / "acquire.json", "r") as fh:
+        data = json.load(fh)
+
+    if overwrite:  # the metadata is overwritten
+        assert data["baz"] == "qux"
+        assert "foo" not in data
+    else:  # the originally written metadata is preserved
+        assert data["foo"] == "bar"
+        assert "baz" not in data

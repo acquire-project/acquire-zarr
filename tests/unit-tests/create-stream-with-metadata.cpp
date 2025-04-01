@@ -50,11 +50,17 @@ create_stream_with_metadata(ZarrVersion version)
     settings.store_path = TEST ".zarr";
 
     std::string custom_metadata = R"({"foo":"bar"})";
-    settings.custom_metadata = custom_metadata.c_str();
 
     configure_stream_dimensions(&settings);
 
-    return ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings);
+    CHECK(stream);
+
+    // Write custom metadata to the stream
+    CHECK(ZarrStatusCode_Success == ZarrStream_write_custom_metadata(
+                                      stream, custom_metadata.c_str(), true));
+
+    return stream;
 }
 
 ZarrStream*

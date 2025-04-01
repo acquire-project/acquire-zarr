@@ -89,6 +89,8 @@ extern "C"
                 return "Compression error";
             case ZarrStatusCode_InvalidSettings:
                 return "Invalid settings";
+            case ZarrStatusCode_WillNotOverwrite:
+                return "Will not overwrite existing data";
             default:
                 return "Unknown error";
         }
@@ -175,5 +177,22 @@ extern "C"
         }
 
         return ZarrStatusCode_Success;
+    }
+
+    ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,
+                                                    const char* custom_metadata,
+                                                    bool overwrite)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+
+        ZarrStatusCode status;
+        try {
+            status = stream->write_custom_metadata(custom_metadata, overwrite);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error writing metadata: ", e.what());
+            status = ZarrStatusCode_InternalError;
+        }
+
+        return status;
     }
 }

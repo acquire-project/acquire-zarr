@@ -42,9 +42,14 @@ jobs:
         with:
           submodules: true
 
+      - name: actions-setup-cmake
+        uses: jwlawson/actions-setup-cmake@v2.0.2
+        with:
+          cmake-version: "3.31.x"
+
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -104,7 +109,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -112,7 +117,7 @@ jobs:
         shell: bash
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build auditwheel
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build auditwheel
 
       - name: Install OpenMP on macOS
         if: matrix.platform == 'macos-latest' || matrix.platform == 'macos-13'

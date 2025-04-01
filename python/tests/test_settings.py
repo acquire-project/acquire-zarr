@@ -27,15 +27,6 @@ def test_settings_set_store_path(settings):
     assert settings.store_path == this_dir
 
 
-def test_settings_set_custom_metadata(settings):
-    assert settings.custom_metadata is None
-
-    metadata = json.dumps({"foo": "bar"})
-    settings.custom_metadata = metadata
-
-    assert settings.custom_metadata == metadata
-
-
 def test_set_s3_settings(settings):
     assert settings.s3 is None
 
