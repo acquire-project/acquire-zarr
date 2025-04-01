@@ -115,7 +115,20 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;
 
+    /**
+     * @brief Write a frame to the chunk buffers.
+     * @note This function splits the incoming frame into tiles and writes them
+     * to the chunk buffers. If we are writing multiscale frames, the function
+     * calls write_multiscale_frames_() to write the scaled frames.
+     * @param data The frame data to write.
+     * @return The number of bytes written of the full-resolution frame.
+     */
     size_t write_frame_(ConstByteSpan data);
+
+    /**
+     * @brief Downsample the full-resolution frame to create multiscale frames.
+     * @param data The full-resolution frame data.
+     */
     void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
