@@ -43,9 +43,14 @@ jobs:
         with:
           submodules: true
 
+      - name: actions-setup-cmake
+        uses: jwlawson/actions-setup-cmake@v2.0.2
+        with:
+          cmake-version: "3.31.x"
+
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -114,7 +119,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.02.14
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -134,7 +139,7 @@ jobs:
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 90
 
       - name: Install Python dependencies
-        run: python -m pip install -U pip "pybind11[global]" cmake build numpy pytest auditwheel
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest auditwheel
 
       - name: Build
         run: python -m build -o dist

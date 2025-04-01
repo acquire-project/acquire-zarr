@@ -248,15 +248,6 @@ class PyZarrStreamSettings
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
 
-    const std::optional<std::string>& custom_metadata() const
-    {
-        return custom_metadata_;
-    }
-    void set_custom_metadata(const std::optional<std::string>& metadata)
-    {
-        custom_metadata_ = metadata;
-    }
-
     const std::optional<PyZarrS3Settings>& s3() const { return s3_settings_; }
     void set_s3(const std::optional<PyZarrS3Settings>& settings)
     {
@@ -290,7 +281,6 @@ class PyZarrStreamSettings
 
   private:
     std::string store_path_;
-    std::optional<std::string> custom_metadata_{ std::nullopt };
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
     std::optional<PyZarrCompressionSettings> compression_settings_{
         std::nullopt
@@ -311,7 +301,6 @@ class PyZarrStream
 
         ZarrStreamSettings stream_settings{
             .store_path = nullptr,
-            .custom_metadata = nullptr,
             .s3_settings = nullptr,
             .compression_settings = nullptr,
             .dimensions = nullptr,
@@ -324,11 +313,6 @@ class PyZarrStream
 
         store_path_ = settings.store_path();
         stream_settings.store_path = store_path_.c_str();
-
-        if (settings.custom_metadata()) {
-            custom_metadata_ = settings.custom_metadata().value();
-            stream_settings.custom_metadata = custom_metadata_.c_str();
-        }
 
         if (settings.s3().has_value()) {
             const auto& s3 = settings.s3().value();
@@ -418,6 +402,31 @@ class PyZarrStream
         }
     }
 
+    bool write_custom_metadata(py::str custom_metadata, bool overwrite)
+    {
+        if (!is_active()) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "Cannot write metadata unless streaming.");
+            throw py::error_already_set();
+        }
+
+        auto status = ZarrStream_write_custom_metadata(
+          stream_.get(),
+          custom_metadata.cast<std::string>().c_str(),
+          overwrite);
+
+        if (status == ZarrStatusCode_WillNotOverwrite) {
+            return false; // Metadata already exists and overwrite is false
+        } else if (status != ZarrStatusCode_Success) {
+            std::string err = "Failed to write custom metadata: " +
+                              std::string(Zarr_get_status_message(status));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+
+        return true;
+    }
+
     bool is_active() const { return static_cast<bool>(stream_); }
 
   private:
@@ -427,7 +436,6 @@ class PyZarrStream
     ZarrStreamPtr stream_;
 
     std::string store_path_;
-    std::string custom_metadata_;
 
     std::vector<std::string> dimension_names_;
 
@@ -607,12 +615,6 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("store_path"))
               settings.set_store_path(kwargs["store_path"].cast<std::string>());
 
-          if (kwargs.contains("custom_metadata") &&
-              !kwargs["custom_metadata"].is_none()) {
-              auto cm = kwargs["custom_metadata"].cast<std::string>();
-              settings.set_custom_metadata(cm);
-          }
-
           if (kwargs.contains("s3") && !kwargs["s3"].is_none()) {
               auto s3 = kwargs["s3"].cast<PyZarrS3Settings>();
               settings.set_s3(s3);
@@ -645,10 +647,6 @@ PYBIND11_MODULE(acquire_zarr, m)
            [](const PyZarrStreamSettings& self) {
                std::string repr =
                  "StreamSettings(store_path='" + self.store_path() + "'";
-               if (self.custom_metadata().has_value()) {
-                   repr += ", custom_metadata='" +
-                           self.custom_metadata().value() + "'";
-               }
 
                if (self.s3().has_value()) {
                    repr += ", s3=" + self.s3()->repr();
@@ -673,21 +671,6 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("store_path",
                     &PyZarrStreamSettings::store_path,
                     &PyZarrStreamSettings::set_store_path)
-      .def_property(
-        "custom_metadata",
-        [](const PyZarrStreamSettings& self) -> py::object {
-            if (self.custom_metadata()) {
-                return py::cast(*self.custom_metadata());
-            }
-            return py::none();
-        },
-        [](PyZarrStreamSettings& self, py::object obj) {
-            if (obj.is_none()) {
-                self.set_custom_metadata(std::nullopt);
-            } else {
-                self.set_custom_metadata(obj.cast<std::string>());
-            }
-        })
       .def_property(
         "s3",
         [](const PyZarrStreamSettings& self) -> py::object {
@@ -735,6 +718,10 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
       .def("append", &PyZarrStream::append)
+      .def("write_custom_metadata",
+           &PyZarrStream::write_custom_metadata,
+           py::arg("custom_metadata"),
+           py::arg("overwrite"))
       .def("is_active", &PyZarrStream::is_active);
 
     m.def(
