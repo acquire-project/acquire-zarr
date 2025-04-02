@@ -43,8 +43,8 @@ jobs:
         with:
           submodules: true
 
-      - name: actions-setup-cmake
-        uses: jwlawson/actions-setup-cmake@v2.0.2
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: "3.31.x"
 

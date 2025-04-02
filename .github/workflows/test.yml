@@ -43,8 +43,8 @@ jobs:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: actions-setup-cmake
-        uses: jwlawson/actions-setup-cmake@v2.0.2
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: "3.31.x"
 
@@ -91,6 +91,11 @@ jobs:
         with:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
 
       - name: Install minio and mcli
         run: |
