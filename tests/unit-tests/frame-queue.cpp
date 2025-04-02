@@ -22,7 +22,7 @@ test_basic_operations()
     }
 
     // Pushing
-    CHECK(queue.push(std::move(frame)));
+    CHECK(queue.push(frame));
     CHECK(queue.size() == 1);
     CHECK(!queue.empty());
 
@@ -48,13 +48,13 @@ test_capacity()
     // Fill the queue
     for (size_t i = 0; i < capacity; ++i) {
         ByteVector frame(100, std::byte(i));
-        bool result = queue.push(std::move(frame));
+        bool result = queue.push(frame);
         CHECK(result);
     }
 
     // Queue should be full (next push should fail)
     ByteVector extra_frame(100);
-    bool push_result = queue.push(std::move(extra_frame));
+    bool push_result = queue.push(extra_frame);
     CHECK(!push_result);
     CHECK(queue.size() == capacity);
 
@@ -66,7 +66,7 @@ test_capacity()
 
     // Should be able to push again
     ByteVector new_frame(100, std::byte(99));
-    push_result = queue.push(std::move(new_frame));
+    push_result = queue.push(new_frame);
     CHECK(push_result);
     CHECK(queue.size() == capacity);
 }
@@ -87,10 +87,8 @@ test_producer_consumer()
             ByteVector frame(frame_size, std::byte(i % 256));
 
             // Try until successful
-            while (!queue.push(std::move(frame))) {
+            while (!queue.push(frame)) {
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
-                // Create new frame since the previous one was moved
-                frame = ByteVector(frame_size, std::byte(i % 256));
             }
         }
     });

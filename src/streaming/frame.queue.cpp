@@ -1,11 +1,12 @@
 #include "frame.queue.hh"
 #include "macros.hh"
 
+#include <cstring>
 #include <stdexcept>
 
 zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
-  : buffer_(num_frames + 1) // allocate one extra slot to distinguish full/empty
-  , capacity_(num_frames + 1) // allocate one extra slot to distinguish full/empty
+  : buffer_(num_frames + 1)   // one extra slot to distinguish full/empty
+  , capacity_(num_frames + 1) // one extra slot to distinguish full/empty
 {
     EXPECT(num_frames > 0, "FrameQueue must have at least one frame.");
 
@@ -19,7 +20,7 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
 }
 
 bool
-zarr::FrameQueue::push(ByteVector&& frame)
+zarr::FrameQueue::push(ConstByteSpan frame)
 {
     size_t write_pos = write_pos_.load(std::memory_order_relaxed);
 
@@ -28,7 +29,8 @@ zarr::FrameQueue::push(ByteVector&& frame)
         return false; // Queue is full
     }
 
-    buffer_[write_pos].data = std::move(frame);
+    buffer_[write_pos].data.resize(frame.size());
+    memcpy(buffer_[write_pos].data.data(), frame.data(), frame.size());
     buffer_[write_pos].ready.store(true, std::memory_order_release);
 
     write_pos_.store(next_pos, std::memory_order_release);
@@ -90,7 +92,9 @@ zarr::FrameQueue::bytes_used() const
     return total_bytes;
 }
 
-bool zarr::FrameQueue::empty() const {
+bool
+zarr::FrameQueue::empty() const
+{
     // Queue is empty when read position equals write position
     // and the slot at read position is not ready
     size_t read = read_pos_.load(std::memory_order_relaxed);
@@ -99,7 +103,9 @@ bool zarr::FrameQueue::empty() const {
     return (read == write);
 }
 
-bool zarr::FrameQueue::full() const {
+bool
+zarr::FrameQueue::full() const
+{
     // Queue is full when the next write position equals read position
     size_t write = write_pos_.load(std::memory_order_relaxed);
     size_t next_write = (write + 1) % capacity_;

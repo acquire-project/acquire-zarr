@@ -10,8 +10,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <condition_variable>
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -32,8 +34,8 @@ struct ZarrStream_s
     /**
      * @brief Write custom metadata to the stream.
      * @param custom_metadata JSON-formatted custom metadata to write.
-     * @param overwrite If true, overwrite any existing custom metadata. Otherwise,
-     * fail if custom metadata has already been written.
+     * @param overwrite If true, overwrite any existing custom metadata.
+     * Otherwise, fail if custom metadata has already been written.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
@@ -60,6 +62,10 @@ struct ZarrStream_s
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
+
+    std::atomic<bool> process_frames_{ true };
+    std::mutex frame_queue_mutex_;
+    std::condition_variable frame_queue_cv_;
     std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
@@ -114,6 +120,12 @@ struct ZarrStream_s
 
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;
+
+    /** @brief Process the frame queue. */
+    void process_frame_queue_();
+
+    /** @brief Wait for the frame queue to finish processing. */
+    void finalize_frame_queue_();
 
     /**
      * @brief Write a frame to the chunk buffers.

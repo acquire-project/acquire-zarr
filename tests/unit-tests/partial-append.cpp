@@ -206,7 +206,12 @@ main()
                                        data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
+        // cleanup
+        ZarrStream_destroy(stream);
+        stream = nullptr;
+
         verify_file_data(settings);
+        ZarrStreamSettings_destroy_dimension_array(&settings);
 
         retval = 0;
     } catch (const std::exception& exception) {
@@ -214,8 +219,13 @@ main()
     }
 
     // cleanup
-    ZarrStreamSettings_destroy_dimension_array(&settings);
-    ZarrStream_destroy(stream);
+    if (stream) {
+        ZarrStream_destroy(stream);
+    }
+
+    if (settings.dimensions) {
+        ZarrStreamSettings_destroy_dimension_array(&settings);
+    }
 
     std::error_code ec;
     if (fs::is_directory(settings.store_path) &&
