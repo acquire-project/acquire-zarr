@@ -8,7 +8,8 @@
 # ]
 # ///
 #!/usr/bin/env python3
-"""Compare write performance of TensorStore vs. acquire-zarr for a Zarr v3 store."""
+"""Compare write performance of TensorStore vs. acquire-zarr for a Zarr v3 store. Thanks to Talley Lambert @tlambert03
+for the original version of this script: https://gist.github.com/tlambert03/f8c1b069c2947b411ce24ea05aa370b1"""
 
 from pathlib import Path
 import sys
@@ -45,7 +46,7 @@ class CyclicArray:
             stop = min(i + self.t, arr.shape[0])
             # print(f"Comparing 0:{stop - start} to {start}:{stop}")
             np.testing.assert_array_equal(
-                self.data[0 : (stop - start)], arr[start:stop]
+                self.data[0: (stop - start)], arr[start:stop]
             )
 
 
@@ -163,7 +164,7 @@ def compare(
 
     # Pre-generate the data (timing excluded)
     data = CyclicArray(
-        np.random.randint(0, 2**16 - 1, (32, 2048, 2048), dtype=np.uint16), frame_count
+        np.random.randint(0, 2 ** 16 - 1, (32, 2048, 2048), dtype=np.uint16), frame_count
     )
 
     time_az_ms = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
