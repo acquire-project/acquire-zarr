@@ -16,7 +16,7 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(ByteVector&& frame);
+    bool push(ConstByteSpan frame);
     bool pop(ByteVector& frame);
 
     size_t size() const;

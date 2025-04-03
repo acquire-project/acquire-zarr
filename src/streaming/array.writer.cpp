@@ -5,7 +5,6 @@
 #include "sink.hh"
 
 #include <cmath>
-#include <execution>
 #include <functional>
 #include <stdexcept>
 
