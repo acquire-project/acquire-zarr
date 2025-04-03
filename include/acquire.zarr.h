@@ -93,14 +93,15 @@ extern "C"
     void ZarrStream_destroy(ZarrStream* stream);
 
     /**
-     * @brief Append data to the Zarr stream.
+     * @brief Append data to the default group "0" of the Zarr stream.
      * @details This function will block while chunks are compressed and written
-     * to the store. It will return when all data has been written. Multiple frames
-     * can be appended in a single call.
+     * to the store. It will return when all data has been written. Multiple
+     * frames can be appended in a single call.
      * @param[in, out] stream The Zarr stream struct.
      * @param[in] data The data to append.
      * @param[in] bytes_in The number of bytes in @p data. This can be any
-     * nonnegative integer. On a value of 0, this function will immediately return.
+     * nonnegative integer. On a value of 0, this function will immediately
+     * return.
      * @param[out] bytes_out The number of bytes written to the stream.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
@@ -108,6 +109,26 @@ extern "C"
                                      const void* data,
                                      size_t bytes_in,
                                      size_t* bytes_out);
+
+    /**
+     * @brief Append data to the named group of the Zarr stream.
+     * @details This function will block while chunks are compressed and written
+     * to the store. It will return when all data has been written. Multiple
+     * frames can be appended in a single call.
+     * @param[in, out] stream The Zarr stream struct.
+     * @param[in] group_name The name of the group to append to.
+     * @param[in] data The data to append.
+     * @param[in] bytes_in The number of bytes in @p data. This can be any
+     * nonnegative integer. On a value of 0, this function will immediately
+     * return.
+     * @param[out] bytes_out The number of bytes written to the stream.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_append_to_group(ZarrStream* stream,
+                                              const char* group_name,
+                                              const void* data,
+                                              size_t bytes_in,
+                                              size_t* bytes_out);
 
     /**
      * @brief Write custom metadata to the Zarr stream.

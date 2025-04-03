@@ -402,7 +402,7 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append(const void* data_, size_t nbytes)
+ZarrStream::append(const void* data_, const char* group_name, size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
 
