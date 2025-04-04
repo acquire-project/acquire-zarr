@@ -165,12 +165,23 @@ extern "C"
                                      size_t bytes_in,
                                      size_t* bytes_out)
     {
+        return ZarrStream_append_to_group(
+          stream, "0", data, bytes_in, bytes_out);
+    }
+
+    ZarrStatusCode ZarrStream_append_to_group(struct ZarrStream_s* stream,
+                                              const char* group_name,
+                                              const void* data,
+                                              size_t bytes_in,
+                                              size_t* bytes_out)
+    {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(group_name, "Null pointer: group_name");
         EXPECT_VALID_ARGUMENT(data, "Null pointer: data");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
         try {
-            *bytes_out = stream->append(data, bytes_in);
+            *bytes_out = stream->append(data, group_name, bytes_in);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
             return ZarrStatusCode_InternalError;

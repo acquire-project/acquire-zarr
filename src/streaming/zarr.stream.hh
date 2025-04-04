@@ -26,7 +26,7 @@ struct ZarrStream_s
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(const void* data, size_t nbytes);
+    size_t append(const void* data, const char* group_name, size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -39,6 +39,11 @@ struct ZarrStream_s
                                          bool overwrite);
 
   private:
+    struct ZarrGroup
+    {
+        std::vector<std::unique_ptr<zarr::ArrayWriter>> writers;
+    };
+
     struct CompressionSettings
     {
         ZarrCompressor compressor;
