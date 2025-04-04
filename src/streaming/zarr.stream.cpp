@@ -7,7 +7,6 @@
 #include "sink.hh"
 
 #include <blosc.h>
-#include <omp.h>
 
 #include <filesystem>
 
@@ -969,7 +968,6 @@ ZarrStream_s::write_multiscale_frames_(ConstByteSpan data)
 
         // bytes_of data is now downscaled
         // frame_width and frame_height are now the new dimensions
-
         if (scaled_frames_[i]) {
             std::span frame_data(dst);
             average2(frame_data, *scaled_frames_[i]);
