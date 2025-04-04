@@ -1,6 +1,8 @@
 #include "s3.sink.hh"
 #include "unit.test.macros.hh"
 
+#include <miniocpp/client.h>
+
 #include <cstdlib>
 #include <memory>
 
