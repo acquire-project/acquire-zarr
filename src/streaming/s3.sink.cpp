@@ -155,7 +155,7 @@ zarr::S3Sink::flush_part_()
     try {
         auto& parts = multipart_upload_->parts;
 
-        minio::s3::Part part;
+        S3Part part;
         part.number = static_cast<unsigned int>(parts.size()) + 1;
 
         std::span data(reinterpret_cast<uint8_t*>(part_buffer_.data()),

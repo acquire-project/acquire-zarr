@@ -69,7 +69,7 @@ main()
           conn->create_multipart_object(settings.bucket_name, object_name);
         CHECK(!upload_id.empty());
 
-        std::list<minio::s3::Part> parts;
+        std::vector<zarr::S3Part> parts;
 
         // parts need to be at least 5MiB, except the last part
         std::vector<uint8_t> data(5 << 20, 0);
@@ -82,7 +82,7 @@ main()
               i + 1);
             CHECK(!etag.empty());
 
-            minio::s3::Part part;
+            zarr::S3Part part;
             part.number = i + 1;
             part.etag = etag;
             part.size = data.size();
@@ -102,7 +102,7 @@ main()
               part_number);
             CHECK(!etag.empty());
 
-            minio::s3::Part part;
+            zarr::S3Part part;
             part.number = part_number;
             part.etag = etag;
             part.size = part_size;
