@@ -41,7 +41,7 @@ test_basic_downsampling()
 
     // Check writer configurations
     const auto& writer_configs = downsampler.writer_configurations();
-    EXPECT_EQ(size_t, writer_configs.size(), 2);
+    EXPECT_EQ(size_t, writer_configs.size(), 3);
     EXPECT(writer_configs.count(1) > 0, "Level 1 configuration missing");
 
     // Create an image with all pixels set to 100
