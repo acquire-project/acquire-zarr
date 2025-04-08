@@ -10,21 +10,43 @@ namespace zarr {
 class Downsampler
 {
   public:
-    Downsampler(const ArrayWriterConfig& config,
-                std::shared_ptr<ThreadPool> thread_pool,
-                std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    explicit Downsampler(const ArrayWriterConfig& config);
 
+    /**
+     * @brief Add a full-resolution frame to the downsampler.
+     * @note Downsampled frames are cached internally and can be retrieved, per
+     * level, by calling get_downsampled_frame().
+     * @param frame_data The full-resolution frame data.
+     */
     void add_frame(ConstByteSpan frame_data);
 
-  private:
-    std::shared_ptr<ThreadPool> thread_pool_;
-    std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
+    /**
+     * @brief Get the downsampled frame for the given level, removing it from
+     * the internal cache if found. Return false if the frame was not found.
+     * @note This method is not idempotent. It will remove the downsampled frame
+     * from the internal cache.
+     * @param[in] level The level of detail to get.
+     * @param[out] frame_data The downsampled frame data.
+     * @return True if the downsampled frame was found, false otherwise.
+     */
+    bool get_downsampled_frame(int level, ByteVector& frame_data);
 
-    ArrayWriterConfig array_writer_config_;
-    std::unordered_map<int, std::unique_ptr<ArrayWriter>> writers_;
+    const std::unordered_map<int, zarr::ArrayWriterConfig>&
+    writer_configurations() const;
+
+  private:
+    std::function<ByteVector(ConstByteSpan, size_t&, size_t&)> scale_fun_;
+    std::function<void(ByteVector&, ConstByteSpan)> average2_fun_;
+
+    std::unordered_map<int, ArrayWriterConfig> writer_configurations_;
+    std::unordered_map<int, ByteVector> downsampled_frames_;
+    std::unordered_map<int, ByteVector> partial_scaled_frames_;
 
     bool is_3d_downsample_() const;
-    std::vector<ArrayWriterConfig> make_downsampled_configs_();
-    void make_writers_();
+    size_t n_levels_() const;
+
+    void make_writer_configurations_(const ArrayWriterConfig& config);
+    void downsample_3d_(ConstByteSpan frame_data);
+    void downsample_2d_(ConstByteSpan frame_data);
 };
 } // namespace zarr

@@ -30,6 +30,7 @@ set(tests
         zarrv3-writer-write-ragged-internal-dim
         vectorized-file-write
         partial-append
+        downsampler
 )
 
 foreach (name ${tests})
