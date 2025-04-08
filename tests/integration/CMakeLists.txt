@@ -7,6 +7,8 @@ set(tests
         stream-zarr-v2-compressed-to-s3
         stream-zarr-v3-raw-to-filesystem
         stream-zarr-v3-compressed-to-filesystem
+        stream-zarr-v3-2d-multiscale-to-filesystem
+        stream-zarr-v3-3d-multiscale-to-filesystem
         stream-zarr-v3-raw-to-s3
         stream-zarr-v3-compressed-to-s3
         stream-zarr-v3-multi-frame-append
