@@ -1,7 +1,5 @@
 #pragma once
 
-#include <miniocpp/client.h>
-
 #include <condition_variable>
 #include <list>
 #include <memory>
@@ -21,10 +19,18 @@ struct S3Settings
     std::optional<std::string> region;
 };
 
+struct S3Part
+{
+    unsigned int number;
+    std::string etag;
+    size_t size;
+};
+
 class S3Connection
 {
   public:
     explicit S3Connection(const S3Settings& settings);
+    ~S3Connection();
 
     /**
      * @brief Test a connection by listing all buckets at this connection's
@@ -117,11 +123,12 @@ class S3Connection
       std::string_view bucket_name,
       std::string_view object_name,
       std::string_view upload_id,
-      const std::list<minio::s3::Part>& parts);
+      const std::vector<S3Part>& parts);
 
   private:
-    std::unique_ptr<minio::s3::Client> client_;
-    std::unique_ptr<minio::creds::StaticProvider> provider_;
+    struct Impl;
+
+    std::unique_ptr<Impl> impl_;
 };
 
 class S3ConnectionPool

@@ -243,8 +243,6 @@ class PyZarrStreamSettings
     PyZarrStreamSettings() = default;
     ~PyZarrStreamSettings() = default;
 
-    std::vector<PyZarrDimensionProperties> dimensions;
-
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
 
@@ -279,6 +277,17 @@ class PyZarrStreamSettings
         max_threads_ = max_threads;
     }
 
+    const std::vector<PyZarrDimensionProperties>& dimensions() const
+    {
+        return dimensions_;
+    }
+    std::vector<PyZarrDimensionProperties>& dimensions() { return dimensions_; }
+    void set_dimensions(
+      const std::vector<PyZarrDimensionProperties>& dimensions)
+    {
+        dimensions_ = dimensions;
+    }
+
   private:
     std::string store_path_;
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
@@ -289,6 +298,7 @@ class PyZarrStreamSettings
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
+    std::vector<PyZarrDimensionProperties> dimensions_;
 };
 
 class PyZarrStream
@@ -347,7 +357,7 @@ class PyZarrStream
             stream_settings.compression_settings = &compression_settings;
         }
 
-        const auto& dims = settings.dimensions;
+        const auto& dims = settings.dimensions();
         dimension_names_.resize(dims.size());
 
         std::vector<ZarrDimensionProperties> dimension_props;
@@ -627,10 +637,16 @@ PYBIND11_MODULE(acquire_zarr, m)
               settings.set_compression(compression);
           }
 
-          if (kwargs.contains("dimensions"))
-              settings.dimensions =
-                kwargs["dimensions"]
-                  .cast<std::vector<PyZarrDimensionProperties>>();
+          if (kwargs.contains("dimensions")) {
+              py::list dims_list = kwargs["dimensions"].cast<py::list>();
+              std::vector<PyZarrDimensionProperties> dims(dims_list.size());
+
+              for (auto i = 0; i < dims_list.size(); ++i) {
+                  auto dim = dims_list[i].cast<PyZarrDimensionProperties>();
+                  dims[i] = dim;
+              }
+              settings.set_dimensions(dims);
+          }
 
           if (kwargs.contains("multiscale"))
               settings.set_multiscale(kwargs["multiscale"].cast<bool>());
@@ -655,7 +671,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                    repr += ", compression=" + self.compression()->repr();
                }
                repr += ", dimensions=[";
-               for (const auto& dim : self.dimensions) {
+               for (const auto& dim : self.dimensions()) {
                    repr += dim.repr() + ", ";
                }
 
@@ -701,7 +717,24 @@ PYBIND11_MODULE(acquire_zarr, m)
                 self.set_compression(obj.cast<PyZarrCompressionSettings>());
             }
         })
-      .def_readwrite("dimensions", &PyZarrStreamSettings::dimensions)
+      .def_property(
+        "dimensions",
+        [](PyZarrStreamSettings& self) -> py::object {
+            return py::cast(self.dimensions(),
+                            py::return_value_policy::reference);
+        },
+        [](PyZarrStreamSettings& self, py::object obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrDimensionProperties> dims;
+                for (auto item : obj.cast<py::list>()) {
+                    dims.push_back(item.cast<PyZarrDimensionProperties>());
+                }
+                self.set_dimensions(dims);
+            } else {
+                self.set_dimensions(
+                  obj.cast<std::vector<PyZarrDimensionProperties>>());
+            }
+        })
       .def_property("multiscale",
                     &PyZarrStreamSettings::multiscale,
                     &PyZarrStreamSettings::set_multiscale)
