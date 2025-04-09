@@ -14,6 +14,7 @@ for the original version of this script: https://gist.github.com/tlambert03/f8c1
 from pathlib import Path
 import sys
 import time
+from typing import Tuple
 
 import acquire_zarr as aqz
 import numpy as np
@@ -50,7 +51,7 @@ class CyclicArray:
             )
 
 
-def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> float:
+def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> Tuple[float, np.ndarray]:
     """Write data using TensorStore and print per-plane and total write times."""
     # Define a TensorStore spec for a Zarr v3 store.
     spec = {
@@ -65,6 +66,7 @@ def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> float:
     print(ts)
     total_start = time.perf_counter_ns()
     futures = []
+    elapsed_times = []
 
     # cache data until we've reached a write-chunk-aligned block
     chunk_length = ts.schema.chunk_layout.write_chunk.shape[0]
@@ -79,6 +81,7 @@ def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> float:
             futures.append(ts[slc].write(chunk))
             chunk = np.empty(write_chunk_shape, dtype=np.uint16)
         elapsed = time.perf_counter_ns() - start_plane
+        elapsed_times.append(elapsed)
         print(f"TensorStore: Plane {i} written in {elapsed / 1e6:.3f} ms")
 
     start_futures = time.perf_counter_ns()
@@ -86,12 +89,14 @@ def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> float:
     for future in futures:
         future.result()
     elapsed = time.perf_counter_ns() - start_futures
+    elapsed_times.append(elapsed)
     print(f"TensorStore: Final futures took {elapsed / 1e6:.3f} ms")
 
     total_elapsed = time.perf_counter_ns() - total_start
     tot_ms = total_elapsed / 1e6
     print(f"TensorStore: Total write time: {tot_ms:.3f} ms")
-    return tot_ms
+
+    return tot_ms, np.array(elapsed_times) / 1e6
 
 
 def run_acquire_zarr_test(
@@ -100,7 +105,7 @@ def run_acquire_zarr_test(
         tchunk_size: int = 1,
         xy_chunk_size: int = 2048,
         xy_shard_size: int = 1,
-) -> float:
+) -> Tuple[float, np.ndarray]:
     """Write data using acquire-zarr and print per-plane and total write times."""
     settings = aqz.StreamSettings(
         store_path=path,
@@ -136,11 +141,14 @@ def run_acquire_zarr_test(
     # Create a ZarrStream for appending frames.
     stream = aqz.ZarrStream(settings)
 
+    elapsed_times = []
+
     total_start = time.perf_counter_ns()
     for i in range(data.shape[0]):
         start_plane = time.perf_counter_ns()
         stream.append(data[i])
         elapsed = time.perf_counter_ns() - start_plane
+        elapsed_times.append(elapsed)
         print(f"Acquire-zarr: Plane {i} written in {elapsed / 1e6:.3f} ms")
 
     # Close (or flush) the stream to finalize writes.
@@ -148,7 +156,8 @@ def run_acquire_zarr_test(
     total_elapsed = time.perf_counter_ns() - total_start
     tot_ms = total_elapsed / 1e6
     print(f"Acquire-zarr: Total write time: {tot_ms:.3f} ms")
-    return tot_ms
+
+    return tot_ms, np.array(elapsed_times) / 1e6
 
 
 def compare(
@@ -164,10 +173,10 @@ def compare(
 
     # Pre-generate the data (timing excluded)
     data = CyclicArray(
-        np.random.randint(0, 2 ** 16 - 1, (32, 2048, 2048), dtype=np.uint16), frame_count
+        np.random.randint(0, 2 ** 16 - 1, (128, 2048, 2048), dtype=np.uint16), frame_count
     )
 
-    time_az_ms = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
+    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
 
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
@@ -175,7 +184,7 @@ def compare(
 
     print("\nRunning TensorStore test:")
     ts_path = "tensorstore_test.zarr"
-    time_ts_ms = run_tensorstore_test(
+    time_ts_ms, frame_write_times_ts = run_tensorstore_test(
         data,
         ts_path,
         {**az.metadata.to_dict(), "data_type": "uint16"},
@@ -198,10 +207,10 @@ def compare(
 
     print("\nPerformance comparison:")
     print(
-        f"  acquire-zarr: {time_az_ms:.3f} ms, {1000 * data_size_gib / time_az_ms:.3f} GiB/s"
+        f"  acquire-zarr: {time_az_ms:.3f} ms, {1000 * data_size_gib / time_az_ms:.3f} GiB/s, 50th percentile frame write time: {np.percentile(frame_write_times_az, 50):.3f} ms, 99th percentile: {np.percentile(frame_write_times_az, 99):.3f} ms"
     )
     print(
-        f"  TensorStore: {time_ts_ms:.3f} ms, {1000 * data_size_gib / time_ts_ms:.3f} GiB/s"
+        f"  TensorStore: {time_ts_ms:.3f} ms, {1000 * data_size_gib / time_ts_ms:.3f} GiB/s, 50th percentile frame write time: {np.percentile(frame_write_times_ts, 50):.3f} ms, 99th percentile: {np.percentile(frame_write_times_ts, 99):.3f} ms"
     )
     print(f"  TS/AZ Ratio: {time_ts_ms / time_az_ms:.3f}")
 
