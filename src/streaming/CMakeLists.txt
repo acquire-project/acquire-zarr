@@ -11,6 +11,8 @@ add_library(${tgt}
         acquire.zarr.cpp
         zarr.dimension.hh
         zarr.dimension.cpp
+        downsampler.hh
+        downsampler.cpp
         zarr.stream.hh
         zarr.stream.cpp
         zarr.common.hh
