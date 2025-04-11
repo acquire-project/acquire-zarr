@@ -73,6 +73,14 @@ struct ZarrStream_s
     bool is_compressed_acquisition_() const;
 
     /**
+     * @brief Check that the settings are valid.
+     * @note Sets the error_ member if settings are invalid.
+     * @param settings Struct containing settings to validate.
+     * @return true if settings are valid, false otherwise.
+     */
+    [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
+
+    /**
      * @brief Copy settings to the stream.
      * @param settings Struct containing settings to copy.
      */
