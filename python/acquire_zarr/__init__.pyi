@@ -236,10 +236,8 @@ class LogLevel:
 class S3Settings:
     """Settings for connecting to and storing data in S3."""
 
-    access_key_id: str
     bucket_name: str
     endpoint: str
-    secret_access_key: str
     region: Optional[str]
 
     def __init__(self, **kwargs) -> None: ...

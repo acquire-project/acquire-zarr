@@ -123,41 +123,21 @@ class PyZarrS3Settings
     void set_bucket_name(const std::string& bucket) { bucket_name_ = bucket; }
     const std::string& bucket_name() const { return bucket_name_; }
 
-    void set_access_key_id(const std::string& access_key_id)
-    {
-        access_key_id_ = access_key_id;
-    }
-    const std::string& access_key_id() const { return access_key_id_; }
-
-    void set_secret_access_key(const std::string& secret_access_key)
-    {
-        secret_access_key_ = secret_access_key;
-    }
-    const std::string& secret_access_key() const { return secret_access_key_; }
-
     void set_region(const std::string& region) { region_ = region; }
     const std::optional<std::string>& region() const { return region_; }
 
     std::string repr() const
     {
-        const auto secret_access_key =
-          secret_access_key_.size() < 6
-            ? secret_access_key_
-            : secret_access_key_.substr(0, 5) + "...";
         const auto region =
           region_.has_value() ? ("'" + region_.value() + "'") : "None";
 
         return "S3Settings(endpoint='" + endpoint_ + "', bucket_name='" +
-               bucket_name_ + "', access_key_id='" + access_key_id_ +
-               "', secret_access_key='" + secret_access_key +
-               "', region=" + region + ")";
+               bucket_name_ + "', region=" + region + ")";
     }
 
   private:
     std::string endpoint_;
     std::string bucket_name_;
-    std::string access_key_id_;
-    std::string secret_access_key_;
     std::optional<std::string> region_;
 };
 
@@ -332,12 +312,6 @@ class PyZarrStream
             s3_bucket_name_ = s3.bucket_name();
             s3_settings.bucket_name = s3_bucket_name_.c_str();
 
-            s3_access_key_id_ = s3.access_key_id();
-            s3_settings.access_key_id = s3_access_key_id_.c_str();
-
-            s3_secret_access_key_ = s3.secret_access_key();
-            s3_settings.secret_access_key = s3_secret_access_key_.c_str();
-
             if (s3.region().has_value()) {
                 s3_region_ = s3.region().value();
                 s3_settings.region = s3_region_.c_str();
@@ -460,8 +434,6 @@ class PyZarrStream
 
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
-    std::string s3_access_key_id_;
-    std::string s3_secret_access_key_;
     std::string s3_region_;
 };
 
@@ -538,12 +510,6 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("bucket_name"))
               settings.set_bucket_name(
                 kwargs["bucket_name"].cast<std::string>());
-          if (kwargs.contains("access_key_id"))
-              settings.set_access_key_id(
-                kwargs["access_key_id"].cast<std::string>());
-          if (kwargs.contains("secret_access_key"))
-              settings.set_secret_access_key(
-                kwargs["secret_access_key"].cast<std::string>());
           if (kwargs.contains("region"))
               settings.set_region(kwargs["region"].cast<std::string>());
           return settings;
@@ -555,12 +521,6 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("bucket_name",
                     &PyZarrS3Settings::bucket_name,
                     &PyZarrS3Settings::set_bucket_name)
-      .def_property("access_key_id",
-                    &PyZarrS3Settings::access_key_id,
-                    &PyZarrS3Settings::set_access_key_id)
-      .def_property("secret_access_key",
-                    &PyZarrS3Settings::secret_access_key,
-                    &PyZarrS3Settings::set_secret_access_key)
       .def_property(
         "region", &PyZarrS3Settings::region, &PyZarrS3Settings::set_region);
 
