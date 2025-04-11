@@ -6,18 +6,7 @@
 #include "zarrv3.array.writer.hh"
 #include "sink.hh"
 
-#include <blosc.h>
-#include <omp.h>
-
 #include <filesystem>
-
-#ifdef min
-#undef min
-#endif
-
-#ifdef max
-#undef max
-#endif
 
 namespace fs = std::filesystem;
 
@@ -34,27 +23,58 @@ is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
     return nullptr != settings->compression_settings;
 }
 
+bool
+construct_s3_settings(const ZarrS3Settings* settings,
+                      zarr::S3Settings& s3_settings)
+{
+    char* env = nullptr;
+    if (!(env = std::getenv("AWS_ACCESS_KEY_ID"))) {
+        LOG_ERROR("AWS_ACCESS_KEY_ID environment variable is not set");
+        return false;
+    }
+    s3_settings.access_key_id = zarr::trim(env);
+
+    if (!(env = std::getenv("AWS_SECRET_ACCESS_KEY"))) {
+        LOG_ERROR("AWS_SECRET_ACCESS_KEY environment variable is not set");
+        return false;
+    }
+    s3_settings.secret_access_key = zarr::trim(env);
+
+    s3_settings.endpoint = zarr::trim(settings->endpoint);
+    s3_settings.bucket_name = zarr::trim(settings->bucket_name);
+
+    if (settings->region != nullptr) {
+        s3_settings.region = zarr::trim(settings->region);
+    }
+
+    return true;
+}
+
 [[nodiscard]] bool
 validate_s3_settings(const ZarrS3Settings* settings)
 {
-    if (zarr::is_empty_string(settings->endpoint, "S3 endpoint is empty")) {
-        return false;
-    }
-    if (zarr::is_empty_string(settings->access_key_id,
-                              "S3 access key ID is empty")) {
-        return false;
-    }
-    if (zarr::is_empty_string(settings->secret_access_key,
-                              "S3 secret access key is empty")) {
+    zarr::S3Settings s3_settings;
+    if (!construct_s3_settings(settings, s3_settings)) {
         return false;
     }
 
-    std::string trimmed = zarr::trim(settings->bucket_name);
-    if (trimmed.length() < 3 || trimmed.length() > 63) {
+    if (s3_settings.endpoint.empty()) {
+        LOG_ERROR("S3 endpoint is empty");
+        return false;
+    }
+    if (s3_settings.access_key_id.empty()) {
+        LOG_ERROR("S3 access key ID is empty");
+        return false;
+    }
+    if (s3_settings.secret_access_key.empty()) {
+        LOG_ERROR("S3 secret access key is empty");
+        return false;
+    }
+    if (s3_settings.bucket_name.length() < 3 ||
+        s3_settings.bucket_name.length() > 63) {
         LOG_ERROR("Invalid length for S3 bucket name: ",
-                  trimmed.length(),
-                  ". Must be between 3 "
-                  "and 63 characters");
+                  s3_settings.bucket_name.length(),
+                  ". Must be between 3 and 63 characters");
         return false;
     }
 
@@ -528,13 +548,9 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     store_path_ = zarr::trim(settings->store_path);
 
     if (is_s3_acquisition(settings)) {
-        s3_settings_ = {
-            .endpoint = zarr::trim(settings->s3_settings->endpoint),
-            .bucket_name = zarr::trim(settings->s3_settings->bucket_name),
-            .access_key_id = zarr::trim(settings->s3_settings->access_key_id),
-            .secret_access_key =
-              zarr::trim(settings->s3_settings->secret_access_key),
-        };
+        s3_settings_ = zarr::S3Settings();
+        EXPECT(construct_s3_settings(settings->s3_settings, *s3_settings_),
+               "Failed to construct S3 settings");
 
         if (settings->s3_settings->region) {
             s3_settings_->region = zarr::trim(settings->s3_settings->region);

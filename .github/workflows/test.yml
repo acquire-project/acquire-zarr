@@ -139,8 +139,8 @@ jobs:
         env:
           ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
           ZARR_S3_BUCKET_NAME: ${{ env.MINIO_BUCKET }}
-          ZARR_S3_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
-          ZARR_S3_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
 
       - name: Install dependencies

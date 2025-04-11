@@ -86,8 +86,8 @@ def main():
         s3_args = [
             "--s3-endpoint", os.getenv("ZARR_S3_ENDPOINT"),
             "--s3-bucket", os.getenv("ZARR_S3_BUCKET_NAME"),
-            "--s3-access-key", os.getenv("ZARR_S3_ACCESS_KEY_ID"),
-            "--s3-secret-key", os.getenv("ZARR_S3_SECRET_ACCESS_KEY")
+            "--s3-access-key", os.getenv("AWS_ACCESS_KEY_ID"),
+            "--s3-secret-key", os.getenv("AWS_SECRET_ACCESS_KEY")
         ]
 
     outfile_path = f"zarr_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"

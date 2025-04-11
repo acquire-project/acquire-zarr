@@ -83,8 +83,6 @@ setup_stream(const BenchmarkConfig& config)
         s3_settings = {
             .endpoint = config.s3_endpoint.c_str(),
             .bucket_name = config.s3_bucket.c_str(),
-            .access_key_id = config.s3_access_key.c_str(),
-            .secret_access_key = config.s3_secret_key.c_str(),
         };
         settings.s3_settings = &s3_settings;
     }
