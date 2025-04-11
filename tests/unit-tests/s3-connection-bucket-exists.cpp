@@ -21,18 +21,6 @@ get_settings(zarr::S3Settings& settings)
     }
     settings.bucket_name = env;
 
-    if (!(env = std::getenv("AWS_ACCESS_KEY_ID"))) {
-        LOG_ERROR("AWS_ACCESS_KEY_ID not set.");
-        return false;
-    }
-    settings.access_key_id = env;
-
-    if (!(env = std::getenv("AWS_SECRET_ACCESS_KEY"))) {
-        LOG_ERROR("AWS_SECRET_ACCESS_KEY not set.");
-        return false;
-    }
-    settings.secret_access_key = env;
-
     env = std::getenv("ZARR_S3_REGION");
     if (env) {
         settings.region = env;

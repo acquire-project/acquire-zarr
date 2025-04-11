@@ -14,8 +14,6 @@ struct S3Settings
 {
     std::string endpoint;
     std::string bucket_name;
-    std::string access_key_id;
-    std::string secret_access_key;
     std::optional<std::string> region;
 };
 
