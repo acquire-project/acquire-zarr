@@ -89,8 +89,6 @@ extern "C"
     {
         const char* endpoint;
         const char* bucket_name;
-        const char* access_key_id;
-        const char* secret_access_key;
         const char* region;
     } ZarrS3Settings;
 

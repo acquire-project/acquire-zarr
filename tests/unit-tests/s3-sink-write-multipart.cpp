@@ -23,18 +23,6 @@ get_settings(zarr::S3Settings& settings)
     }
     settings.bucket_name = env;
 
-    if (!(env = std::getenv("ZARR_S3_ACCESS_KEY_ID"))) {
-        LOG_ERROR("ZARR_S3_ACCESS_KEY_ID not set.");
-        return false;
-    }
-    settings.access_key_id = env;
-
-    if (!(env = std::getenv("ZARR_S3_SECRET_ACCESS_KEY"))) {
-        LOG_ERROR("ZARR_S3_SECRET_ACCESS_KEY not set.");
-        return false;
-    }
-    settings.secret_access_key = env;
-
     env = std::getenv("ZARR_S3_REGION");
     if (env) {
         settings.region = env;
@@ -87,9 +75,7 @@ main()
             minio::s3::BaseUrl url(settings.endpoint);
             url.https = settings.endpoint.starts_with("https://");
 
-            minio::creds::StaticProvider provider(settings.access_key_id,
-                                                  settings.secret_access_key);
-
+            minio::creds::EnvAwsProvider provider;
             minio::s3::Client client(url, &provider);
             minio::s3::StatObjectArgs args;
             args.bucket = settings.bucket_name;
