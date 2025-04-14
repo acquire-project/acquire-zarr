@@ -18,14 +18,12 @@ scale_image(ConstByteSpan src, size_t& width, size_t& height)
            bytes_of_src);
 
     const int downscale = 2;
-    constexpr auto bytes_of_type = static_cast<double>(sizeof(T));
-    const double factor = 0.25;
+    constexpr auto bytes_of_type = sizeof(T);
+    const uint32_t factor = 4;
 
-    const auto w_pad = static_cast<double>(width + (width % downscale));
-    const auto h_pad = static_cast<double>(height + (height % downscale));
-
-    const auto size_downscaled =
-      static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
+    const auto w_pad = width + (width % downscale);
+    const auto h_pad = height + (height % downscale);
+    const auto size_downscaled = w_pad * h_pad * bytes_of_type / factor;
 
     ByteVector dst(size_downscaled, static_cast<std::byte>(0));
     auto* dst_as_T = reinterpret_cast<T*>(dst.data());
@@ -39,22 +37,18 @@ scale_image(ConstByteSpan src, size_t& width, size_t& height)
             size_t src_idx = row * width + col;
             const bool pad_width = (col == width - 1 && width != w_pad);
 
-            auto here = static_cast<double>(src_as_T[src_idx]);
-            auto right = static_cast<double>(
-              src_as_T[src_idx + (1 - static_cast<int>(pad_width))]);
-            auto down = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height))]);
-            auto diag = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height)) +
-                       (1 - static_cast<int>(pad_width))]);
+            T here = src_as_T[src_idx];
+            T right = src_as_T[src_idx + !pad_width];
+            T down = src_as_T[src_idx + width * (!pad_height)];
 
-            dst_as_T[dst_idx++] =
-              static_cast<T>(factor * (here + right + down + diag));
+            T diag = src_as_T[src_idx + width * (!pad_height) + (!pad_width)];
+
+            dst_as_T[dst_idx++] = (T)((here + right + down + diag) / factor);
         }
     }
 
-    width = static_cast<size_t>(w_pad) / 2;
-    height = static_cast<size_t>(h_pad) / 2;
+    width = w_pad / downscale;
+    height = h_pad / downscale;
 
     return dst;
 }
