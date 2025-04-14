@@ -224,6 +224,7 @@ def test_stream_data_to_filesystem(
             level=1,
             shuffle=1,
         )
+    settings.data_type = DataType.UINT16
 
     stream = ZarrStream(settings)
     assert stream
@@ -234,7 +235,7 @@ def test_stream_data_to_filesystem(
             settings.dimensions[1].array_size_px,
             settings.dimensions[2].array_size_px,
         ),
-        dtype=np.uint8,
+        dtype=np.uint16,
     )
     for i in range(data.shape[0]):
         data[i, :, :] = i
@@ -547,13 +548,11 @@ def test_write_transposed_array(
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-
-    stream = ZarrStream(settings)
-    assert stream
+    settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        0,
-        255,
+        -2**16,
+        2**16 - 1,
         (
             settings.dimensions[0].chunk_size_px,
             settings.dimensions[1].array_size_px,
@@ -561,9 +560,12 @@ def test_write_transposed_array(
             settings.dimensions[4].array_size_px,
             settings.dimensions[3].array_size_px,
         ),
-        dtype=np.uint8,
-    )
+        dtype=np.int32,
+        )
     data = np.transpose(data, (0, 1, 2, 4, 3))
+
+    stream = ZarrStream(settings)
+    assert stream
 
     stream.append(data)
 
@@ -572,4 +574,5 @@ def test_write_transposed_array(
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
 
+    assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
