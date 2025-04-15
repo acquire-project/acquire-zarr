@@ -123,41 +123,21 @@ class PyZarrS3Settings
     void set_bucket_name(const std::string& bucket) { bucket_name_ = bucket; }
     const std::string& bucket_name() const { return bucket_name_; }
 
-    void set_access_key_id(const std::string& access_key_id)
-    {
-        access_key_id_ = access_key_id;
-    }
-    const std::string& access_key_id() const { return access_key_id_; }
-
-    void set_secret_access_key(const std::string& secret_access_key)
-    {
-        secret_access_key_ = secret_access_key;
-    }
-    const std::string& secret_access_key() const { return secret_access_key_; }
-
     void set_region(const std::string& region) { region_ = region; }
     const std::optional<std::string>& region() const { return region_; }
 
     std::string repr() const
     {
-        const auto secret_access_key =
-          secret_access_key_.size() < 6
-            ? secret_access_key_
-            : secret_access_key_.substr(0, 5) + "...";
         const auto region =
           region_.has_value() ? ("'" + region_.value() + "'") : "None";
 
         return "S3Settings(endpoint='" + endpoint_ + "', bucket_name='" +
-               bucket_name_ + "', access_key_id='" + access_key_id_ +
-               "', secret_access_key='" + secret_access_key +
-               "', region=" + region + ")";
+               bucket_name_ + "', region=" + region + ")";
     }
 
   private:
     std::string endpoint_;
     std::string bucket_name_;
-    std::string access_key_id_;
-    std::string secret_access_key_;
     std::optional<std::string> region_;
 };
 
@@ -332,12 +312,6 @@ class PyZarrStream
             s3_bucket_name_ = s3.bucket_name();
             s3_settings.bucket_name = s3_bucket_name_.c_str();
 
-            s3_access_key_id_ = s3.access_key_id();
-            s3_settings.access_key_id = s3_access_key_id_.c_str();
-
-            s3_secret_access_key_ = s3.secret_access_key();
-            s3_settings.secret_access_key = s3_secret_access_key_.c_str();
-
             if (s3.region().has_value()) {
                 s3_region_ = s3.region().value();
                 s3_settings.region = s3_region_.c_str();
@@ -393,13 +367,79 @@ class PyZarrStream
             throw py::error_already_set();
         }
 
-        // Create a contiguous copy, but only if needed
-        py::array contiguous_data;
-        if (!(image_data.flags() & py::array::c_style)) {
+        // if the array is already contiguous, we can just write it out
+        if (image_data.flags() & py::array::c_style) {
+            write_contiguous_data(image_data);
+            return;
+        }
+
+        // just make a copy of smaller (2-dim or less) arrays
+        if (image_data.ndim() <= 2) {
             py::module np = py::module::import("numpy");
-            contiguous_data = np.attr("ascontiguousarray")(image_data);
+            py::array contiguous_data =
+              np.attr("ascontiguousarray")(image_data);
+            write_contiguous_data(contiguous_data);
+            return;
+        }
+
+        // iterate through frames
+        iterate_and_append(image_data, 0, std::vector<py::ssize_t>());
+    }
+
+    // iterate over the indices of the array until we get down to 2 dimensions,
+    // then write the frame
+    void iterate_and_append(const py::array& array,
+                            size_t dim,
+                            std::vector<py::ssize_t> indices)
+    {
+        if (dim == array.ndim() - 2) {
+            // we are down to a 2D frame - we can write it
+            py::array frame = extract_frame(array, indices);
+            write_contiguous_data(frame);
         } else {
-            contiguous_data = image_data;
+            // construct indices for this dimension
+            for (py::ssize_t i = 0; i < array.shape()[dim]; ++i) {
+                indices.push_back(i);
+                iterate_and_append(array, dim + 1, indices);
+                indices.pop_back();
+            }
+        }
+    }
+
+    // extract a 2D frame given the indices for all but the last 2 dimensions
+    py::array extract_frame(const py::array& array,
+                            const std::vector<py::ssize_t>& indices)
+    {
+        // Use Python's slicing to extract the frame
+        py::tuple args(array.ndim());
+
+        // fill the tuple with the indices for higher dimensions...
+        for (size_t i = 0; i < indices.size(); ++i) {
+            args[i] = py::int_(indices[i]);
+        }
+
+        // ... and slices for the last two
+        py::module builtins = py::module::import("builtins");
+        py::object slice_fn = builtins.attr("slice");
+        py::object none = py::none(); // equivalent to : in Python
+
+        args[array.ndim() - 2] = slice_fn(none, none, none);
+        args[array.ndim() - 1] = slice_fn(none, none, none);
+
+        // here's the frame
+        py::object frame = array.attr("__getitem__")(args);
+        return frame.cast<py::array>();
+    }
+
+    void write_contiguous_data(py::array frame)
+    {
+        // double check the frame is C-contiguous
+        py::array contiguous_data;
+        if (!(frame.flags() & py::array::c_style)) {
+            py::module np = py::module::import("numpy");
+            contiguous_data = np.attr("ascontiguousarray")(frame);
+        } else {
+            contiguous_data = frame;
         }
 
         auto buf = contiguous_data.request();
@@ -407,15 +447,21 @@ class PyZarrStream
 
         py::gil_scoped_release release;
 
-        size_t bytes_out;
-        auto status = ZarrStream_append(
-          stream_.get(), ptr, buf.itemsize * buf.size, &bytes_out);
+        size_t bytes_out, bytes_in = buf.itemsize * buf.size;
+        auto status =
+          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out);
 
         py::gil_scoped_acquire acquire;
 
         if (status != ZarrStatusCode_Success) {
             std::string err = "Failed to append data to Zarr stream: " +
                               std::string(Zarr_get_status_message(status));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        } else if (bytes_out != bytes_in) {
+            std::string err = "Expected to write " + std::to_string(bytes_in) +
+                              " bytes, wrote " + std::to_string(bytes_out) +
+                              ".";
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }
@@ -460,8 +506,6 @@ class PyZarrStream
 
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
-    std::string s3_access_key_id_;
-    std::string s3_secret_access_key_;
     std::string s3_region_;
 };
 
@@ -538,12 +582,6 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("bucket_name"))
               settings.set_bucket_name(
                 kwargs["bucket_name"].cast<std::string>());
-          if (kwargs.contains("access_key_id"))
-              settings.set_access_key_id(
-                kwargs["access_key_id"].cast<std::string>());
-          if (kwargs.contains("secret_access_key"))
-              settings.set_secret_access_key(
-                kwargs["secret_access_key"].cast<std::string>());
           if (kwargs.contains("region"))
               settings.set_region(kwargs["region"].cast<std::string>());
           return settings;
@@ -555,12 +593,6 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("bucket_name",
                     &PyZarrS3Settings::bucket_name,
                     &PyZarrS3Settings::set_bucket_name)
-      .def_property("access_key_id",
-                    &PyZarrS3Settings::access_key_id,
-                    &PyZarrS3Settings::set_access_key_id)
-      .def_property("secret_access_key",
-                    &PyZarrS3Settings::secret_access_key,
-                    &PyZarrS3Settings::set_secret_access_key)
       .def_property(
         "region", &PyZarrS3Settings::region, &PyZarrS3Settings::set_region);
 

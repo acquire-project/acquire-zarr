@@ -15,6 +15,8 @@ from numcodecs import blosc as ncblosc
 from zarr.codecs import blosc as zblosc
 import s3fs
 
+dotenv.load_dotenv()
+
 from acquire_zarr import (
     StreamSettings,
     ZarrStream,
@@ -67,20 +69,17 @@ def settings():
 
 @pytest.fixture(scope="module")
 def s3_settings():
-    dotenv.load_dotenv()
     if (
         "ZARR_S3_ENDPOINT" not in os.environ
         or "ZARR_S3_BUCKET_NAME" not in os.environ
-        or "ZARR_S3_ACCESS_KEY_ID" not in os.environ
-        or "ZARR_S3_SECRET_ACCESS_KEY" not in os.environ
+        or "AWS_ACCESS_KEY_ID" not in os.environ
+        or "AWS_SECRET_ACCESS_KEY" not in os.environ
     ):
         yield None
     else:
         settings = S3Settings(
             endpoint=os.environ["ZARR_S3_ENDPOINT"],
             bucket_name=os.environ["ZARR_S3_BUCKET_NAME"],
-            access_key_id=os.environ["ZARR_S3_ACCESS_KEY_ID"],
-            secret_access_key=os.environ["ZARR_S3_SECRET_ACCESS_KEY"],
         )
         if "ZARR_S3_REGION" in os.environ:
             settings.region = os.environ["ZARR_S3_REGION"]
@@ -225,6 +224,7 @@ def test_stream_data_to_filesystem(
             level=1,
             shuffle=1,
         )
+    settings.data_type = DataType.UINT16
 
     stream = ZarrStream(settings)
     assert stream
@@ -235,7 +235,7 @@ def test_stream_data_to_filesystem(
             settings.dimensions[1].array_size_px,
             settings.dimensions[2].array_size_px,
         ),
-        dtype=np.uint8,
+        dtype=np.uint16,
     )
     for i in range(data.shape[0]):
         data[i, :, :] = i
@@ -395,8 +395,8 @@ def test_stream_data_to_s3(
     store = zarr.storage.FsspecStore.from_url(
         f"s3://{settings.s3.bucket_name}/{settings.store_path}",
         storage_options={
-            "key": s3_settings.access_key_id,
-            "secret": s3_settings.secret_access_key,
+            "key": os.environ.get("AWS_ACCESS_KEY_ID"),
+            "secret": os.environ.get("AWS_SECRET_ACCESS_KEY"),
             "client_kwargs": {"endpoint_url": s3_settings.endpoint},
         },
     )
@@ -437,8 +437,8 @@ def test_stream_data_to_s3(
 
     # cleanup
     s3 = s3fs.S3FileSystem(
-        key=settings.s3.access_key_id,
-        secret=settings.s3.secret_access_key,
+        key=os.environ.get("AWS_ACCESS_KEY_ID"),
+        secret=os.environ.get("AWS_SECRET_ACCESS_KEY"),
         client_kwargs={"endpoint_url": settings.s3.endpoint},
     )
     s3.rm(f"{settings.s3.bucket_name}/{settings.store_path}", recursive=True)
@@ -548,13 +548,11 @@ def test_write_transposed_array(
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-
-    stream = ZarrStream(settings)
-    assert stream
+    settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        0,
-        255,
+        -2**16,
+        2**16 - 1,
         (
             settings.dimensions[0].chunk_size_px,
             settings.dimensions[1].array_size_px,
@@ -562,9 +560,12 @@ def test_write_transposed_array(
             settings.dimensions[4].array_size_px,
             settings.dimensions[3].array_size_px,
         ),
-        dtype=np.uint8,
-    )
+        dtype=np.int32,
+        )
     data = np.transpose(data, (0, 1, 2, 4, 3))
+
+    stream = ZarrStream(settings)
+    assert stream
 
     stream.append(data)
 
@@ -573,4 +574,5 @@ def test_write_transposed_array(
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
 
+    assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
