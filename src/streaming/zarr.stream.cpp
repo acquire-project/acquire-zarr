@@ -6,18 +6,7 @@
 #include "zarrv3.array.writer.hh"
 #include "sink.hh"
 
-#include <blosc.h>
-#include <omp.h>
-
 #include <filesystem>
-
-#ifdef min
-#undef min
-#endif
-
-#ifdef max
-#undef max
-#endif
 
 namespace fs = std::filesystem;
 
@@ -34,27 +23,33 @@ is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
     return nullptr != settings->compression_settings;
 }
 
+zarr::S3Settings
+construct_s3_settings(const ZarrS3Settings* settings)
+{
+    zarr::S3Settings s3_settings{ .endpoint = zarr::trim(settings->endpoint),
+                                  .bucket_name =
+                                    zarr::trim(settings->bucket_name) };
+
+    if (settings->region != nullptr) {
+        s3_settings.region = zarr::trim(settings->region);
+    }
+
+    return s3_settings;
+}
+
 [[nodiscard]] bool
-validate_s3_settings(const ZarrS3Settings* settings)
+validate_s3_settings(const ZarrS3Settings* settings, std::string& error)
 {
     if (zarr::is_empty_string(settings->endpoint, "S3 endpoint is empty")) {
-        return false;
-    }
-    if (zarr::is_empty_string(settings->access_key_id,
-                              "S3 access key ID is empty")) {
-        return false;
-    }
-    if (zarr::is_empty_string(settings->secret_access_key,
-                              "S3 secret access key is empty")) {
+        error = "S3 endpoint is empty";
         return false;
     }
 
     std::string trimmed = zarr::trim(settings->bucket_name);
     if (trimmed.length() < 3 || trimmed.length() > 63) {
-        LOG_ERROR("Invalid length for S3 bucket name: ",
-                  trimmed.length(),
-                  ". Must be between 3 "
-                  "and 63 characters");
+        error = "Invalid length for S3 bucket name: " +
+                std::to_string(trimmed.length()) +
+                ". Must be between 3 and 63 characters";
         return false;
     }
 
@@ -62,7 +57,7 @@ validate_s3_settings(const ZarrS3Settings* settings)
 }
 
 [[nodiscard]] bool
-validate_filesystem_store_path(std::string_view data_root)
+validate_filesystem_store_path(std::string_view data_root, std::string& error)
 {
     fs::path path(data_root);
     fs::path parent_path = path.parent_path();
@@ -72,9 +67,8 @@ validate_filesystem_store_path(std::string_view data_root)
 
     // parent path must exist and be a directory
     if (!fs::exists(parent_path) || !fs::is_directory(parent_path)) {
-        LOG_ERROR("Parent path '",
-                  parent_path,
-                  "' does not exist or is not a directory");
+        error = "Parent path '" + parent_path.string() +
+                "' does not exist or is not a directory";
         return false;
     }
 
@@ -85,7 +79,7 @@ validate_filesystem_store_path(std::string_view data_root)
                 fs::perms::others_write)) != fs::perms::none;
 
     if (!is_writable) {
-        LOG_ERROR("Parent path '", parent_path, "' is not writable");
+        error = "Parent path '" + parent_path.string() + "' is not writable";
         return false;
     }
 
@@ -93,44 +87,41 @@ validate_filesystem_store_path(std::string_view data_root)
 }
 
 [[nodiscard]] bool
-validate_compression_settings(const ZarrCompressionSettings* settings)
+validate_compression_settings(const ZarrCompressionSettings* settings,
+                              std::string& error)
 {
     if (settings->compressor >= ZarrCompressorCount) {
-        LOG_ERROR("Invalid compressor: ", settings->compressor);
+        error = "Invalid compressor: " + std::to_string(settings->compressor);
         return false;
     }
 
     if (settings->codec >= ZarrCompressionCodecCount) {
-        LOG_ERROR("Invalid compression codec: ", settings->codec);
+        error = "Invalid compression codec: " + std::to_string(settings->codec);
         return false;
     }
 
     // if compressing, we require a compression codec
     if (settings->compressor != ZarrCompressor_None &&
         settings->codec == ZarrCompressionCodec_None) {
-        LOG_ERROR("Compression codec must be set when using a compressor");
+        error = "Compression codec must be set when using a compressor";
         return false;
     }
 
     if (settings->level > 9) {
-        LOG_ERROR("Invalid compression level: ",
-                  settings->level,
-                  ". Must be between 0 and 9");
+        error =
+          "Invalid compression level: " + std::to_string(settings->level) +
+          ". Must be between 0 and 9";
         return false;
     }
 
     if (settings->shuffle != BLOSC_NOSHUFFLE &&
         settings->shuffle != BLOSC_SHUFFLE &&
         settings->shuffle != BLOSC_BITSHUFFLE) {
-        LOG_ERROR("Invalid shuffle: ",
-                  settings->shuffle,
-                  ". Must be ",
-                  BLOSC_NOSHUFFLE,
-                  " (no shuffle), ",
-                  BLOSC_SHUFFLE,
-                  " (byte  shuffle), or ",
-                  BLOSC_BITSHUFFLE,
-                  " (bit shuffle)");
+        error = "Invalid shuffle: " + std::to_string(settings->shuffle) +
+                ". Must be " + std::to_string(BLOSC_NOSHUFFLE) +
+                " (no shuffle), " + std::to_string(BLOSC_SHUFFLE) +
+                " (byte  shuffle), or " + std::to_string(BLOSC_BITSHUFFLE) +
+                " (bit shuffle)";
         return false;
     }
 
@@ -162,108 +153,33 @@ validate_custom_metadata(std::string_view metadata)
 [[nodiscard]] bool
 validate_dimension(const ZarrDimensionProperties* dimension,
                    ZarrVersion version,
-                   bool is_append)
+                   bool is_append,
+                   std::string& error)
 {
     if (zarr::is_empty_string(dimension->name, "Dimension name is empty")) {
+        error = "Dimension name is empty";
         return false;
     }
 
     if (dimension->type >= ZarrDimensionTypeCount) {
-        LOG_ERROR("Invalid dimension type: ", dimension->type);
+        error = "Invalid dimension type: " + std::to_string(dimension->type);
         return false;
     }
 
     if (!is_append && dimension->array_size_px == 0) {
-        LOG_ERROR("Array size must be nonzero");
+        error = "Array size must be nonzero";
         return false;
     }
 
     if (dimension->chunk_size_px == 0) {
-        LOG_ERROR("Invalid chunk size: ", dimension->chunk_size_px);
+        error =
+          "Invalid chunk size: " + std::to_string(dimension->chunk_size_px);
         return false;
     }
 
     if (version == ZarrVersion_3 && dimension->shard_size_chunks == 0) {
-        LOG_ERROR("Shard size must be nonzero");
+        error = "Shard size must be nonzero";
         return false;
-    }
-
-    return true;
-}
-
-[[nodiscard]] bool
-validate_settings(const struct ZarrStreamSettings_s* settings)
-{
-    if (!settings) {
-        LOG_ERROR("Null pointer: settings");
-        return false;
-    }
-
-    auto version = settings->version;
-    if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
-        LOG_ERROR("Invalid Zarr version: ", version);
-        return false;
-    }
-
-    if (settings->store_path == nullptr) {
-        LOG_ERROR("Null pointer: store_path");
-        return false;
-    }
-    std::string_view store_path(settings->store_path);
-
-    // we require the store path (root of the dataset) to be nonempty
-    if (store_path.empty()) {
-        LOG_ERROR("Store path is empty");
-        return false;
-    }
-
-    if ((is_s3_acquisition(settings) &&
-         !validate_s3_settings(settings->s3_settings)) ||
-        (!is_s3_acquisition(settings) &&
-         !validate_filesystem_store_path(store_path))) {
-        return false;
-    }
-
-    if (settings->data_type >= ZarrDataTypeCount) {
-        LOG_ERROR("Invalid data type: ", settings->data_type);
-        return false;
-    }
-
-    if (is_compressed_acquisition(settings) &&
-        !validate_compression_settings(settings->compression_settings)) {
-        return false;
-    }
-
-    if (settings->dimensions == nullptr) {
-        LOG_ERROR("Null pointer: dimensions");
-        return false;
-    }
-
-    // we must have at least 3 dimensions
-    const size_t ndims = settings->dimension_count;
-    if (ndims < 3) {
-        LOG_ERROR(
-          "Invalid number of dimensions: ", ndims, ". Must be at least 3");
-        return false;
-    }
-
-    // check the final dimension (width), must be space
-    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
-        LOG_ERROR("Last dimension must be of type Space");
-        return false;
-    }
-
-    // check the penultimate dimension (height), must be space
-    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
-        LOG_ERROR("Second to last dimension must be of type Space");
-        return false;
-    }
-
-    // validate the dimensions individually
-    for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(settings->dimensions + i, version, i == 0)) {
-            return false;
-        }
     }
 
     return true;
@@ -368,9 +284,7 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
   : error_()
   , frame_buffer_offset_(0)
 {
-    if (!validate_settings(settings)) {
-        throw std::runtime_error("Invalid Zarr stream settings");
-    }
+    EXPECT(validate_settings_(settings), error_);
 
     commit_settings_(settings);
 
@@ -521,6 +435,87 @@ ZarrStream_s::is_compressed_acquisition_() const
     return compression_settings_.has_value();
 }
 
+bool
+ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
+{
+    if (!settings) {
+        error_ = "Null pointer: settings";
+        return false;
+    }
+
+    auto version = settings->version;
+    if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
+        error_ = "Invalid Zarr version: " + std::to_string(version);
+        return false;
+    }
+
+    if (settings->store_path == nullptr) {
+        error_ = "Null pointer: store_path";
+        return false;
+    }
+    std::string_view store_path(settings->store_path);
+
+    // we require the store path (root of the dataset) to be nonempty
+    if (store_path.empty()) {
+        error_ = "Store path is empty";
+        return false;
+    }
+
+    if (is_s3_acquisition(settings)) {
+        if (!validate_s3_settings(settings->s3_settings, error_)) {
+            return false;
+        }
+    } else if (!validate_filesystem_store_path(store_path, error_)) {
+        return false;
+    }
+
+    if (settings->data_type >= ZarrDataTypeCount) {
+        error_ = "Invalid data type: " + std::to_string(settings->data_type);
+        return false;
+    }
+
+    if (is_compressed_acquisition(settings) &&
+        !validate_compression_settings(settings->compression_settings,
+                                       error_)) {
+        return false;
+    }
+
+    if (settings->dimensions == nullptr) {
+        error_ = "Null pointer: dimensions";
+        return false;
+    }
+
+    // we must have at least 3 dimensions
+    const size_t ndims = settings->dimension_count;
+    if (ndims < 3) {
+        error_ = "Invalid number of dimensions: " + std::to_string(ndims) +
+                 ". Must be at least 3";
+        return false;
+    }
+
+    // check the final dimension (width), must be space
+    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+        error_ = "Last dimension must be of type Space";
+        return false;
+    }
+
+    // check the penultimate dimension (height), must be space
+    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+        error_ = "Second to last dimension must be of type Space";
+        return false;
+    }
+
+    // validate the dimensions individually
+    for (size_t i = 0; i < ndims; ++i) {
+        if (!validate_dimension(
+              settings->dimensions + i, version, i == 0, error_)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
@@ -528,17 +523,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     store_path_ = zarr::trim(settings->store_path);
 
     if (is_s3_acquisition(settings)) {
-        s3_settings_ = {
-            .endpoint = zarr::trim(settings->s3_settings->endpoint),
-            .bucket_name = zarr::trim(settings->s3_settings->bucket_name),
-            .access_key_id = zarr::trim(settings->s3_settings->access_key_id),
-            .secret_access_key =
-              zarr::trim(settings->s3_settings->secret_access_key),
-        };
-
-        if (settings->s3_settings->region) {
-            s3_settings_->region = zarr::trim(settings->s3_settings->region);
-        }
+        s3_settings_ = construct_s3_settings(settings->s3_settings);
     }
 
     if (is_compressed_acquisition(settings)) {

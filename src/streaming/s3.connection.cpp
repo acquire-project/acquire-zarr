@@ -1,6 +1,7 @@
 #include "macros.hh"
 #include "s3.connection.hh"
 
+#include <miniocpp/client.h>
 #include <miniocpp/utils.h>
 
 #include <list>
@@ -33,21 +34,30 @@ make_url(const std::string& endpoint, std::optional<std::string> region)
 }
 } // namespace
 
+struct zarr::S3Connection::Impl
+{
+    std::unique_ptr<minio::s3::Client> client;
+    std::unique_ptr<minio::creds::Provider> provider;
+};
+
 zarr::S3Connection::S3Connection(const S3Settings& settings)
+  : impl_(std::make_unique<Impl>())
 {
     auto url = make_url(settings.endpoint, settings.region);
 
-    provider_ = std::make_unique<minio::creds::StaticProvider>(
-      settings.access_key_id, settings.secret_access_key);
-    client_ = std::make_unique<minio::s3::Client>(url, provider_.get());
+    impl_->provider = std::make_unique<minio::creds::EnvAwsProvider>();
+    impl_->client =
+      std::make_unique<minio::s3::Client>(url, impl_->provider.get());
 
-    CHECK(client_);
+    CHECK(impl_->client);
 }
+
+zarr::S3Connection::~S3Connection() = default;
 
 bool
 zarr::S3Connection::is_connection_valid()
 {
-    return static_cast<bool>(client_->ListBuckets());
+    return static_cast<bool>(impl_->client->ListBuckets());
 }
 
 bool
@@ -56,7 +66,7 @@ zarr::S3Connection::bucket_exists(std::string_view bucket_name)
     minio::s3::BucketExistsArgs args;
     args.bucket = bucket_name;
 
-    auto response = client_->BucketExists(args);
+    auto response = impl_->client->BucketExists(args);
     return response.exist;
 }
 
@@ -68,7 +78,7 @@ zarr::S3Connection::object_exists(std::string_view bucket_name,
     args.bucket = bucket_name;
     args.object = object_name;
 
-    auto response = client_->StatObject(args);
+    auto response = impl_->client->StatObject(args);
     // casts to true if response code in 200 range and error message is empty
     return static_cast<bool>(response);
 }
@@ -91,7 +101,7 @@ zarr::S3Connection::put_object(std::string_view bucket_name,
     args.bucket = bucket_name;
     args.object = object_name;
 
-    auto response = client_->PutObject(args);
+    auto response = impl_->client->PutObject(args);
     if (!response) {
         LOG_ERROR("Failed to put object ",
                   object_name,
@@ -117,7 +127,7 @@ zarr::S3Connection::delete_object(std::string_view bucket_name,
     args.bucket = bucket_name;
     args.object = object_name;
 
-    auto response = client_->RemoveObject(args);
+    auto response = impl_->client->RemoveObject(args);
     if (!response) {
         LOG_ERROR("Failed to delete object ",
                   object_name,
@@ -144,7 +154,7 @@ zarr::S3Connection::create_multipart_object(std::string_view bucket_name,
     args.bucket = bucket_name;
     args.object = object_name;
 
-    auto response = client_->CreateMultipartUpload(args);
+    auto response = impl_->client->CreateMultipartUpload(args);
     if (!response) {
         LOG_ERROR("Failed to create multipart object ",
                   object_name,
@@ -187,7 +197,7 @@ zarr::S3Connection::upload_multipart_object_part(std::string_view bucket_name,
     args.upload_id = upload_id;
     args.data = data_buffer;
 
-    auto response = client_->UploadPart(args);
+    auto response = impl_->client->UploadPart(args);
     if (!response) {
         LOG_ERROR("Failed to upload part ",
                   part_number,
@@ -208,7 +218,7 @@ zarr::S3Connection::complete_multipart_object(
   std::string_view bucket_name,
   std::string_view object_name,
   std::string_view upload_id,
-  const std::list<minio::s3::Part>& parts)
+                                              const std::vector<S3Part>& parts)
 {
     EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
     EXPECT(!object_name.empty(), "Object name must not be empty.");
@@ -221,9 +231,13 @@ zarr::S3Connection::complete_multipart_object(
     args.bucket = bucket_name;
     args.object = object_name;
     args.upload_id = upload_id;
-    args.parts = parts;
+    args.parts.clear();
+    for (const auto& part : parts) {
+        args.parts.emplace_back(part.number, part.etag);
+        args.parts.back().size = part.size;
+    }
 
-    auto response = client_->CompleteMultipartUpload(args);
+    auto response = impl_->client->CompleteMultipartUpload(args);
     if (!response) {
         LOG_ERROR("Failed to complete multipart object ",
                   object_name,

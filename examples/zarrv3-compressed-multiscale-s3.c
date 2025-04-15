@@ -19,11 +19,11 @@ main()
     };
 
     // Configure S3
+    // Ensure that you have set your S3 credentials in the environment variables
+    // AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
     ZarrS3Settings s3 = {
         .endpoint = "http://192.168.1.57:9000",
         .bucket_name = "acquire-test",
-        .access_key_id = "tv4MtRQPbtfwKxMusI0I",
-        .secret_access_key = "W85Cnb4qd7bhPaTsqkt8aEKoO3XtXm49o9nMtD5O",
     };
 
     // Configure stream settings

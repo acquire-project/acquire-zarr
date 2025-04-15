@@ -205,6 +205,49 @@ stream = aqz.ZarrStream(settings)
 stream.append(my_frame_data)
 ```
 
+### S3
+
+The library supports writing directly to S3-compatible storage. Configuration requires specifying the endpoint, bucket name, and region:
+
+```c
+ZarrStreamSettings settings = { /* ... */ };
+
+// Configure S3 storage
+ZarrS3Settings s3_settings = {
+    .endpoint = "https://s3.amazonaws.com",
+    .bucket_name = "my-zarr-data",
+    .region = "us-east-1"
+};
+
+settings.s3_settings = &s3_settings;
+```
+
+In Python, S3 configuration looks like:
+
+```python
+import acquire_zarr as aqz
+
+settings = aqz.StreamSettings()
+# ...
+
+# Configure S3 storage
+s3_settings = aqz.S3Settings(
+    endpoint="s3.amazonaws.com",
+    bucket_name="my-zarr-data",
+    region="us-east-1"
+)
+
+# Apply S3 settings to your stream configuration
+settings.s3 = s3_settings
+```
+
+The library authenticates with S3 exclusively through environment variables:
+
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
+
+These must be set in the environment where your application runs.
+
 [Zarr]: https://zarr.readthedocs.io/en/stable/spec/v2.html
 
 [Blosc]: https://github.com/Blosc/c-blosc

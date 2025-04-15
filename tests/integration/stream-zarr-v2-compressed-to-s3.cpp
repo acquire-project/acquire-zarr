@@ -48,14 +48,14 @@ get_credentials()
     }
     s3_bucket_name = env;
 
-    if (!(env = std::getenv("ZARR_S3_ACCESS_KEY_ID"))) {
-        LOG_ERROR("ZARR_S3_ACCESS_KEY_ID not set.");
+    if (!(env = std::getenv("AWS_ACCESS_KEY_ID"))) {
+        LOG_ERROR("AWS_ACCESS_KEY_ID not set.");
         return false;
     }
     s3_access_key_id = env;
 
-    if (!(env = std::getenv("ZARR_S3_SECRET_ACCESS_KEY"))) {
-        LOG_ERROR("ZARR_S3_SECRET_ACCESS_KEY not set.");
+    if (!(env = std::getenv("AWS_SECRET_ACCESS_KEY"))) {
+        LOG_ERROR("AWS_SECRET_ACCESS_KEY not set.");
         return false;
     }
     s3_secret_access_key = env;
@@ -169,8 +169,6 @@ setup()
     ZarrS3Settings s3_settings{
         .endpoint = s3_endpoint.c_str(),
         .bucket_name = s3_bucket_name.c_str(),
-        .access_key_id = s3_access_key_id.c_str(),
-        .secret_access_key = s3_secret_access_key.c_str(),
     };
     if (!s3_region.empty()) {
         s3_settings.region = s3_region.c_str();
