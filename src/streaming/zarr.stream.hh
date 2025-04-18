@@ -2,6 +2,7 @@
 
 #include "array.writer.hh"
 #include "definitions.hh"
+#include "downsampler.hh"
 #include "frame.queue.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
@@ -73,11 +74,11 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
+    std::optional<zarr::Downsampler> downsampler_;
+
     std::vector<std::unique_ptr<zarr::ArrayWriter>> writers_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
       metadata_sinks_;
-
-    std::unordered_map<size_t, std::optional<ByteVector>> scaled_frames_;
 
     bool is_s3_acquisition_() const;
     bool is_compressed_acquisition_() const;
@@ -116,8 +117,8 @@ struct ZarrStream_s
     /** @brief Create the writers. */
     [[nodiscard]] bool create_writers_();
 
-    /** @brief Create placeholders for multiscale frames. */
-    void create_scaled_frames_();
+    /** @brief Create a downsampler for multiscale. */
+    [[nodiscard]] bool create_downsampler_();
 
     /** @brief Create the metadata sinks. */
     [[nodiscard]] bool create_metadata_sinks_();
@@ -130,6 +131,9 @@ struct ZarrStream_s
 
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;
+
+    /** @brief Create a configuration for a full-resolution ArrayWriter. */
+    zarr::ArrayWriterConfig make_array_writer_config_() const;
 
     /** @brief Process the frame queue. */
     void process_frame_queue_();

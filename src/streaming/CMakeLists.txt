@@ -13,6 +13,8 @@ add_library(${tgt}
         zarr.dimension.cpp
         frame.queue.hh
         frame.queue.cpp
+        downsampler.hh
+        downsampler.cpp
         zarr.stream.hh
         zarr.stream.cpp
         zarr.common.hh

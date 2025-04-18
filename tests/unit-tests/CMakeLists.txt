@@ -30,6 +30,7 @@ set(tests
         zarrv3-writer-write-ragged-internal-dim
         partial-append
         frame-queue
+        downsampler
 )
 
 foreach (name ${tests})
