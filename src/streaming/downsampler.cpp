@@ -158,11 +158,13 @@ bool
 zarr::Downsampler::is_3d_downsample_() const
 {
     // the width and depth dimensions are always spatial -- if the 3rd dimension
-    // is also spatial, then we downsample in 3 dimensions
+    // is also spatial and nontrivial, then we downsample in 3 dimensions
     const auto& dims = writer_configurations_.at(0).dimensions;
     const auto ndims = dims->ndims();
 
-    return dims->at(ndims - 3).type == ZarrDimensionType_Space;
+    const auto& third_dim = dims->at(ndims - 3);
+    return third_dim.type == ZarrDimensionType_Space &&
+           third_dim.array_size_px > 1;
 }
 
 size_t

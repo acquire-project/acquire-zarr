@@ -872,12 +872,16 @@ ZarrStream_s::make_ome_metadata_() const
     };
 
     for (auto i = 1; i < writers_.size(); ++i) {
-        const auto& dim3 = dimensions_->at(ndims - 3);
-        if (dim3.type == ZarrDimensionType_Space) {
-            scales[ndims - 3] = std::pow(2, i);
+        const auto& config = downsampler_->writer_configurations().at(i);
+
+        for (auto j = 0; j < ndims; ++j) {
+            const auto base_size = dimensions_->at(j).array_size_px;
+            const auto down_size = config.dimensions->at(j).array_size_px;
+            CHECK(down_size > 0);
+
+            scales[j] =
+              static_cast<double>((base_size + down_size - 1) / down_size);
         }
-        scales[ndims - 2] = std::pow(2, i);
-        scales[ndims - 1] = std::pow(2, i);
 
         multiscales[0]["datasets"].push_back({
           { "path", std::to_string(i) },
