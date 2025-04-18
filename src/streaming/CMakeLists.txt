@@ -11,6 +11,8 @@ add_library(${tgt}
         acquire.zarr.cpp
         zarr.dimension.hh
         zarr.dimension.cpp
+        frame.queue.hh
+        frame.queue.cpp
         downsampler.hh
         downsampler.cpp
         zarr.stream.hh
@@ -36,8 +38,6 @@ add_library(${tgt}
         zarrv2.array.writer.cpp
         zarrv3.array.writer.hh
         zarrv3.array.writer.cpp
-        vectorized.file.writer.hh
-        vectorized.file.writer.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 
