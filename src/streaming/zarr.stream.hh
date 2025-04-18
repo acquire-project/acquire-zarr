@@ -1,16 +1,19 @@
 #pragma once
 
-#include "zarr.dimension.hh"
-#include "thread.pool.hh"
-#include "s3.connection.hh"
-#include "sink.hh"
 #include "array.writer.hh"
 #include "definitions.hh"
+#include "frame.queue.hh"
+#include "s3.connection.hh"
+#include "sink.hh"
+#include "thread.pool.hh"
+#include "zarr.dimension.hh"
 
 #include <nlohmann/json.hpp>
 
+#include <condition_variable>
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -31,8 +34,8 @@ struct ZarrStream_s
     /**
      * @brief Write custom metadata to the stream.
      * @param custom_metadata JSON-formatted custom metadata to write.
-     * @param overwrite If true, overwrite any existing custom metadata. Otherwise,
-     * fail if custom metadata has already been written.
+     * @param overwrite If true, overwrite any existing custom metadata.
+     * Otherwise, fail if custom metadata has already been written.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
@@ -59,6 +62,13 @@ struct ZarrStream_s
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
+
+    std::atomic<bool> process_frames_{ true };
+    std::mutex frame_queue_mutex_;
+    std::condition_variable frame_queue_not_full_cv_;  // Space is available
+    std::condition_variable frame_queue_not_empty_cv_; // Data is available
+    std::condition_variable frame_queue_finished_cv_;  // Done processing
+    std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
@@ -100,6 +110,9 @@ struct ZarrStream_s
     /** @brief Create the data store. */
     [[nodiscard]] bool create_store_();
 
+    /** @brief Initialize the frame queue. */
+    [[nodiscard]] bool init_frame_queue_();
+
     /** @brief Create the writers. */
     [[nodiscard]] bool create_writers_();
 
@@ -118,7 +131,26 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;
 
+    /** @brief Process the frame queue. */
+    void process_frame_queue_();
+
+    /** @brief Wait for the frame queue to finish processing. */
+    void finalize_frame_queue_();
+
+    /**
+     * @brief Write a frame to the chunk buffers.
+     * @note This function splits the incoming frame into tiles and writes them
+     * to the chunk buffers. If we are writing multiscale frames, the function
+     * calls write_multiscale_frames_() to write the scaled frames.
+     * @param data The frame data to write.
+     * @return The number of bytes written of the full-resolution frame.
+     */
     size_t write_frame_(ConstByteSpan data);
+
+    /**
+     * @brief Downsample the full-resolution frame to create multiscale frames.
+     * @param data The full-resolution frame data.
+     */
     void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);

@@ -297,6 +297,9 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     // create the data store
     EXPECT(create_store_(), error_);
 
+    // initialize the frame queue
+    EXPECT(init_frame_queue_(), error_);
+
     // allocate writers
     EXPECT(create_writers_(), error_);
 
@@ -342,12 +345,19 @@ ZarrStream::append(const void* data_, size_t nbytes)
             frame_buffer_offset_ += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
-            // ready to flush the frame buffer
+            // ready to enqueue the frame buffer
             if (frame_buffer_offset_ == bytes_of_frame) {
-                if (write_frame_(frame_buffer_) < bytes_of_frame) {
-                    break; // critical error
+                std::unique_lock lock(frame_queue_mutex_);
+                while (!frame_queue_->push(frame_buffer_) && process_frames_) {
+                    frame_queue_not_full_cv_.wait(lock);
                 }
 
+                if (process_frames_) {
+                    frame_queue_not_empty_cv_.notify_one();
+                } else {
+                    LOG_DEBUG("Stopping frame processing");
+                    break;
+                }
                 data += bytes_to_copy;
                 frame_buffer_offset_ = 0;
             }
@@ -356,8 +366,18 @@ ZarrStream::append(const void* data_, size_t nbytes)
             frame_buffer_offset_ = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            if (write_frame_({ data, bytes_of_frame }) < bytes_of_frame) {
-                break; // critical error
+            ConstByteSpan frame(data, bytes_of_frame);
+
+            std::unique_lock lock(frame_queue_mutex_);
+            while (!frame_queue_->push(frame) && process_frames_) {
+                frame_queue_not_full_cv_.wait(lock);
+            }
+
+            if (process_frames_) {
+                frame_queue_not_empty_cv_.notify_one();
+            } else {
+                LOG_DEBUG("Stopping frame processing");
+                break;
             }
 
             bytes_written += bytes_of_frame;
@@ -620,6 +640,49 @@ ZarrStream_s::create_store_()
 }
 
 bool
+ZarrStream_s::init_frame_queue_()
+{
+    if (frame_queue_) {
+        return true; // already initialized
+    }
+
+    if (!thread_pool_) {
+        set_error_("Thread pool is not initialized");
+        return false;
+    }
+
+    const auto frame_size = dimensions_->width_dim().array_size_px *
+                            dimensions_->height_dim().array_size_px *
+                            zarr::bytes_of_type(dtype_);
+
+    // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
+    const auto buffer_size_bytes = 2ULL << 30;
+    const auto frame_count = std::max(10ULL, buffer_size_bytes / frame_size);
+
+    try {
+        frame_queue_ =
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size);
+
+        EXPECT(thread_pool_->push_job([this](std::string& err) {
+            try {
+                process_frame_queue_();
+            } catch (const std::exception& e) {
+                err = e.what();
+                return false;
+            }
+
+            return true;
+        }),
+               "Failed to push job to thread pool.");
+    } catch (const std::exception& e) {
+        set_error_("Error creating frame queue: " + std::string(e.what()));
+        return false;
+    }
+
+    return true;
+}
+
+bool
 ZarrStream_s::create_writers_()
 {
     writers_.clear();
@@ -873,6 +936,61 @@ ZarrStream_s::make_ome_metadata_() const
     return ome;
 }
 
+void
+ZarrStream_s::process_frame_queue_()
+{
+    if (!frame_queue_) {
+        set_error_("Frame queue is not initialized");
+        return;
+    }
+
+    const auto bytes_of_frame = frame_buffer_.size();
+
+    std::vector<std::byte> frame;
+    while (process_frames_ || !frame_queue_->empty()) {
+        std::unique_lock lock(frame_queue_mutex_);
+        while (frame_queue_->empty() && process_frames_) {
+            frame_queue_not_empty_cv_.wait(lock);
+        }
+
+        if (!process_frames_ && frame_queue_->empty()) {
+            break;
+        }
+
+        if (!frame_queue_->pop(frame)) {
+            continue;
+        }
+
+        // Signal that there's space available in the queue
+        frame_queue_not_full_cv_.notify_one();
+
+        EXPECT(write_frame_(frame) == bytes_of_frame,
+               "Failed to write frame to writer");
+    }
+
+    CHECK(frame_queue_->empty());
+    std::unique_lock lock(frame_queue_mutex_);
+    frame_queue_finished_cv_.notify_all();
+}
+
+void
+ZarrStream_s::finalize_frame_queue_()
+{
+    process_frames_ = false;
+
+    // Wake up all potentially waiting threads
+    {
+        std::unique_lock lock(frame_queue_mutex_);
+        frame_queue_not_empty_cv_.notify_all();
+        frame_queue_not_full_cv_.notify_all();
+    }
+
+    // Wait for frame processing to complete
+    std::unique_lock lock(frame_queue_mutex_);
+    frame_queue_finished_cv_.wait(lock,
+                                  [this] { return frame_queue_->empty(); });
+}
+
 size_t
 ZarrStream_s::write_frame_(ConstByteSpan data)
 {
@@ -998,6 +1116,8 @@ finalize_stream(struct ZarrStream_s* stream)
         }
     }
     stream->metadata_sinks_.clear();
+
+    stream->finalize_frame_queue_();
 
     for (auto i = 0; i < stream->writers_.size(); ++i) {
         if (!finalize_array(std::move(stream->writers_[i]))) {
