@@ -576,3 +576,59 @@ def test_write_transposed_array(
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
+
+
+def test_column_ragged_sharding(
+        store_path: Path,
+):
+    settings = StreamSettings(
+        dimensions=[
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=2,
+                chunk_size_px=1,
+                shard_size_chunks=2,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=1080,
+                chunk_size_px=64,
+                shard_size_chunks=2,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=1080,
+                chunk_size_px=64,
+                shard_size_chunks=2,
+            ),
+        ]
+    )
+    settings.store_path = str(store_path / "test.zarr")
+    settings.version = ZarrVersion.V3
+    settings.data_type = DataType.INT32
+
+    data = np.random.randint(
+        -2 ** 16,
+        2 ** 16 - 1,
+        (
+            settings.dimensions[0].array_size_px,
+            settings.dimensions[1].array_size_px,
+            settings.dimensions[2].array_size_px,
+        ),
+        dtype=np.int32,
+    )
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    stream.append(data)
+
+    del stream  # close the stream, flush the files
+
+    array = zarr.open(settings.store_path, mode="r")["0"]
+
+    assert data.shape == array.shape
+    np.testing.assert_array_equal(data, array)

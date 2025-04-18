@@ -205,7 +205,18 @@ zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
     const auto shard_idx = dims->shard_index_for_chunk(index);
     auto& shard = data_buffers_[shard_idx];
 
-    const auto internal_idx = dims->shard_internal_index(index);
+    auto internal_idx = dims->shard_internal_index(index);
+    const auto& chunk_indices = dims->chunk_indices_for_shard(shard_idx);
+
+    // ragged shard
+    if (internal_idx >= chunk_indices.size() ||
+        chunk_indices[internal_idx] != index) {
+        const auto it =
+          std::find(chunk_indices.begin(), chunk_indices.end(), index);
+        CHECK(it != chunk_indices.end());
+        internal_idx = std::distance(chunk_indices.begin(), it);
+    }
+
     const auto n_bytes = bytes_to_allocate_per_chunk_();
     const auto offset = internal_idx * n_bytes;
 
@@ -238,7 +249,6 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
     const auto n_layers = dims->chunk_layers_per_shard();
     CHECK(n_layers > 0);
 
-    const auto chunks_per_layer = dims->chunks_per_shard() / n_layers;
     const auto chunk_group_offset = current_layer_ * chunks_in_memory;
 
     std::atomic<char> all_successful = 1;
