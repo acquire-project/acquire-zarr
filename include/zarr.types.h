@@ -121,65 +121,6 @@ extern "C"
                                        dimension */
     } ZarrDimensionProperties;
 
-    /**
-     * @brief Settings for a well field of view.
-     */
-    typedef struct ZarrWellFieldSettings_s
-    {
-        const char* path;        /**< Path (name) of the field of view */
-        uint32_t acquisition_id; /**< ID of the acquisition for this field */
-    } ZarrWellFieldSettings;
-
-    /**
-     * @brief Settings for a plate well.
-     */
-    typedef struct ZarrWellSettings_s
-    {
-        const char* row_name;          /**< Name of the row, e.g., "A" */
-        const char* column_name;       /**< Name of the column, e.g., "1" */
-        uint32_t row_index;            /**< Index of the row */
-        uint32_t column_index;         /**< Index of the column */
-        ZarrWellFieldSettings* fields; /**< Field of view settings */
-        size_t field_count;            /**< Number of fields */
-    } ZarrWellSettings;
-
-    /**
-     * @brief Settings for a plate acquisition.
-     */
-    typedef struct ZarrAcquisitionSettings_s
-    {
-        uint32_t id;                  /**< Unique ID for this acquisition */
-        const char* name;             /**< Name of the acquisition */
-        uint32_t maximum_field_count; /**< Maximum number of fields per well */
-        uint64_t start_time;          /**< Start timestamp (epoch) */
-        uint64_t end_time;            /**< End timestamp (epoch) */
-        const char* description;      /**< Optional description */
-    } ZarrAcquisitionSettings;
-
-    /**
-     * @brief Settings for a plate.
-     */
-    typedef struct ZarrPlateSettings_s
-    {
-        const char* name;     /**< Name of the plate */
-        const char* version;  /**< Version of the plate specification */
-        uint32_t field_count; /**< Maximum fields across all wells */
-
-        /* Row and column definitions */
-        const char** row_names;    /**< Array of row names */
-        size_t row_count;          /**< Number of rows */
-        const char** column_names; /**< Array of column names */
-        size_t column_count;       /**< Number of columns */
-
-        /* Acquisitions */
-        ZarrAcquisitionSettings* acquisitions; /**< Array of acquisitions */
-        size_t acquisition_count;              /**< Number of acquisitions */
-
-        /* Wells */
-        ZarrWellSettings* wells; /**< Array of wells */
-        size_t well_count;       /**< Number of wells */
-    } ZarrPlateSettings;
-
 #ifdef __cplusplus
 }
 #endif
