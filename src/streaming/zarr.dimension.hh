@@ -112,6 +112,14 @@ class ArrayDimensions
     uint32_t shard_index_for_chunk(uint32_t chunk_index) const;
 
     /**
+     * @brief Get the chunk indices corresponding to a given shard index.
+     * @param shard_index The index of the shard.
+     * @return A vector of chunk indices corresponding to the shard.
+     */
+    const std::vector<uint32_t>& chunk_indices_for_shard(
+      uint32_t shard_index) const;
+
+    /**
      * @brief Get the streaming index of a chunk within a shard.
      * @param chunk_index The index of the chunk.
      * @return The index of the chunk within the shard.
@@ -130,6 +138,7 @@ class ArrayDimensions
 
     std::unordered_map<uint32_t, uint32_t> shard_indices_;
     std::unordered_map<uint32_t, uint32_t> shard_internal_indices_;
+    std::vector<std::vector<uint32_t>> chunk_indices_for_shard_;
 
     uint32_t shard_index_for_chunk_(uint32_t chunk_index) const;
     uint32_t shard_internal_index_(uint32_t chunk_index) const;

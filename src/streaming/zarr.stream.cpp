@@ -6,6 +6,7 @@
 #include "zarrv3.array.writer.hh"
 #include "sink.hh"
 
+#include <bit> // bit_ceil
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -884,9 +885,7 @@ ZarrStream_s::make_ome_metadata_() const
             const auto base_size = base_dim.array_size_px;
             const auto down_size = down_dim.array_size_px;
             const auto ratio = (base_size + down_size - 1) / down_size;
-
-            // round to the next power of 2 if the ratio isn't an integer
-            scales[j] = std::pow(2.0, std::ceil(std::log2(ratio)));
+            scales[j] = std::bit_ceil(ratio); // scale is the next power of 2
         }
 
         multiscales[0]["datasets"].push_back({

@@ -24,9 +24,14 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
         }
     }
 
+    chunk_indices_for_shard_.resize(number_of_shards_);
+
     for (auto i = 0; i < chunks_per_shard_ * number_of_shards_; ++i) {
-        shard_indices_.insert_or_assign(i, shard_index_for_chunk_(i));
+        const auto shard_index = shard_index_for_chunk_(i);
+        shard_indices_.insert_or_assign(i, shard_index);
         shard_internal_indices_.insert_or_assign(i, shard_internal_index_(i));
+
+        chunk_indices_for_shard_[shard_index].push_back(i);
     }
 }
 
@@ -178,6 +183,12 @@ uint32_t
 ArrayDimensions::shard_index_for_chunk(uint32_t chunk_index) const
 {
     return shard_indices_.at(chunk_index);
+}
+
+const std::vector<uint32_t>&
+ArrayDimensions::chunk_indices_for_shard(uint32_t shard_index) const
+{
+    return chunk_indices_for_shard_.at(shard_index);
 }
 
 uint32_t
