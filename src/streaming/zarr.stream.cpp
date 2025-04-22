@@ -297,13 +297,14 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     // create the data store
     EXPECT(create_store_(), error_);
 
+    // create downsampler if needed
+    EXPECT(create_downsampler_(), error_);
+
+    // initialize the frame queue
+    EXPECT(init_frame_queue_(), error_);
+
     // allocate writers
     EXPECT(create_writers_(), error_);
-
-    // allocate multiscale frame placeholders
-    if (multiscale_) {
-        create_scaled_frames_();
-    }
 
     // allocate metadata sinks
     EXPECT(create_metadata_sinks_(), error_);
@@ -342,12 +343,19 @@ ZarrStream::append(const void* data_, size_t nbytes)
             frame_buffer_offset_ += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
-            // ready to flush the frame buffer
+            // ready to enqueue the frame buffer
             if (frame_buffer_offset_ == bytes_of_frame) {
-                if (write_frame_(frame_buffer_) < bytes_of_frame) {
-                    break; // critical error
+                std::unique_lock lock(frame_queue_mutex_);
+                while (!frame_queue_->push(frame_buffer_) && process_frames_) {
+                    frame_queue_not_full_cv_.wait(lock);
                 }
 
+                if (process_frames_) {
+                    frame_queue_not_empty_cv_.notify_one();
+                } else {
+                    LOG_DEBUG("Stopping frame processing");
+                    break;
+                }
                 data += bytes_to_copy;
                 frame_buffer_offset_ = 0;
             }
@@ -356,8 +364,18 @@ ZarrStream::append(const void* data_, size_t nbytes)
             frame_buffer_offset_ = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            if (write_frame_({ data, bytes_of_frame }) < bytes_of_frame) {
-                break; // critical error
+            ConstByteSpan frame(data, bytes_of_frame);
+
+            std::unique_lock lock(frame_queue_mutex_);
+            while (!frame_queue_->push(frame) && process_frames_) {
+                frame_queue_not_full_cv_.wait(lock);
+            }
+
+            if (process_frames_) {
+                frame_queue_not_empty_cv_.notify_one();
+            } else {
+                LOG_DEBUG("Stopping frame processing");
+                break;
             }
 
             bytes_written += bytes_of_frame;
@@ -620,70 +638,98 @@ ZarrStream_s::create_store_()
 }
 
 bool
+ZarrStream_s::init_frame_queue_()
+{
+    if (frame_queue_) {
+        return true; // already initialized
+    }
+
+    if (!thread_pool_) {
+        set_error_("Thread pool is not initialized");
+        return false;
+    }
+
+    const auto frame_size = dimensions_->width_dim().array_size_px *
+                            dimensions_->height_dim().array_size_px *
+                            zarr::bytes_of_type(dtype_);
+
+    // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
+    const auto buffer_size_bytes = 2ULL << 30;
+    const auto frame_count = std::max(10ULL, buffer_size_bytes / frame_size);
+
+    try {
+        frame_queue_ =
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size);
+
+        EXPECT(thread_pool_->push_job([this](std::string& err) {
+            try {
+                process_frame_queue_();
+            } catch (const std::exception& e) {
+                err = e.what();
+                return false;
+            }
+
+            return true;
+        }),
+               "Failed to push job to thread pool.");
+    } catch (const std::exception& e) {
+        set_error_("Error creating frame queue: " + std::string(e.what()));
+        return false;
+    }
+
+    return true;
+}
+
+bool
 ZarrStream_s::create_writers_()
 {
     writers_.clear();
 
-    // construct Blosc compression parameters
-    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
-    if (is_compressed_acquisition_()) {
-        blosc_compression_params = zarr::BloscCompressionParams(
-          zarr::blosc_codec_to_string(compression_settings_->codec),
-          compression_settings_->level,
-          compression_settings_->shuffle);
-    }
+    if (downsampler_) {
+        const auto& configs = downsampler_->writer_configurations();
+        writers_.resize(configs.size());
 
-    std::optional<std::string> s3_bucket_name;
-    if (is_s3_acquisition_()) {
-        s3_bucket_name = s3_settings_->bucket_name;
-    }
-
-    zarr::ArrayWriterConfig config = {
-        .dimensions = dimensions_,
-        .dtype = static_cast<ZarrDataType>(dtype_),
-        .level_of_detail = 0,
-        .bucket_name = s3_bucket_name,
-        .store_path = store_path_,
-        .compression_params = blosc_compression_params,
-    };
-
-    if (version_ == 2) {
-        writers_.push_back(std::make_unique<zarr::ZarrV2ArrayWriter>(
-          config, thread_pool_, s3_connection_pool_));
-    } else {
-        writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
-          config, thread_pool_, s3_connection_pool_));
-    }
-
-    if (multiscale_) {
-        zarr::ArrayWriterConfig downsampled_config;
-
-        bool do_downsample = true;
-        while (do_downsample) {
-            do_downsample = downsample(config, downsampled_config);
-
+        for (const auto& [lod, config] : configs) {
             if (version_ == 2) {
-                writers_.push_back(std::make_unique<zarr::ZarrV2ArrayWriter>(
-                  downsampled_config, thread_pool_, s3_connection_pool_));
+                writers_[lod] = std::make_unique<zarr::ZarrV2ArrayWriter>(
+                  config, thread_pool_, s3_connection_pool_);
             } else {
-                writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
-                  downsampled_config, thread_pool_, s3_connection_pool_));
+                writers_[lod] = std::make_unique<zarr::ZarrV3ArrayWriter>(
+                  config, thread_pool_, s3_connection_pool_);
             }
+        }
+    } else {
+        const auto config = make_array_writer_config_();
 
-            config = std::move(downsampled_config);
-            downsampled_config = {};
+        if (version_ == 2) {
+            writers_.push_back(std::make_unique<zarr::ZarrV2ArrayWriter>(
+              config, thread_pool_, s3_connection_pool_));
+        } else {
+            writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
+              config, thread_pool_, s3_connection_pool_));
         }
     }
 
     return true;
 }
 
-void
-ZarrStream_s::create_scaled_frames_()
+bool
+ZarrStream_s::create_downsampler_()
 {
-    for (size_t level = 1; level < writers_.size(); ++level) {
-        scaled_frames_.emplace(level, std::nullopt);
+    if (!multiscale_) {
+        return true;
     }
+
+    const auto config = make_array_writer_config_();
+
+    try {
+        downsampler_ = zarr::Downsampler(config);
+    } catch (const std::exception& exc) {
+        set_error_("Error creating downsampler: " + std::string(exc.what()));
+        return false;
+    }
+
+    return true;
 }
 
 bool
@@ -794,13 +840,14 @@ nlohmann::json
 ZarrStream_s::make_ome_metadata_() const
 {
     nlohmann::json multiscales;
+    const auto ndims = dimensions_->ndims();
 
     auto& axes = multiscales[0]["axes"];
-    for (auto i = 0; i < dimensions_->ndims(); ++i) {
+    for (auto i = 0; i < ndims; ++i) {
         const auto& dim = dimensions_->at(i);
         std::string type = dimension_type_to_string(dim.type);
 
-        if (i < dimensions_->ndims() - 2) {
+        if (i < ndims - 2) {
             axes.push_back({ { "name", dim.name.c_str() }, { "type", type } });
         } else {
             axes.push_back({ { "name", dim.name.c_str() },
@@ -810,7 +857,7 @@ ZarrStream_s::make_ome_metadata_() const
     }
 
     // spatial multiscale metadata
-    std::vector<double> scales(dimensions_->ndims(), 1.0);
+    std::vector<double> scales(ndims, 1.0);
     multiscales[0]["datasets"] = {
         {
           { "path", "0" },
@@ -825,13 +872,22 @@ ZarrStream_s::make_ome_metadata_() const
     };
 
     for (auto i = 1; i < writers_.size(); ++i) {
-        scales.clear();
-        scales.push_back(std::pow(2, i)); // append
-        for (auto k = 0; k < dimensions_->ndims() - 3; ++k) {
-            scales.push_back(1.);
+        const auto& config = downsampler_->writer_configurations().at(i);
+
+        for (auto j = 0; j < ndims; ++j) {
+            const auto& base_dim = dimensions_->at(j);
+            const auto& down_dim = config.dimensions->at(j);
+            if (base_dim.type != ZarrDimensionType_Space) {
+                continue;
+            }
+
+            const auto base_size = base_dim.array_size_px;
+            const auto down_size = down_dim.array_size_px;
+            const auto ratio = (base_size + down_size - 1) / down_size;
+
+            // round to the next power of 2 if the ratio isn't an integer
+            scales[j] = std::pow(2.0, std::ceil(std::log2(ratio)));
         }
-        scales.push_back(std::pow(2, i)); // y
-        scales.push_back(std::pow(2, i)); // x
 
         multiscales[0]["datasets"].push_back({
           { "path", std::to_string(i) },
@@ -873,6 +929,88 @@ ZarrStream_s::make_ome_metadata_() const
     return ome;
 }
 
+zarr::ArrayWriterConfig
+ZarrStream_s::make_array_writer_config_() const
+{
+    // construct Blosc compression parameters
+    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
+    if (is_compressed_acquisition_()) {
+        blosc_compression_params = zarr::BloscCompressionParams(
+          zarr::blosc_codec_to_string(compression_settings_->codec),
+          compression_settings_->level,
+          compression_settings_->shuffle);
+    }
+
+    std::optional<std::string> s3_bucket_name;
+    if (is_s3_acquisition_()) {
+        s3_bucket_name = s3_settings_->bucket_name;
+    }
+
+    return {
+        .dimensions = dimensions_,
+        .dtype = dtype_,
+        .level_of_detail = 0,
+        .bucket_name = s3_bucket_name,
+        .store_path = store_path_,
+        .compression_params = blosc_compression_params,
+    };
+}
+
+void
+ZarrStream_s::process_frame_queue_()
+{
+    if (!frame_queue_) {
+        set_error_("Frame queue is not initialized");
+        return;
+    }
+
+    const auto bytes_of_frame = frame_buffer_.size();
+
+    std::vector<std::byte> frame;
+    while (process_frames_ || !frame_queue_->empty()) {
+        std::unique_lock lock(frame_queue_mutex_);
+        while (frame_queue_->empty() && process_frames_) {
+            frame_queue_not_empty_cv_.wait(lock);
+        }
+
+        if (!process_frames_ && frame_queue_->empty()) {
+            break;
+        }
+
+        if (!frame_queue_->pop(frame)) {
+            continue;
+        }
+
+        // Signal that there's space available in the queue
+        frame_queue_not_full_cv_.notify_one();
+
+        EXPECT(write_frame_(frame) == bytes_of_frame,
+               "Failed to write frame to writer");
+    }
+
+    CHECK(frame_queue_->empty());
+    std::unique_lock lock(frame_queue_mutex_);
+    frame_queue_finished_cv_.notify_all();
+}
+
+void
+ZarrStream_s::finalize_frame_queue_()
+{
+    process_frames_ = false;
+
+    // Wake up all potentially waiting threads
+    {
+        std::unique_lock lock(frame_queue_mutex_);
+        frame_queue_not_empty_cv_.notify_all();
+        frame_queue_not_full_cv_.notify_all();
+    }
+
+    // Wait for frame processing to complete
+    std::unique_lock lock(frame_queue_mutex_);
+    frame_queue_finished_cv_.wait(lock,
+                                  [this] { return frame_queue_->empty(); });
+}
+
 size_t
 ZarrStream_s::write_frame_(ConstByteSpan data)
 {
@@ -896,83 +1034,20 @@ ZarrStream_s::write_multiscale_frames_(ConstByteSpan data)
         return;
     }
 
-    std::function<ByteVector(ConstByteSpan, size_t&, size_t&)> scale;
-    std::function<void(ByteSpan&, ConstByteSpan)> average2;
+    CHECK(downsampler_.has_value());
+    downsampler_->add_frame(data);
 
-    switch (dtype_) {
-        case ZarrDataType_uint8:
-            scale = scale_image<uint8_t>;
-            average2 = average_two_frames<uint8_t>;
-            break;
-        case ZarrDataType_uint16:
-            scale = scale_image<uint16_t>;
-            average2 = average_two_frames<uint16_t>;
-            break;
-        case ZarrDataType_uint32:
-            scale = scale_image<uint32_t>;
-            average2 = average_two_frames<uint32_t>;
-            break;
-        case ZarrDataType_uint64:
-            scale = scale_image<uint64_t>;
-            average2 = average_two_frames<uint64_t>;
-            break;
-        case ZarrDataType_int8:
-            scale = scale_image<int8_t>;
-            average2 = average_two_frames<int8_t>;
-            break;
-        case ZarrDataType_int16:
-            scale = scale_image<int16_t>;
-            average2 = average_two_frames<int16_t>;
-            break;
-        case ZarrDataType_int32:
-            scale = scale_image<int32_t>;
-            average2 = average_two_frames<int32_t>;
-            break;
-        case ZarrDataType_int64:
-            scale = scale_image<int64_t>;
-            average2 = average_two_frames<int64_t>;
-            break;
-        case ZarrDataType_float32:
-            scale = scale_image<float>;
-            average2 = average_two_frames<float>;
-            break;
-        case ZarrDataType_float64:
-            scale = scale_image<double>;
-            average2 = average_two_frames<double>;
-            break;
-        default:
-            throw std::runtime_error("Invalid data type: " +
-                                     std::to_string(dtype_));
-    }
-
-    size_t frame_width = dimensions_->width_dim().array_size_px;
-    size_t frame_height = dimensions_->height_dim().array_size_px;
-
-    ByteVector dst;
     for (auto i = 1; i < writers_.size(); ++i) {
-        dst = scale(data, frame_width, frame_height);
-
-        // bytes_of data is now downscaled
-        // frame_width and frame_height are now the new dimensions
-
-        if (scaled_frames_[i]) {
-            std::span frame_data(dst);
-            average2(frame_data, *scaled_frames_[i]);
-
-            EXPECT(writers_[i]->write_frame(frame_data),
-                   "Failed to write frame to writer %zu",
-                   i);
-
-            // clean up this LOD
-            scaled_frames_[i].reset();
-
-            // set up for next iteration
-            if (i + 1 < writers_.size()) {
-                data = dst;
-            }
-        } else {
-            scaled_frames_[i] = dst;
-            break;
+        ByteVector downsampled_frame;
+        if (downsampler_->get_downsampled_frame(i, downsampled_frame)) {
+            const auto n_bytes = writers_[i]->write_frame(downsampled_frame);
+            EXPECT(n_bytes == downsampled_frame.size(),
+                   "Expected to write ",
+                   downsampled_frame.size(),
+                   " bytes to multiscale array ",
+                   i,
+                   "wrote ",
+                   n_bytes);
         }
     }
 }
@@ -998,6 +1073,8 @@ finalize_stream(struct ZarrStream_s* stream)
         }
     }
     stream->metadata_sinks_.clear();
+
+    stream->finalize_frame_queue_();
 
     for (auto i = 0; i < stream->writers_.size(); ++i) {
         if (!finalize_array(std::move(stream->writers_[i]))) {

@@ -2,126 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.12](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.11..v0.1.12) - 2024-07-26
+## [0.3.0] - 2025-04-18
 
 ### Added
-
-- Support for writing to S3 buckets.
+- Python benchmark comparing acquire-zarr to TensorStore performance (#80)
 
 ### Changed
+- Metadata may be set at any point during streaming (#74)
+- Hide flush latency with a frame queue (#75)
+- Make `StreamSettings.dimensions` behave more like a Python list (#81)
+- Require S3 credentials in environment variables (#97)
+- Downsampling may be done in 2d or 3d depending on the third dimension (#88)
 
-- Calling `acquire_get_configuration` with a Zarr storage device now returns a URI of the storage device, with file://
-  scheme indicator and absolute path, assuming localhost.
-- Array metadata is updated every time data is flushed to disk.
+### Fixed
+- Transposed Python arrays can be `append`ed as is (#90)
+
+## [0.2.4] - 2025-03-25
+
+### Fixed
+- Explicitly assign S3 port when none is specified (#71)
+
+### Changed
+- Performance enhancements (#72)
+
+## [0.2.3] - 2025-03-12
+
+### Fixed
+- Unwritten data in acquisitions with large file counts (#69)
+
+## [0.2.2] - 2025-02-25
 
 ### Added
+- Support OME-NGFF 0.5 in Zarr V3 (#68)
 
-- Support for multiscale in Zarr V3 stores.
-
-## [0.1.11](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.10..v0.1.11) - 2024-04-22
-
-### Fixed
-
-- Acquisition dimensions can be reconfigured without causing a crash.
-
-## [0.1.10](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.9..v0.1.10) - 2024-03-29
+## [0.2.1] - 2025-02-25
 
 ### Added
-
-- Support for nearly arbitrary dimension configurations.
-
-### Changed
-
-- Chunk size may now exceed the array size along any dimension.
-- The number of chunks per shard along any dimension no longer needs to divide the total number of chunks along that
-  dimension.
-
-## [0.1.9](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.8..v0.1.9) - 2024-01-11
-
-### Changed
-
-- Switches to `acquire-common` from `acquire-core-libs`, `acquire-video-runtime`, and `acquire-driver-common`.
-
-## [0.1.8](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.7..v0.1.8) - 2023-12-19
+- Digital Object Identifier (DOI) (#56)
 
 ### Fixed
-
-- Resets the device state when the device is stopped.
-- Ensure that all properties are saved when `zarr_get` is called.
-
-## [0.1.7](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.6..v0.1.7) - 2023-12-11
-
-### Fixed
-
-- Removes `noexcept` specifier from various methods that don't need it and whose implementations may throw exceptions.
+- Default compression level is now 1 (#66)
+- Improve docstrings for mkdocstrings compatibility
+- Add crc32c to requirements in README
 
 ### Changed
+- Chunks are written into per-shard buffers in ZarrV3 writer (#60)
 
-- The thread pool starts on `Zarr::start()` and shuts down on `Zarr::stop()`.
-
-## [0.1.6](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.5...v0.1.6) - 2023-11-28
-
-### Fixed
-
-- A bug where trailing whitespace on otherwise valid JSON would fail to validate.
-
-## [0.1.5](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.4...v0.1.5) - 2023-11-20
+## [0.2.0] - 2025-02-11
 
 ### Added
-
-- Support for [Zarr v3](https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html).
-- Support for
-  the [sharding storage transformer](https://web.archive.org/web/20230213221154/https://zarr-specs.readthedocs.io/en/latest/extensions/storage-transformers/sharding/v1.0.html)
-  in Zarr v3.
-- Ship debug libs for C-Blosc on Linux and Mac.
-
-### Changed
-
-- Upgrades C-Blosc from v1.21.4 to v1.21.5.
+- Region field to S3 settings (#58)
 
 ### Fixed
+- Wheel packaging to include stubs (#54)
+- Buffer overrun on partial frame append (#51)
 
-- A bug where enabling multiscale without specifying the tile size would cause an error.
-- Exceptions thrown off the main thread are now caught and logged, and Zarr throws an error in `append`.
-
-## [0.1.4](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.3...v0.1.4) - 2023-08-11
-
-### Fixed
-
-- A bug where not specifying the chunk size causes tile dimensions to be set to zero.
-
-## [0.1.3](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.2...v0.1.3) - 2023-07-28
+## [0.1.0] - 2025-01-21
 
 ### Added
-
-- Support for writing multiscale OME-Zarr.
-
-### Changed
-
-- `ZarrV2Writer`s need to specify which multiscale layer they write to.
-- The Zarr writer now validates that image and tile shapes are set and compatible with each other before the first
-  append.
-
-### Removed
-
-- Noisy thread status messages.
+- API parameter to cap thread usage (#46)
+- More examples (and updates to existing ones) (#36)
 
 ### Fixed
+- Missing header that caused build failure (#40)
 
-- Check that the image shape has been set before complaining that the tile shape along any dimension is also zero.
-- A bug where multibyte samples exhibited striping behavior due to being copied from the wrong offset in the source
-  buffer.
+### Changed
+- Buffers are compressed and flushed in the same job (#43)
 
-## [0.1.2](https://github.com/acquire-project/acquire-driver-zarr/compare/v0.1.1...v0.1.2) - 2023-06-23
+## [0.0.5] - 2025-01-09
+
+### Changed
+- Use CRC32C checksum rather than CRC32 for chunk indices (#37)
+- Zarr V3 writer writes latest spec (#33)
+
+### Fixed
+- Memory leak (#34)
+- Development instructions in README (#35)
+
+## [0.0.3] - 2024-12-19
 
 ### Added
+- C++ benchmark for different chunk/shard/compression/storage configurations (#22)
 
-- Nightly releases.
-- Acquisitions using Zarr as a storage device can be chunked along the X, Y, and Z axes, and the number of bytes per
-  chunk can also be specified.
-    - Chunking can be configured via `storage_properties_set_chunking_props()`. See README for details.
+### Changed
+- Build wheels for Python 3.9 through 3.13 (#32)
+- Remove requirement to link against acquire-logger (#31)
 
-## 0.1.1 - 2023-05-11
+## [0.0.2] - 2024-11-26
+
+### Added
+- Manylinux wheel release (#19)
+
+## [0.0.1] - 2024-11-08
+
+### Added
+- Initial release wheel
