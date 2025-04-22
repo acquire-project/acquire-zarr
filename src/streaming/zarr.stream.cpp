@@ -884,6 +884,8 @@ ZarrStream_s::make_ome_metadata_() const
             const auto base_size = base_dim.array_size_px;
             const auto down_size = down_dim.array_size_px;
             const auto ratio = (base_size + down_size - 1) / down_size;
+
+            // round to the next power of 2 if the ratio isn't an integer
             scales[j] = std::pow(2.0, std::ceil(std::log2(ratio)));
         }
 
