@@ -26,11 +26,13 @@ struct ZarrStream_s
 
     /**
      * @brief Append data to the stream.
+     * @param group_name The name of the group to append to. Empty string for
+     * the root group.
      * @param data The data to append.
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(const void* data, size_t nbytes);
+    size_t append(std::string_view group_name, const void* data, size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
