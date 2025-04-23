@@ -13,7 +13,7 @@ static const size_t frames_to_acquire = 12;
 static const size_t frames_per_append = 3;
 static const fs::path test_path = "multi-frame-test.zarr";
 
-static ZarrStream* 
+static ZarrStream*
 setup() {
     const auto test_path_str = test_path.string();
     const auto test_path_cstr = test_path_str.c_str();

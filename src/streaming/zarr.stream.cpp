@@ -183,6 +183,11 @@ validate_dimension(const ZarrDimensionProperties* dimension,
         return false;
     }
 
+    if (dimension->scale < 0.0) {
+        error = "Scale must be non-negative";
+        return false;
+    }
+
     return true;
 }
 
@@ -559,11 +564,20 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     std::vector<ZarrDimension> dims;
     for (auto i = 0; i < settings->dimension_count; ++i) {
         const auto& dim = settings->dimensions[i];
+        std::string unit = "";
+        if (dim.unit) {
+            unit = zarr::trim(dim.unit);
+        }
+
+        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
+
         dims.emplace_back(dim.name,
                           dim.type,
                           dim.array_size_px,
                           dim.chunk_size_px,
-                          dim.shard_size_chunks);
+                          dim.shard_size_chunks,
+                          unit,
+                          scale);
     }
     dimensions_ = std::make_shared<ArrayDimensions>(std::move(dims), dtype_);
 
@@ -846,19 +860,27 @@ ZarrStream_s::make_ome_metadata_() const
     auto& axes = multiscales[0]["axes"];
     for (auto i = 0; i < ndims; ++i) {
         const auto& dim = dimensions_->at(i);
-        std::string type = dimension_type_to_string(dim.type);
+        const auto type = dimension_type_to_string(dim.type);
+        const std::string unit = dim.unit.has_value() ? *dim.unit : "";
 
-        if (i < ndims - 2) {
-            axes.push_back({ { "name", dim.name.c_str() }, { "type", type } });
+        if (!unit.empty()) {
+            axes.push_back({
+              { "name", dim.name.c_str() },
+              { "type", type },
+              { "unit", unit.c_str() },
+            });
         } else {
-            axes.push_back({ { "name", dim.name.c_str() },
-                             { "type", type },
-                             { "unit", "micrometer" } });
+            axes.push_back({ { "name", dim.name.c_str() }, { "type", type } });
         }
     }
 
     // spatial multiscale metadata
-    std::vector<double> scales(ndims, 1.0);
+    std::vector<double> scales(ndims);
+    for (auto i = 0; i < ndims; ++i) {
+        const auto& dim = dimensions_->at(i);
+        scales[i] = dim.scale;
+    }
+
     multiscales[0]["datasets"] = {
         {
           { "path", "0" },
@@ -885,7 +907,9 @@ ZarrStream_s::make_ome_metadata_() const
             const auto base_size = base_dim.array_size_px;
             const auto down_size = down_dim.array_size_px;
             const auto ratio = (base_size + down_size - 1) / down_size;
-            scales[j] = std::bit_ceil(ratio); // scale is the next power of 2
+
+            // scale by next power of 2
+            scales[j] = base_dim.scale * std::bit_ceil(ratio);
         }
 
         multiscales[0]["datasets"].push_back({

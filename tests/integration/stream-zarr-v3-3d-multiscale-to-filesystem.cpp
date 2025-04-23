@@ -130,7 +130,7 @@ verify_group_metadata(const nlohmann::json& meta)
 
     const auto axes = multiscales["axes"];
     EXPECT_EQ(size_t, axes.size(), 5);
-    std::string name, type, unit;
+    std::string name, type;
 
     name = axes[0]["name"];
     type = axes[0]["type"];
@@ -151,25 +151,15 @@ verify_group_metadata(const nlohmann::json& meta)
 
     name = axes[3]["name"];
     type = axes[3]["type"];
-    unit = axes[3]["unit"];
     EXPECT(name == "y", "Expected name to be 'y', but got '", name, "'");
     EXPECT(
       type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
 
     name = axes[4]["name"];
     type = axes[4]["type"];
-    unit = axes[4]["unit"];
     EXPECT(name == "x", "Expected name to be 'x', but got '", name, "'");
     EXPECT(
       type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
 
     const auto datasets = multiscales["datasets"];
     for (auto level = 0; level < 3; ++level) {
