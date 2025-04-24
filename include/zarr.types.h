@@ -111,14 +111,16 @@ extern "C"
      */
     typedef struct
     {
-        const char* name;       /**< Name of the dimension */
-        ZarrDimensionType type; /**< Type of the dimension */
-        uint32_t array_size_px; /**< Size of the array along this dimension in
-                                       pixels */
-        uint32_t chunk_size_px; /**< Size of the chunks along this dimension in
-                                       pixels */
+        const char* name;           /**< Name of the dimension */
+        ZarrDimensionType type;     /**< Type of the dimension */
+        uint32_t array_size_px;     /**< Size of the array along this dimension
+                                         in pixels */
+        uint32_t chunk_size_px;     /**< Size of the chunks along this dimension
+                                         in pixels */
         uint32_t shard_size_chunks; /**< Number of chunks in a shard along this
-                                       dimension */
+                                         dimension */
+        const char* unit;           /** Unit of the dimension */
+        double scale;               /**< Scale of the dimension */
     } ZarrDimensionProperties;
 
 #ifdef __cplusplus

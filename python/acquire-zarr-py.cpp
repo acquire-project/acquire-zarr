@@ -188,6 +188,12 @@ class PyZarrDimensionProperties
     ZarrDimensionType type() const { return type_; }
     void set_type(ZarrDimensionType type) { type_ = type; }
 
+    std::optional<std::string> unit() const { return unit_; }
+    void set_unit(const std::optional<std::string>& unit) { unit_ = unit; }
+
+    double scale() const { return scale_; }
+    void set_scale(double scale) { scale_ = scale; }
+
     uint32_t array_size_px() const { return array_size_px_; }
     void set_array_size_px(uint32_t size) { array_size_px_ = size; }
 
@@ -199,8 +205,13 @@ class PyZarrDimensionProperties
 
     std::string repr() const
     {
+        std::string unit = "None";
+        if (unit_) {
+            unit = "'" + *unit_ + "'";
+        }
         return "Dimension(name='" + name_ + "', kind=DimensionType." +
-               std::string(dimension_type_to_str(type_)) +
+               std::string(dimension_type_to_str(type_)) + ", unit=" + unit +
+               ", scale=" + std::to_string(scale_) +
                ", array_size_px=" + std::to_string(array_size_px_) +
                ", chunk_size_px=" + std::to_string(chunk_size_px_) +
                ", shard_size_chunks=" + std::to_string(shard_size_chunks_) +
@@ -210,6 +221,10 @@ class PyZarrDimensionProperties
   private:
     std::string name_;
     ZarrDimensionType type_{ ZarrDimensionType_Space };
+
+    std::optional<std::string> unit_;
+    double scale_{ 1.0 };
+
     uint32_t array_size_px_{ 0 };
     uint32_t chunk_size_px_{ 0 };
     uint32_t shard_size_chunks_{ 0 };
@@ -333,17 +348,22 @@ class PyZarrStream
 
         const auto& dims = settings.dimensions();
         dimension_names_.resize(dims.size());
+        dimension_units_.resize(dims.size());
 
         std::vector<ZarrDimensionProperties> dimension_props;
         for (auto i = 0; i < dims.size(); ++i) {
             const auto& dim = dims[i];
             dimension_names_[i] = dim.name();
+            dimension_units_[i] = dim.unit().has_value() ? *dim.unit() : "";
+
             ZarrDimensionProperties properties{
                 .name = dimension_names_[i].c_str(),
                 .type = dim.type(),
                 .array_size_px = dim.array_size_px(),
                 .chunk_size_px = dim.chunk_size_px(),
                 .shard_size_chunks = dim.shard_size_chunks(),
+                .unit = dimension_units_[i].c_str(),
+                .scale = dim.scale(),
             };
             dimension_props.push_back(properties);
         }
@@ -503,6 +523,7 @@ class PyZarrStream
     std::string store_path_;
 
     std::vector<std::string> dimension_names_;
+    std::vector<std::string> dimension_units_;
 
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
@@ -633,6 +654,10 @@ PYBIND11_MODULE(acquire_zarr, m)
               props.set_name(kwargs["name"].cast<std::string>());
           if (kwargs.contains("kind"))
               props.set_type(kwargs["kind"].cast<ZarrDimensionType>());
+          if (kwargs.contains("unit"))
+              props.set_unit(kwargs["unit"].cast<std::optional<std::string>>());
+          if (kwargs.contains("scale"))
+              props.set_scale(kwargs["scale"].cast<double>());
           if (kwargs.contains("array_size_px"))
               props.set_array_size_px(kwargs["array_size_px"].cast<uint32_t>());
           if (kwargs.contains("chunk_size_px"))
@@ -650,6 +675,12 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("kind",
                     &PyZarrDimensionProperties::type,
                     &PyZarrDimensionProperties::set_type)
+      .def_property("unit",
+                    &PyZarrDimensionProperties::unit,
+                    &PyZarrDimensionProperties::set_unit)
+      .def_property("scale",
+                    &PyZarrDimensionProperties::scale,
+                    &PyZarrDimensionProperties::set_scale)
       .def_property("array_size_px",
                     &PyZarrDimensionProperties::array_size_px,
                     &PyZarrDimensionProperties::set_array_size_px)

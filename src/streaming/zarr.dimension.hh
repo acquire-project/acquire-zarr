@@ -3,6 +3,7 @@
 #include "zarr.types.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -15,17 +16,26 @@ struct ZarrDimension
                   ZarrDimensionType type,
                   uint32_t array_size_px,
                   uint32_t chunk_size_px,
-                  uint32_t shard_size_chunks)
+                  uint32_t shard_size_chunks,
+                  std::string_view unit = "",
+                  double scale = 1.0)
       : name(name)
       , type(type)
       , array_size_px(array_size_px)
       , chunk_size_px(chunk_size_px)
       , shard_size_chunks(shard_size_chunks)
+      , scale(scale)
     {
+        if (!unit.empty()) {
+            this->unit = unit;
+        }
     }
 
     std::string name;
     ZarrDimensionType type{ ZarrDimensionType_Space };
+
+    std::optional<std::string> unit;
+    double scale{ 1.0 };
 
     uint32_t array_size_px{ 0 };
     uint32_t chunk_size_px{ 0 };

@@ -103,11 +103,9 @@ def validate_v2_metadata(store_path: Path):
 
         assert axes[1]["name"] == "y"
         assert axes[1]["type"] == "space"
-        assert axes[1]["unit"] == "micrometer"
 
         assert axes[2]["name"] == "x"
         assert axes[2]["type"] == "space"
-        assert axes[2]["unit"] == "micrometer"
 
     assert (store_path / ".zgroup").is_file()
     with open(store_path / ".zgroup", "r") as fh:
@@ -131,11 +129,9 @@ def validate_v3_metadata(store_path: Path):
 
         assert axes[1]["name"] == "y"
         assert axes[1]["type"] == "space"
-        assert axes[1]["unit"] == "micrometer"
 
         assert axes[2]["name"] == "x"
         assert axes[2]["type"] == "space"
-        assert axes[2]["unit"] == "micrometer"
 
     assert not (store_path / "acquire.json").is_file()
 
@@ -632,3 +628,88 @@ def test_column_ragged_sharding(
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
+
+
+def test_custom_dimension_units_and_scales(store_path: Path):
+    settings = StreamSettings(
+        dimensions=[
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                unit="micron",
+                scale=0.1,
+                array_size_px=2,
+                chunk_size_px=1,
+                shard_size_chunks=2,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                unit="micrometer",
+                scale=0.9,
+                array_size_px=1080,
+                chunk_size_px=64,
+                shard_size_chunks=2,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                unit="nanometer",
+                scale=1.1,
+                array_size_px=1080,
+                chunk_size_px=64,
+                shard_size_chunks=2,
+            ),
+        ]
+    )
+    settings.store_path = str(store_path / "test.zarr")
+    settings.version = ZarrVersion.V3
+    settings.data_type = DataType.INT32
+
+    data = np.random.randint(
+        -2 ** 16,
+        2 ** 16 - 1,
+        (
+            settings.dimensions[0].array_size_px,
+            settings.dimensions[1].array_size_px,
+            settings.dimensions[2].array_size_px,
+        ),
+        dtype=np.int32,
+    )
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    stream.append(data)
+
+    del stream  # close the stream, flush the files
+
+    group = zarr.open(settings.store_path, mode="r")
+    array = group["0"]
+
+    assert data.shape == array.shape
+    np.testing.assert_array_equal(data, array)
+
+    # Check custom units and scales
+    multiscale = group.attrs["ome"]["multiscales"][0]
+    axes = multiscale["axes"]
+    assert len(axes) == 3
+    z, y, x = axes
+
+    assert z["name"] == "z"
+    assert z["type"] == "space"
+    assert z["unit"] == "micron"
+
+    assert y["name"] == "y"
+    assert y["type"] == "space"
+    assert y["unit"] == "micrometer"
+
+    assert x["name"] == "x"
+    assert x["type"] == "space"
+    assert x["unit"] == "nanometer"
+
+    z_scale, y_scale, x_scale = multiscale["datasets"][0]["coordinateTransformations"][0]["scale"]
+
+    assert z_scale == 0.1
+    assert y_scale == 0.9
+    assert x_scale == 1.1

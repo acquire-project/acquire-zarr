@@ -500,6 +500,12 @@ zarr::ZarrV3ArrayWriter::write_array_metadata_()
     metadata["data_type"] = sample_type_to_dtype(config_.dtype);
     metadata["storage_transformers"] = json::array();
 
+    std::vector<std::string> dimension_names(dims->ndims());
+    for (auto i = 0; i < dimension_names.size(); ++i) {
+        dimension_names[i] = dims->at(i).name;
+    }
+    metadata["dimension_names"] = dimension_names;
+
     auto codecs = json::array();
 
     auto sharding_indexed = json::object();

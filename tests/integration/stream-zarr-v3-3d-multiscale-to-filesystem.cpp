@@ -80,26 +80,45 @@ setup()
                ZarrDimensionType_Time,
                array_timepoints,
                chunk_timepoints,
-               shard_timepoints);
+               shard_timepoints,
+               nullptr,
+               1.0);
 
     dim = settings.dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
                chunk_channels,
-               shard_channels);
+               shard_channels,
+               nullptr,
+               1.0);
 
     dim = settings.dimensions + 2;
-    *dim = DIM(
-      "z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
+    *dim = DIM("z",
+               ZarrDimensionType_Space,
+               array_planes,
+               chunk_planes,
+               shard_planes,
+               "millimeter",
+               1.4);
 
     dim = settings.dimensions + 3;
-    *dim = DIM(
-      "y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
+    *dim = DIM("y",
+               ZarrDimensionType_Space,
+               array_height,
+               chunk_height,
+               shard_height,
+               "micrometer",
+               0.9);
 
     dim = settings.dimensions + 4;
-    *dim =
-      DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
+    *dim = DIM("x",
+               ZarrDimensionType_Space,
+               array_width,
+               chunk_width,
+               shard_width,
+               "micrometer",
+               0.9);
 
     auto* stream = ZarrStream_create(&settings);
     ZarrStreamSettings_destroy_dimension_array(&settings);
@@ -136,18 +155,29 @@ verify_group_metadata(const nlohmann::json& meta)
     type = axes[0]["type"];
     EXPECT(name == "t", "Expected name to be 't', but got '", name, "'");
     EXPECT(type == "time", "Expected type to be 'time', but got '", type, "'");
+    EXPECT(!axes[0].contains("unit"),
+           "Expected unit to be missing, got ",
+           axes[0]["unit"].get<std::string>());
 
     name = axes[1]["name"];
     type = axes[1]["type"];
     EXPECT(name == "c", "Expected name to be 'c', but got '", name, "'");
     EXPECT(
       type == "channel", "Expected type to be 'channel', but got '", type, "'");
+    EXPECT(!axes[1].contains("unit"),
+           "Expected unit to be missing, got ",
+           axes[1]["unit"].get<std::string>());
 
     name = axes[2]["name"];
     type = axes[2]["type"];
+    unit = axes[2]["unit"];
     EXPECT(name == "z", "Expected name to be 'z', but got '", name, "'");
     EXPECT(
       type == "space", "Expected type to be 'space', but got '", type, "'");
+    EXPECT(unit == "millimeter",
+           "Expected unit to be 'millimeter', but got '",
+           unit,
+           "'");
 
     name = axes[3]["name"];
     type = axes[3]["type"];
@@ -194,9 +224,9 @@ verify_group_metadata(const nlohmann::json& meta)
         EXPECT_EQ(size_t, scale.size(), 5);
         EXPECT_EQ(int, scale[0].get<double>(), 1.0);
         EXPECT_EQ(int, scale[1].get<double>(), 1.0);
-        EXPECT_EQ(int, scale[2].get<double>(), std::pow(2, level));
-        EXPECT_EQ(int, scale[3].get<double>(), std::pow(2, level));
-        EXPECT_EQ(int, scale[4].get<double>(), std::pow(2, level));
+        EXPECT_EQ(int, scale[2].get<double>(), std::pow(2, level) * 1.4);
+        EXPECT_EQ(int, scale[3].get<double>(), std::pow(2, level) * 0.9);
+        EXPECT_EQ(int, scale[4].get<double>(), std::pow(2, level) * 0.9);
     }
 }
 
