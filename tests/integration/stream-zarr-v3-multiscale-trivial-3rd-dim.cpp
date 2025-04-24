@@ -68,26 +68,45 @@ setup()
                ZarrDimensionType_Time,
                array_timepoints,
                chunk_timepoints,
-               shard_timepoints);
+               shard_timepoints,
+               nullptr,
+               1.0);
 
     dim = settings.dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
                chunk_channels,
-               shard_channels);
+               shard_channels,
+               nullptr,
+               1.0);
 
     dim = settings.dimensions + 2;
-    *dim = DIM(
-      "z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
+    *dim = DIM("z",
+               ZarrDimensionType_Space,
+               array_planes,
+               chunk_planes,
+               shard_planes,
+               "millimeter",
+               1.36);
 
     dim = settings.dimensions + 3;
-    *dim = DIM(
-      "y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
+    *dim = DIM("y",
+               ZarrDimensionType_Space,
+               array_height,
+               chunk_height,
+               shard_height,
+               "micrometer",
+               0.85);
 
     dim = settings.dimensions + 4;
-    *dim =
-      DIM("x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
+    *dim = DIM("x",
+               ZarrDimensionType_Space,
+               array_width,
+               chunk_width,
+               shard_width,
+               "micrometer",
+               0.85);
 
     auto* stream = ZarrStream_create(&settings);
     ZarrStreamSettings_destroy_dimension_array(&settings);
@@ -125,12 +144,13 @@ void verify_multiscale_metadata()
         
         const auto scale = coordinate_transformations[0]["scale"];
         EXPECT_EQ(size_t, scale.size(), 5);
-        
-        // Level 0 should have scale 1 for all dimensions
+
         if (level == 0) {
-            for (int i = 0; i < 5; i++) {
-                EXPECT_EQ(double, scale[i].get<double>(), 1.0);
-            }
+            EXPECT_EQ(double, scale[0].get<double>(), 1.0);
+            EXPECT_EQ(double, scale[1].get<double>(), 1.0);
+            EXPECT_EQ(double, scale[2].get<double>(), 1.36);
+            EXPECT_EQ(double, scale[3].get<double>(), 0.85);
+            EXPECT_EQ(double, scale[4].get<double>(), 0.85);
         } else {
             fs::path array_metadata_path = fs::path(test_path) / std::to_string(level) / "zarr.json";
             std::ifstream af = std::ifstream(array_metadata_path);
@@ -142,13 +162,15 @@ void verify_multiscale_metadata()
             // t and c dimensions should still be 1.0
             EXPECT_EQ(double, scale[0].get<double>(), 1.0); // t dimension
             EXPECT_EQ(double, scale[1].get<double>(), 1.0); // c dimension
-            
-            // z dimension should be 1.0 since we have only 1 plane
-            EXPECT_EQ(double, scale[2].get<double>(), 1.0);
-            
+
+            // z dimension should be 1.36 since we have only 1 plane
+            EXPECT_EQ(double, scale[2].get<double>(), 1.36);
+
             // y and x dimensions should match the ratio of original size to downsampled size
-            double expected_y_scale = static_cast<double>(array_height) / shape[3].get<int>();
-            double expected_x_scale = static_cast<double>(array_width) / shape[4].get<int>();
+            double expected_y_scale =
+              0.85 * (array_height / shape[3].get<int>());
+            double expected_x_scale =
+              0.85 * (array_width / shape[4].get<int>());
 
             EXPECT(std::abs(scale[3].get<double>() - expected_y_scale) < 0.01,
                    "For level ", level, ", expected y scale to be around ", expected_y_scale,
@@ -157,9 +179,6 @@ void verify_multiscale_metadata()
             EXPECT(std::abs(scale[4].get<double>() - expected_x_scale) < 0.01,
                    "For level ", level, ", expected x scale to be around ", expected_x_scale,
                    ", but got ", scale[4].get<double>());
-
-            // Verify that we're not doing 3D downsampling (z scale should be 1.0)
-            EXPECT_EQ(double, scale[2].get<double>(), 1.0);
         }
     }
 }
