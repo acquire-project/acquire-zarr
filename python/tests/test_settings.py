@@ -69,6 +69,8 @@ def test_set_dimensions(settings):
         acquire_zarr.Dimension(
             name="foo",
             kind=acquire_zarr.DimensionType.TIME,
+            unit="nanosecond",
+            scale=2.71828,
             array_size_px=1,
             chunk_size_px=2,
             shard_size_chunks=3,
@@ -76,6 +78,7 @@ def test_set_dimensions(settings):
         acquire_zarr.Dimension(
             name="bar",
             kind=acquire_zarr.DimensionType.SPACE,
+            unit="micrometer",
             array_size_px=4,
             chunk_size_px=5,
             shard_size_chunks=6,
@@ -93,18 +96,24 @@ def test_set_dimensions(settings):
 
     assert settings.dimensions[0].name == "foo"
     assert settings.dimensions[0].kind == acquire_zarr.DimensionType.TIME
+    assert settings.dimensions[0].unit == "nanosecond"
+    assert settings.dimensions[0].scale == 2.71828
     assert settings.dimensions[0].array_size_px == 1
     assert settings.dimensions[0].chunk_size_px == 2
     assert settings.dimensions[0].shard_size_chunks == 3
 
     assert settings.dimensions[1].name == "bar"
     assert settings.dimensions[1].kind == acquire_zarr.DimensionType.SPACE
+    assert settings.dimensions[1].unit == "micrometer"
+    assert settings.dimensions[1].scale == 1.0
     assert settings.dimensions[1].array_size_px == 4
     assert settings.dimensions[1].chunk_size_px == 5
     assert settings.dimensions[1].shard_size_chunks == 6
 
     assert settings.dimensions[2].name == "baz"
     assert settings.dimensions[2].kind == acquire_zarr.DimensionType.OTHER
+    assert settings.dimensions[2].unit is None
+    assert settings.dimensions[2].scale == 1.0
     assert settings.dimensions[2].array_size_px == 7
     assert settings.dimensions[2].chunk_size_px == 8
     assert settings.dimensions[2].shard_size_chunks == 9

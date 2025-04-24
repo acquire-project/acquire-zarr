@@ -158,7 +158,9 @@ class Dimension:
     chunk_size_px: int
     kind: DimensionType
     name: str
+    scale: float
     shard_size_chunks: int
+    unit: Optional[str]
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
