@@ -5,22 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.4.0] - [2025-04-24](https://github.com/acquire-project/acquire-zarr/compare/v0.3.1...v0.4.0)
 
 ### Added
 
 - API supports `unit` (string) and `scale` (double) properties to C `ZarrDimensionProperties` struct and Python
-  `DimensionProperties` class
-    - Validation ensures scale values are nonnegative (scale values of 0 default to 1)
-- Support for optional Zarr V3 `dimension_names` field in array metadata
+  `DimensionProperties` class (#102)
+- Support for optional Zarr V3 `dimension_names` field in array metadata (#102)
 
 ### Changed
 
-- Modified OME metadata generation to write unit and scale information
+- Modified OME metadata generation to write unit and scale information (#102)
 
 ### Removed
 
-- Remove hardcoded "micrometer" unit values from x and y dimensions
+- Remove hardcoded "micrometer" unit values from x and y dimensions (#102)
 
 ## [0.3.1] - [2025-04-22](https://github.com/acquire-project/acquire-zarr/compare/v0.3.0...v0.3.1)
 
