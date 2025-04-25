@@ -8,6 +8,7 @@
 #include "sink.hh"
 #include "thread.pool.hh"
 #include "zarr.dimension.hh"
+#include "zarr.group.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -25,14 +26,27 @@ struct ZarrStream_s
     ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Append data to the stream.
+     * @brief Append data to the named group.
      * @param group_name The name of the group to append to. Empty string for
      * the root group.
      * @param data The data to append.
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(std::string_view group_name, const void* data, size_t nbytes);
+    size_t append_to_group(std::string_view group_name,
+                           const void* data,
+                           size_t nbytes);
+
+    /**
+     * @brief Append data to the named array.
+     * @param group_name The name of the array to append to.
+     * @param data The data to append.
+     * @param nbytes The number of bytes to append.
+     * @return The number of bytes appended.
+     */
+    size_t append_to_array(std::string_view array_name,
+                           const void* data,
+                           size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -62,6 +76,8 @@ struct ZarrStream_s
     ZarrDataType dtype_;
     std::shared_ptr<ArrayDimensions> dimensions_;
     bool multiscale_;
+
+    std::unordered_map<std::string, zarr::ZarrGroup> groups_;
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;

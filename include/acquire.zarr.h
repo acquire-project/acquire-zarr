@@ -6,7 +6,6 @@
 extern "C"
 {
 #endif
-
     /**
      * @brief The settings for a Zarr stream.
      * @details This struct contains the settings for a Zarr stream, including
@@ -86,8 +85,8 @@ extern "C"
 
     /**
      * @brief Destroy a Zarr stream.
-     * @details This function waits for all pending writes to complete and frees the 
-     * memory allocated for the Zarr stream.
+     * @details This function waits for all pending writes to complete and frees
+     * the memory allocated for the Zarr stream.
      * @param stream The Zarr stream struct to destroy.
      */
     void ZarrStream_destroy(ZarrStream* stream);
@@ -98,7 +97,8 @@ extern "C"
      * @param[in, out] stream The Zarr stream struct.
      * @param[in] data The data to append.
      * @param[in] bytes_in The number of bytes in @p data. This can be any
-     * nonnegative integer. On a value of 0, this function will immediately return.
+     * nonnegative integer. On a value of 0, this function will immediately
+     * return.
      * @param[out] bytes_out The number of bytes written to the stream.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
@@ -108,19 +108,58 @@ extern "C"
                                      size_t* bytes_out);
 
     /**
+     * @brief Configure a new group in the stream.
+     * @param[in, out] stream The Zarr stream struct.
+     * @param[in] properties The properties of the group to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_configure_group(
+      ZarrStream* stream,
+      const ZarrGroupProperties* properties);
+
+    /**
+     * @brief Configure a new array in the stream.
+     * @param[in, out] stream The Zarr stream struct.
+     * @param[in] properties The properties of the array to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_configure_array(
+      ZarrStream* stream,
+      const ZarrArrayProperties* properties);
+
+    /**
      * @brief Append data to the named group in the Zarr stream.
      * @note Partial or multiple frames can be appended in a single call.
      * @param[in, out] stream The Zarr stream struct.
-     * @param[in] group_name The name of the group to append to. Empty string
-     * indicates the root group.
+     * @param[in] array_name The name of the group to append to. Empty string
+     * indicates the root group, equivalent to ZarrStream_append().
      * @param[in] data The data to append.
      * @param[in] bytes_in The number of bytes in @p data. This can be any
-     * nonnegative integer. On a value of 0, this function will immediately return.
+     * nonnegative integer. On a value of 0, this function will immediately
+     * return.
      * @param[out] bytes_out The number of bytes written to the stream.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_append_to_group(ZarrStream* stream,
-                                              const char* group_name,
+                                              const char* array_name,
+                                              const void* data,
+                                              size_t bytes_in,
+                                              size_t* bytes_out);
+
+    /**
+     * @brief Append data to the named array in the Zarr stream.
+     * @note Partial or multiple frames can be appended in a single call.
+     * @param[in, out] stream The Zarr stream struct.
+     * @param[in] array_name The name of the group to append to.
+     * @param[in] data The data to append.
+     * @param[in] bytes_in The number of bytes in @p data. This can be any
+     * nonnegative integer. On a value of 0, this function will immediately
+     * return.
+     * @param[out] bytes_out The number of bytes written to the stream.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_append_to_array(ZarrStream* stream,
+                                              const char* array_name,
                                               const void* data,
                                               size_t bytes_in,
                                               size_t* bytes_out);

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- API configuration structs for named groups and arrays in the dataset.
+- API function `ZarrStream_append_to_group` for appending data to a named group in the dataset.
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
 ## [0.4.0] - [2025-04-24](https://github.com/acquire-project/acquire-zarr/compare/v0.3.1...v0.4.0)
 
 ### Added

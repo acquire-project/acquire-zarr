@@ -323,9 +323,9 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append(std::string_view group_name,
-                   const void* data_,
-                   size_t nbytes)
+ZarrStream::append_to_group(std::string_view group_name,
+                            const void* data_,
+                            size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
 

@@ -169,6 +169,22 @@ extern "C"
           stream, "", data, bytes_in, bytes_out);
     }
 
+    ZarrStatusCode ZarrStream_configure_group(
+      struct ZarrStream_s* stream,
+      const ZarrGroupProperties* properties)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
+    }
+
+    ZarrStatusCode ZarrStream_configure_array(
+      struct ZarrStream_s* stream,
+      const ZarrArrayProperties* properties)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
+    }
+
     ZarrStatusCode ZarrStream_append_to_group(struct ZarrStream_s* stream,
                                               const char* group_name,
                                               const void* data,
