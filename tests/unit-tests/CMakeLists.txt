@@ -20,14 +20,13 @@ set(tests
         s3-sink-write-multipart
         make-data-sinks
         make-metadata-sinks
-        array-writer-downsample-writer-config
-        zarrv2-array-writer-write-frame-to-chunks
-        zarrv2-writer-write-even
-        zarrv2-writer-write-ragged-append-dim
-        zarrv2-writer-write-ragged-internal-dim
-        zarrv3-writer-write-even
-        zarrv3-writer-write-ragged-append-dim
-        zarrv3-writer-write-ragged-internal-dim
+        v2-array-write-frame-to-chunks
+        v2-array-write-even
+        v2-array-write-ragged-append-dim
+        v2-array-write-ragged-internal-dim
+        v3-array-write-even
+        v3-array-write-ragged-append-dim
+        v3-array-write-ragged-internal-dim
         partial-append
         frame-queue
         downsampler

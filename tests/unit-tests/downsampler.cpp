@@ -32,7 +32,7 @@ test_basic_downsampling()
                                   { "x", ZarrDimensionType_Space, 10, 5, 1 } },
       ZarrDataType_uint8);
 
-    zarr::ArrayWriterConfig config;
+    zarr::ArrayConfig config;
     config.dtype = ZarrDataType_uint8;
     config.dimensions = dims;
     config.level_of_detail = 0;
@@ -81,7 +81,7 @@ test_3d_downsampling()
                                   { "x", ZarrDimensionType_Space, 20, 5, 1 } },
       ZarrDataType_uint16);
 
-    zarr::ArrayWriterConfig config;
+    zarr::ArrayConfig config;
     config.dtype = ZarrDataType_uint16;
     config.dimensions = dims;
     config.level_of_detail = 0;
@@ -161,7 +161,7 @@ test_data_types()
             { "x", ZarrDimensionType_Space, 10, 5, 1 } },
           type);
 
-        zarr::ArrayWriterConfig config;
+        zarr::ArrayConfig config;
         config.dtype = type;
         config.dimensions = dims;
         config.level_of_detail = 0;
@@ -257,7 +257,7 @@ test_writer_configurations()
     auto dims = std::make_shared<ArrayDimensions>(std::move(dimensions_to_move),
                                                   ZarrDataType_uint16);
 
-    zarr::ArrayWriterConfig config;
+    zarr::ArrayConfig config;
     config.dtype = ZarrDataType_uint16;
     config.dimensions = dims;
     config.level_of_detail = 0;
@@ -310,7 +310,7 @@ test_edge_cases()
       },
       ZarrDataType_uint8);
 
-    zarr::ArrayWriterConfig config;
+    zarr::ArrayConfig config;
     config.dtype = ZarrDataType_uint8;
     config.dimensions = dims;
     config.level_of_detail = 0;

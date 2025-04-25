@@ -3,7 +3,7 @@
 #include "definitions.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
-#include "zarr.dimension.hh"
+#include "array.dimensions.hh"
 
 #include <cstddef> // size_t, std::byte
 #include <memory>  // std::unique_ptr

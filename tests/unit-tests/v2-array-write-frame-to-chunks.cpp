@@ -1,6 +1,10 @@
-#include "zarrv2.array.writer.hh"
+#include "v2.array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 int
 main()
@@ -36,16 +40,16 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, 0);
 
-        zarr::ArrayWriterConfig config = {
+        zarr::ArrayConfig config = {
             .dimensions =
               std::make_unique<ArrayDimensions>(std::move(dims), dtype),
             .dtype = dtype,
             .bucket_name = std::nullopt,
-            .store_path = base_dir.string(),
+            .store_root = base_dir.string(),
             .compression_params = std::nullopt,
         };
 
-        zarr::ZarrV2ArrayWriter writer(std::move(config), thread_pool);
+        zarr::V2Array writer(std::move(config), thread_pool);
 
         const size_t frame_size = array_width * array_height * nbytes_px;
         std::vector data_(frame_size, std::byte(0));

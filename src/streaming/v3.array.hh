@@ -1,16 +1,15 @@
 #pragma once
 
-#include "array.writer.hh"
+#include "array.hh"
 
 namespace zarr {
-struct ZarrV3ArrayWriter : public ArrayWriter
+class V3Array final : public Array
 {
   public:
-    ZarrV3ArrayWriter(const ArrayWriterConfig& config,
-                      std::shared_ptr<ThreadPool> thread_pool);
-    ZarrV3ArrayWriter(const ArrayWriterConfig& config,
-                      std::shared_ptr<ThreadPool> thread_pool,
-                      std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    V3Array(const ArrayConfig& config, std::shared_ptr<ThreadPool> thread_pool);
+    V3Array(const ArrayConfig& config,
+            std::shared_ptr<ThreadPool> thread_pool,
+            std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
     std::vector<size_t> shard_file_offsets_;

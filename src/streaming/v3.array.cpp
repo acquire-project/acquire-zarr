@@ -1,4 +1,4 @@
-#include "zarrv3.array.writer.hh"
+#include "v3.array.hh"
 
 #include "definitions.hh"
 #include "macros.hh"
@@ -65,18 +65,16 @@ shuffle_to_string(uint8_t shuffle)
 }
 } // namespace
 
-zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool)
-  : ZarrV3ArrayWriter(config, thread_pool, nullptr)
+zarr::V3Array::V3Array(const ArrayConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool)
+  : V3Array(config, thread_pool, nullptr)
 {
 }
 
-zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayWriter(config, thread_pool, s3_connection_pool)
+zarr::V3Array::V3Array(const ArrayConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
   , current_layer_{ 0 }
 {
     const auto& dims = config_.dimensions;
@@ -94,7 +92,7 @@ zarr::ZarrV3ArrayWriter::ZarrV3ArrayWriter(
 }
 
 size_t
-zarr::ZarrV3ArrayWriter::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
+zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 {
     const auto& dims = config_.dimensions;
     CHECK(shard_index < dims->number_of_shards());
@@ -155,27 +153,27 @@ zarr::ZarrV3ArrayWriter::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 }
 
 std::string
-zarr::ZarrV3ArrayWriter::data_root_() const
+zarr::V3Array::data_root_() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
            "/c/" + std::to_string(append_chunk_index_);
 }
 
 std::string
-zarr::ZarrV3ArrayWriter::metadata_path_() const
+zarr::V3Array::metadata_path_() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
            "/zarr.json";
 }
 
 const DimensionPartsFun
-zarr::ZarrV3ArrayWriter::parts_along_dimension_() const
+zarr::V3Array::parts_along_dimension_() const
 {
     return shards_along_dimension;
 }
 
 void
-zarr::ZarrV3ArrayWriter::make_buffers_()
+zarr::V3Array::make_buffers_()
 {
     LOG_DEBUG("Creating shard buffers");
 
@@ -199,7 +197,7 @@ zarr::ZarrV3ArrayWriter::make_buffers_()
 }
 
 BytePtr
-zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
+zarr::V3Array::get_chunk_data_(uint32_t index)
 {
     const auto& dims = config_.dimensions;
     const auto shard_idx = dims->shard_index_for_chunk(index);
@@ -226,7 +224,7 @@ zarr::ZarrV3ArrayWriter::get_chunk_data_(uint32_t index)
 }
 
 bool
-zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
+zarr::V3Array::compress_and_flush_data_()
 {
     // construct paths to shard sinks if they don't already exist
     if (data_paths_.empty()) {
@@ -282,39 +280,38 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
         auto& latch = chunk_latches.at(shard_idx);
 
         if (compression_params) {
-            EXPECT(thread_pool_->push_job(std::move([bytes_per_px,
-                                                     bytes_of_raw_chunk,
-                                                     &compression_params,
-                                                     chunk_ptr =
-                                                       get_chunk_data_(i),
-                                                     &shard_table,
-                                                     internal_idx,
-                                                     &latch,
-                                                     &all_successful](
-                                                      std::string& err) {
-                bool success = true;
+            EXPECT(thread_pool_->push_job(
+                     std::move([bytes_per_px,
+                                bytes_of_raw_chunk,
+                                &compression_params,
+                                chunk_ptr = get_chunk_data_(i),
+                                &shard_table,
+                                internal_idx,
+                                &latch,
+                                &all_successful](std::string& err) {
+                         bool success = true;
 
-                try {
-                    const int nb = compress_buffer_in_place(
-                      chunk_ptr,
-                      bytes_of_raw_chunk + BLOSC_MAX_OVERHEAD,
-                      bytes_of_raw_chunk,
-                      *compression_params,
-                      bytes_per_px);
-                    EXPECT(nb > 0, "Failed to compress chunk");
+                         try {
+                             const int nb = compress_buffer_in_place(
+                               chunk_ptr,
+                               bytes_of_raw_chunk + BLOSC_MAX_OVERHEAD,
+                               bytes_of_raw_chunk,
+                               *compression_params,
+                               bytes_per_px);
+                             EXPECT(nb > 0, "Failed to compress chunk");
 
-                    // update shard table with size
-                    shard_table[2 * internal_idx + 1] = nb;
-                } catch (const std::exception& exc) {
-                    err = exc.what();
-                    success = false;
-                }
+                             // update shard table with size
+                             shard_table[2 * internal_idx + 1] = nb;
+                         } catch (const std::exception& exc) {
+                             err = exc.what();
+                             success = false;
+                         }
 
-                latch.count_down();
+                         latch.count_down();
 
-                all_successful.fetch_and(static_cast<char>(success));
-                return success;
-            })),
+                         all_successful.fetch_and(static_cast<char>(success));
+                         return success;
+                     })),
                    "Failed to push job to thread pool");
         } else {
             // no compression, just update shard table with size
@@ -446,7 +443,7 @@ zarr::ZarrV3ArrayWriter::compress_and_flush_data_()
 }
 
 bool
-zarr::ZarrV3ArrayWriter::write_array_metadata_()
+zarr::V3Array::write_array_metadata_()
 {
     if (!make_metadata_sink_()) {
         return false;
@@ -561,7 +558,7 @@ zarr::ZarrV3ArrayWriter::write_array_metadata_()
 }
 
 void
-zarr::ZarrV3ArrayWriter::close_sinks_()
+zarr::V3Array::close_sinks_()
 {
     data_paths_.clear();
 
@@ -573,7 +570,7 @@ zarr::ZarrV3ArrayWriter::close_sinks_()
 }
 
 bool
-zarr::ZarrV3ArrayWriter::should_rollover_() const
+zarr::V3Array::should_rollover_() const
 {
     const auto& dims = config_.dimensions;
     const auto& append_dim = dims->final_dim();

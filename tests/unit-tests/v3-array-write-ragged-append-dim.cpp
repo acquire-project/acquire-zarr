@@ -1,4 +1,4 @@
-#include "zarrv3.array.writer.hh"
+#include "v3.array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -103,17 +103,17 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
-        zarr::ArrayWriterConfig config = {
+        zarr::ArrayConfig config = {
             .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
             .dtype = dtype,
             .level_of_detail = 4,
             .bucket_name = std::nullopt,
-            .store_path = base_dir.string(),
+            .store_root = base_dir.string(),
             .compression_params = std::nullopt,
         };
 
         {
-            auto writer = std::make_unique<zarr::ZarrV3ArrayWriter>(
+            auto writer = std::make_unique<zarr::V3Array>(
               std::move(config), thread_pool);
 
             const size_t frame_size = array_width * array_height * nbytes_px;

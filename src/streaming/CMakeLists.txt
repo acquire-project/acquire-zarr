@@ -9,8 +9,8 @@ endif ()
 add_library(${tgt}
         macros.hh
         acquire.zarr.cpp
-        zarr.dimension.hh
-        zarr.dimension.cpp
+        array.dimensions.hh
+        array.dimensions.cpp
         frame.queue.hh
         frame.queue.cpp
         downsampler.hh
@@ -32,12 +32,12 @@ add_library(${tgt}
         ${PLATFORM_FILE_SINK_CPP}
         s3.sink.hh
         s3.sink.cpp
-        array.writer.hh
-        array.writer.cpp
-        zarrv2.array.writer.hh
-        zarrv2.array.writer.cpp
-        zarrv3.array.writer.hh
-        zarrv3.array.writer.cpp
+        array.hh
+        array.cpp
+        v2.array.hh
+        v2.array.cpp
+        v3.array.hh
+        v3.array.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 

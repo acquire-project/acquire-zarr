@@ -1,7 +1,7 @@
 #include "downsampler.hh"
 #include "macros.hh"
-#include "zarrv2.array.writer.hh"
-#include "zarrv3.array.writer.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
 
 namespace {
 template<typename T>
@@ -74,7 +74,7 @@ average_two_frames(ByteVector& dst, ConstByteSpan src)
 }
 } // namespace
 
-zarr::Downsampler::Downsampler(const ArrayWriterConfig& config)
+zarr::Downsampler::Downsampler(const ArrayConfig& config)
 {
     make_writer_configurations_(config);
 
@@ -148,7 +148,7 @@ zarr::Downsampler::get_downsampled_frame(int level, ByteVector& frame_data)
     return false;
 }
 
-const std::unordered_map<int, zarr::ArrayWriterConfig>&
+const std::unordered_map<int, zarr::ArrayConfig>&
 zarr::Downsampler::writer_configurations() const
 {
     return writer_configurations_;
@@ -174,7 +174,7 @@ zarr::Downsampler::n_levels_() const
 }
 
 void
-zarr::Downsampler::make_writer_configurations_(const ArrayWriterConfig& config)
+zarr::Downsampler::make_writer_configurations_(const ArrayConfig& config)
 {
     writer_configurations_.insert({ config.level_of_detail, config });
 

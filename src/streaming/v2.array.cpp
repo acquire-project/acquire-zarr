@@ -1,4 +1,4 @@
-#include "zarrv2.array.writer.hh"
+#include "v2.array.hh"
 
 #include "definitions.hh"
 #include "macros.hh"
@@ -60,43 +60,41 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 }
 } // namespace
 
-zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool)
-  : ArrayWriter(config, thread_pool)
+zarr::V2Array::V2Array(const ArrayConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool)
+  : Array(config, thread_pool)
 {
 }
 
-zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayWriter(config, thread_pool, s3_connection_pool)
+zarr::V2Array::V2Array(const ArrayConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
 {
 }
 
 std::string
-zarr::ZarrV2ArrayWriter::data_root_() const
+zarr::V2Array::data_root_() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
            "/" + std::to_string(append_chunk_index_);
 }
 
 std::string
-zarr::ZarrV2ArrayWriter::metadata_path_() const
+zarr::V2Array::metadata_path_() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
+    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
            "/.zarray";
 }
 
 const DimensionPartsFun
-zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
+zarr::V2Array::parts_along_dimension_() const
 {
     return chunks_along_dimension;
 }
 
 void
-zarr::ZarrV2ArrayWriter::make_buffers_()
+zarr::V2Array::make_buffers_()
 {
     LOG_DEBUG("Creating chunk buffers");
 
@@ -112,13 +110,13 @@ zarr::ZarrV2ArrayWriter::make_buffers_()
 }
 
 BytePtr
-zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
+zarr::V2Array::get_chunk_data_(uint32_t index)
 {
     return data_buffers_[index].data();
 }
 
 bool
-zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
+zarr::V2Array::compress_and_flush_data_()
 {
     // construct paths to chunk sinks
     CHECK(data_paths_.empty());
@@ -225,7 +223,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
 }
 
 bool
-zarr::ZarrV2ArrayWriter::write_array_metadata_()
+zarr::V2Array::write_array_metadata_()
 {
     if (!make_metadata_sink_()) {
         return false;
@@ -283,13 +281,13 @@ zarr::ZarrV2ArrayWriter::write_array_metadata_()
 }
 
 void
-zarr::ZarrV2ArrayWriter::close_sinks_()
+zarr::V2Array::close_sinks_()
 {
     data_paths_.clear();
 }
 
 bool
-zarr::ZarrV2ArrayWriter::should_rollover_() const
+zarr::V2Array::should_rollover_() const
 {
     return true;
 }

@@ -1,4 +1,4 @@
-#include "zarr.dimension.hh"
+#include "array.dimensions.hh"
 #include "unit.test.macros.hh"
 
 #include <stdexcept>

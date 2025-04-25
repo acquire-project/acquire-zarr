@@ -191,7 +191,7 @@ main()
             std::fill(data.begin(), data.end(), row);
             for (auto col_group = 0; col_group < 4; ++col_group) {
                 const auto bytes_written =
-                  stream->append("", data.data(), data.size());
+                  stream->append_to_group("", data.data(), data.size());
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
@@ -201,10 +201,10 @@ main()
 
         // append more than one frame, then fill in the rest
         const auto bytes_to_write = 48 * 64 + 7;
-        auto bytes_written = stream->append("", data.data(), bytes_to_write);
+        auto bytes_written = stream->append_to_group("", data.data(), bytes_to_write);
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
-        bytes_written = stream->append(
+        bytes_written = stream->append_to_group(
           "", data.data() + bytes_to_write, data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 

@@ -2,8 +2,8 @@
 #include "zarr.stream.hh"
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
-#include "zarrv2.array.writer.hh"
-#include "zarrv3.array.writer.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
 #include "sink.hh"
 
 #include <bit> // bit_ceil
@@ -708,10 +708,10 @@ ZarrStream_s::create_writers_()
 
         for (const auto& [lod, config] : configs) {
             if (version_ == 2) {
-                writers_[lod] = std::make_unique<zarr::ZarrV2ArrayWriter>(
+                writers_[lod] = std::make_unique<zarr::V2Array>(
                   config, thread_pool_, s3_connection_pool_);
             } else {
-                writers_[lod] = std::make_unique<zarr::ZarrV3ArrayWriter>(
+                writers_[lod] = std::make_unique<zarr::V3Array>(
                   config, thread_pool_, s3_connection_pool_);
             }
         }
@@ -719,10 +719,10 @@ ZarrStream_s::create_writers_()
         const auto config = make_array_writer_config_();
 
         if (version_ == 2) {
-            writers_.push_back(std::make_unique<zarr::ZarrV2ArrayWriter>(
+            writers_.push_back(std::make_unique<zarr::V2Array>(
               config, thread_pool_, s3_connection_pool_));
         } else {
-            writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
+            writers_.push_back(std::make_unique<zarr::V3Array>(
               config, thread_pool_, s3_connection_pool_));
         }
     }
@@ -954,7 +954,7 @@ ZarrStream_s::make_ome_metadata_() const
     return ome;
 }
 
-zarr::ArrayWriterConfig
+zarr::ArrayConfig
 ZarrStream_s::make_array_writer_config_() const
 {
     // construct Blosc compression parameters
@@ -976,7 +976,7 @@ ZarrStream_s::make_array_writer_config_() const
         .dtype = dtype_,
         .level_of_detail = 0,
         .bucket_name = s3_bucket_name,
-        .store_path = store_path_,
+        .store_root = store_path_,
         .compression_params = blosc_compression_params,
     };
 }

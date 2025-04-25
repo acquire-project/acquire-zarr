@@ -1,14 +1,14 @@
 #pragma once
 
-#include "array.writer.hh"
+#include "array.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
-#include "zarr.dimension.hh"
-#include "zarr.group.hh"
+#include "array.dimensions.hh"
+#include "group.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -77,7 +77,8 @@ struct ZarrStream_s
     std::shared_ptr<ArrayDimensions> dimensions_;
     bool multiscale_;
 
-    std::unordered_map<std::string, zarr::ZarrGroup> groups_;
+    std::unordered_map<std::string, std::shared_ptr<zarr::Group>> groups_;
+    std::unordered_map<std::string, std::shared_ptr<zarr::Array>> arrays_;
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
@@ -94,7 +95,7 @@ struct ZarrStream_s
 
     std::optional<zarr::Downsampler> downsampler_;
 
-    std::vector<std::unique_ptr<zarr::ArrayWriter>> writers_;
+    std::vector<std::unique_ptr<zarr::Array>> writers_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
       metadata_sinks_;
 
@@ -107,7 +108,8 @@ struct ZarrStream_s
      * @param settings Struct containing settings to validate.
      * @return true if settings are valid, false otherwise.
      */
-    [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool validate_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Copy settings to the stream.
@@ -150,8 +152,8 @@ struct ZarrStream_s
     /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
     [[nodiscard]] nlohmann::json make_ome_metadata_() const;
 
-    /** @brief Create a configuration for a full-resolution ArrayWriter. */
-    zarr::ArrayWriterConfig make_array_writer_config_() const;
+    /** @brief Create a configuration for a full-resolution Array. */
+    zarr::ArrayConfig make_array_writer_config_() const;
 
     /** @brief Process the frame queue. */
     void process_frame_queue_();

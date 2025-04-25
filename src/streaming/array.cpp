@@ -1,5 +1,5 @@
 #include "macros.hh"
-#include "array.writer.hh"
+#include "array.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 #include "sink.hh"
@@ -13,79 +13,15 @@
 #undef max
 #endif
 
-bool
-zarr::downsample(const ArrayWriterConfig& config,
-                 ArrayWriterConfig& downsampled_config)
-{
-    // downsample dimensions
-    std::vector<ZarrDimension> downsampled_dims(config.dimensions->ndims());
-    for (auto i = 0; i < config.dimensions->ndims(); ++i) {
-        const auto& dim = config.dimensions->at(i);
-        // don't downsample channels
-        if (dim.type == ZarrDimensionType_Channel) {
-            downsampled_dims[i] = dim;
-        } else {
-            const uint32_t array_size_px =
-              (dim.array_size_px + (dim.array_size_px % 2)) / 2;
-
-            const uint32_t chunk_size_px =
-              dim.array_size_px == 0
-                ? dim.chunk_size_px
-                : std::min(dim.chunk_size_px, array_size_px);
-
-            CHECK(chunk_size_px);
-            const uint32_t n_chunks =
-              (array_size_px + chunk_size_px - 1) / chunk_size_px;
-
-            const uint32_t shard_size_chunks =
-              dim.array_size_px == 0
-                ? 1
-                : std::min(n_chunks, dim.shard_size_chunks);
-
-            downsampled_dims[i] = { dim.name,
-                                    dim.type,
-                                    array_size_px,
-                                    chunk_size_px,
-                                    shard_size_chunks };
-        }
-    }
-    downsampled_config.dimensions = std::make_shared<ArrayDimensions>(
-      std::move(downsampled_dims), config.dtype);
-
-    downsampled_config.level_of_detail = config.level_of_detail + 1;
-    downsampled_config.bucket_name = config.bucket_name;
-    downsampled_config.store_path = config.store_path;
-
-    downsampled_config.dtype = config.dtype;
-
-    // copy the Blosc compression parameters
-    downsampled_config.compression_params = config.compression_params;
-
-    // can we downsample downsampled_config?
-    for (auto i = 0; i < config.dimensions->ndims(); ++i) {
-        // downsampling made the chunk size strictly smaller
-        const auto& dim = config.dimensions->at(i);
-        const auto& downsampled_dim = downsampled_config.dimensions->at(i);
-
-        if (dim.chunk_size_px > downsampled_dim.chunk_size_px) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// Writer
-zarr::ArrayWriter::ArrayWriter(const ArrayWriterConfig& config,
-                               std::shared_ptr<ThreadPool> thread_pool)
-  : ArrayWriter(std::move(config), thread_pool, nullptr)
+zarr::Array::Array(const ArrayConfig& config,
+                   std::shared_ptr<ThreadPool> thread_pool)
+  : Array(std::move(config), thread_pool, nullptr)
 {
 }
 
-zarr::ArrayWriter::ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+zarr::Array::Array(const ArrayConfig& config,
+                   std::shared_ptr<ThreadPool> thread_pool,
+                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_{ config }
   , thread_pool_{ thread_pool }
   , s3_connection_pool_{ s3_connection_pool }
@@ -97,7 +33,7 @@ zarr::ArrayWriter::ArrayWriter(
 }
 
 size_t
-zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
+zarr::Array::write_frame(std::span<const std::byte> data)
 {
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
@@ -141,7 +77,7 @@ zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
 }
 
 size_t
-zarr::ArrayWriter::bytes_to_allocate_per_chunk_() const
+zarr::Array::bytes_to_allocate_per_chunk_() const
 {
     size_t bytes_per_chunk = config_.dimensions->bytes_per_chunk();
     if (config_.compression_params) {
@@ -152,13 +88,13 @@ zarr::ArrayWriter::bytes_to_allocate_per_chunk_() const
 }
 
 bool
-zarr::ArrayWriter::is_s3_array_() const
+zarr::Array::is_s3_array_() const
 {
     return config_.bucket_name.has_value();
 }
 
 void
-zarr::ArrayWriter::make_data_paths_()
+zarr::Array::make_data_paths_()
 {
     if (data_paths_.empty()) {
         data_paths_ = construct_data_paths(
@@ -167,7 +103,7 @@ zarr::ArrayWriter::make_data_paths_()
 }
 
 bool
-zarr::ArrayWriter::make_metadata_sink_()
+zarr::Array::make_metadata_sink_()
 {
     if (metadata_sink_) {
         return true;
@@ -188,7 +124,7 @@ zarr::ArrayWriter::make_metadata_sink_()
 }
 
 size_t
-zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
+zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 {
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_.dtype);
@@ -282,7 +218,7 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
 }
 
 bool
-zarr::ArrayWriter::should_flush_() const
+zarr::Array::should_flush_() const
 {
     const auto& dims = config_.dimensions;
     size_t frames_before_flush = dims->final_dim().chunk_size_px;
@@ -295,7 +231,7 @@ zarr::ArrayWriter::should_flush_() const
 }
 
 void
-zarr::ArrayWriter::rollover_()
+zarr::Array::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
@@ -304,7 +240,7 @@ zarr::ArrayWriter::rollover_()
 }
 
 bool
-zarr::finalize_array(std::unique_ptr<ArrayWriter>&& writer)
+zarr::finalize_array(std::unique_ptr<Array>&& writer)
 {
     if (writer == nullptr) {
         LOG_INFO("Array writer is null. Nothing to finalize.");
