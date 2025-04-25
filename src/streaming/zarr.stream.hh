@@ -77,8 +77,8 @@ struct ZarrStream_s
     std::shared_ptr<ArrayDimensions> dimensions_;
     bool multiscale_;
 
-    std::unordered_map<std::string, std::shared_ptr<zarr::Group>> groups_;
-    std::unordered_map<std::string, std::shared_ptr<zarr::Array>> arrays_;
+    std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
+    std::unordered_map<std::string, std::unique_ptr<zarr::Array>> arrays_;
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
@@ -93,9 +93,6 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
-    std::optional<zarr::Downsampler> downsampler_;
-
-    std::vector<std::unique_ptr<zarr::Array>> writers_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
       metadata_sinks_;
 
@@ -134,11 +131,8 @@ struct ZarrStream_s
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();
 
-    /** @brief Create the writers. */
-    [[nodiscard]] bool create_writers_();
-
-    /** @brief Create a downsampler for multiscale. */
-    [[nodiscard]] bool create_downsampler_();
+    /** @brief Create the root group. */
+    [[nodiscard]] bool create_root_group_();
 
     /** @brief Create the metadata sinks. */
     [[nodiscard]] bool create_metadata_sinks_();
@@ -149,33 +143,11 @@ struct ZarrStream_s
     /** @brief Write Zarr group metadata. */
     [[nodiscard]] bool write_group_metadata_();
 
-    /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
-    [[nodiscard]] nlohmann::json make_ome_metadata_() const;
-
-    /** @brief Create a configuration for a full-resolution Array. */
-    zarr::ArrayConfig make_array_writer_config_() const;
-
     /** @brief Process the frame queue. */
     void process_frame_queue_();
 
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
-
-    /**
-     * @brief Write a frame to the chunk buffers.
-     * @note This function splits the incoming frame into tiles and writes them
-     * to the chunk buffers. If we are writing multiscale frames, the function
-     * calls write_multiscale_frames_() to write the scaled frames.
-     * @param data The frame data to write.
-     * @return The number of bytes written of the full-resolution frame.
-     */
-    size_t write_frame_(ConstByteSpan data);
-
-    /**
-     * @brief Downsample the full-resolution frame to create multiscale frames.
-     * @param data The full-resolution frame data.
-     */
-    void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };

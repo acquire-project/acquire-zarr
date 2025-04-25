@@ -14,8 +14,7 @@ struct ArrayConfig
     ZarrDataType dtype;
     int level_of_detail;
     std::optional<std::string> bucket_name;
-    std::string
-      store_root; /**< Path to the root of the store, e.g., my-dataset.zarr */
+    std::string store_root;
     std::optional<BloscCompressionParams> compression_params;
 };
 
@@ -89,9 +88,9 @@ class Array
 
     virtual void close_sinks_() = 0;
 
-    friend bool finalize_array(std::unique_ptr<Array>&& writer);
+    friend bool finalize_array(std::unique_ptr<Array>&& array);
 };
 
 bool
-finalize_array(std::unique_ptr<Array>&& writer);
+finalize_array(std::unique_ptr<Array>&& array);
 } // namespace zarr

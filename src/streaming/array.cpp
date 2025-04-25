@@ -1,17 +1,12 @@
-#include "macros.hh"
 #include "array.hh"
+#include "macros.hh"
+#include "sink.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
-#include "sink.hh"
 
 #include <cmath>
 #include <functional>
 #include <stdexcept>
-
-#if defined(min) || defined(max)
-#undef min
-#undef max
-#endif
 
 zarr::Array::Array(const ArrayConfig& config,
                    std::shared_ptr<ThreadPool> thread_pool)
@@ -240,32 +235,32 @@ zarr::Array::rollover_()
 }
 
 bool
-zarr::finalize_array(std::unique_ptr<Array>&& writer)
+zarr::finalize_array(std::unique_ptr<Array>&& array)
 {
-    if (writer == nullptr) {
+    if (array == nullptr) {
         LOG_INFO("Array writer is null. Nothing to finalize.");
         return true;
     }
 
-    writer->is_finalizing_ = true;
+    array->is_finalizing_ = true;
     try {
-        if (writer->bytes_to_flush_ > 0) {
-            CHECK(writer->compress_and_flush_data_());
+        if (array->bytes_to_flush_ > 0) {
+            CHECK(array->compress_and_flush_data_());
         }
-        if (writer->frames_written_ > 0) {
-            CHECK(writer->write_array_metadata_());
+        if (array->frames_written_ > 0) {
+            CHECK(array->write_array_metadata_());
         }
-        writer->close_sinks_();
+        array->close_sinks_();
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to finalize array writer: ", exc.what());
         return false;
     }
 
-    if (!finalize_sink(std::move(writer->metadata_sink_))) {
+    if (!finalize_sink(std::move(array->metadata_sink_))) {
         LOG_ERROR("Failed to finalize metadata sink");
         return false;
     }
 
-    writer.reset();
+    array.reset();
     return true;
 }

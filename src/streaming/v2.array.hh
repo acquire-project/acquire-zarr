@@ -7,7 +7,6 @@ class V2Array final : public Array
 {
   public:
     V2Array(const ArrayConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-
     V2Array(const ArrayConfig& config,
             std::shared_ptr<ThreadPool> thread_pool,
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);

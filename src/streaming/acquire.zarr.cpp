@@ -175,6 +175,8 @@ extern "C"
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
+
+        return ZarrStatusCode_Success;
     }
 
     ZarrStatusCode ZarrStream_configure_array(
@@ -183,6 +185,8 @@ extern "C"
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
+
+        return ZarrStatusCode_Success;
     }
 
     ZarrStatusCode ZarrStream_append_to_group(struct ZarrStream_s* stream,
