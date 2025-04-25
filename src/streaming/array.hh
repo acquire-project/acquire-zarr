@@ -14,7 +14,8 @@ struct ArrayConfig
     ZarrDataType dtype;
     int level_of_detail;
     std::optional<std::string> bucket_name;
-    std::string store_root; /**< Path to the root of the store, e.g., my-dataset.zarr */
+    std::string
+      store_root; /**< Path to the root of the store, e.g., my-dataset.zarr */
     std::optional<BloscCompressionParams> compression_params;
 };
 
@@ -22,7 +23,6 @@ class Array
 {
   public:
     Array(const ArrayConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-
     Array(const ArrayConfig& config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);

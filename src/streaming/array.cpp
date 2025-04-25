@@ -15,7 +15,7 @@
 
 zarr::Array::Array(const ArrayConfig& config,
                    std::shared_ptr<ThreadPool> thread_pool)
-  : Array(std::move(config), thread_pool, nullptr)
+  : Array(config, thread_pool, nullptr)
 {
 }
 
