@@ -39,6 +39,12 @@ class Group
      */
     size_t write_frame(ConstByteSpan data);
 
+    /**
+     * @brief Construct OME metadata for this group.
+     * @return
+     */
+    virtual nlohmann::json get_ome_metadata() const = 0;
+
   protected:
     GroupConfig config_;
 
@@ -59,9 +65,6 @@ class Group
 
     /** @brief Construct OME multiscales metadata for this group. */
     [[nodiscard]] virtual nlohmann::json make_multiscales_metadata_() const;
-
-    /** @brief Construct OME metadata for this group. */
-    [[nodiscard]] virtual nlohmann::json make_ome_metadata_() const = 0;
 
     /** @brief Create a configuration for a full-resolution Array. */
     zarr::ArrayConfig make_array_config_() const;
