@@ -118,7 +118,7 @@ zarr::Group::make_multiscales_metadata_() const
         },
     };
 
-    const auto& base_config = downsampler_->writer_configurations().at(0);
+    const auto& base_config = make_array_config_();
     const auto& base_dims = base_config.dimensions;
 
     for (auto i = 1; i < arrays_.size(); ++i) {
