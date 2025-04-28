@@ -137,7 +137,6 @@ extern "C"
 
     ZarrStream_s* ZarrStream_create(struct ZarrStreamSettings_s* settings)
     {
-
         ZarrStream_s* stream = nullptr;
 
         try {

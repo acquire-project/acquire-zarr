@@ -2,8 +2,8 @@
 #include "zarr.stream.hh"
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
-#include "v2.array.hh"
-#include "v3.array.hh"
+#include "v2.group.hh"
+#include "v3.group.hh"
 #include "sink.hh"
 
 #include <bit> // bit_ceil
@@ -189,23 +189,6 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     }
 
     return true;
-}
-
-std::string
-dimension_type_to_string(ZarrDimensionType type)
-{
-    switch (type) {
-        case ZarrDimensionType_Time:
-            return "time";
-        case ZarrDimensionType_Channel:
-            return "channel";
-        case ZarrDimensionType_Space:
-            return "space";
-        case ZarrDimensionType_Other:
-            return "other";
-        default:
-            return "(unknown)";
-    }
 }
 
 template<typename T>
@@ -720,14 +703,21 @@ ZarrStream_s::create_root_group_()
     };
 
     std::unique_ptr<zarr::Group> root_group;
-    if (version_ == ZarrVersion_2) {
-        root_group = std::make_unique<zarr::V2Group>(
-          config, thread_pool_, s3_connection_pool_);
-    } else {
-        root_group = std::make_unique<zarr::V3Group>(
-          config, thread_pool_, s3_connection_pool_);
+    try {
+        if (version_ == ZarrVersion_2) {
+            root_group = std::make_unique<zarr::V2Group>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            root_group = std::make_unique<zarr::V3Group>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+    } catch (const std::exception& exc) {
+        set_error_("Failed to create root group: " + std::string(exc.what()));
+        return false;
     }
+
     groups_.emplace("", std::move(root_group));
+    return true;
 }
 
 bool
@@ -765,7 +755,11 @@ ZarrStream_s::write_base_metadata_()
     std::string metadata_key;
 
     if (version_ == 2) {
-        metadata["multiscales"] = groups_.at("")->make_ome_metadata_();
+//        metadata["multiscales"] = groups_.at("")->get_ome_metadata();
+        const auto it = groups_.find("");
+        CHECK(it != groups_.end());
+        const auto& root_group = it->second;
+        metadata["multiscales"] = root_group->get_ome_metadata();
 
         metadata_key = ".zattrs";
     } else {
@@ -808,7 +802,7 @@ ZarrStream_s::write_group_metadata_()
 
         metadata_key = ".zgroup";
     } else {
-        const auto multiscales = groups_.at("")->make_ome_metadata_();
+        const auto multiscales = groups_.at("")->get_ome_metadata();
         metadata["attributes"]["ome"] = multiscales;
         metadata["zarr_format"] = 3;
         metadata["consolidated_metadata"] = nullptr;
@@ -913,7 +907,7 @@ finalize_stream(struct ZarrStream_s* stream)
 
     stream->finalize_frame_queue_();
 
-    for (auto& [group_key, group] : groups_) {
+    for (auto& [group_key, group] : stream->groups_) {
         if (!zarr::close_group(std::move(group))) {
             std::string err_msg;
             if (group_key.empty()) {

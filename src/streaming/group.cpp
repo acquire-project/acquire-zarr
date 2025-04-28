@@ -2,6 +2,25 @@
 #include "macros.hh"
 #include "zarr.common.hh"
 
+namespace {
+std::string
+dimension_type_to_string(ZarrDimensionType type)
+{
+    switch (type) {
+        case ZarrDimensionType_Time:
+            return "time";
+        case ZarrDimensionType_Channel:
+            return "channel";
+        case ZarrDimensionType_Space:
+            return "space";
+        case ZarrDimensionType_Other:
+            return "other";
+        default:
+            return "(unknown)";
+    }
+}
+} // namespace
+
 zarr::Group::Group(const zarr::GroupConfig& config,
                    std::shared_ptr<ThreadPool> thread_pool)
   : Group(config, thread_pool, nullptr)
@@ -99,7 +118,7 @@ zarr::Group::make_multiscales_metadata_() const
         },
     };
 
-    const auto& base_config = downsampler_->writer_configurations().at(0);
+    const auto& base_config = make_array_config_();
     const auto& base_dims = base_config.dimensions;
 
     for (auto i = 1; i < arrays_.size(); ++i) {

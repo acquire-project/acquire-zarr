@@ -1,5 +1,29 @@
 #include "v3.group.hh"
 
+zarr::V3Group::V3Group(const zarr::GroupConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool)
+  : Group(config, thread_pool)
+{
+}
+
+zarr::V3Group::V3Group(const zarr::GroupConfig& config,
+                       std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : Group(config, thread_pool, s3_connection_pool)
+{
+}
+
+nlohmann::json
+zarr::V3Group::get_ome_metadata() const
+{
+    nlohmann::json ome;
+    ome["version"] = "0.5";
+    ome["name"] = "/";
+    ome["multiscales"] = make_multiscales_metadata_();
+
+    return ome;
+}
+
 bool
 zarr::V3Group::create_arrays_()
 {
@@ -20,15 +44,4 @@ zarr::V3Group::create_arrays_()
     }
 
     return true;
-}
-
-nlohmann::json
-zarr::V3Group::make_ome_metadata_() const
-{
-    nlohmann::json ome;
-    ome["version"] = "0.5";
-    ome["name"] = "/";
-    ome["multiscales"] = make_multiscales_metadata_();
-
-    return ome;
 }
