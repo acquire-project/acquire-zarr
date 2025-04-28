@@ -755,11 +755,7 @@ ZarrStream_s::write_base_metadata_()
     std::string metadata_key;
 
     if (version_ == 2) {
-//        metadata["multiscales"] = groups_.at("")->get_ome_metadata();
-        const auto it = groups_.find("");
-        CHECK(it != groups_.end());
-        const auto& root_group = it->second;
-        metadata["multiscales"] = root_group->get_ome_metadata();
+        metadata["multiscales"] = groups_.at("")->get_ome_metadata();
 
         metadata_key = ".zattrs";
     } else {
@@ -908,7 +904,7 @@ finalize_stream(struct ZarrStream_s* stream)
     stream->finalize_frame_queue_();
 
     for (auto& [group_key, group] : stream->groups_) {
-        if (!zarr::close_group(std::move(group))) {
+        if (!zarr::finalize_group(std::move(group))) {
             std::string err_msg;
             if (group_key.empty()) {
                 err_msg = "Failed to close root group";

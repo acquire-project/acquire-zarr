@@ -1,8 +1,9 @@
+#include "macros.hh"
 #include "v3.group.hh"
 
 zarr::V3Group::V3Group(const zarr::GroupConfig& config,
                        std::shared_ptr<ThreadPool> thread_pool)
-  : Group(config, thread_pool)
+  : V3Group(config, thread_pool, nullptr)
 {
 }
 
@@ -11,6 +12,7 @@ zarr::V3Group::V3Group(const zarr::GroupConfig& config,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : Group(config, thread_pool, s3_connection_pool)
 {
+    CHECK(create_arrays_());
 }
 
 nlohmann::json

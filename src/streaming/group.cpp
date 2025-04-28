@@ -207,7 +207,15 @@ zarr::Group::write_multiscale_frames_(ConstByteSpan data)
 }
 
 bool
-zarr::close_group(std::unique_ptr<Group>&& group)
+zarr::finalize_group(std::unique_ptr<Group>&& group)
 {
+    if (group == nulltr) {
+        LOG_INFO("Group is null. Nothing to finalize.");
+        return true;
+    }
+
+    if (!group->write_metadata_()) {
+        LOG_ERROR("Error closing group: ")
+    }
     return false;
 }

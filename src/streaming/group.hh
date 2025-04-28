@@ -60,7 +60,11 @@ class Group
     /** @brief Create array writers. */
     [[nodiscard]] virtual bool create_arrays_() = 0;
 
-    /** @brief Create a downsampler for multiscale. */
+    /**
+     * @brief Create a downsampler for multiscale acquisitions.
+     * @return True if not writing multiscale, or if a downsampler was
+     *         successfully created. Otherwise, false.
+     */
     [[nodiscard]] bool create_downsampler_();
 
     /** @brief Construct OME multiscales metadata for this group. */
@@ -76,10 +80,16 @@ class Group
      */
     void write_multiscale_frames_(ConstByteSpan data);
 
-    friend bool close_group(std::unique_ptr<Group>&& group);
+    /**
+     * @brief
+     * @return
+     */
+    [[nodiscard]] virtual bool write_group_metadata_() = 0;
+
+    friend bool finalize_group(std::unique_ptr<Group>&& group);
 };
 
 [[nodiscard]]
 bool
-close_group(std::unique_ptr<Group>&& group);
+finalize_group(std::unique_ptr<Group>&& group);
 } // namespace zarr
