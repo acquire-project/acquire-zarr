@@ -1,5 +1,6 @@
 #include "macros.hh"
 #include "v3.group.hh"
+#include "zarr.common.hh"
 
 zarr::V3Group::V3Group(const zarr::GroupConfig& config,
                        std::shared_ptr<ThreadPool> thread_pool)
@@ -29,8 +30,13 @@ zarr::V3Group::get_ome_metadata() const
 std::string
 zarr::V3Group::get_metadata_key_() const
 {
-    return config_.group_key.empty() ? "zarr.json"
-                                     : config_.group_key + "/zarr.json";
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/zarr.json";
+
+    return key;
 }
 
 bool

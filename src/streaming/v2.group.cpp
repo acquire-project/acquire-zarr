@@ -1,5 +1,6 @@
 #include "macros.hh"
 #include "v2.group.hh"
+#include "zarr.common.hh"
 
 zarr::V2Group::V2Group(const zarr::GroupConfig& config,
                        std::shared_ptr<ThreadPool> thread_pool)
@@ -27,8 +28,13 @@ zarr::V2Group::get_ome_metadata() const
 std::string
 zarr::V2Group::get_metadata_key_() const
 {
-    return config_.group_key.empty() ? ".zgroup"
-                                     : config_.group_key + "/.zgroup";
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/.zgroup";
+
+    return key;
 }
 
 nlohmann::json
