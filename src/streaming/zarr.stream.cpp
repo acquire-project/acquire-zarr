@@ -299,15 +299,17 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append_to_group(std::string_view group_name,
-                            const void* data_,
-                            size_t nbytes)
+ZarrStream::append_to_node(std::string_view key,
+                           const void* data_,
+                           size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
 
     if (0 == nbytes) {
         return 0;
     }
+
+    switch_node_(key);
 
     auto* data = static_cast<const std::byte*>(data_);
 
@@ -838,6 +840,56 @@ ZarrStream_s::finalize_frame_queue_()
     std::unique_lock lock(frame_queue_mutex_);
     frame_queue_finished_cv_.wait(lock,
                                   [this] { return frame_queue_->empty(); });
+}
+
+void
+ZarrStream_s::close_current_node_()
+{
+    if (!active_node_key_) { // no current active node
+        return;
+    }
+
+    const auto group_it = groups_.find(*active_node_key_);
+    if (group_it != groups_.end()) {
+        EXPECT(groups_.at(*active_node_key_)->close(),
+               "Failed to close group ",
+               *active_node_key_);
+    }
+
+    const auto array_it = arrays_.find(*active_node_key_);
+    if (array_it != arrays_.end()) {
+        EXPECT(arrays_.at(*active_node_key_)->close(),
+               "Failed to close array ",
+               *active_node_key_);
+    }
+
+    active_node_key_.reset();
+}
+
+bool
+ZarrStream_s::switch_node_(std::string_view key)
+{
+    if (key == active_node_key_) {
+        return true; // already on the right node
+    }
+    const std::string key_str(key);
+
+    const auto group_it = groups_.find(key_str);
+    if (group_it != groups_.end()) {
+        close_current_node_();
+        active_node_key_ = key;
+        return true;
+    }
+
+    const auto array_it = arrays_.find(key_str);
+    if (array_it != arrays_.end()) {
+        close_current_node_();
+        active_node_key_ = key;
+        return true;
+    }
+
+    LOG_ERROR("Node not found: ", key);
+    return false;
 }
 
 bool

@@ -200,7 +200,7 @@ extern "C"
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
         try {
-            *bytes_out = stream->append_to_group(group_name, data, bytes_in);
+            *bytes_out = stream->append_to_node(group_name, data, bytes_in);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
             return ZarrStatusCode_InternalError;

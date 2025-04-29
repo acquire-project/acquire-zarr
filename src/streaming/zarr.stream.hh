@@ -26,27 +26,16 @@ struct ZarrStream_s
     ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Append data to the named group.
-     * @param group_name The name of the group to append to. Empty string for
+     * @brief Append data to the named node (i.e., group or array).
+     * @param key The name of the node to append to. Empty string for
      * the root group.
      * @param data The data to append.
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append_to_group(std::string_view group_name,
-                           const void* data,
-                           size_t nbytes);
-
-    /**
-     * @brief Append data to the named array.
-     * @param group_name The name of the array to append to.
-     * @param data The data to append.
-     * @param nbytes The number of bytes to append.
-     * @return The number of bytes appended.
-     */
-    size_t append_to_array(std::string_view array_name,
-                           const void* data,
-                           size_t nbytes);
+    size_t append_to_node(std::string_view key,
+                          const void* data,
+                          size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -75,8 +64,9 @@ struct ZarrStream_s
     std::optional<CompressionSettings> compression_settings_;
     ZarrDataType dtype_;
     std::shared_ptr<ArrayDimensions> dimensions_;
-    bool multiscale_{};
+    bool multiscale_{ false };
 
+    std::optional<std::string> active_node_key_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Array>> arrays_;
 
@@ -145,6 +135,17 @@ struct ZarrStream_s
 
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
+
+    /** @brief Close the currently active group or array. */
+    void close_current_node_();
+
+    /**
+     * @brief Switch to a different node in the stream.
+     * @param key The name of the node to switch to. Empty string for
+     * the root group.
+     * @return True if the switch was successful, false otherwise.
+     */
+    [[nodiscard]] bool switch_node_(std::string_view key);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };
