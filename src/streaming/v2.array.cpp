@@ -76,15 +76,25 @@ zarr::V2Array::V2Array(const ArrayConfig& config,
 std::string
 zarr::V2Array::data_root_() const
 {
-    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
-           "/" + std::to_string(append_chunk_index_);
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/" + std::to_string(config_.level_of_detail) + "/" +
+           std::to_string(append_chunk_index_);
+
+    return key;
 }
 
 std::string
 zarr::V2Array::metadata_path_() const
 {
-    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
-           "/.zarray";
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/" + std::to_string(config_.level_of_detail) + "/.zarray";
+    return key;
 }
 
 const DimensionPartsFun

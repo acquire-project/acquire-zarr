@@ -66,8 +66,7 @@ zarr::Group::make_metadata_sink_()
             metadata_sink_ = zarr::make_s3_sink(
               *config_.bucket_name, metadata_key_, s3_connection_pool_);
         } else {
-            metadata_sink_ =
-              zarr::make_file_sink(metadata_key_);
+            metadata_sink_ = zarr::make_file_sink(metadata_key_);
         }
     } catch (const std::exception& exc) {
         LOG_ERROR("Error creating metadata sink: " + std::string(exc.what()));
@@ -198,6 +197,7 @@ zarr::Group::make_base_array_config_() const
         .level_of_detail = 0,
         .bucket_name = config_.bucket_name,
         .store_root = config_.store_root,
+        .group_key = config_.group_key,
         .compression_params = config_.compression_params,
     };
 }

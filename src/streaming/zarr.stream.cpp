@@ -696,6 +696,7 @@ ZarrStream_s::create_root_group_()
         .multiscale = multiscale_,
         .bucket_name = s3_bucket_name,
         .store_root = store_path_,
+        .group_key = "",
         .compression_params = blosc_compression_params,
     };
 

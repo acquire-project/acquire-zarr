@@ -15,6 +15,7 @@ struct ArrayConfig
     int level_of_detail;
     std::optional<std::string> bucket_name;
     std::string store_root;
+    std::string group_key;
     std::optional<BloscCompressionParams> compression_params;
 };
 
@@ -27,6 +28,19 @@ class Array
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
     virtual ~Array() = default;
+
+    /**
+     * @brief Open the array for writing.
+     */
+    void open();
+
+    /**
+     * @brief Close the array and flush any remaining data.
+     * @note The array may be reopened after closing, but only the metadata will
+     * be preserved.
+     * @return True if the array was closed successfully, false otherwise.
+     */
+    [[nodiscard]] bool close();
 
     /**
      * @brief Write a frame to the array.
@@ -53,7 +67,8 @@ class Array
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
     uint32_t append_chunk_index_;
-    bool is_finalizing_;
+    bool is_open_{ false };
+    bool is_closing_{ false };
 
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
 

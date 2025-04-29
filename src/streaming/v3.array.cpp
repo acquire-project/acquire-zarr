@@ -155,15 +155,26 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 std::string
 zarr::V3Array::data_root_() const
 {
-    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
-           "/c/" + std::to_string(append_chunk_index_);
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/" + std::to_string(config_.level_of_detail) + "/c/" +
+           std::to_string(append_chunk_index_);
+
+    return key;
 }
 
 std::string
 zarr::V3Array::metadata_path_() const
 {
-    return config_.store_root + "/" + std::to_string(config_.level_of_detail) +
-           "/zarr.json";
+    std::string key = config_.store_root;
+    if (!config_.group_key.empty()) {
+        key += "/" + config_.group_key;
+    }
+    key += "/" + std::to_string(config_.level_of_detail) + "/zarr.json";
+
+    return key;
 }
 
 const DimensionPartsFun
@@ -251,7 +262,7 @@ zarr::V3Array::compress_and_flush_data_()
 
     std::atomic<char> all_successful = 1;
 
-    auto write_table = is_finalizing_ || should_rollover_();
+    auto write_table = is_closing_ || should_rollover_();
     std::latch shard_latch(n_shards);
 
     // get count of chunks per shard to construct chunk latches

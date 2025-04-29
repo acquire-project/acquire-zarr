@@ -23,13 +23,49 @@ zarr::Array::Array(const ArrayConfig& config,
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
-  , is_finalizing_{ false }
 {
+    open();
+}
+
+void
+zarr::Array::open()
+{
+    is_closing_ = false;
+    is_open_ = true;
+}
+
+bool
+zarr::Array::close()
+{
+    bool retval = false;
+    is_closing_ = true;
+    try {
+        if (bytes_to_flush_ > 0) {
+            CHECK(compress_and_flush_data_());
+        }
+        close_sinks_();
+
+        if (frames_written_ > 0) {
+            CHECK(write_array_metadata_());
+        }
+        CHECK(finalize_sink(std::move(metadata_sink_)));
+
+        metadata_sink_.reset();
+        retval = true;
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to finalize array writer: ", exc.what());
+    }
+
+    is_closing_ = false;
+    is_open_ = false;
+    return retval;
 }
 
 size_t
 zarr::Array::write_frame(std::span<const std::byte> data)
 {
+    EXPECT(is_open_, "Unable to write to a closed Array");
+
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
       bytes_of_frame(*config_.dimensions, config_.dtype);
@@ -242,22 +278,12 @@ zarr::finalize_array(std::unique_ptr<Array>&& array)
         return true;
     }
 
-    array->is_finalizing_ = true;
     try {
-        if (array->bytes_to_flush_ > 0) {
-            CHECK(array->compress_and_flush_data_());
+        if (!array->close()) {
+            return false;
         }
-        if (array->frames_written_ > 0) {
-            CHECK(array->write_array_metadata_());
-        }
-        array->close_sinks_();
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to finalize array writer: ", exc.what());
-        return false;
-    }
-
-    if (!finalize_sink(std::move(array->metadata_sink_))) {
-        LOG_ERROR("Failed to finalize metadata sink");
+        LOG_ERROR("Failed to close array: ", exc.what());
         return false;
     }
 
