@@ -257,11 +257,18 @@ zarr::finalize_group(std::unique_ptr<Group>&& group)
         LOG_ERROR("Error closing group: failed to write metadata");
     }
 
+    if (!zarr::finalize_sink(std::move(group->metadata_sink_))) {
+        LOG_ERROR("Error closing group: failed to finalize metadata sink");
+        return false;
+    }
+
     for (auto i = 0; i < group->arrays_.size(); ++i) {
         if (!zarr::finalize_array(std::move(group->arrays_[i]))) {
-            LOG_ERROR("Error closing array " + std::to_string(i) + ": failed to finalize array");
+            LOG_ERROR("Error closing array " + std::to_string(i) +
+                      ": failed to finalize array");
             return false;
         }
     }
-    return false;
+
+    return true;
 }
