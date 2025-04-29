@@ -296,9 +296,6 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     // write base metadata
     EXPECT(write_base_metadata_(), error_);
-
-    // write group metadata
-    EXPECT(write_group_metadata_(), error_);
 }
 
 size_t
@@ -787,43 +784,6 @@ ZarrStream_s::write_base_metadata_()
     return true;
 }
 
-bool
-ZarrStream_s::write_group_metadata_()
-{
-    nlohmann::json metadata;
-    std::string metadata_key;
-
-    if (version_ == 2) {
-        metadata = { { "zarr_format", 2 } };
-
-        metadata_key = ".zgroup";
-    } else {
-        const auto multiscales = groups_.at("")->get_ome_metadata();
-        metadata["attributes"]["ome"] = multiscales;
-        metadata["zarr_format"] = 3;
-        metadata["consolidated_metadata"] = nullptr;
-        metadata["node_type"] = "group";
-
-        metadata_key = "zarr.json";
-    }
-
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        set_error_("Metadata sink '" + metadata_key + "'not found");
-        return false;
-    }
-
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!sink->write(0, data)) {
-        set_error_("Error writing group metadata");
-        return false;
-    }
-
-    return true;
-}
-
 void
 ZarrStream_s::process_frame_queue_()
 {
@@ -887,13 +847,8 @@ finalize_stream(struct ZarrStream_s* stream)
         return true;
     }
 
-    if (!stream->write_group_metadata_()) {
-        LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
-        return false;
-    }
-
     for (auto& [sink_name, sink] : stream->metadata_sinks_) {
-        if (!finalize_sink(std::move(sink))) {
+        if (!zarr::finalize_sink(std::move(sink))) {
             LOG_ERROR("Error finalizing Zarr stream. Failed to write ",
                       sink_name);
             return false;

@@ -15,6 +15,9 @@ class V2Group final : public Group
     nlohmann::json get_ome_metadata() const override;
 
   private:
+    std::string get_metadata_key_() const override;
+    nlohmann::json make_group_metadata_() const override;
+
     bool create_arrays_() override;
 };
 } // namespace zarr

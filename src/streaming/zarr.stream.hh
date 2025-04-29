@@ -75,7 +75,7 @@ struct ZarrStream_s
     std::optional<CompressionSettings> compression_settings_;
     ZarrDataType dtype_;
     std::shared_ptr<ArrayDimensions> dimensions_;
-    bool multiscale_;
+    bool multiscale_{};
 
     std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Array>> arrays_;
@@ -139,9 +139,6 @@ struct ZarrStream_s
 
     /** @brief Write per-acquisition metadata. */
     [[nodiscard]] bool write_base_metadata_();
-
-    /** @brief Write Zarr group metadata. */
-    [[nodiscard]] bool write_group_metadata_();
 
     /** @brief Process the frame queue. */
     void process_frame_queue_();

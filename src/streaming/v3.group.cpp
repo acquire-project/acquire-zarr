@@ -26,6 +26,13 @@ zarr::V3Group::get_ome_metadata() const
     return ome;
 }
 
+std::string
+zarr::V3Group::get_metadata_key_() const
+{
+    return config_.group_key.empty() ? "zarr.json"
+                                     : config_.group_key + "/zarr.json";
+}
+
 bool
 zarr::V3Group::create_arrays_()
 {
@@ -40,10 +47,24 @@ zarr::V3Group::create_arrays_()
               config, thread_pool_, s3_connection_pool_);
         }
     } else {
-        const auto config = make_array_config_();
+        const auto config = make_base_array_config_();
         arrays_.push_back(std::make_unique<zarr::V3Array>(
           config, thread_pool_, s3_connection_pool_));
     }
 
     return true;
+}
+
+nlohmann::json
+zarr::V3Group::make_group_metadata_() const
+{
+    nlohmann::json metadata = {
+        { "zarr_format", 3 },
+        { "consolidated_metadata", nullptr },
+        { "node_type", "group" },
+        { "attributes", nlohmann::json::object() },
+    };
+    metadata["attributes"]["ome"] = get_ome_metadata();
+
+    return metadata;
 }

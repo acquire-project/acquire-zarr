@@ -57,13 +57,34 @@ zarr::Group::write_frame(ConstByteSpan data)
 }
 
 bool
+zarr::Group::make_metadata_sink_()
+{
+    const std::string metadata_key_ = get_metadata_key_();
+
+    try {
+        if (s3_connection_pool_) {
+            metadata_sink_ = zarr::make_s3_sink(
+              *config_.bucket_name, metadata_key_, s3_connection_pool_);
+        } else {
+            metadata_sink_ =
+              zarr::make_file_sink(config_.store_root + "/" + metadata_key_);
+        }
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Error creating metadata sink: " + std::string(exc.what()));
+        return false;
+    }
+
+    return true;
+}
+
+bool
 zarr::Group::create_downsampler_()
 {
     if (!config_.multiscale) {
         return true;
     }
 
-    const auto config = make_array_config_();
+    const auto config = make_base_array_config_();
 
     try {
         downsampler_ = zarr::Downsampler(config);
@@ -118,7 +139,7 @@ zarr::Group::make_multiscales_metadata_() const
         },
     };
 
-    const auto& base_config = make_array_config_();
+    const auto& base_config = make_base_array_config_();
     const auto& base_dims = base_config.dimensions;
 
     for (auto i = 1; i < arrays_.size(); ++i) {
@@ -169,7 +190,7 @@ zarr::Group::make_multiscales_metadata_() const
 }
 
 zarr::ArrayConfig
-zarr::Group::make_array_config_() const
+zarr::Group::make_base_array_config_() const
 {
     return {
         .dimensions = config_.dimensions,
@@ -207,15 +228,40 @@ zarr::Group::write_multiscale_frames_(ConstByteSpan data)
 }
 
 bool
+zarr::Group::write_metadata_()
+{
+    const auto metadata = make_group_metadata_();
+    if (metadata_sink_ == nullptr && !make_metadata_sink_()) {
+        return false;
+    }
+
+    const std::string metadata_str = metadata.dump(4);
+    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
+                    metadata_str.size() };
+    if (!metadata_sink_->write(0, data)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool
 zarr::finalize_group(std::unique_ptr<Group>&& group)
 {
-    if (group == nulltr) {
+    if (group == nullptr) {
         LOG_INFO("Group is null. Nothing to finalize.");
         return true;
     }
 
     if (!group->write_metadata_()) {
-        LOG_ERROR("Error closing group: ")
+        LOG_ERROR("Error closing group: failed to write metadata");
+    }
+
+    for (auto i = 0; i < group->arrays_.size(); ++i) {
+        if (!zarr::finalize_array(std::move(group->arrays_[i]))) {
+            LOG_ERROR("Error closing array " + std::to_string(i) + ": failed to finalize array");
+            return false;
+        }
     }
     return false;
 }

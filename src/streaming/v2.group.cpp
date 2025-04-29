@@ -24,6 +24,19 @@ zarr::V2Group::get_ome_metadata() const
     return multiscales;
 }
 
+std::string
+zarr::V2Group::get_metadata_key_() const
+{
+    return config_.group_key.empty() ? ".zgroup"
+                                     : config_.group_key + "/.zgroup";
+}
+
+nlohmann::json
+zarr::V2Group::make_group_metadata_() const
+{
+    return { { "zarr_format", 2 } };
+}
+
 bool
 zarr::V2Group::create_arrays_()
 {
@@ -38,7 +51,7 @@ zarr::V2Group::create_arrays_()
               config, thread_pool_, s3_connection_pool_);
         }
     } else {
-        const auto config = make_array_config_();
+        const auto config = make_base_array_config_();
         arrays_.push_back(std::make_unique<zarr::V2Array>(
           config, thread_pool_, s3_connection_pool_));
     }

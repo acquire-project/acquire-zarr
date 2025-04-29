@@ -2,6 +2,7 @@
 
 #include "array.hh"
 #include "downsampler.hh"
+#include "sink.hh"
 #include "thread.pool.hh"
 
 #include <nlohmann/json.hpp>
@@ -16,6 +17,7 @@ struct GroupConfig
     bool multiscale;
     std::optional<std::string> bucket_name;
     std::string store_root;
+    std::string group_key;
     std::optional<BloscCompressionParams> compression_params;
 };
 
@@ -53,9 +55,20 @@ class Group
 
     std::optional<zarr::Downsampler> downsampler_;
 
-    std::vector<std::shared_ptr<Array>> arrays_;
+    std::unique_ptr<Sink> metadata_sink_;
+    std::vector<std::unique_ptr<Array>> arrays_;
 
     size_t bytes_per_frame_;
+
+    /** @brief Get the key to the metadata file. */
+    virtual std::string get_metadata_key_() const = 0;
+
+    /**
+     * @brief Create the metadata sink for this group.
+     * @return True if the metadata sink was successfully created, otherwise
+     * false.
+     */
+    bool make_metadata_sink_();
 
     /** @brief Create array writers. */
     [[nodiscard]] virtual bool create_arrays_() = 0;
@@ -71,7 +84,7 @@ class Group
     [[nodiscard]] virtual nlohmann::json make_multiscales_metadata_() const;
 
     /** @brief Create a configuration for a full-resolution Array. */
-    zarr::ArrayConfig make_array_config_() const;
+    zarr::ArrayConfig make_base_array_config_() const;
 
     /**
      * @brief Add @p data to downsampler and write downsampled frames to lower-
@@ -80,11 +93,14 @@ class Group
      */
     void write_multiscale_frames_(ConstByteSpan data);
 
+    /** @brief Construct metadata for this group. */
+    [[nodiscard]] virtual nlohmann::json make_group_metadata_() const = 0;
+
     /**
-     * @brief
-     * @return
+     * @brief Write the metadata for this group.
+     * @return True if the metadata was successfully written, otherwise false.
      */
-    [[nodiscard]] virtual bool write_group_metadata_() = 0;
+    [[nodiscard]] bool write_metadata_();
 
     friend bool finalize_group(std::unique_ptr<Group>&& group);
 };
