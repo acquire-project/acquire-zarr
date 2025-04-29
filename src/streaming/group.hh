@@ -31,6 +31,10 @@ class Group
 
     virtual ~Group() = default;
 
+    void open();
+
+    [[nodiscard]] bool close();
+
     /**
      * @brief Write a frame to the group.
      * @note This function splits the incoming frame into tiles and writes them
@@ -49,6 +53,8 @@ class Group
 
   protected:
     GroupConfig config_;
+
+    bool is_open_{ false };
 
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;

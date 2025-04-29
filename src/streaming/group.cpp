@@ -37,6 +37,38 @@ zarr::Group::Group(const zarr::GroupConfig& config,
     bytes_per_frame_ = zarr::bytes_of_frame(*config.dimensions, config.dtype);
 
     CHECK(create_downsampler_());
+
+    open();
+}
+
+void
+zarr::Group::open()
+{
+    is_open_ = true;
+}
+
+bool
+zarr::Group::close()
+{
+    if (!write_metadata_()) {
+        LOG_ERROR("Error closing group: failed to write metadata");
+        return false;
+    }
+
+    if (!zarr::finalize_sink(std::move(metadata_sink_))) {
+        LOG_ERROR("Error closing group: failed to finalize metadata sink");
+        return false;
+    }
+
+    for (auto i = 0; i < arrays_.size(); ++i) {
+        if (!zarr::finalize_array(std::move(arrays_[i]))) {
+            LOG_ERROR("Error closing array " + std::to_string(i) +
+                      ": failed to finalize array");
+            return false;
+        }
+    }
+
+    return true;
 }
 
 size_t
@@ -253,22 +285,15 @@ zarr::finalize_group(std::unique_ptr<Group>&& group)
         return true;
     }
 
-    if (!group->write_metadata_()) {
-        LOG_ERROR("Error closing group: failed to write metadata");
-    }
-
-    if (!zarr::finalize_sink(std::move(group->metadata_sink_))) {
-        LOG_ERROR("Error closing group: failed to finalize metadata sink");
+    try {
+        if (!group->close()) {
+            return false;
+        }
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to close group: ", exc.what());
         return false;
     }
 
-    for (auto i = 0; i < group->arrays_.size(); ++i) {
-        if (!zarr::finalize_array(std::move(group->arrays_[i]))) {
-            LOG_ERROR("Error closing array " + std::to_string(i) +
-                      ": failed to finalize array");
-            return false;
-        }
-    }
-
+    group.reset();
     return true;
 }
