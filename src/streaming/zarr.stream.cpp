@@ -1,13 +1,14 @@
-#include "macros.hh"
-#include "zarr.stream.hh"
 #include "acquire.zarr.h"
-#include "zarr.common.hh"
+#include "macros.hh"
+#include "sink.hh"
 #include "v2.group.hh"
 #include "v3.group.hh"
-#include "sink.hh"
+#include "zarr.common.hh"
+#include "zarr.stream.hh"
 
 #include <bit> // bit_ceil
 #include <filesystem>
+#include <regex>
 
 namespace fs = std::filesystem;
 
@@ -88,48 +89,6 @@ validate_filesystem_store_path(std::string_view data_root, std::string& error)
 }
 
 [[nodiscard]] bool
-validate_compression_settings(const ZarrCompressionSettings* settings,
-                              std::string& error)
-{
-    if (settings->compressor >= ZarrCompressorCount) {
-        error = "Invalid compressor: " + std::to_string(settings->compressor);
-        return false;
-    }
-
-    if (settings->codec >= ZarrCompressionCodecCount) {
-        error = "Invalid compression codec: " + std::to_string(settings->codec);
-        return false;
-    }
-
-    // if compressing, we require a compression codec
-    if (settings->compressor != ZarrCompressor_None &&
-        settings->codec == ZarrCompressionCodec_None) {
-        error = "Compression codec must be set when using a compressor";
-        return false;
-    }
-
-    if (settings->level > 9) {
-        error =
-          "Invalid compression level: " + std::to_string(settings->level) +
-          ". Must be between 0 and 9";
-        return false;
-    }
-
-    if (settings->shuffle != BLOSC_NOSHUFFLE &&
-        settings->shuffle != BLOSC_SHUFFLE &&
-        settings->shuffle != BLOSC_BITSHUFFLE) {
-        error = "Invalid shuffle: " + std::to_string(settings->shuffle) +
-                ". Must be " + std::to_string(BLOSC_NOSHUFFLE) +
-                " (no shuffle), " + std::to_string(BLOSC_SHUFFLE) +
-                " (byte  shuffle), or " + std::to_string(BLOSC_BITSHUFFLE) +
-                " (bit shuffle)";
-        return false;
-    }
-
-    return true;
-}
-
-[[nodiscard]] bool
 validate_custom_metadata(std::string_view metadata)
 {
     if (metadata.empty()) {
@@ -151,107 +110,43 @@ validate_custom_metadata(std::string_view metadata)
     return true;
 }
 
-[[nodiscard]] bool
-validate_dimension(const ZarrDimensionProperties* dimension,
-                   ZarrVersion version,
-                   bool is_append,
-                   std::string& error)
+std::optional<zarr::BloscCompressionParams>
+make_compression_params(const ZarrCompressionSettings* settings)
 {
-    if (zarr::is_empty_string(dimension->name, "Dimension name is empty")) {
-        error = "Dimension name is empty";
-        return false;
+    if (!settings) {
+        return std::nullopt;
     }
 
-    if (dimension->type >= ZarrDimensionTypeCount) {
-        error = "Invalid dimension type: " + std::to_string(dimension->type);
-        return false;
-    }
-
-    if (!is_append && dimension->array_size_px == 0) {
-        error = "Array size must be nonzero";
-        return false;
-    }
-
-    if (dimension->chunk_size_px == 0) {
-        error =
-          "Invalid chunk size: " + std::to_string(dimension->chunk_size_px);
-        return false;
-    }
-
-    if (version == ZarrVersion_3 && dimension->shard_size_chunks == 0) {
-        error = "Shard size must be nonzero";
-        return false;
-    }
-
-    if (dimension->scale < 0.0) {
-        error = "Scale must be non-negative";
-        return false;
-    }
-
-    return true;
+    return zarr::BloscCompressionParams(
+      zarr::blosc_codec_to_string(settings->codec),
+      settings->level,
+      settings->shuffle);
 }
 
-template<typename T>
-[[nodiscard]]
-bool
-validate_node_properties(const T* properties,
-                         ZarrVersion version,
-                         std::string& error)
+std::shared_ptr<ArrayDimensions>
+make_array_dimensions(const ZarrDimensionProperties* dimensions,
+                      size_t dimension_count,
+                      ZarrDataType data_type)
 {
-    if (!properties) {
-        error = "Null pointer: properties";
-        return false;
-    }
-
-    if (!properties->store_key) {
-        error = "Null pointer: store_key";
-        return false;
-    }
-
-    if (properties->data_type >= ZarrDataTypeCount) {
-        error = "Invalid data type: " + std::to_string(properties->data_type);
-        return false;
-    }
-
-    if (properties->compression_settings &&
-        !validate_compression_settings(properties->compression_settings,
-                                       error)) {
-        return false;
-    }
-
-    if (!properties->dimensions) {
-        error = "Null pointer: dimensions";
-        return false;
-    }
-
-    const auto ndims = properties->dimension_count;
-    if (ndims < 3) {
-        error = "Invalid number of dimensions: " + std::to_string(ndims) +
-                ". Must be at least 3";
-        return false;
-    }
-
-    // check the final dimension (width), must be space
-    if (properties->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
-        error = "Last dimension must be of type Space";
-        return false;
-    }
-
-    // check the penultimate dimension (height), must be space
-    if (properties->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
-        error = "Second to last dimension must be of type Space";
-        return false;
-    }
-
-    // validate the dimensions individually
-    for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              properties->dimensions + i, version, i == 0, error)) {
-            return false;
+    std::vector<ZarrDimension> dims;
+    for (auto i = 0; i < dimension_count; ++i) {
+        const auto& dim = dimensions[i];
+        std::string unit;
+        if (dim.unit) {
+            unit = zarr::trim(dim.unit);
         }
-    }
 
-    return true;
+        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
+
+        dims.emplace_back(dim.name,
+                          dim.type,
+                          dim.array_size_px,
+                          dim.chunk_size_px,
+                          dim.shard_size_chunks,
+                          unit,
+                          scale);
+    }
+    return std::make_shared<ArrayDimensions>(std::move(dims), data_type);
 }
 
 template<typename T>
@@ -507,54 +402,24 @@ ZarrStatusCode
 ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 {
     std::string key = zarr::trim(properties->store_key);
-
-    // do we already have a node with this key?
-    if (has_node_(key)) {
-        LOG_ERROR("Node with key '", key, "' already exists.");
-        return ZarrStatusCode_InvalidArgument;
-    }
-
-    // validate group properties
     std::string error;
-    if (!validate_node_properties(properties, version_, error)) {
+
+    if (!check_node_and_validate_(key, properties, error)) {
         LOG_ERROR(error);
         return ZarrStatusCode_InvalidArgument;
     }
 
-    // construct Blosc compression parameters
-    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
-    if (properties->compression_settings) {
-        blosc_compression_params = zarr::BloscCompressionParams(
-          zarr::blosc_codec_to_string(properties->compression_settings->codec),
-          properties->compression_settings->level,
-          properties->compression_settings->shuffle);
-    }
+    auto dimensions = make_array_dimensions(properties->dimensions,
+                                            properties->dimension_count,
+                                            properties->data_type);
 
     std::optional<std::string> s3_bucket_name;
     if (is_s3_acquisition_()) {
         s3_bucket_name = s3_settings_->bucket_name;
     }
 
-    std::vector<ZarrDimension> dims;
-    for (auto i = 0; i < properties->dimension_count; ++i) {
-        const auto& dim = properties->dimensions[i];
-        std::string unit;
-        if (dim.unit) {
-            unit = zarr::trim(dim.unit);
-        }
-
-        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
-
-        dims.emplace_back(dim.name,
-                          dim.type,
-                          dim.array_size_px,
-                          dim.chunk_size_px,
-                          dim.shard_size_chunks,
-                          unit,
-                          scale);
-    }
-    auto dimensions =
-      std::make_shared<ArrayDimensions>(std::move(dims), properties->data_type);
+    auto blosc_compression_params =
+      make_compression_params(properties->compression_settings);
 
     zarr::GroupConfig config{
         .dimensions = dimensions,
@@ -589,54 +454,24 @@ ZarrStatusCode
 ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
 {
     std::string key = zarr::trim(properties->store_key);
-
-    // do we already have a node with this key?
-    if (has_node_(key)) {
-        LOG_ERROR("Node with key '", key, "' already exists.");
-        return ZarrStatusCode_InvalidArgument;
-    }
-
-    // validate array properties
     std::string error;
-    if (!validate_node_properties(properties, version_, error)) {
+
+    if (!check_node_and_validate_(key, properties, error)) {
         LOG_ERROR(error);
         return ZarrStatusCode_InvalidArgument;
     }
 
-    // construct Blosc compression parameters
-    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
-    if (properties->compression_settings) {
-        blosc_compression_params = zarr::BloscCompressionParams(
-          zarr::blosc_codec_to_string(properties->compression_settings->codec),
-          properties->compression_settings->level,
-          properties->compression_settings->shuffle);
-    }
+    auto dimensions = make_array_dimensions(properties->dimensions,
+                                            properties->dimension_count,
+                                            properties->data_type);
 
     std::optional<std::string> s3_bucket_name;
     if (is_s3_acquisition_()) {
         s3_bucket_name = s3_settings_->bucket_name;
     }
 
-    std::vector<ZarrDimension> dims;
-    for (auto i = 0; i < properties->dimension_count; ++i) {
-        const auto& dim = properties->dimensions[i];
-        std::string unit;
-        if (dim.unit) {
-            unit = zarr::trim(dim.unit);
-        }
-
-        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
-
-        dims.emplace_back(dim.name,
-                          dim.type,
-                          dim.array_size_px,
-                          dim.chunk_size_px,
-                          dim.shard_size_chunks,
-                          unit,
-                          scale);
-    }
-    auto dimensions =
-      std::make_shared<ArrayDimensions>(std::move(dims), properties->data_type);
+    auto blosc_compression_params =
+      make_compression_params(properties->compression_settings);
 
     zarr::ArrayConfig config{
         .dimensions = dimensions,
@@ -715,9 +550,10 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         .dimension_count = settings->dimension_count,
     };
 
-    return validate_node_properties(&root_group_properties,
-                                    static_cast<ZarrVersion>(settings->version),
-                                    error_);
+    return validate_node_properties_(
+      &root_group_properties,
+      static_cast<ZarrVersion>(settings->version),
+      error_);
 }
 
 bool
@@ -1038,6 +874,88 @@ ZarrStream_s::switch_node_(std::string_view key)
 }
 
 bool
+ZarrStream_s::validate_compression_settings_(
+  const ZarrCompressionSettings* settings,
+  std::string& error)
+{
+    if (settings->compressor >= ZarrCompressorCount) {
+        error = "Invalid compressor: " + std::to_string(settings->compressor);
+        return false;
+    }
+
+    if (settings->codec >= ZarrCompressionCodecCount) {
+        error = "Invalid compression codec: " + std::to_string(settings->codec);
+        return false;
+    }
+
+    // if compressing, we require a compression codec
+    if (settings->compressor != ZarrCompressor_None &&
+        settings->codec == ZarrCompressionCodec_None) {
+        error = "Compression codec must be set when using a compressor";
+        return false;
+    }
+
+    if (settings->level > 9) {
+        error =
+          "Invalid compression level: " + std::to_string(settings->level) +
+          ". Must be between 0 and 9";
+        return false;
+    }
+
+    if (settings->shuffle != BLOSC_NOSHUFFLE &&
+        settings->shuffle != BLOSC_SHUFFLE &&
+        settings->shuffle != BLOSC_BITSHUFFLE) {
+        error = "Invalid shuffle: " + std::to_string(settings->shuffle) +
+                ". Must be " + std::to_string(BLOSC_NOSHUFFLE) +
+                " (no shuffle), " + std::to_string(BLOSC_SHUFFLE) +
+                " (byte  shuffle), or " + std::to_string(BLOSC_BITSHUFFLE) +
+                " (bit shuffle)";
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::validate_dimension_(const ZarrDimensionProperties* dimension,
+                                  bool is_append,
+                                  std::string& error)
+{
+    if (zarr::is_empty_string(dimension->name, "Dimension name is empty")) {
+        error = "Dimension name is empty";
+        return false;
+    }
+
+    if (dimension->type >= ZarrDimensionTypeCount) {
+        error = "Invalid dimension type: " + std::to_string(dimension->type);
+        return false;
+    }
+
+    if (!is_append && dimension->array_size_px == 0) {
+        error = "Array size must be nonzero";
+        return false;
+    }
+
+    if (dimension->chunk_size_px == 0) {
+        error =
+          "Invalid chunk size: " + std::to_string(dimension->chunk_size_px);
+        return false;
+    }
+
+    if (version_ == ZarrVersion_3 && dimension->shard_size_chunks == 0) {
+        error = "Shard size must be nonzero";
+        return false;
+    }
+
+    if (dimension->scale < 0.0) {
+        error = "Scale must be non-negative";
+        return false;
+    }
+
+    return true;
+}
+
+bool
 finalize_stream(struct ZarrStream_s* stream)
 {
     if (stream == nullptr) {
@@ -1069,6 +987,16 @@ finalize_stream(struct ZarrStream_s* stream)
         }
     }
     stream->groups_.clear(); // flush before shutting down thread pool
+
+    for (auto& [array_key, array] : stream->arrays_) {
+        if (!zarr::finalize_array(std::move(array))) {
+            std::string err_msg = "Failed to close array '" + array_key + "'";
+            LOG_ERROR("Error finalizing Zarr stream: " + err_msg);
+            return false;
+        }
+    }
+    stream->arrays_.clear(); // flush before shutting down thread pool
+
     stream->thread_pool_->await_stop();
 
     return true;

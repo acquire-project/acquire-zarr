@@ -1,14 +1,14 @@
 #pragma once
 
 #include "array.hh"
+#include "array.dimensions.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
+#include "group.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
-#include "array.dimensions.hh"
-#include "group.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -162,6 +162,96 @@ struct ZarrStream_s
      * @return True if the switch was successful, false otherwise.
      */
     [[nodiscard]] bool switch_node_(std::string_view key);
+
+    [[nodiscard]] static bool validate_compression_settings_(
+      const ZarrCompressionSettings* settings,
+      std::string& error);
+
+    [[nodiscard]] bool validate_dimension_(
+      const ZarrDimensionProperties* dimension,
+      bool is_append,
+      std::string& error);
+
+    template<typename PropertiesT>
+    [[nodiscard]]
+    bool validate_node_properties_(const PropertiesT* properties,
+                                   ZarrVersion version,
+                                   std::string& error)
+    {
+        if (!properties) {
+            error = "Null pointer: properties";
+            return false;
+        }
+
+        if (!properties->store_key) {
+            error = "Null pointer: store_key";
+            return false;
+        }
+
+        if (properties->data_type >= ZarrDataTypeCount) {
+            error =
+              "Invalid data type: " + std::to_string(properties->data_type);
+            return false;
+        }
+
+        if (properties->compression_settings &&
+            !validate_compression_settings_(properties->compression_settings,
+                                            error)) {
+            return false;
+        }
+
+        if (!properties->dimensions) {
+            error = "Null pointer: dimensions";
+            return false;
+        }
+
+        const auto ndims = properties->dimension_count;
+        if (ndims < 3) {
+            error = "Invalid number of dimensions: " + std::to_string(ndims) +
+                    ". Must be at least 3";
+            return false;
+        }
+
+        // check the final dimension (width), must be space
+        if (properties->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+            error = "Last dimension must be of type Space";
+            return false;
+        }
+
+        // check the penultimate dimension (height), must be space
+        if (properties->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+            error = "Second to last dimension must be of type Space";
+            return false;
+        }
+
+        // validate the dimensions individually
+        for (size_t i = 0; i < ndims; ++i) {
+            if (!validate_dimension_(
+                  properties->dimensions + i, i == 0, error)) {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    template<typename PropertiesT>
+    [[nodiscard]]
+    bool check_node_and_validate_(const std::string& key,
+                                  const PropertiesT* properties,
+                                  std::string& error)
+    {
+        if (has_node_(key)) {
+            error = "Node with key '" + key + "' already exists.";
+            return false;
+        }
+
+        if (!validate_node_properties_(properties, version_, error)) {
+            return false;
+        }
+
+        return true;
+    };
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };
