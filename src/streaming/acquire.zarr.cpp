@@ -101,9 +101,8 @@ extern "C"
       size_t dimension_count)
     {
         EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
-        EXPECT_VALID_ARGUMENT(dimension_count >= 3,
-                              "Invalid dimension count: ",
-                              dimension_count);
+        EXPECT_VALID_ARGUMENT(
+          dimension_count >= 3, "Invalid dimension count: ", dimension_count);
 
         ZarrDimensionProperties* dimensions = nullptr;
 
@@ -175,7 +174,15 @@ extern "C"
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
 
-        return ZarrStatusCode_Success;
+        ZarrStatusCode code;
+        try {
+            code = stream->configure_group(properties);
+        } catch (const std::exception& exc) {
+            LOG_ERROR("Error configuring group: ", exc.what());
+            return ZarrStatusCode_InternalError;
+        }
+
+        return code;
     }
 
     ZarrStatusCode ZarrStream_configure_array(
@@ -185,7 +192,15 @@ extern "C"
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(properties, "Null pointer: properties");
 
-        return ZarrStatusCode_Success;
+        ZarrStatusCode code;
+        try {
+            code = stream->configure_array(properties);
+        } catch (const std::exception& exc) {
+            LOG_ERROR("Error configuring array: ", exc.what());
+            return ZarrStatusCode_InternalError;
+        }
+
+        return code;
     }
 
     ZarrStatusCode ZarrStream_append_to_group(struct ZarrStream_s* stream,

@@ -47,6 +47,20 @@ struct ZarrStream_s
     ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
                                          bool overwrite);
 
+    /**
+     * @brief
+     * @param properties
+     * @return
+     */
+    ZarrStatusCode configure_group(const ZarrGroupProperties* properties);
+
+    /**
+     * @brief
+     * @param properties
+     * @return
+     */
+    ZarrStatusCode configure_array(const ZarrArrayProperties* properties);
+
   private:
     struct CompressionSettings
     {
@@ -61,10 +75,6 @@ struct ZarrStream_s
     ZarrVersion version_;
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
-    std::optional<CompressionSettings> compression_settings_;
-    ZarrDataType dtype_;
-    std::shared_ptr<ArrayDimensions> dimensions_;
-    bool multiscale_{ false };
 
     std::optional<std::string> active_node_key_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
@@ -87,7 +97,6 @@ struct ZarrStream_s
       metadata_sinks_;
 
     bool is_s3_acquisition_() const;
-    bool is_compressed_acquisition_() const;
 
     /**
      * @brief Check that the settings are valid.
@@ -101,8 +110,10 @@ struct ZarrStream_s
     /**
      * @brief Copy settings to the stream.
      * @param settings Struct containing settings to copy.
+     * @return True if settings were committed successfully, otherwise false.
      */
-    void commit_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool commit_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.
@@ -119,10 +130,7 @@ struct ZarrStream_s
     [[nodiscard]] bool create_store_();
 
     /** @brief Initialize the frame queue. */
-    [[nodiscard]] bool init_frame_queue_();
-
-    /** @brief Create the root group. */
-    [[nodiscard]] bool create_root_group_();
+    [[nodiscard]] bool init_frame_queue_(size_t frame_size);
 
     /** @brief Create the metadata sinks. */
     [[nodiscard]] bool create_metadata_sinks_();

@@ -191,6 +191,68 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     return true;
 }
 
+[[nodiscard]]
+bool
+validate_group_properties(const ZarrGroupProperties* properties,
+                          ZarrVersion version,
+                          std::string& error)
+{
+    if (!properties) {
+        error = "Null pointer: properties";
+        return false;
+    }
+
+    if (!properties->store_key) {
+        error = "Null pointer: store_key";
+        return false;
+    }
+
+    if (properties->data_type >= ZarrDataTypeCount) {
+        error = "Invalid data type: " + std::to_string(properties->data_type);
+        return false;
+    }
+
+    if (properties->compression_settings &&
+        !validate_compression_settings(properties->compression_settings,
+                                       error)) {
+        return false;
+    }
+
+    if (!properties->dimensions) {
+        error = "Null pointer: dimensions";
+        return false;
+    }
+
+    const auto ndims = properties->dimension_count;
+    if (ndims < 3) {
+        error = "Invalid number of dimensions: " + std::to_string(ndims) +
+                ". Must be at least 3";
+        return false;
+    }
+
+    // check the final dimension (width), must be space
+    if (properties->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+        error = "Last dimension must be of type Space";
+        return false;
+    }
+
+    // check the penultimate dimension (height), must be space
+    if (properties->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+        error = "Second to last dimension must be of type Space";
+        return false;
+    }
+
+    // validate the dimensions individually
+    for (size_t i = 0; i < ndims; ++i) {
+        if (!validate_dimension(
+              properties->dimensions + i, version, i == 0, error)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 template<typename T>
 [[nodiscard]] ByteVector
 scale_image(ConstByteSpan src, size_t& width, size_t& height)
@@ -279,17 +341,8 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     start_thread_pool_(settings->max_threads);
 
-    // allocate a frame buffer
-    frame_buffer_.resize(zarr::bytes_of_frame(*dimensions_, dtype_));
-
     // create the data store
     EXPECT(create_store_(), error_);
-
-    // initialize the frame queue
-    EXPECT(init_frame_queue_(), error_);
-
-    // create the root group
-    EXPECT(create_root_group_(), error_);
 
     // allocate metadata sinks
     EXPECT(create_metadata_sinks_(), error_);
@@ -427,16 +480,88 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     return ZarrStatusCode_Success;
 }
 
+ZarrStatusCode
+ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
+{
+    // validate group properties
+    std::string error;
+    if (!validate_group_properties(properties, version_, error)) {
+        LOG_ERROR(error);
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    // construct Blosc compression parameters
+    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
+    if (properties->compression_settings) {
+        blosc_compression_params = zarr::BloscCompressionParams(
+          zarr::blosc_codec_to_string(properties->compression_settings->codec),
+          properties->compression_settings->level,
+          properties->compression_settings->shuffle);
+    }
+
+    std::optional<std::string> s3_bucket_name;
+    if (is_s3_acquisition_()) {
+        s3_bucket_name = s3_settings_->bucket_name;
+    }
+
+    std::vector<ZarrDimension> dims;
+    for (auto i = 0; i < properties->dimension_count; ++i) {
+        const auto& dim = properties->dimensions[i];
+        std::string unit;
+        if (dim.unit) {
+            unit = zarr::trim(dim.unit);
+        }
+
+        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
+
+        dims.emplace_back(dim.name,
+                          dim.type,
+                          dim.array_size_px,
+                          dim.chunk_size_px,
+                          dim.shard_size_chunks,
+                          unit,
+                          scale);
+    }
+    auto dimensions =
+      std::make_shared<ArrayDimensions>(std::move(dims), properties->data_type);
+
+    zarr::GroupConfig config{
+        .dimensions = dimensions,
+        .dtype = properties->data_type,
+        .multiscale = properties->multiscale,
+        .bucket_name = s3_bucket_name,
+        .store_root = store_path_,
+        .group_key = zarr::trim(properties->store_key),
+        .compression_params = blosc_compression_params,
+    };
+
+    std::unique_ptr<zarr::Group> group;
+    try {
+        if (version_ == ZarrVersion_2) {
+            group = std::make_unique<zarr::V2Group>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            group = std::make_unique<zarr::V3Group>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+    } catch (const std::exception& exc) {
+        set_error_("Failed to create group: " + std::string(exc.what()));
+        return ZarrStatusCode_InternalError;
+    }
+
+    return ZarrStatusCode_Success;
+}
+
+ZarrStatusCode
+ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
+{
+    return ZarrStatusCode_Success;
+}
+
 bool
 ZarrStream_s::is_s3_acquisition_() const
 {
     return s3_settings_.has_value();
-}
-
-bool
-ZarrStream_s::is_compressed_acquisition_() const
-{
-    return compression_settings_.has_value();
 }
 
 bool
@@ -473,54 +598,20 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (settings->data_type >= ZarrDataTypeCount) {
-        error_ = "Invalid data type: " + std::to_string(settings->data_type);
-        return false;
-    }
+    ZarrGroupProperties root_group_properties{
+        .store_key = "",
+        .data_type = settings->data_type,
+        .multiscale = settings->multiscale,
+        .compression_settings = settings->compression_settings,
+        .dimensions = settings->dimensions,
+        .dimension_count = settings->dimension_count,
+    };
 
-    if (is_compressed_acquisition(settings) &&
-        !validate_compression_settings(settings->compression_settings,
-                                       error_)) {
-        return false;
-    }
-
-    if (settings->dimensions == nullptr) {
-        error_ = "Null pointer: dimensions";
-        return false;
-    }
-
-    // we must have at least 3 dimensions
-    const size_t ndims = settings->dimension_count;
-    if (ndims < 3) {
-        error_ = "Invalid number of dimensions: " + std::to_string(ndims) +
-                 ". Must be at least 3";
-        return false;
-    }
-
-    // check the final dimension (width), must be space
-    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
-        error_ = "Last dimension must be of type Space";
-        return false;
-    }
-
-    // check the penultimate dimension (height), must be space
-    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
-        error_ = "Second to last dimension must be of type Space";
-        return false;
-    }
-
-    // validate the dimensions individually
-    for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              settings->dimensions + i, version, i == 0, error_)) {
-            return false;
-        }
-    }
-
-    return true;
+    return validate_group_properties(
+      root_group_properties, settings->version, error_);
 }
 
-void
+bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     version_ = settings->version;
@@ -530,38 +621,32 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         s3_settings_ = construct_s3_settings(settings->s3_settings);
     }
 
-    if (is_compressed_acquisition(settings)) {
-        compression_settings_ = {
-            .compressor = settings->compression_settings->compressor,
-            .codec = settings->compression_settings->codec,
-            .level = settings->compression_settings->level,
-            .shuffle = settings->compression_settings->shuffle,
-        };
+    ZarrGroupProperties root_group_props{
+        .store_key = "",
+        .data_type = settings->data_type,
+        .multiscale = settings->multiscale,
+        .compression_settings = settings->compression_settings,
+        .dimensions = settings->dimensions,
+        .dimension_count = settings->dimension_count,
+    };
+
+    if (configure_group(&root_group_props) != ZarrStatusCode_Success) {
+        set_error_("Failed to configure root group");
+        return false;
     }
 
-    dtype_ = settings->data_type;
+    // allocate the frame buffer
+    frame_buffer_.resize(
+      zarr::bytes_of_frame(*dimensions, settings->data_type));
 
-    std::vector<ZarrDimension> dims;
-    for (auto i = 0; i < settings->dimension_count; ++i) {
-        const auto& dim = settings->dimensions[i];
-        std::string unit = "";
-        if (dim.unit) {
-            unit = zarr::trim(dim.unit);
-        }
+    // initialize the frame queue
+    const auto& width_dim = settings->dimensions[settings->dimension_count - 1];
+    const auto& height_dim =
+      settings->dimensions[settings->dimension_count - 2];
+    const auto frame_size = width_dim.array_size_px * height_dim.array_size_px *
+                            zarr::bytes_of_type(settings->data_type);
 
-        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
-
-        dims.emplace_back(dim.name,
-                          dim.type,
-                          dim.array_size_px,
-                          dim.chunk_size_px,
-                          dim.shard_size_chunks,
-                          unit,
-                          scale);
-    }
-    dimensions_ = std::make_shared<ArrayDimensions>(std::move(dims), dtype_);
-
-    multiscale_ = settings->multiscale;
+    return init_frame_queue_(frame_size);
 }
 
 void
@@ -633,7 +718,7 @@ ZarrStream_s::create_store_()
 }
 
 bool
-ZarrStream_s::init_frame_queue_()
+ZarrStream_s::init_frame_queue_(size_t frame_size)
 {
     if (frame_queue_) {
         return true; // already initialized
@@ -643,10 +728,6 @@ ZarrStream_s::init_frame_queue_()
         set_error_("Thread pool is not initialized");
         return false;
     }
-
-    const auto frame_size = dimensions_->width_dim().array_size_px *
-                            dimensions_->height_dim().array_size_px *
-                            zarr::bytes_of_type(dtype_);
 
     // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
     const auto buffer_size_bytes = 2ULL << 30;
@@ -672,51 +753,6 @@ ZarrStream_s::init_frame_queue_()
         return false;
     }
 
-    return true;
-}
-
-bool
-ZarrStream_s::create_root_group_()
-{
-    // construct Blosc compression parameters
-    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
-    if (is_compressed_acquisition_()) {
-        blosc_compression_params = zarr::BloscCompressionParams(
-          zarr::blosc_codec_to_string(compression_settings_->codec),
-          compression_settings_->level,
-          compression_settings_->shuffle);
-    }
-
-    std::optional<std::string> s3_bucket_name;
-    if (is_s3_acquisition_()) {
-        s3_bucket_name = s3_settings_->bucket_name;
-    }
-
-    zarr::GroupConfig config{
-        .dimensions = dimensions_,
-        .dtype = dtype_,
-        .multiscale = multiscale_,
-        .bucket_name = s3_bucket_name,
-        .store_root = store_path_,
-        .group_key = "",
-        .compression_params = blosc_compression_params,
-    };
-
-    std::unique_ptr<zarr::Group> root_group;
-    try {
-        if (version_ == ZarrVersion_2) {
-            root_group = std::make_unique<zarr::V2Group>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            root_group = std::make_unique<zarr::V3Group>(
-              config, thread_pool_, s3_connection_pool_);
-        }
-    } catch (const std::exception& exc) {
-        set_error_("Failed to create root group: " + std::string(exc.what()));
-        return false;
-    }
-
-    groups_.emplace("", std::move(root_group));
     return true;
 }
 
