@@ -191,11 +191,12 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     return true;
 }
 
+template<typename T>
 [[nodiscard]]
 bool
-validate_group_properties(const ZarrGroupProperties* properties,
-                          ZarrVersion version,
-                          std::string& error)
+validate_node_properties(const T* properties,
+                         ZarrVersion version,
+                         std::string& error)
 {
     if (!properties) {
         error = "Null pointer: properties";
@@ -337,12 +338,33 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 {
     EXPECT(validate_settings_(settings), error_);
 
-    commit_settings_(settings);
+    version_ = settings->version;
+    store_path_ = zarr::trim(settings->store_path);
+
+    if (is_s3_acquisition(settings)) {
+        s3_settings_ = construct_s3_settings(settings->s3_settings);
+    }
 
     start_thread_pool_(settings->max_threads);
 
     // create the data store
     EXPECT(create_store_(), error_);
+
+    EXPECT(create_root_group_(settings), error_);
+
+    // compute frame size
+    const auto& width_dim = settings->dimensions[settings->dimension_count - 1];
+    const auto& height_dim =
+      settings->dimensions[settings->dimension_count - 2];
+
+    const auto frame_size = width_dim.array_size_px * height_dim.array_size_px *
+                            zarr::bytes_of_type(settings->data_type);
+
+    // allocate the frame buffer
+    frame_buffer_.resize(frame_size);
+
+    // initialize the frame queue
+    EXPECT(init_frame_queue_(frame_size), error_);
 
     // allocate metadata sinks
     EXPECT(create_metadata_sinks_(), error_);
@@ -362,7 +384,8 @@ ZarrStream::append_to_node(std::string_view key,
         return 0;
     }
 
-    switch_node_(key);
+    EXPECT(switch_node_(key),
+           "Failed to switch to node '" + std::string(key) + "'");
 
     auto* data = static_cast<const std::byte*>(data_);
 
@@ -483,9 +506,17 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
 ZarrStatusCode
 ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 {
+    std::string key = zarr::trim(properties->store_key);
+
+    // do we already have a node with this key?
+    if (has_node_(key)) {
+        LOG_ERROR("Node with key '", key, "' already exists.");
+        return ZarrStatusCode_InvalidArgument;
+    }
+
     // validate group properties
     std::string error;
-    if (!validate_group_properties(properties, version_, error)) {
+    if (!validate_node_properties(properties, version_, error)) {
         LOG_ERROR(error);
         return ZarrStatusCode_InvalidArgument;
     }
@@ -531,7 +562,7 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
         .multiscale = properties->multiscale,
         .bucket_name = s3_bucket_name,
         .store_root = store_path_,
-        .group_key = zarr::trim(properties->store_key),
+        .group_key = key,
         .compression_params = blosc_compression_params,
     };
 
@@ -544,6 +575,8 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
             group = std::make_unique<zarr::V3Group>(
               config, thread_pool_, s3_connection_pool_);
         }
+
+        groups_.emplace(key, std::move(group));
     } catch (const std::exception& exc) {
         set_error_("Failed to create group: " + std::string(exc.what()));
         return ZarrStatusCode_InternalError;
@@ -555,6 +588,81 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 ZarrStatusCode
 ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
 {
+    std::string key = zarr::trim(properties->store_key);
+
+    // do we already have a node with this key?
+    if (has_node_(key)) {
+        LOG_ERROR("Node with key '", key, "' already exists.");
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    // validate array properties
+    std::string error;
+    if (!validate_node_properties(properties, version_, error)) {
+        LOG_ERROR(error);
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    // construct Blosc compression parameters
+    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
+    if (properties->compression_settings) {
+        blosc_compression_params = zarr::BloscCompressionParams(
+          zarr::blosc_codec_to_string(properties->compression_settings->codec),
+          properties->compression_settings->level,
+          properties->compression_settings->shuffle);
+    }
+
+    std::optional<std::string> s3_bucket_name;
+    if (is_s3_acquisition_()) {
+        s3_bucket_name = s3_settings_->bucket_name;
+    }
+
+    std::vector<ZarrDimension> dims;
+    for (auto i = 0; i < properties->dimension_count; ++i) {
+        const auto& dim = properties->dimensions[i];
+        std::string unit;
+        if (dim.unit) {
+            unit = zarr::trim(dim.unit);
+        }
+
+        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
+
+        dims.emplace_back(dim.name,
+                          dim.type,
+                          dim.array_size_px,
+                          dim.chunk_size_px,
+                          dim.shard_size_chunks,
+                          unit,
+                          scale);
+    }
+    auto dimensions =
+      std::make_shared<ArrayDimensions>(std::move(dims), properties->data_type);
+
+    zarr::ArrayConfig config{
+        .dimensions = dimensions,
+        .dtype = properties->data_type,
+        .bucket_name = s3_bucket_name,
+        .store_root = store_path_,
+        .group_key = key, // FIXME: should be the parent of this
+        .compression_params = blosc_compression_params,
+    };
+
+    std::unique_ptr<zarr::Array> array;
+    try {
+        if (version_ == ZarrVersion_2) {
+            array = std::make_unique<zarr::V2Array>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            array = std::make_unique<zarr::V3Array>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+
+        arrays_.emplace(key, std::move(array));
+    } catch (const std::exception& exc) {
+        set_error_("Failed to create array: " + std::string(exc.what()));
+        return ZarrStatusCode_InternalError;
+    }
+
     return ZarrStatusCode_Success;
 }
 
@@ -607,20 +715,14 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         .dimension_count = settings->dimension_count,
     };
 
-    return validate_group_properties(
-      root_group_properties, settings->version, error_);
+    return validate_node_properties(&root_group_properties,
+                                    static_cast<ZarrVersion>(settings->version),
+                                    error_);
 }
 
 bool
-ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::create_root_group_(const struct ZarrStreamSettings_s* settings)
 {
-    version_ = settings->version;
-    store_path_ = zarr::trim(settings->store_path);
-
-    if (is_s3_acquisition(settings)) {
-        s3_settings_ = construct_s3_settings(settings->s3_settings);
-    }
-
     ZarrGroupProperties root_group_props{
         .store_key = "",
         .data_type = settings->data_type,
@@ -635,18 +737,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    // allocate the frame buffer
-    frame_buffer_.resize(
-      zarr::bytes_of_frame(*dimensions, settings->data_type));
-
-    // initialize the frame queue
-    const auto& width_dim = settings->dimensions[settings->dimension_count - 1];
-    const auto& height_dim =
-      settings->dimensions[settings->dimension_count - 2];
-    const auto frame_size = width_dim.array_size_px * height_dim.array_size_px *
-                            zarr::bytes_of_type(settings->data_type);
-
-    return init_frame_queue_(frame_size);
+    return true;
 }
 
 void
@@ -876,6 +967,24 @@ ZarrStream_s::finalize_frame_queue_()
     std::unique_lock lock(frame_queue_mutex_);
     frame_queue_finished_cv_.wait(lock,
                                   [this] { return frame_queue_->empty(); });
+}
+
+bool
+ZarrStream_s::has_node_(std::string_view key)
+{
+    std::string key_str(key);
+
+    const auto group_it = groups_.find(key_str);
+    if (group_it != groups_.end()) {
+        return true;
+    }
+
+    const auto array_it = arrays_.find(key_str);
+    if (array_it != arrays_.end()) {
+        return true;
+    }
+
+    return false;
 }
 
 void

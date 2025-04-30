@@ -112,7 +112,7 @@ struct ZarrStream_s
      * @param settings Struct containing settings to copy.
      * @return True if settings were committed successfully, otherwise false.
      */
-    [[nodiscard]] bool commit_settings_(
+    [[nodiscard]] bool create_root_group_(
       const struct ZarrStreamSettings_s* settings);
 
     /**
@@ -143,6 +143,14 @@ struct ZarrStream_s
 
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
+
+    /**
+     * @brief Check if the stream has a node with key @p key.
+     * @param key A node key.
+     * @return True if the stream has a node with the specified key, otherwise
+     * false.
+     */
+    bool has_node_(std::string_view key);
 
     /** @brief Close the currently active group or array. */
     void close_current_node_();
