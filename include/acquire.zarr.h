@@ -12,26 +12,35 @@ extern "C"
      * the store path, custom metadata, S3 settings, chunk compression settings,
      * dimension properties, whether to stream to multiple levels of detail, the
      * pixel data type, and the Zarr format version.
-     * @note The store path can be a filesystem path or an S3 key prefix. For example,
-     * supplying an endpoint "s3://my-endpoint.com" and a bucket "my-bucket" with a
-     * store_path of "my-dataset.zarr" will result in the store being written to
-     * "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
-     * @note The dimensions array may be allocated with ZarrStreamSettings_create_dimension_array
-     * and freed with ZarrStreamSettings_destroy_dimension_array. The order in which you
-     * set the dimension properties in the array should match the order of the dimensions
-     * from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
+     * @note The store path can be a filesystem path or an S3 key prefix. For
+     * example, supplying an endpoint "s3://my-endpoint.com" and a bucket
+     * "my-bucket" with a store_path of "my-dataset.zarr" will result in the
+     * store being written to "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
+     * @note The dimensions array may be allocated with
+     * ZarrStreamSettings_create_dimension_array and freed with
+     * ZarrStreamSettings_destroy_dimension_array. The order in which you set
+     * the dimension properties in the array should match the order of the
+     * dimensions from slowest to fastest changing, for example, [Z, Y, X] for a
+     * 3D dataset.
      */
     typedef struct ZarrStreamSettings_s
     {
-        const char* store_path; /**< Path to the store. Filesystem path or S3 key prefix. */
+        const char* store_path; /**< Path to the store. Filesystem path or S3
+                                   key prefix. */
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
-        ZarrCompressionSettings* compression_settings; /**< Optional chunk compression settings for the store. */
-        ZarrDimensionProperties* dimensions; /**< The properties of each dimension in the dataset. */
+        ZarrCompressionSettings*
+          compression_settings; /**< Optional chunk compression settings for the
+                                   store. */
+        ZarrDimensionProperties*
+          dimensions; /**< The properties of each dimension in the dataset. */
         size_t dimension_count; /**< The number of dimensions in the dataset. */
         bool multiscale; /**< Whether to stream to multiple levels of detail. */
         ZarrDataType data_type; /**< The pixel data type of the dataset. */
-        ZarrVersion version; /**< The version of the Zarr format to use. 2 or 3. */
-        unsigned int max_threads; /**< The maximum number of threads to use in the stream. Set to 0 to use the supported number of concurrent threads. */
+        ZarrVersion
+          version; /**< The version of the Zarr format to use. 2 or 3. */
+        unsigned int max_threads; /**< The maximum number of threads to use in
+                                     the stream. Set to 0 to use the supported
+                                     number of concurrent threads. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -63,18 +72,25 @@ extern "C"
     const char* Zarr_get_status_message(ZarrStatusCode code);
 
     /**
-     * @brief Allocate memory for the dimension array in the Zarr stream settings struct.
+     * @brief Allocate memory for the dimension array in the Zarr stream
+     * settings struct.
      * @param[in, out] settings The Zarr stream settings struct.
-     * @param dimension_count The number of dimensions in the dataset to allocate memory for.
+     * @param dimension_count The number of dimensions in the dataset to
+     * allocate memory for.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode ZarrStreamSettings_create_dimension_array(ZarrStreamSettings* settings, size_t dimension_count);
+    ZarrStatusCode ZarrStreamSettings_create_dimension_array(
+      ZarrStreamSettings* settings,
+      size_t dimension_count);
 
     /**
-     * @brief Free memory for the dimension array in the Zarr stream settings struct.
-     * @param[in, out] settings The Zarr stream settings struct containing the dimension array to free.
+     * @brief Free memory for the dimension array in the Zarr stream settings
+     * struct.
+     * @param[in, out] settings The Zarr stream settings struct containing the
+     * dimension array to free.
      */
-    void ZarrStreamSettings_destroy_dimension_array(ZarrStreamSettings* settings);
+    void ZarrStreamSettings_destroy_dimension_array(
+      ZarrStreamSettings* settings);
 
     /**
      * @brief Create a Zarr stream.
@@ -128,10 +144,10 @@ extern "C"
       const ZarrArrayProperties* properties);
 
     /**
-     * @brief Append data to the named group in the Zarr stream.
+     * @brief Append data to the named node in the Zarr stream.
      * @note Partial or multiple frames can be appended in a single call.
      * @param[in, out] stream The Zarr stream struct.
-     * @param[in] array_name The name of the group to append to. Empty string
+     * @param[in] node_key The name of the node to append to. Empty string
      * indicates the root group, equivalent to ZarrStream_append().
      * @param[in] data The data to append.
      * @param[in] bytes_in The number of bytes in @p data. This can be any
@@ -140,37 +156,20 @@ extern "C"
      * @param[out] bytes_out The number of bytes written to the stream.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode ZarrStream_append_to_group(ZarrStream* stream,
-                                              const char* array_name,
-                                              const void* data,
-                                              size_t bytes_in,
-                                              size_t* bytes_out);
-
-    /**
-     * @brief Append data to the named array in the Zarr stream.
-     * @note Partial or multiple frames can be appended in a single call.
-     * @param[in, out] stream The Zarr stream struct.
-     * @param[in] array_name The name of the group to append to.
-     * @param[in] data The data to append.
-     * @param[in] bytes_in The number of bytes in @p data. This can be any
-     * nonnegative integer. On a value of 0, this function will immediately
-     * return.
-     * @param[out] bytes_out The number of bytes written to the stream.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrStream_append_to_array(ZarrStream* stream,
-                                              const char* array_name,
-                                              const void* data,
-                                              size_t bytes_in,
-                                              size_t* bytes_out);
+    ZarrStatusCode ZarrStream_append_to_node(ZarrStream* stream,
+                                             const char* node_key,
+                                             const void* data,
+                                             size_t bytes_in,
+                                             size_t* bytes_out);
 
     /**
      * @brief Write custom metadata to the Zarr stream.
      * @param stream The Zarr stream struct.
-     * @param custom_metadata JSON-formatted custom metadata to be written to the dataset.
-     * @param overwrite If true, overwrite any existing custom metadata. Otherwise,
-     * if custom_metadata is not empty and the stream has already written custom
-     * metadata, this function will return an error.
+     * @param custom_metadata JSON-formatted custom metadata to be written to
+     * the dataset.
+     * @param overwrite If true, overwrite any existing custom metadata.
+     * Otherwise, if custom_metadata is not empty and the stream has already
+     * written custom metadata, this function will return an error.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
