@@ -149,6 +149,91 @@ make_array_dimensions(const ZarrDimensionProperties* dimensions,
     return std::make_shared<ArrayDimensions>(std::move(dims), data_type);
 }
 
+bool
+is_valid_zarr_key(const std::string& key, std::string& error)
+{
+    // https://zarr-specs.readthedocs.io/en/latest/v3/core/index.html#node-names
+
+    // key cannot be empty
+    if (key.empty()) {
+        error = "Key is empty";
+        return false;
+    }
+
+    // key cannot end with '/'
+    if (key.back() == '/') {
+        error = "Key ends in '/'";
+        return false;
+    }
+
+    if (key.find('/') != std::string::npos) {
+        // path has slashes, check each segment
+        std::string segment;
+        std::istringstream stream(key);
+
+        while (std::getline(stream, segment, '/')) {
+            // skip empty segments (like in "/foo" where there's an empty
+            // segment at start)
+            if (segment.empty()) {
+                continue;
+            }
+
+            // segment must not be composed only of periods
+            if (std::regex_match(segment, std::regex("^\\.+$"))) {
+                error = "Invalid key segment '" + segment + "'";
+                return false;
+            }
+
+            // segment must not start with "__"
+            if (segment.substr(0, 2) == "__") {
+                error =
+                  "Key segment '" + segment + "' has reserved prefix '__'";
+                return false;
+            }
+        }
+    } else { // simple name, apply node name rules
+        // must not be composed only of periods
+        if (std::regex_match(key, std::regex("^\\.+$"))) {
+            error = "Invalid key '" + key + "'";
+            return false;
+        }
+
+        // must not start with "__"
+        if (key.substr(0, 2) == "__") {
+            error = " Key '" + key + "' has reserved prefix '__'";
+            return false;
+        }
+    }
+
+    // check that all characters are in recommended set
+    std::regex valid_chars("^[a-zA-Z0-9_.-]*$");
+
+    // for paths, apply to each segment
+    if (key.find('/') != std::string::npos) {
+        std::string segment;
+        std::istringstream stream(key);
+
+        while (std::getline(stream, segment, '/')) {
+            if (!segment.empty() && !std::regex_match(segment, valid_chars)) {
+                error = "Key segment '" + segment +
+                        "' contains invalid characters (should use only a-z, "
+                        "A-Z, 0-9, -, _, .)";
+                return false;
+            }
+        }
+    } else {
+        // for simple names
+        if (!std::regex_match(key, valid_chars)) {
+            error = "Key '" + key +
+                    "' contains invalid characters (should use only a-z, A-Z, "
+                    "0-9, -, _, .)";
+            return false;
+        }
+    }
+
+    return true;
+}
+
 template<typename T>
 [[nodiscard]] ByteVector
 scale_image(ConstByteSpan src, size_t& width, size_t& height)
@@ -402,9 +487,21 @@ ZarrStatusCode
 ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 {
     std::string key = zarr::trim(properties->store_key);
-    std::string error;
 
-    if (!check_node_and_validate_(key, properties, error)) {
+    // remove leading slash(es)
+    key = std::regex_replace(key, std::regex("^\\/+"), "");
+
+    std::string error;
+    if (!key.empty() && !is_valid_zarr_key(key, error)) {
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    if (has_node_(key)) {
+        error = "Node with key '" + key + "' already exists.";
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    if (!validate_node_properties_(properties, version_, error)) {
         LOG_ERROR(error);
         return ZarrStatusCode_InvalidArgument;
     }
@@ -454,10 +551,17 @@ ZarrStatusCode
 ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
 {
     std::string key = zarr::trim(properties->store_key);
-    std::string error;
 
-    if (!check_node_and_validate_(key, properties, error)) {
-        LOG_ERROR(error);
+    // remove leading slash(es)
+    key = std::regex_replace(key, std::regex("^\\/+"), "");
+
+    std::string error;
+    if (!is_valid_zarr_key(key, error)) {
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    if (has_node_(key)) {
+        error = "Node with key '" + key + "' already exists.";
         return ZarrStatusCode_InvalidArgument;
     }
 

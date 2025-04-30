@@ -235,24 +235,6 @@ struct ZarrStream_s
         return true;
     };
 
-    template<typename PropertiesT>
-    [[nodiscard]]
-    bool check_node_and_validate_(const std::string& key,
-                                  const PropertiesT* properties,
-                                  std::string& error)
-    {
-        if (has_node_(key)) {
-            error = "Node with key '" + key + "' already exists.";
-            return false;
-        }
-
-        if (!validate_node_properties_(properties, version_, error)) {
-            return false;
-        }
-
-        return true;
-    };
-
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };
 
