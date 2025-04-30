@@ -34,7 +34,10 @@ zarr::Group::Group(const zarr::GroupConfig& config,
   , thread_pool_{ thread_pool }
   , s3_connection_pool_{ s3_connection_pool }
 {
-    bytes_per_frame_ = zarr::bytes_of_frame(*config.dimensions, config.dtype);
+    bytes_per_frame_ =
+      config.dimensions == nullptr
+        ? 0
+        : zarr::bytes_of_frame(*config.dimensions, config.dtype);
 
     CHECK(create_downsampler_());
 
@@ -74,13 +77,20 @@ zarr::Group::close()
 size_t
 zarr::Group::write_frame(ConstByteSpan data)
 {
-    CHECK(!arrays_.empty());
+    if (arrays_.empty()) {
+        LOG_WARNING("Attempt to write to group with no arrays");
+        return 0;
+    }
 
     const auto n_bytes = arrays_[0]->write_frame(data);
-    EXPECT(n_bytes == bytes_per_frame_, "");
+    EXPECT(n_bytes == bytes_per_frame_,
+           "Expected to write ",
+           bytes_per_frame_,
+           " bytes, wrote ",
+           n_bytes);
 
     if (n_bytes != data.size()) {
-        LOG_ERROR("Incomplete write to full-resolution array.");
+        LOG_ERROR("Incomplete write to full-resolution array");
         return n_bytes;
     }
 

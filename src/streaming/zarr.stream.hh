@@ -172,6 +172,9 @@ struct ZarrStream_s
       bool is_append,
       std::string& error);
 
+    [[nodiscard]] bool ensure_parent_groups_exist_(const std::string& key,
+                                                   std::string& error);
+
     template<typename PropertiesT>
     [[nodiscard]]
     bool validate_node_properties_(const PropertiesT* properties,

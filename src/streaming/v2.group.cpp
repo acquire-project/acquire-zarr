@@ -13,7 +13,9 @@ zarr::V2Group::V2Group(const zarr::GroupConfig& config,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : Group(config, thread_pool, s3_connection_pool)
 {
-    CHECK(create_arrays_());
+    if (config.dimensions) {
+        CHECK(create_arrays_());
+    }
 }
 
 nlohmann::json

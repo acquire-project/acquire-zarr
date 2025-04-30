@@ -13,7 +13,9 @@ zarr::V3Group::V3Group(const zarr::GroupConfig& config,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : Group(config, thread_pool, s3_connection_pool)
 {
-    CHECK(create_arrays_());
+    if (config.dimensions) {
+        CHECK(create_arrays_());
+    }
 }
 
 nlohmann::json
@@ -70,7 +72,10 @@ zarr::V3Group::make_group_metadata_() const
         { "node_type", "group" },
         { "attributes", nlohmann::json::object() },
     };
-    metadata["attributes"]["ome"] = get_ome_metadata();
+
+    if (!arrays_.empty()) {
+        metadata["attributes"]["ome"] = get_ome_metadata();
+    }
 
     return metadata;
 }

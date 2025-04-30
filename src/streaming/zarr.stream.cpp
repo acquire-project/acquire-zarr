@@ -234,6 +234,26 @@ is_valid_zarr_key(const std::string& key, std::string& error)
     return true;
 }
 
+std::string
+regularize_key(std::string_view key)
+{
+    std::string regularized_key = zarr::trim(key);
+
+    // replace multiple consecutive slashes with single slashes
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("\\/+"), "/");
+
+    // remove leading slash
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("^\\/"), "");
+
+    // remove trailing slash
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("\\/$"), "");
+
+    return regularized_key;
+}
+
 template<typename T>
 [[nodiscard]] ByteVector
 scale_image(ConstByteSpan src, size_t& width, size_t& height)
@@ -354,7 +374,7 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append_to_node(std::string_view key,
+ZarrStream::append_to_node(std::string_view key_view,
                            const void* data_,
                            size_t nbytes)
 {
@@ -364,8 +384,8 @@ ZarrStream::append_to_node(std::string_view key,
         return 0;
     }
 
-    EXPECT(switch_node_(key),
-           "Failed to switch to node '" + std::string(key) + "'");
+    const std::string key = regularize_key(key_view);
+    EXPECT(switch_node_(key), "Failed to switch to node '" + key + "'");
 
     auto* data = static_cast<const std::byte*>(data_);
 
@@ -486,10 +506,7 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
 ZarrStatusCode
 ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 {
-    std::string key = zarr::trim(properties->store_key);
-
-    // remove leading slash(es)
-    key = std::regex_replace(key, std::regex("^\\/+"), "");
+    const std::string key = regularize_key(properties->store_key);
 
     std::string error;
     if (!key.empty() && !is_valid_zarr_key(key, error)) {
@@ -499,6 +516,10 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
     if (has_node_(key)) {
         error = "Node with key '" + key + "' already exists.";
         return ZarrStatusCode_InvalidArgument;
+    }
+
+    if (!ensure_parent_groups_exist_(key, error)) {
+        return ZarrStatusCode_InternalError;
     }
 
     if (!validate_node_properties_(properties, version_, error)) {
@@ -550,10 +571,7 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
 ZarrStatusCode
 ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
 {
-    std::string key = zarr::trim(properties->store_key);
-
-    // remove leading slash(es)
-    key = std::regex_replace(key, std::regex("^\\/+"), "");
+    const std::string key = regularize_key(properties->store_key);
 
     std::string error;
     if (!is_valid_zarr_key(key, error)) {
@@ -563,6 +581,10 @@ ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
     if (has_node_(key)) {
         error = "Node with key '" + key + "' already exists.";
         return ZarrStatusCode_InvalidArgument;
+    }
+
+    if (!ensure_parent_groups_exist_(key, error)) {
+        return ZarrStatusCode_InternalError;
     }
 
     auto dimensions = make_array_dimensions(properties->dimensions,
@@ -1057,6 +1079,74 @@ ZarrStream_s::validate_dimension_(const ZarrDimensionProperties* dimension,
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::ensure_parent_groups_exist_(const std::string& key,
+                                          std::string& error)
+{
+    // Skip if key is empty or just the root
+    if (key.empty() || key == "/") {
+        return true;
+    }
+
+    // Split the key into components
+    std::vector<std::string> segments;
+    size_t start = 0;
+    size_t end = key.find('/');
+
+    while (end != std::string::npos) {
+        if (end > start) {                          // akip empty segments
+            segments.push_back(key.substr(0, end)); // get all parent paths
+        }
+        start = end + 1;
+        end = key.find('/', start);
+    }
+
+    std::optional<std::string> bucket_name;
+    if (is_s3_acquisition_()) {
+        bucket_name = s3_settings_->bucket_name;
+    }
+
+    // create any missing parent groups
+    for (const auto& parent_path : segments) {
+        // skip if this group already exists
+        if (has_node_(parent_path)) {
+            // check that it's not an array (arrays can't have children)
+            if (arrays_.find(parent_path) != arrays_.end()) {
+                error = "Path conflict: '" + parent_path +
+                        "' is an array and cannot contain other nodes.";
+                return false;
+            }
+            // it's a group, so we can continue
+            continue;
+        }
+
+        // create the group at this path level
+        zarr::GroupConfig config{
+            .dimensions = nullptr,
+            .dtype = ZarrDataTypeCount,
+            .multiscale = false,
+            .bucket_name = bucket_name,
+            .store_root = store_path_,
+            .group_key = parent_path,
+            .compression_params = std::nullopt,
+        };
+
+        // use default properties for intermediate groups
+        std::unique_ptr<zarr::Group> parent_group;
+        if (version_ == ZarrVersion_2) {
+            parent_group = std::make_unique<zarr::V2Group>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            parent_group = std::make_unique<zarr::V3Group>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+
+        groups_.emplace(parent_path, std::move(parent_group));
+    }
+
+    return ZarrStatusCode_Success;
 }
 
 bool
