@@ -30,6 +30,7 @@ set(tests
         partial-append
         frame-queue
         downsampler
+        zarr-stream-configure-group
 )
 
 foreach (name ${tests})
