@@ -48,11 +48,19 @@ void
 zarr::Group::open()
 {
     is_open_ = true;
+
+    for (auto& array : arrays_) {
+        array->open();
+    }
 }
 
 bool
 zarr::Group::close()
 {
+    if (!is_open_) {
+        return true;
+    }
+
     if (!write_metadata_()) {
         LOG_ERROR("Error closing group: failed to write metadata");
         return false;
@@ -64,7 +72,7 @@ zarr::Group::close()
     }
 
     for (auto i = 0; i < arrays_.size(); ++i) {
-        if (!zarr::finalize_array(std::move(arrays_[i]))) {
+        if (!arrays_[i]->close()) {
             LOG_ERROR("Error closing array " + std::to_string(i) +
                       ": failed to finalize array");
             return false;
@@ -299,6 +307,14 @@ zarr::finalize_group(std::unique_ptr<Group>&& group)
         if (!group->close()) {
             return false;
         }
+
+        for (auto i = 0; i < group->arrays_.size(); ++i) {
+            if (!zarr::finalize_array(std::move(group->arrays_[i]))) {
+                LOG_ERROR("Failed to finalize array " + std::to_string(i));
+                return false;
+            }
+        }
+        group->arrays_.clear();
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to close group: ", exc.what());
         return false;

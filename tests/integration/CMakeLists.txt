@@ -5,6 +5,7 @@ set(tests
         stream-zarr-v2-compressed-to-filesystem
         stream-zarr-v2-raw-to-s3
         stream-zarr-v2-compressed-to-s3
+        stream-zarr-v2-to-named-group
         stream-zarr-v3-raw-to-filesystem
         stream-zarr-v3-compressed-to-filesystem
         stream-zarr-v3-2d-multiscale-to-filesystem

@@ -389,6 +389,7 @@ ZarrStream::append_to_node(std::string_view key_view,
 
     auto* data = static_cast<const std::byte*>(data_);
 
+    // FIXME (aliddell): different frame buffers for different keys (FML)
     const size_t bytes_of_frame = frame_buffer_.size();
     size_t bytes_written = 0; // bytes written out of the input data
 
@@ -408,7 +409,8 @@ ZarrStream::append_to_node(std::string_view key_view,
             // ready to enqueue the frame buffer
             if (frame_buffer_offset_ == bytes_of_frame) {
                 std::unique_lock lock(frame_queue_mutex_);
-                while (!frame_queue_->push(frame_buffer_) && process_frames_) {
+                while (!frame_queue_->push(key, frame_buffer_) &&
+                       process_frames_) {
                     frame_queue_not_full_cv_.wait(lock);
                 }
 
@@ -429,7 +431,7 @@ ZarrStream::append_to_node(std::string_view key_view,
             ConstByteSpan frame(data, bytes_of_frame);
 
             std::unique_lock lock(frame_queue_mutex_);
-            while (!frame_queue_->push(frame) && process_frames_) {
+            while (!frame_queue_->push(key, frame) && process_frames_) {
                 frame_queue_not_full_cv_.wait(lock);
             }
 
@@ -897,15 +899,27 @@ ZarrStream_s::process_frame_queue_()
             break;
         }
 
-        if (!frame_queue_->pop(frame)) {
+        std::string key;
+        if (!frame_queue_->pop(key, frame)) {
             continue;
         }
 
         // Signal that there's space available in the queue
         frame_queue_not_full_cv_.notify_one();
 
-        EXPECT(groups_.at("")->write_frame(frame) == bytes_of_frame,
-               "Failed to write frame to writer");
+        const auto group_it = groups_.find(key);
+        const auto array_it = arrays_.find(key);
+        if (group_it != groups_.end()) {
+            EXPECT(group_it->second->write_frame(frame) == bytes_of_frame,
+                   "Failed to write frame to group ",
+                   key);
+        } else if (array_it != arrays_.end()) {
+            EXPECT(array_it->second->write_frame(frame) == bytes_of_frame,
+                   "Failed to write frame to array ",
+                   key);
+        } else {
+            throw std::runtime_error("Unrecognized key '" + key + "'");
+        }
     }
 
     CHECK(frame_queue_->empty());
@@ -985,6 +999,7 @@ ZarrStream_s::switch_node_(std::string_view key)
     if (group_it != groups_.end()) {
         close_current_node_();
         active_node_key_ = key;
+        group_it->second->open();
         return true;
     }
 
@@ -992,6 +1007,7 @@ ZarrStream_s::switch_node_(std::string_view key)
     if (array_it != arrays_.end()) {
         close_current_node_();
         active_node_key_ = key;
+        array_it->second->open();
         return true;
     }
 

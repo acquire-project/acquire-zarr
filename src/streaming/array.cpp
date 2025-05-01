@@ -37,6 +37,10 @@ zarr::Array::open()
 bool
 zarr::Array::close()
 {
+    if (!is_open_) {
+        return true;
+    }
+
     bool retval = false;
     is_closing_ = true;
     try {
