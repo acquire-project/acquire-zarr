@@ -1146,7 +1146,7 @@ ZarrStream_s::ensure_parent_groups_exist_(const std::string& key,
         groups_.emplace(parent_path, std::move(parent_group));
     }
 
-    return ZarrStatusCode_Success;
+    return true;
 }
 
 bool

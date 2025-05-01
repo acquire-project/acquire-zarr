@@ -47,7 +47,7 @@ class Group
 
     /**
      * @brief Construct OME metadata for this group.
-     * @return
+     * @return JSON structure with OME metadata for this group.
      */
     virtual nlohmann::json get_ome_metadata() const = 0;
 

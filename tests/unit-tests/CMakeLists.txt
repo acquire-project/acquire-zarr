@@ -27,10 +27,11 @@ set(tests
         v3-array-write-even
         v3-array-write-ragged-append-dim
         v3-array-write-ragged-internal-dim
-        partial-append
         frame-queue
         downsampler
+        zarr-stream-partial-append
         zarr-stream-configure-group
+        zarr-stream-configure-array
 )
 
 foreach (name ${tests})
