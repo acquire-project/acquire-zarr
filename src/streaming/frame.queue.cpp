@@ -20,7 +20,7 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
 }
 
 bool
-zarr::FrameQueue::push(const std::string& key, ConstByteSpan frame)
+zarr::FrameQueue::push(ConstByteSpan frame)
 {
     size_t write_pos = write_pos_.load(std::memory_order_relaxed);
 
@@ -29,7 +29,6 @@ zarr::FrameQueue::push(const std::string& key, ConstByteSpan frame)
         return false; // Queue is full
     }
 
-    buffer_[write_pos].key = key;
     buffer_[write_pos].data.resize(frame.size());
     memcpy(buffer_[write_pos].data.data(), frame.data(), frame.size());
     buffer_[write_pos].ready.store(true, std::memory_order_release);
@@ -40,7 +39,7 @@ zarr::FrameQueue::push(const std::string& key, ConstByteSpan frame)
 }
 
 bool
-zarr::FrameQueue::pop(std::string& key, ByteVector& frame)
+zarr::FrameQueue::pop(ByteVector& frame)
 {
     size_t read_pos = read_pos_.load(std::memory_order_relaxed);
 
@@ -52,7 +51,6 @@ zarr::FrameQueue::pop(std::string& key, ByteVector& frame)
         return false;
     }
 
-    key = buffer_[read_pos].key;
     frame = std::move(buffer_[read_pos].data);
     buffer_[read_pos].ready.store(false, std::memory_order_release);
 

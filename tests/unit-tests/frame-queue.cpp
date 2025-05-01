@@ -22,15 +22,13 @@ test_basic_operations()
     }
 
     // Pushing
-    CHECK(queue.push("foo", frame));
+    CHECK(queue.push(frame));
     CHECK(queue.size() == 1);
     CHECK(!queue.empty());
 
     // Popping
-    std::string key;
     ByteVector received_frame;
-    CHECK(queue.pop(key, received_frame));
-    CHECK(key == "foo");
+    CHECK(queue.pop(received_frame));
     CHECK(received_frame.size() == 1024);
     CHECK(queue.size() == 0);
     CHECK(queue.empty());
@@ -50,26 +48,25 @@ test_capacity()
     // Fill the queue
     for (size_t i = 0; i < capacity; ++i) {
         ByteVector frame(100, std::byte(i));
-        bool result = queue.push("", frame);
+        bool result = queue.push(frame);
         CHECK(result);
     }
 
     // Queue should be full (next push should fail)
     ByteVector extra_frame(100);
-    bool push_result = queue.push("", extra_frame);
+    bool push_result = queue.push(extra_frame);
     CHECK(!push_result);
     CHECK(queue.size() == capacity);
 
     // Remove one item
-    std::string key;
     ByteVector received_frame;
-    bool pop_result = queue.pop(key, received_frame);
+    bool pop_result = queue.pop(received_frame);
     CHECK(pop_result);
     CHECK(queue.size() == capacity - 1);
 
     // Should be able to push again
     ByteVector new_frame(100, std::byte(99));
-    push_result = queue.push("", new_frame);
+    push_result = queue.push(new_frame);
     CHECK(push_result);
     CHECK(queue.size() == capacity);
 }
@@ -90,7 +87,7 @@ test_producer_consumer()
             ByteVector frame(frame_size, std::byte(i % 256));
 
             // Try until successful
-            while (!queue.push("", frame)) {
+            while (!queue.push(frame)) {
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
             }
         }
@@ -100,10 +97,9 @@ test_producer_consumer()
     std::thread consumer([&queue, n_frames]() {
         size_t frames_received = 0;
 
-        std::string key;
         while (frames_received < n_frames) {
             ByteVector frame;
-            if (queue.pop(key, frame)) {
+            if (queue.pop(frame)) {
                 // Verify frame data (first byte should match frame number %
                 // 256)
                 CHECK(frame.size() > 0);
@@ -140,12 +136,11 @@ test_throughput()
 
     // Push and pop in a loop
     const size_t iterations = 100;
-    std::string key;
     ByteVector received_frame;
     for (size_t i = 0; i < iterations; ++i) {
-        CHECK(queue.push("", ByteVector(large_frame)));
+        CHECK(queue.push(ByteVector(large_frame)));
 
-        CHECK(queue.pop(key, received_frame));
+        CHECK(queue.pop(received_frame));
         CHECK(received_frame.size() == frame_size);
 
         received_frame.clear();

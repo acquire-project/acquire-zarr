@@ -16,8 +16,8 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(const std::string& key, ConstByteSpan frame);
-    bool pop(std::string& key, ByteVector& frame);
+    bool push(ConstByteSpan frame);
+    bool pop(ByteVector& frame);
 
     size_t size() const;
     size_t bytes_used() const;

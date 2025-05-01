@@ -48,16 +48,16 @@ struct ZarrStream_s
                                          bool overwrite);
 
     /**
-     * @brief
-     * @param properties
-     * @return
+     * @brief Configure a group in the stream.
+     * @param properties Properties of the group to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode configure_group(const ZarrGroupProperties* properties);
 
     /**
-     * @brief
-     * @param properties
-     * @return
+     * @brief Configure an array in the stream.
+     * @param properties Properties of the array to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode configure_array(const ZarrArrayProperties* properties);
 

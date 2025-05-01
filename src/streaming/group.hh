@@ -43,7 +43,7 @@ class Group
      * @param data The frame data to write.
      * @return The number of bytes written of the full-resolution frame.
      */
-    size_t write_frame(ConstByteSpan data);
+    [[nodiscard]] size_t write_frame(ConstByteSpan data);
 
     /**
      * @brief Construct OME metadata for this group.
