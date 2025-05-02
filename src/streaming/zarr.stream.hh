@@ -62,12 +62,11 @@ struct ZarrStream_s
     ZarrStatusCode configure_array(const ZarrArrayProperties* properties);
 
   private:
-    struct CompressionSettings
+    enum class NodeType
     {
-        ZarrCompressor compressor;
-        ZarrCompressionCodec codec;
-        uint8_t level;
-        uint8_t shuffle;
+        None,
+        Group,
+        Array,
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
@@ -77,6 +76,7 @@ struct ZarrStream_s
     std::optional<zarr::S3Settings> s3_settings_;
 
     std::optional<std::string> active_node_key_;
+    NodeType active_node_type_{ NodeType::None };
     std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Array>> arrays_;
 
@@ -86,6 +86,7 @@ struct ZarrStream_s
     std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
     std::condition_variable frame_queue_not_full_cv_;  // Space is available
+    std::condition_variable frame_queue_empty_cv_;     // Queue is empty
     std::condition_variable frame_queue_not_empty_cv_; // Data is available
     std::condition_variable frame_queue_finished_cv_;  // Done processing
     std::unique_ptr<zarr::FrameQueue> frame_queue_;

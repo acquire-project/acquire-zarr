@@ -389,7 +389,6 @@ ZarrStream::append_to_node(std::string_view key_view,
 
     auto* data = static_cast<const std::byte*>(data_);
 
-    // FIXME (aliddell): different frame buffers for different keys (FML)
     const size_t bytes_of_frame = frame_buffer_.size();
     size_t bytes_written = 0; // bytes written out of the input data
 
@@ -889,41 +888,57 @@ ZarrStream_s::process_frame_queue_()
 
     std::vector<std::byte> frame;
     while (process_frames_ || !frame_queue_->empty()) {
-        std::unique_lock lock(frame_queue_mutex_);
-        while (frame_queue_->empty() && process_frames_) {
-            frame_queue_not_empty_cv_.wait(lock);
+        {
+            std::unique_lock lock(frame_queue_mutex_);
+            while (frame_queue_->empty() && process_frames_) {
+                frame_queue_not_empty_cv_.wait_for(
+                  lock, std::chrono::milliseconds(100));
+            }
+
+            if (frame_queue_->empty()) {
+                frame_queue_empty_cv_.notify_all();
+
+                // If we should stop processing and the queue is empty, we're
+                // done
+                if (!process_frames_) {
+                    break;
+                } else {
+                    continue;
+                }
+            }
         }
 
-        if (!process_frames_ && frame_queue_->empty()) {
-            break;
-        }
-
-        std::string key;
-        if (!frame_queue_->pop(key, frame)) {
+        if (!frame_queue_->pop(frame)) {
             continue;
         }
 
-        // Signal that there's space available in the queue
-        frame_queue_not_full_cv_.notify_one();
-
-        const auto group_it = groups_.find(key);
-        const auto array_it = arrays_.find(key);
-        if (group_it != groups_.end()) {
-            EXPECT(group_it->second->write_frame(frame) == bytes_of_frame,
+        if (active_node_type_ == NodeType::Group) {
+            EXPECT(groups_.at(*active_node_key_)->write_frame(frame) ==
+                     bytes_of_frame,
                    "Failed to write frame to group ",
-                   key);
-        } else if (array_it != arrays_.end()) {
-            EXPECT(array_it->second->write_frame(frame) == bytes_of_frame,
+                   *active_node_key_);
+        } else if (active_node_type_ == NodeType::Array) {
+            EXPECT(arrays_.at(*active_node_key_)->write_frame(frame) ==
+                     bytes_of_frame,
                    "Failed to write frame to array ",
-                   key);
-        } else {
-            throw std::runtime_error("Unrecognized key '" + key + "'");
+                   *active_node_key_);
+        }
+
+        {
+            // Signal that there's space available in the queue
+            std::unique_lock lock(frame_queue_mutex_);
+            frame_queue_not_full_cv_.notify_one();
+
+            // Signal that the queue is empty, if applicable
+            if (frame_queue_->empty()) {
+                frame_queue_empty_cv_.notify_all();
+            }
         }
     }
 
     CHECK(frame_queue_->empty());
     std::unique_lock lock(frame_queue_mutex_);
-    frame_queue_finished_cv_.notify_all();
+    frame_queue_empty_cv_.notify_all();
 }
 
 void
@@ -940,8 +955,7 @@ ZarrStream_s::finalize_frame_queue_()
 
     // Wait for frame processing to complete
     std::unique_lock lock(frame_queue_mutex_);
-    frame_queue_finished_cv_.wait(lock,
-                                  [this] { return frame_queue_->empty(); });
+    frame_queue_empty_cv_.wait(lock, [this] { return frame_queue_->empty(); });
 }
 
 bool
@@ -967,6 +981,22 @@ ZarrStream_s::close_current_node_()
 {
     if (!active_node_key_) { // no current active node
         return;
+    }
+
+    {
+        std::unique_lock lock(frame_queue_mutex_);
+        frame_queue_empty_cv_.wait(lock,
+                                   [this] { return frame_queue_->empty(); });
+    }
+
+    if (active_node_type_ == NodeType::Group) {
+        EXPECT(groups_.at(*active_node_key_)->close(),
+               "Failed to close group ",
+               *active_node_key_);
+    } else if (active_node_type_ == NodeType::Array) {
+        EXPECT(arrays_.at(*active_node_key_)->close(),
+               "Failed to close array ",
+               *active_node_key_);
     }
 
     const auto group_it = groups_.find(*active_node_key_);
@@ -998,6 +1028,7 @@ ZarrStream_s::switch_node_(std::string_view key)
     if (group_it != groups_.end()) {
         close_current_node_();
         active_node_key_ = key;
+        active_node_type_ = NodeType::Group;
         group_it->second->open();
         return true;
     }
@@ -1006,9 +1037,12 @@ ZarrStream_s::switch_node_(std::string_view key)
     if (array_it != arrays_.end()) {
         close_current_node_();
         active_node_key_ = key;
+        active_node_type_ = NodeType::Array;
         array_it->second->open();
         return true;
     }
+
+    frame_buffer_offset_ = 0; // reset the frame buffer offset
 
     LOG_ERROR("Node not found: ", key);
     return false;
