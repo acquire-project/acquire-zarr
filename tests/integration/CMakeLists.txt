@@ -14,6 +14,7 @@ set(tests
         stream-zarr-v3-compressed-to-s3
         stream-zarr-v3-multi-frame-append
         stream-zarr-v3-multiscale-trivial-3rd-dim
+        stream-zarr-v3-to-named-group
 )
 
 foreach (name ${tests})

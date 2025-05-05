@@ -70,6 +70,7 @@ zarr::Group::close()
         LOG_ERROR("Error closing group: failed to finalize metadata sink");
         return false;
     }
+    metadata_sink_.reset();
 
     for (auto i = 0; i < arrays_.size(); ++i) {
         if (!arrays_[i]->close()) {
