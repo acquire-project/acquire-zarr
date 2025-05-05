@@ -366,8 +366,8 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     // initialize the frame queue
     EXPECT(init_frame_queue_(frame_size), error_);
 
-    // allocate metadata sinks
-    EXPECT(create_metadata_sinks_(), error_);
+    // allocate base metadata sink (Zarr V2 only)
+    EXPECT(create_base_metadata_sink_(), error_);
 
     // write base metadata
     EXPECT(write_base_metadata_(), error_);
@@ -810,29 +810,34 @@ ZarrStream_s::init_frame_queue_(size_t frame_size)
 }
 
 bool
-ZarrStream_s::create_metadata_sinks_()
+ZarrStream_s::create_base_metadata_sink_()
 {
+    if (version_ != ZarrVersion_2) {
+        return true;
+    }
+
+    const std::string zattrs_key = ".zattrs";
+
+    std::unique_ptr<zarr::Sink> zattrs_sink;
     try {
         if (s3_connection_pool_) {
-            if (!make_metadata_s3_sinks(version_,
-                                        s3_settings_->bucket_name,
-                                        store_path_,
-                                        s3_connection_pool_,
-                                        metadata_sinks_)) {
-                set_error_("Error creating metadata sinks");
-                return false;
-            }
+            zattrs_sink = zarr::make_s3_sink(s3_settings_->bucket_name,
+                                             store_path_ + "/" + zattrs_key,
+                                             s3_connection_pool_);
         } else {
-            if (!make_metadata_file_sinks(
-                  version_, store_path_, thread_pool_, metadata_sinks_)) {
-                set_error_("Error creating metadata sinks");
-                return false;
-            }
+            zattrs_sink = zarr::make_file_sink(store_path_ + "/" + zattrs_key);
         }
     } catch (const std::exception& e) {
         set_error_("Error creating metadata sinks: " + std::string(e.what()));
         return false;
     }
+
+    if (!zattrs_sink) {
+        set_error_("Error creating metadata sinks");
+        return false;
+    }
+
+    metadata_sinks_.emplace(zattrs_key, std::move(zattrs_sink));
 
     return true;
 }
@@ -840,23 +845,14 @@ ZarrStream_s::create_metadata_sinks_()
 bool
 ZarrStream_s::write_base_metadata_()
 {
-    nlohmann::json metadata;
-    std::string metadata_key;
-
-    if (version_ == 2) {
-        metadata["multiscales"] = groups_.at("")->get_ome_metadata();
-
-        metadata_key = ".zattrs";
-    } else {
-        metadata["extensions"] = nlohmann::json::array();
-        metadata["metadata_encoding"] =
-          "https://purl.org/zarr/spec/protocol/core/3.0";
-        metadata["metadata_key_suffix"] = ".json";
-        metadata["zarr_format"] =
-          "https://purl.org/zarr/spec/protocol/core/3.0";
-
-        metadata_key = "zarr.json";
+    if (version_ != ZarrVersion_2) {
+        return true;
     }
+
+    nlohmann::json metadata{
+        { "multiscales", groups_.at("")->get_ome_metadata() },
+    };
+    const std::string metadata_key = ".zattrs";
 
     const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
     if (!sink) {

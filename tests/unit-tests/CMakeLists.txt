@@ -19,7 +19,6 @@ set(tests
         s3-sink-write
         s3-sink-write-multipart
         make-data-sinks
-        make-metadata-sinks
         v2-array-write-frame-to-chunks
         v2-array-write-even
         v2-array-write-ragged-append-dim

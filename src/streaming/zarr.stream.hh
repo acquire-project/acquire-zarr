@@ -134,7 +134,7 @@ struct ZarrStream_s
     [[nodiscard]] bool init_frame_queue_(size_t frame_size);
 
     /** @brief Create the metadata sinks. */
-    [[nodiscard]] bool create_metadata_sinks_();
+    [[nodiscard]] bool create_base_metadata_sink_();
 
     /** @brief Write per-acquisition metadata. */
     [[nodiscard]] bool write_base_metadata_();
