@@ -1,76 +1,49 @@
 #pragma once
 
 #include "array.dimensions.hh"
-#include "thread.pool.hh"
-#include "s3.connection.hh"
 #include "blosc.compression.params.hh"
-#include "file.sink.hh"
 #include "definitions.hh"
+#include "file.sink.hh"
+#include "node.hh"
+#include "s3.connection.hh"
+#include "thread.pool.hh"
 
 namespace zarr {
-struct ArrayConfig
+struct ArrayConfig : public NodeConfig
 {
-    std::shared_ptr<ArrayDimensions> dimensions;
-    ZarrDataType dtype;
-    int level_of_detail;
-    std::optional<std::string> bucket_name;
-    std::string store_root;
-    std::string group_key;
-    std::optional<BloscCompressionParams> compression_params;
+    int level_of_detail{ 0 };
 };
 
-class Array
+class Array : public Node
 {
   public:
-    Array(const ArrayConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-    Array(const ArrayConfig& config,
+    Array(std::shared_ptr<ArrayConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
-    virtual ~Array() = default;
+    ~Array() override = default;
 
-    /**
-     * @brief Open the array for writing.
-     */
-    void open();
-
-    /**
-     * @brief Close the array and flush any remaining data.
-     * @note The array may be reopened after closing, but only the metadata will
-     * be preserved.
-     * @return True if the array was closed successfully, false otherwise.
-     */
-    [[nodiscard]] bool close();
-
-    /**
-     * @brief Write a frame to the array.
-     * @param data The frame data.
-     * @return The number of bytes written.
-     */
-    [[nodiscard]] size_t write_frame(std::span<const std::byte> data);
+    bool open() override;
+    [[nodiscard]] bool close() override;
+    [[nodiscard]] size_t write_frame(ConstByteSpan) override;
 
   protected:
-    ArrayConfig config_;
-
     /// Buffering
     std::vector<ByteVector> data_buffers_;
 
     /// Filesystem
     std::vector<std::string> data_paths_;
-    std::unique_ptr<Sink> metadata_sink_;
 
     /// Multithreading
-    std::shared_ptr<ThreadPool> thread_pool_;
     std::mutex buffers_mutex_;
 
     /// Bookkeeping
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
     uint32_t append_chunk_index_;
-    bool is_open_{ false };
-    bool is_closing_{ false };
+    bool is_closing_;
 
-    std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<ArrayConfig> array_config_() const;
 
     /**
      * @brief Compute the number of bytes to allocate for a single chunk.
@@ -82,7 +55,6 @@ class Array
 
     bool is_s3_array_() const;
     virtual std::string data_root_() const = 0;
-    virtual std::string metadata_path_() const = 0;
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
     void make_data_paths_();

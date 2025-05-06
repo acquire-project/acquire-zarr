@@ -8,30 +8,28 @@
 #include <functional>
 #include <stdexcept>
 
-zarr::Array::Array(const ArrayConfig& config,
-                   std::shared_ptr<ThreadPool> thread_pool)
-  : Array(config, thread_pool, nullptr)
-{
-}
-
-zarr::Array::Array(const ArrayConfig& config,
+zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : config_{ config }
-  , thread_pool_{ thread_pool }
-  , s3_connection_pool_{ s3_connection_pool }
+  : Node(std::move(config),
+         std::move(thread_pool),
+         std::move(s3_connection_pool))
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
+  , is_closing_{ false }
 {
-    open();
+    // check that the config is actually an ArrayConfig
+    CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
 }
 
-void
+bool
 zarr::Array::open()
 {
     is_closing_ = false;
     is_open_ = true;
+
+    return true;
 }
 
 bool
@@ -72,7 +70,7 @@ zarr::Array::write_frame(std::span<const std::byte> data)
 
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
-      bytes_of_frame(*config_.dimensions, config_.dtype);
+      bytes_of_frame(*config_->dimensions, config_->dtype);
 
     if (nbytes_frame != nbytes_data) {
         LOG_ERROR("Frame size mismatch: expected ",
@@ -111,11 +109,17 @@ zarr::Array::write_frame(std::span<const std::byte> data)
     return bytes_written;
 }
 
+std::shared_ptr<zarr::ArrayConfig>
+zarr::Array::array_config_() const
+{
+    return std::dynamic_pointer_cast<ArrayConfig>(config_);
+}
+
 size_t
 zarr::Array::bytes_to_allocate_per_chunk_() const
 {
-    size_t bytes_per_chunk = config_.dimensions->bytes_per_chunk();
-    if (config_.compression_params) {
+    size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
+    if (config_->compression_params) {
         bytes_per_chunk += BLOSC_MAX_OVERHEAD;
     }
 
@@ -125,7 +129,7 @@ zarr::Array::bytes_to_allocate_per_chunk_() const
 bool
 zarr::Array::is_s3_array_() const
 {
-    return config_.bucket_name.has_value();
+    return config_->bucket_name.has_value();
 }
 
 void
@@ -133,7 +137,7 @@ zarr::Array::make_data_paths_()
 {
     if (data_paths_.empty()) {
         data_paths_ = construct_data_paths(
-          data_root_(), *config_.dimensions, parts_along_dimension_());
+          data_root_(), *config_->dimensions, parts_along_dimension_());
     }
 }
 
@@ -144,11 +148,11 @@ zarr::Array::make_metadata_sink_()
         return true;
     }
 
-    const auto metadata_path = metadata_path_();
-    metadata_sink_ =
-      is_s3_array_()
-        ? make_s3_sink(*config_.bucket_name, metadata_path, s3_connection_pool_)
-        : make_file_sink(metadata_path);
+    const auto metadata_path = get_metadata_key();
+    metadata_sink_ = is_s3_array_() ? make_s3_sink(*config_->bucket_name,
+                                                   metadata_path,
+                                                   s3_connection_pool_)
+                                    : make_file_sink(metadata_path);
 
     if (!metadata_sink_) {
         LOG_ERROR("Failed to create metadata sink: ", metadata_path);
@@ -162,9 +166,9 @@ size_t
 zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 {
     // break the frame into tiles and write them to the chunk buffers
-    const auto bytes_per_px = bytes_of_type(config_.dtype);
+    const auto bytes_per_px = bytes_of_type(config_->dtype);
 
-    const auto& dimensions = config_.dimensions;
+    const auto& dimensions = config_->dimensions;
 
     const auto& x_dim = dimensions->width_dim();
     const auto frame_cols = x_dim.array_size_px;
@@ -255,7 +259,7 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 bool
 zarr::Array::should_flush_() const
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     size_t frames_before_flush = dims->final_dim().chunk_size_px;
     for (auto i = 1; i < dims->ndims() - 2; ++i) {
         frames_before_flush *= dims->at(i).array_size_px;

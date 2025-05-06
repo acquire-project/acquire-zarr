@@ -6,10 +6,11 @@ namespace zarr {
 class V3Array final : public Array
 {
   public:
-    V3Array(const ArrayConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-    V3Array(const ArrayConfig& config,
+    V3Array(std::shared_ptr<ArrayConfig> config,
             std::shared_ptr<ThreadPool> thread_pool,
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+
+    std::string get_metadata_key() const override;
 
   private:
     std::vector<size_t> shard_file_offsets_;
@@ -21,7 +22,6 @@ class V3Array final : public Array
     size_t compute_chunk_offsets_and_defrag_(uint32_t shard_index);
 
     std::string data_root_() const override;
-    std::string metadata_path_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;
     void make_buffers_() override;
     BytePtr get_chunk_data_(uint32_t index) override;

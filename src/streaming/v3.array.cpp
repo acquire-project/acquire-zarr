@@ -65,19 +65,15 @@ shuffle_to_string(uint8_t shuffle)
 }
 } // namespace
 
-zarr::V3Array::V3Array(const ArrayConfig& config,
-                       std::shared_ptr<ThreadPool> thread_pool)
-  : V3Array(config, thread_pool, nullptr)
-{
-}
-
-zarr::V3Array::V3Array(const ArrayConfig& config,
+zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config, thread_pool, s3_connection_pool)
+  : Array(std::move(config),
+          std::move(thread_pool),
+          std::move(s3_connection_pool))
   , current_layer_{ 0 }
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     const auto number_of_shards = dims->number_of_shards();
     const auto chunks_per_shard = dims->chunks_per_shard();
 
@@ -91,10 +87,22 @@ zarr::V3Array::V3Array(const ArrayConfig& config,
     }
 }
 
+std::string
+zarr::V3Array::get_metadata_key() const
+{
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
+    }
+    key += "/" + std::to_string(array_config_()->level_of_detail) + "/zarr.json";
+
+    return key;
+}
+
 size_t
 zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     CHECK(shard_index < dims->number_of_shards());
 
     const auto chunks_per_shard = dims->chunks_per_shard();
@@ -125,7 +133,7 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
     }
 
     // no need to defragment if no compression
-    if (!config_.compression_params) {
+    if (!config_->compression_params) {
         return shard_size;
     }
 
@@ -155,24 +163,12 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 std::string
 zarr::V3Array::data_root_() const
 {
-    std::string key = config_.store_root;
-    if (!config_.group_key.empty()) {
-        key += "/" + config_.group_key;
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
     }
-    key += "/" + std::to_string(config_.level_of_detail) + "/c/" +
+    key += "/" + std::to_string(array_config_()->level_of_detail) + "/c/" +
            std::to_string(append_chunk_index_);
-
-    return key;
-}
-
-std::string
-zarr::V3Array::metadata_path_() const
-{
-    std::string key = config_.store_root;
-    if (!config_.group_key.empty()) {
-        key += "/" + config_.group_key;
-    }
-    key += "/" + std::to_string(config_.level_of_detail) + "/zarr.json";
 
     return key;
 }
@@ -188,7 +184,7 @@ zarr::V3Array::make_buffers_()
 {
     LOG_DEBUG("Creating shard buffers");
 
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     const size_t n_shards = dims->number_of_shards();
 
     // no-op if already the correct size
@@ -210,7 +206,7 @@ zarr::V3Array::make_buffers_()
 BytePtr
 zarr::V3Array::get_chunk_data_(uint32_t index)
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     const auto shard_idx = dims->shard_index_for_chunk(index);
     auto& shard = data_buffers_[shard_idx];
 
@@ -249,7 +245,7 @@ zarr::V3Array::compress_and_flush_data_()
         CHECK(make_dirs(parent_paths, thread_pool_)); // no-op if they exist
     }
 
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
 
     const auto n_shards = dims->number_of_shards();
     CHECK(data_paths_.size() == n_shards);
@@ -279,9 +275,9 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     // queue jobs to compress all chunks
-    const auto compression_params = config_.compression_params;
-    const auto bytes_of_raw_chunk = config_.dimensions->bytes_per_chunk();
-    const auto bytes_per_px = bytes_of_type(config_.dtype);
+    const auto compression_params = config_->compression_params;
+    const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
+    const auto bytes_per_px = bytes_of_type(config_->dtype);
 
     for (auto i = 0; i < chunks_in_memory; ++i) {
         const auto chunk_idx = i + chunk_group_offset;
@@ -331,7 +327,7 @@ zarr::V3Array::compress_and_flush_data_()
         }
     }
 
-    const auto bucket_name = config_.bucket_name;
+    const auto bucket_name = config_->bucket_name;
     auto connection_pool = s3_connection_pool_;
 
     // wait for the chunks in each shard to finish compressing, then defragment
@@ -463,7 +459,7 @@ zarr::V3Array::write_array_metadata_()
     using json = nlohmann::json;
 
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
 
     size_t append_size = frames_written_;
     for (auto i = dims->ndims() - 3; i > 0; --i) {
@@ -505,7 +501,7 @@ zarr::V3Array::write_array_metadata_()
     metadata["zarr_format"] = 3;
     metadata["node_type"] = "array";
     metadata["storage_transformers"] = json::array();
-    metadata["data_type"] = sample_type_to_dtype(config_.dtype);
+    metadata["data_type"] = sample_type_to_dtype(config_->dtype);
     metadata["storage_transformers"] = json::array();
 
     std::vector<std::string> dimension_names(dims->ndims());
@@ -539,15 +535,15 @@ zarr::V3Array::write_array_metadata_()
     configuration["index_location"] = "end";
     configuration["codecs"] = json::array({ codec });
 
-    if (config_.compression_params) {
-        const auto params = *config_.compression_params;
+    if (config_->compression_params) {
+        const auto params = *config_->compression_params;
 
         auto compression_config = json::object();
         compression_config["blocksize"] = 0;
         compression_config["clevel"] = params.clevel;
         compression_config["cname"] = params.codec_id;
         compression_config["shuffle"] = shuffle_to_string(params.shuffle);
-        compression_config["typesize"] = bytes_of_type(config_.dtype);
+        compression_config["typesize"] = bytes_of_type(config_->dtype);
 
         auto compression_codec = json::object();
         compression_codec["configuration"] = compression_config;
@@ -583,7 +579,7 @@ zarr::V3Array::close_sinks_()
 bool
 zarr::V3Array::should_rollover_() const
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     const auto& append_dim = dims->final_dim();
     size_t frames_before_flush =
       append_dim.chunk_size_px * append_dim.shard_size_chunks;

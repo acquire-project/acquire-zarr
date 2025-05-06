@@ -2,6 +2,7 @@
 
 #include "array.hh"
 #include "downsampler.hh"
+#include "node.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
@@ -10,18 +11,12 @@
 #include <optional>
 
 namespace zarr {
-struct GroupConfig
+struct GroupConfig : public NodeConfig
 {
-    std::shared_ptr<ArrayDimensions> dimensions;
-    ZarrDataType dtype;
-    bool multiscale;
-    std::optional<std::string> bucket_name;
-    std::string store_root;
-    std::string group_key;
-    std::optional<BloscCompressionParams> compression_params;
+    bool multiscale { false }
 };
 
-class Group
+class Group : public Node
 {
   public:
     Group(const GroupConfig& config, std::shared_ptr<ThreadPool> thread_pool);
@@ -31,9 +26,8 @@ class Group
 
     virtual ~Group() = default;
 
-    void open();
-
-    [[nodiscard]] bool close();
+    bool open() override;
+    bool close() override;
 
     /**
      * @brief Write a frame to the group.
@@ -43,7 +37,7 @@ class Group
      * @param data The frame data to write.
      * @return The number of bytes written of the full-resolution frame.
      */
-    [[nodiscard]] size_t write_frame(ConstByteSpan data);
+    [[nodiscard]] size_t write_frame(ConstByteSpan data) override;
 
     /**
      * @brief Construct OME metadata for this group.
@@ -52,16 +46,8 @@ class Group
     virtual nlohmann::json get_ome_metadata() const = 0;
 
   protected:
-    GroupConfig config_;
-
-    bool is_open_{ false };
-
-    std::shared_ptr<ThreadPool> thread_pool_;
-    std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
-
     std::optional<zarr::Downsampler> downsampler_;
 
-    std::unique_ptr<Sink> metadata_sink_;
     std::vector<std::unique_ptr<Array>> arrays_;
 
     size_t bytes_per_frame_;
