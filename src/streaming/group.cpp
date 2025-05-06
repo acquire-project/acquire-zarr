@@ -21,30 +21,25 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
-zarr::Group::Group(const zarr::GroupConfig& config,
-                   std::shared_ptr<ThreadPool> thread_pool)
-  : Group(config, thread_pool, nullptr)
-{
-}
-
-zarr::Group::Group(const zarr::GroupConfig& config,
+zarr::Group::Group(std::shared_ptr<GroupConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : config_{ config }
-  , thread_pool_{ thread_pool }
-  , s3_connection_pool_{ s3_connection_pool }
+  : Node(std::move(config),
+         std::move(thread_pool),
+         std::move(s3_connection_pool))
 {
+    // check that the config is a GroupConfig
+    CHECK(std::dynamic_pointer_cast<GroupConfig>(config_));
+
     bytes_per_frame_ =
-      config.dimensions == nullptr
+      config_->dimensions == nullptr
         ? 0
-        : zarr::bytes_of_frame(*config.dimensions, config.dtype);
+        : zarr::bytes_of_frame(*config_->dimensions, config_->dtype);
 
     CHECK(create_downsampler_());
-
-    open();
 }
 
-void
+bool
 zarr::Group::open()
 {
     is_open_ = true;
@@ -52,6 +47,8 @@ zarr::Group::open()
     for (auto& array : arrays_) {
         array->open();
     }
+
+    return true;
 }
 
 bool
@@ -107,15 +104,21 @@ zarr::Group::write_frame(ConstByteSpan data)
     return n_bytes;
 }
 
+std::shared_ptr<zarr::GroupConfig>
+zarr::Group::group_config_() const
+{
+    return std::dynamic_pointer_cast<GroupConfig>(config_);
+}
+
 bool
 zarr::Group::make_metadata_sink_()
 {
-    const std::string metadata_key_ = get_metadata_key_();
+    const std::string metadata_key_ = get_metadata_key();
 
     try {
         if (s3_connection_pool_) {
             metadata_sink_ = zarr::make_s3_sink(
-              *config_.bucket_name, metadata_key_, s3_connection_pool_);
+              *config_->bucket_name, metadata_key_, s3_connection_pool_);
         } else {
             metadata_sink_ = zarr::make_file_sink(metadata_key_);
         }
@@ -130,7 +133,7 @@ zarr::Group::make_metadata_sink_()
 bool
 zarr::Group::create_downsampler_()
 {
-    if (!config_.multiscale) {
+    if (!group_config_()->multiscale) {
         return true;
     }
 
@@ -150,11 +153,11 @@ nlohmann::json
 zarr::Group::make_multiscales_metadata_() const
 {
     nlohmann::json multiscales;
-    const auto ndims = config_.dimensions->ndims();
+    const auto ndims = config_->dimensions->ndims();
 
     auto& axes = multiscales[0]["axes"];
     for (auto i = 0; i < ndims; ++i) {
-        const auto& dim = config_.dimensions->at(i);
+        const auto& dim = config_->dimensions->at(i);
         const auto type = dimension_type_to_string(dim.type);
         const std::string unit = dim.unit.has_value() ? *dim.unit : "";
 
@@ -172,7 +175,7 @@ zarr::Group::make_multiscales_metadata_() const
     // spatial multiscale metadata
     std::vector<double> scales(ndims);
     for (auto i = 0; i < ndims; ++i) {
-        const auto& dim = config_.dimensions->at(i);
+        const auto& dim = config_->dimensions->at(i);
         scales[i] = dim.scale;
     }
 
@@ -190,14 +193,14 @@ zarr::Group::make_multiscales_metadata_() const
     };
 
     const auto& base_config = make_base_array_config_();
-    const auto& base_dims = base_config.dimensions;
+    const auto& base_dims = base_config->dimensions;
 
     for (auto i = 1; i < arrays_.size(); ++i) {
         const auto& config = downsampler_->writer_configurations().at(i);
 
         for (auto j = 0; j < ndims; ++j) {
             const auto& base_dim = base_dims->at(j);
-            const auto& down_dim = config.dimensions->at(j);
+            const auto& down_dim = config->dimensions->at(j);
             if (base_dim.type != ZarrDimensionType_Space) {
                 continue;
             }
@@ -239,24 +242,22 @@ zarr::Group::make_multiscales_metadata_() const
     return multiscales;
 }
 
-zarr::ArrayConfig
+std::shared_ptr<zarr::ArrayConfig>
 zarr::Group::make_base_array_config_() const
 {
-    return {
-        .dimensions = config_.dimensions,
-        .dtype = config_.dtype,
-        .level_of_detail = 0,
-        .bucket_name = config_.bucket_name,
-        .store_root = config_.store_root,
-        .group_key = config_.group_key,
-        .compression_params = config_.compression_params,
-    };
+    return std::make_shared<ArrayConfig>(config_->store_root,
+                                         config_->group_key,
+                                         config_->bucket_name,
+                                         config_->compression_params,
+                                         config_->dimensions,
+                                         config_->dtype,
+                                         0);
 }
 
 void
 zarr::Group::write_multiscale_frames_(ConstByteSpan data)
 {
-    if (!config_.multiscale) {
+    if (!group_config_()->multiscale) {
         return;
     }
 

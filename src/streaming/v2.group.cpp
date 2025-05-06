@@ -2,20 +2,30 @@
 #include "v2.group.hh"
 #include "zarr.common.hh"
 
-zarr::V2Group::V2Group(const zarr::GroupConfig& config,
-                       std::shared_ptr<ThreadPool> thread_pool)
-  : V2Group(config, thread_pool, nullptr)
-{
-}
-
-zarr::V2Group::V2Group(const zarr::GroupConfig& config,
+zarr::V2Group::V2Group(std::shared_ptr<GroupConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Group(config, thread_pool, s3_connection_pool)
+  : Group(std::move(config),
+          std::move(thread_pool),
+          std::move(s3_connection_pool))
 {
-    if (config.dimensions) {
+    // dimensions may be null in the case of intermediate groups, e.g., the
+    // A in A/1
+    if (config_->dimensions) {
         CHECK(create_arrays_());
     }
+}
+
+std::string
+zarr::V2Group::get_metadata_key() const
+{
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
+    }
+    key += "/.zgroup";
+
+    return key;
 }
 
 nlohmann::json
@@ -25,18 +35,6 @@ zarr::V2Group::get_ome_metadata() const
     multiscales[0]["version"] = "0.4";
     multiscales[0]["name"] = "/";
     return multiscales;
-}
-
-std::string
-zarr::V2Group::get_metadata_key_() const
-{
-    std::string key = config_.store_root;
-    if (!config_.group_key.empty()) {
-        key += "/" + config_.group_key;
-    }
-    key += "/.zgroup";
-
-    return key;
 }
 
 nlohmann::json

@@ -13,18 +13,35 @@
 namespace zarr {
 struct GroupConfig : public NodeConfig
 {
-    bool multiscale { false }
+    GroupConfig() = default;
+    GroupConfig(std::string_view store_root,
+                std::string_view group_key,
+                std::optional<std::string> bucket_name,
+                std::optional<BloscCompressionParams> compression_params,
+                std::shared_ptr<ArrayDimensions> dimensions,
+                ZarrDataType dtype,
+                bool multiscale)
+      : NodeConfig(store_root,
+                   group_key,
+                   bucket_name,
+                   compression_params,
+                   dimensions,
+                   dtype)
+      , multiscale(multiscale)
+    {
+    }
+
+    bool multiscale{ false };
 };
 
 class Group : public Node
 {
   public:
-    Group(const GroupConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-    Group(const GroupConfig& config,
+    Group(std::shared_ptr<GroupConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
-    virtual ~Group() = default;
+    ~Group() override = default;
 
     bool open() override;
     bool close() override;
@@ -52,8 +69,7 @@ class Group : public Node
 
     size_t bytes_per_frame_;
 
-    /** @brief Get the key to the metadata file. */
-    virtual std::string get_metadata_key_() const = 0;
+    std::shared_ptr<GroupConfig> group_config_() const;
 
     /**
      * @brief Create the metadata sink for this group.
@@ -76,7 +92,7 @@ class Group : public Node
     [[nodiscard]] virtual nlohmann::json make_multiscales_metadata_() const;
 
     /** @brief Create a configuration for a full-resolution Array. */
-    zarr::ArrayConfig make_base_array_config_() const;
+    std::shared_ptr<zarr::ArrayConfig> make_base_array_config_() const;
 
     /**
      * @brief Add @p data to downsampler and write downsampled frames to lower-

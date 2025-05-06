@@ -67,9 +67,7 @@ main()
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          1, [](const std::string& err) {
-              LOG_ERROR("Error: ", err);
-          });
+          1, [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
         std::vector<ZarrDimension> dims;
         dims.emplace_back(
@@ -79,18 +77,18 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, 0);
 
-        zarr::ArrayConfig config = {
-            .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-            .dtype = dtype,
-            .level_of_detail = level_of_detail,
-            .bucket_name = std::nullopt,
-            .store_root = base_dir.string(),
-            .compression_params = std::nullopt,
-        };
+        auto config = std::make_shared<zarr::ArrayConfig>(
+          base_dir.string(),
+          "",
+          std::nullopt,
+          std::nullopt,
+          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+          dtype,
+          level_of_detail);
 
         {
-            auto writer = std::make_unique<zarr::V2Array>(
-              std::move(config), thread_pool);
+            auto writer =
+              std::make_unique<zarr::V2Array>(config, thread_pool, nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));
@@ -108,7 +106,7 @@ main()
           chunk_width * chunk_height * chunk_planes * nbytes_px;
 
         const fs::path data_root =
-          base_dir / std::to_string(config.level_of_detail);
+          base_dir / std::to_string(config->level_of_detail);
 
         CHECK(fs::is_directory(data_root));
 

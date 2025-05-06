@@ -11,6 +11,24 @@
 namespace zarr {
 struct ArrayConfig : public NodeConfig
 {
+    ArrayConfig() = default;
+    ArrayConfig(std::string_view store_root,
+                std::string_view group_key,
+                std::optional<std::string> bucket_name,
+                std::optional<BloscCompressionParams> compression_params,
+                std::shared_ptr<ArrayDimensions> dimensions,
+                ZarrDataType dtype,
+                int level_of_detail)
+      : NodeConfig(store_root,
+                   group_key,
+                   bucket_name,
+                   compression_params,
+                   dimensions,
+                   dtype)
+      , level_of_detail(level_of_detail)
+    {
+    }
+
     int level_of_detail{ 0 };
 };
 

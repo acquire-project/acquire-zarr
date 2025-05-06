@@ -539,15 +539,13 @@ ZarrStream_s::configure_group(const ZarrGroupProperties* properties)
     auto blosc_compression_params =
       make_compression_params(properties->compression_settings);
 
-    zarr::GroupConfig config{
-        .dimensions = dimensions,
-        .dtype = properties->data_type,
-        .multiscale = properties->multiscale,
-        .bucket_name = s3_bucket_name,
-        .store_root = store_path_,
-        .group_key = key,
-        .compression_params = blosc_compression_params,
-    };
+    auto config = std::make_shared<zarr::GroupConfig>(store_path_,
+                                                      key,
+                                                      s3_bucket_name,
+                                                      blosc_compression_params,
+                                                      dimensions,
+                                                      properties->data_type,
+                                                      properties->multiscale);
 
     std::unique_ptr<zarr::Group> group;
     try {
@@ -599,14 +597,14 @@ ZarrStream_s::configure_array(const ZarrArrayProperties* properties)
     auto blosc_compression_params =
       make_compression_params(properties->compression_settings);
 
-    zarr::ArrayConfig config{
-        .dimensions = dimensions,
-        .dtype = properties->data_type,
-        .bucket_name = s3_bucket_name,
-        .store_root = store_path_,
-        .group_key = key, // FIXME: should be the parent of this
-        .compression_params = blosc_compression_params,
-    };
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      store_path_,
+      key, // FIXME: should be the parent of this
+      s3_bucket_name,
+      blosc_compression_params,
+      dimensions,
+      properties->data_type,
+      0);
 
     std::unique_ptr<zarr::Array> array;
     try {
@@ -1168,15 +1166,13 @@ ZarrStream_s::ensure_parent_groups_exist_(const std::string& key,
         }
 
         // create the group at this path level
-        zarr::GroupConfig config{
-            .dimensions = nullptr,
-            .dtype = ZarrDataTypeCount,
-            .multiscale = false,
-            .bucket_name = bucket_name,
-            .store_root = store_path_,
-            .group_key = parent_path,
-            .compression_params = std::nullopt,
-        };
+        auto config = std::make_shared<zarr::GroupConfig>(store_path_,
+                                                          parent_path,
+                                                          bucket_name,
+                                                          std::nullopt,
+                                                          nullptr,
+                                                          ZarrDataTypeCount,
+                                                          false);
 
         // use default properties for intermediate groups
         std::unique_ptr<zarr::Group> parent_group;

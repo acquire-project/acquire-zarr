@@ -7,15 +7,15 @@ namespace zarr {
 class V2Group final : public Group
 {
   public:
-    V2Group(const GroupConfig& config, std::shared_ptr<ThreadPool> thread_pool);
-    V2Group(const GroupConfig& config,
+    V2Group(std::shared_ptr<GroupConfig> config,
             std::shared_ptr<ThreadPool> thread_pool,
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+
+    std::string get_metadata_key() const override;
 
     nlohmann::json get_ome_metadata() const override;
 
   private:
-    std::string get_metadata_key_() const override;
     nlohmann::json make_group_metadata_() const override;
 
     bool create_arrays_() override;

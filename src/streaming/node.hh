@@ -13,6 +13,22 @@
 namespace zarr {
 struct NodeConfig
 {
+    NodeConfig() = default;
+    NodeConfig(std::string_view store_root,
+               std::string_view group_key,
+               std::optional<std::string> bucket_name,
+               std::optional<BloscCompressionParams> compression_params,
+               std::shared_ptr<ArrayDimensions> dimensions,
+               ZarrDataType dtype)
+      : store_root(store_root)
+      , group_key(group_key)
+      , bucket_name(bucket_name)
+      , compression_params(compression_params)
+      , dimensions(std::move(dimensions))
+      , dtype(dtype)
+    {
+    }
+
     virtual ~NodeConfig() = default;
 
     std::string store_root;

@@ -40,16 +40,16 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, 0);
 
-        zarr::ArrayConfig config = {
-            .dimensions =
-              std::make_unique<ArrayDimensions>(std::move(dims), dtype),
-            .dtype = dtype,
-            .bucket_name = std::nullopt,
-            .store_root = base_dir.string(),
-            .compression_params = std::nullopt,
-        };
+        auto config = std::make_shared<zarr::ArrayConfig>(
+          base_dir.string(),
+          "",
+          std::nullopt,
+          std::nullopt,
+          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+          dtype,
+          0);
 
-        zarr::V2Array writer(std::move(config), thread_pool);
+        zarr::V2Array writer(config, thread_pool, nullptr);
 
         const size_t frame_size = array_width * array_height * nbytes_px;
         std::vector data_(frame_size, std::byte(0));
