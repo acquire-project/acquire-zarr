@@ -39,7 +39,7 @@ zarr::Group::Group(std::shared_ptr<GroupConfig> config,
     CHECK(create_downsampler_());
 }
 
-bool
+void
 zarr::Group::open()
 {
     is_open_ = true;
@@ -47,8 +47,6 @@ zarr::Group::open()
     for (auto& array : arrays_) {
         array->open();
     }
-
-    return true;
 }
 
 bool

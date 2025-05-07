@@ -49,9 +49,8 @@ class Node
 
     /**
      * @brief Open the node for writing.
-     * @return True if the node was opened successfully, false otherwise.
      */
-    [[nodiscard]] virtual bool open() = 0;
+    [[nodiscard]] virtual void open() = 0;
 
     /**
      * @brief Close the node and flush any remaining data.

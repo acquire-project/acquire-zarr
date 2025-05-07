@@ -41,7 +41,7 @@ class Array : public Node
 
     ~Array() override = default;
 
-    bool open() override;
+    void open() override;
     [[nodiscard]] bool close() override;
     [[nodiscard]] size_t write_frame(ConstByteSpan) override;
 

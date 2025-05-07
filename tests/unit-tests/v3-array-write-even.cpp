@@ -139,11 +139,12 @@ main()
           std::nullopt,
           std::make_shared<ArrayDimensions>(std::move(dims), dtype),
           dtype,
-          0);
+          level_of_detail);
 
         {
             auto writer =
               std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
+            writer->open();
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));

@@ -697,6 +697,9 @@ ZarrStream_s::create_root_group_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
+    // open the root group
+    groups_.at("")->open();
+
     return true;
 }
 

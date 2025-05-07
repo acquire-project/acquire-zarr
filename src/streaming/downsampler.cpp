@@ -219,11 +219,15 @@ zarr::Downsampler::make_writer_configurations_(
                              shard_size_chunks };
         }
 
-        auto down_config = cur_config;
-        down_config->dimensions = std::make_shared<ArrayDimensions>(
-          std::move(down_dims), cur_config->dtype);
-
-        ++down_config->level_of_detail;
+        auto down_config = std::make_shared<ArrayConfig>(
+          cur_config->store_root,
+          cur_config->group_key,
+          cur_config->bucket_name,
+          cur_config->compression_params,
+          std::make_shared<ArrayDimensions>(std::move(down_dims),
+                                            cur_config->dtype),
+          cur_config->dtype,
+          cur_config->level_of_detail + 1);
 
         // can we downsample down_config?
         for (auto i = 0; i < ndims; ++i) {

@@ -115,6 +115,7 @@ main()
         {
             auto writer =
               std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
+            writer->open();
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));

@@ -23,13 +23,11 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
 }
 
-bool
+void
 zarr::Array::open()
 {
     is_closing_ = false;
     is_open_ = true;
-
-    return true;
 }
 
 bool
@@ -64,7 +62,7 @@ zarr::Array::close()
 }
 
 size_t
-zarr::Array::write_frame(std::span<const std::byte> data)
+zarr::Array::write_frame(ConstByteSpan data)
 {
     EXPECT(is_open_, "Unable to write to a closed Array");
 

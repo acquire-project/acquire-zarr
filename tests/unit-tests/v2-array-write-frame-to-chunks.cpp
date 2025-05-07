@@ -50,6 +50,7 @@ main()
           0);
 
         zarr::V2Array writer(config, thread_pool, nullptr);
+        writer.open();
 
         const size_t frame_size = array_width * array_height * nbytes_px;
         std::vector data_(frame_size, std::byte(0));

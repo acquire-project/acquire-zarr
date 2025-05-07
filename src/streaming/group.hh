@@ -43,7 +43,7 @@ class Group : public Node
 
     ~Group() override = default;
 
-    bool open() override;
+    void open() override;
     bool close() override;
 
     /**
