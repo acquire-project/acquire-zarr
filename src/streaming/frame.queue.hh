@@ -27,6 +27,7 @@ class FrameQueue
   private:
     struct Frame
     {
+        std::string key;
         ByteVector data;
         std::atomic<bool> ready{ false };
     };

@@ -113,15 +113,41 @@ extern "C"
     {
         const char* name;           /**< Name of the dimension */
         ZarrDimensionType type;     /**< Type of the dimension */
-        uint32_t array_size_px;     /**< Size of the array along this dimension
-                                         in pixels */
-        uint32_t chunk_size_px;     /**< Size of the chunks along this dimension
-                                         in pixels */
+        uint32_t array_size_px;     /**< Size of the array along this dimension in
+                                      *  pixels */
+        uint32_t chunk_size_px;     /**< Size of the chunks along this dimension in
+                                      *  pixels */
         uint32_t shard_size_chunks; /**< Number of chunks in a shard along this
-                                         dimension */
-        const char* unit;           /** Unit of the dimension */
+                                      *  dimension */
+        const char* unit;           /**< Unit of the dimension */
         double scale;               /**< Scale of the dimension */
     } ZarrDimensionProperties;
+
+    typedef struct
+    {
+        const char* store_key;  /**< The key for this group */
+        ZarrDataType data_type; /**< The pixel data type for the group */
+        bool multiscale;        /**< Whether to stream to multiple levels of
+                                  *  detail in this group */
+        ZarrCompressionSettings*
+          compression_settings; /**< Optional chunk compression settings for
+                                  *  the group */
+        ZarrDimensionProperties* dimensions; /**< The properties of each
+                                               *  dimension in the group */
+        size_t dimension_count; /**< The number of dimensions in the group */
+    } ZarrGroupProperties;
+
+    typedef struct
+    {
+        const char* store_key;  /**< The key for this array */
+        ZarrDataType data_type; /**< The pixel data type for the array */
+        ZarrCompressionSettings*
+          compression_settings; /**< Optional chunk compression settings for
+                                  *  the array */
+        ZarrDimensionProperties* dimensions; /**< The properties of each
+                                               *  dimension in the array */
+        size_t dimension_count; /**< The number of dimensions in the array */
+    } ZarrArrayProperties;
 
 #ifdef __cplusplus
 }

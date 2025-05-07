@@ -1,7 +1,7 @@
 #include "downsampler.hh"
 #include "macros.hh"
-#include "zarrv2.array.writer.hh"
-#include "zarrv3.array.writer.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
 
 namespace {
 template<typename T>
@@ -74,11 +74,11 @@ average_two_frames(ByteVector& dst, ConstByteSpan src)
 }
 } // namespace
 
-zarr::Downsampler::Downsampler(const ArrayWriterConfig& config)
+zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config)
 {
     make_writer_configurations_(config);
 
-    switch (config.dtype) {
+    switch (config->dtype) {
         case ZarrDataType_uint8:
             scale_fun_ = scale_image<uint8_t>;
             average2_fun_ = average_two_frames<uint8_t>;
@@ -121,7 +121,7 @@ zarr::Downsampler::Downsampler(const ArrayWriterConfig& config)
             break;
         default:
             throw std::runtime_error("Invalid data type: " +
-                                     std::to_string(config.dtype));
+                                     std::to_string(config->dtype));
     }
 }
 
@@ -148,7 +148,7 @@ zarr::Downsampler::get_downsampled_frame(int level, ByteVector& frame_data)
     return false;
 }
 
-const std::unordered_map<int, zarr::ArrayWriterConfig>&
+const std::unordered_map<int, std::shared_ptr<zarr::ArrayConfig>>&
 zarr::Downsampler::writer_configurations() const
 {
     return writer_configurations_;
@@ -159,7 +159,7 @@ zarr::Downsampler::is_3d_downsample_() const
 {
     // the width and depth dimensions are always spatial -- if the 3rd dimension
     // is also spatial and nontrivial, then we downsample in 3 dimensions
-    const auto& dims = writer_configurations_.at(0).dimensions;
+    const auto& dims = writer_configurations_.at(0)->dimensions;
     const auto ndims = dims->ndims();
 
     const auto& third_dim = dims->at(ndims - 3);
@@ -174,16 +174,17 @@ zarr::Downsampler::n_levels_() const
 }
 
 void
-zarr::Downsampler::make_writer_configurations_(const ArrayWriterConfig& config)
+zarr::Downsampler::make_writer_configurations_(
+  std::shared_ptr<ArrayConfig> config)
 {
-    writer_configurations_.insert({ config.level_of_detail, config });
+    writer_configurations_.insert({ config->level_of_detail, config });
 
-    const auto ndims = config.dimensions->ndims();
+    const auto ndims = config->dimensions->ndims();
 
     auto cur_config = config;
     bool do_downsample = true;
     while (do_downsample) {
-        const auto& dims = cur_config.dimensions;
+        const auto& dims = cur_config->dimensions;
 
         // downsample the final 3 dimensions
         std::vector<ZarrDimension> down_dims(ndims);
@@ -218,17 +219,21 @@ zarr::Downsampler::make_writer_configurations_(const ArrayWriterConfig& config)
                              shard_size_chunks };
         }
 
-        auto down_config = cur_config;
-        down_config.dimensions = std::make_shared<ArrayDimensions>(
-          std::move(down_dims), cur_config.dtype);
-
-        ++down_config.level_of_detail;
+        auto down_config = std::make_shared<ArrayConfig>(
+          cur_config->store_root,
+          cur_config->group_key,
+          cur_config->bucket_name,
+          cur_config->compression_params,
+          std::make_shared<ArrayDimensions>(std::move(down_dims),
+                                            cur_config->dtype),
+          cur_config->dtype,
+          cur_config->level_of_detail + 1);
 
         // can we downsample down_config?
         for (auto i = 0; i < ndims; ++i) {
             // downsampling made the chunk size strictly smaller
-            const auto& dim = cur_config.dimensions->at(i);
-            const auto& downsampled_dim = down_config.dimensions->at(i);
+            const auto& dim = cur_config->dimensions->at(i);
+            const auto& downsampled_dim = down_config->dimensions->at(i);
 
             if (dim.chunk_size_px > downsampled_dim.chunk_size_px) {
                 do_downsample = false;
@@ -236,7 +241,7 @@ zarr::Downsampler::make_writer_configurations_(const ArrayWriterConfig& config)
             }
         }
 
-        writer_configurations_.emplace(down_config.level_of_detail,
+        writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
 
         cur_config = down_config;
@@ -246,7 +251,7 @@ zarr::Downsampler::make_writer_configurations_(const ArrayWriterConfig& config)
 void
 zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
 {
-    const auto& dims = writer_configurations_[0].dimensions;
+    const auto& dims = writer_configurations_[0]->dimensions;
     size_t frame_width = dims->width_dim().array_size_px;
     size_t frame_height = dims->height_dim().array_size_px;
 
@@ -277,7 +282,7 @@ zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
 void
 zarr::Downsampler::downsample_2d_(ConstByteSpan frame_data)
 {
-    const auto& dims = writer_configurations_[0].dimensions;
+    const auto& dims = writer_configurations_[0]->dimensions;
     size_t frame_width = dims->width_dim().array_size_px;
     size_t frame_height = dims->height_dim().array_size_px;
 

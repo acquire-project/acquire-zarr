@@ -1,13 +1,14 @@
 #pragma once
 
-#include "array.writer.hh"
+#include "array.hh"
+#include "array.dimensions.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
+#include "group.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
-#include "zarr.dimension.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -25,12 +26,16 @@ struct ZarrStream_s
     ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Append data to the stream.
+     * @brief Append data to the named node (i.e., group or array).
+     * @param key The name of the node to append to. Empty string for
+     * the root group.
      * @param data The data to append.
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(const void* data, size_t nbytes);
+    size_t append_to_node(std::string_view key,
+                          const void* data,
+                          size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -42,13 +47,26 @@ struct ZarrStream_s
     ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
                                          bool overwrite);
 
+    /**
+     * @brief Configure a group in the stream.
+     * @param properties Properties of the group to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode configure_group(const ZarrGroupProperties* properties);
+
+    /**
+     * @brief Configure an array in the stream.
+     * @param properties Properties of the array to configure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode configure_array(const ZarrArrayProperties* properties);
+
   private:
-    struct CompressionSettings
+    enum class NodeType
     {
-        ZarrCompressor compressor;
-        ZarrCompressionCodec codec;
-        uint8_t level;
-        uint8_t shuffle;
+        None,
+        Group,
+        Array,
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
@@ -56,10 +74,11 @@ struct ZarrStream_s
     ZarrVersion version_;
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
-    std::optional<CompressionSettings> compression_settings_;
-    ZarrDataType dtype_;
-    std::shared_ptr<ArrayDimensions> dimensions_;
-    bool multiscale_;
+
+    std::optional<std::string> active_node_key_;
+    NodeType active_node_type_{ NodeType::None };
+    std::unordered_map<std::string, std::unique_ptr<zarr::Group>> groups_;
+    std::unordered_map<std::string, std::unique_ptr<zarr::Array>> arrays_;
 
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
@@ -67,6 +86,7 @@ struct ZarrStream_s
     std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
     std::condition_variable frame_queue_not_full_cv_;  // Space is available
+    std::condition_variable frame_queue_empty_cv_;     // Queue is empty
     std::condition_variable frame_queue_not_empty_cv_; // Data is available
     std::condition_variable frame_queue_finished_cv_;  // Done processing
     std::unique_ptr<zarr::FrameQueue> frame_queue_;
@@ -74,14 +94,10 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
-    std::optional<zarr::Downsampler> downsampler_;
-
-    std::vector<std::unique_ptr<zarr::ArrayWriter>> writers_;
     std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
       metadata_sinks_;
 
     bool is_s3_acquisition_() const;
-    bool is_compressed_acquisition_() const;
 
     /**
      * @brief Check that the settings are valid.
@@ -89,13 +105,16 @@ struct ZarrStream_s
      * @param settings Struct containing settings to validate.
      * @return true if settings are valid, false otherwise.
      */
-    [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool validate_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Copy settings to the stream.
      * @param settings Struct containing settings to copy.
+     * @return True if settings were committed successfully, otherwise false.
      */
-    void commit_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool create_root_group_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.
@@ -112,28 +131,13 @@ struct ZarrStream_s
     [[nodiscard]] bool create_store_();
 
     /** @brief Initialize the frame queue. */
-    [[nodiscard]] bool init_frame_queue_();
-
-    /** @brief Create the writers. */
-    [[nodiscard]] bool create_writers_();
-
-    /** @brief Create a downsampler for multiscale. */
-    [[nodiscard]] bool create_downsampler_();
+    [[nodiscard]] bool init_frame_queue_(size_t frame_size);
 
     /** @brief Create the metadata sinks. */
-    [[nodiscard]] bool create_metadata_sinks_();
+    [[nodiscard]] bool create_base_metadata_sink_();
 
     /** @brief Write per-acquisition metadata. */
     [[nodiscard]] bool write_base_metadata_();
-
-    /** @brief Write Zarr group metadata. */
-    [[nodiscard]] bool write_group_metadata_();
-
-    /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
-    [[nodiscard]] nlohmann::json make_ome_metadata_() const;
-
-    /** @brief Create a configuration for a full-resolution ArrayWriter. */
-    zarr::ArrayWriterConfig make_array_writer_config_() const;
 
     /** @brief Process the frame queue. */
     void process_frame_queue_();
@@ -142,20 +146,98 @@ struct ZarrStream_s
     void finalize_frame_queue_();
 
     /**
-     * @brief Write a frame to the chunk buffers.
-     * @note This function splits the incoming frame into tiles and writes them
-     * to the chunk buffers. If we are writing multiscale frames, the function
-     * calls write_multiscale_frames_() to write the scaled frames.
-     * @param data The frame data to write.
-     * @return The number of bytes written of the full-resolution frame.
+     * @brief Check if the stream has a node with key @p key.
+     * @param key A node key.
+     * @return True if the stream has a node with the specified key, otherwise
+     * false.
      */
-    size_t write_frame_(ConstByteSpan data);
+    bool has_node_(std::string_view key);
+
+    /** @brief Close the currently active group or array. */
+    void close_current_node_();
 
     /**
-     * @brief Downsample the full-resolution frame to create multiscale frames.
-     * @param data The full-resolution frame data.
+     * @brief Switch to a different node in the stream.
+     * @param key The name of the node to switch to. Empty string for
+     * the root group.
+     * @return True if the switch was successful, false otherwise.
      */
-    void write_multiscale_frames_(ConstByteSpan data);
+    [[nodiscard]] bool switch_node_(std::string_view key);
+
+    [[nodiscard]] static bool validate_compression_settings_(
+      const ZarrCompressionSettings* settings,
+      std::string& error);
+
+    [[nodiscard]] bool validate_dimension_(
+      const ZarrDimensionProperties* dimension,
+      bool is_append,
+      std::string& error);
+
+    [[nodiscard]] bool ensure_parent_groups_exist_(const std::string& key,
+                                                   std::string& error);
+
+    template<typename PropertiesT>
+    [[nodiscard]]
+    bool validate_node_properties_(const PropertiesT* properties,
+                                   ZarrVersion version,
+                                   std::string& error)
+    {
+        if (!properties) {
+            error = "Null pointer: properties";
+            return false;
+        }
+
+        if (!properties->store_key) {
+            error = "Null pointer: store_key";
+            return false;
+        }
+
+        if (properties->data_type >= ZarrDataTypeCount) {
+            error =
+              "Invalid data type: " + std::to_string(properties->data_type);
+            return false;
+        }
+
+        if (properties->compression_settings &&
+            !validate_compression_settings_(properties->compression_settings,
+                                            error)) {
+            return false;
+        }
+
+        if (!properties->dimensions) {
+            error = "Null pointer: dimensions";
+            return false;
+        }
+
+        const auto ndims = properties->dimension_count;
+        if (ndims < 3) {
+            error = "Invalid number of dimensions: " + std::to_string(ndims) +
+                    ". Must be at least 3";
+            return false;
+        }
+
+        // check the final dimension (width), must be space
+        if (properties->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+            error = "Last dimension must be of type Space";
+            return false;
+        }
+
+        // check the penultimate dimension (height), must be space
+        if (properties->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+            error = "Second to last dimension must be of type Space";
+            return false;
+        }
+
+        // validate the dimensions individually
+        for (size_t i = 0; i < ndims; ++i) {
+            if (!validate_dimension_(
+                  properties->dimensions + i, i == 0, error)) {
+                return false;
+            }
+        }
+
+        return true;
+    };
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };

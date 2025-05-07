@@ -1,16 +1,16 @@
 #pragma once
 
-#include "array.writer.hh"
+#include "array.hh"
 
 namespace zarr {
-struct ZarrV3ArrayWriter : public ArrayWriter
+class V3Array final : public Array
 {
   public:
-    ZarrV3ArrayWriter(const ArrayWriterConfig& config,
-                      std::shared_ptr<ThreadPool> thread_pool);
-    ZarrV3ArrayWriter(const ArrayWriterConfig& config,
-                      std::shared_ptr<ThreadPool> thread_pool,
-                      std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    V3Array(std::shared_ptr<ArrayConfig> config,
+            std::shared_ptr<ThreadPool> thread_pool,
+            std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+
+    std::string get_metadata_key() const override;
 
   private:
     std::vector<size_t> shard_file_offsets_;
@@ -22,7 +22,6 @@ struct ZarrV3ArrayWriter : public ArrayWriter
     size_t compute_chunk_offsets_and_defrag_(uint32_t shard_index);
 
     std::string data_root_() const override;
-    std::string metadata_path_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;
     void make_buffers_() override;
     BytePtr get_chunk_data_(uint32_t index) override;

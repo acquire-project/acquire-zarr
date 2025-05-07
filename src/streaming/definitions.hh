@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef> // std::byte
 #include <span>
 #include <vector>
 
