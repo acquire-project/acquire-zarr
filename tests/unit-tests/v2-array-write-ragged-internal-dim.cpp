@@ -1,4 +1,4 @@
-#include "zarrv2.array.writer.hh"
+#include "v2.array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -72,9 +72,8 @@ main()
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          std::thread::hardware_concurrency(), [](const std::string& err) {
-              LOG_ERROR("Error: ", err);
-          });
+          std::thread::hardware_concurrency(),
+          [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
         std::vector<ZarrDimension> dims;
         dims.emplace_back(
@@ -86,18 +85,18 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, 0);
 
-        zarr::ArrayWriterConfig config = {
-            .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-            .dtype = dtype,
-            .level_of_detail = level_of_detail,
-            .bucket_name = std::nullopt,
-            .store_path = base_dir.string(),
-            .compression_params = std::nullopt,
-        };
+        auto config = std::make_shared<zarr::ArrayConfig>(
+          base_dir.string(),
+          "",
+          std::nullopt,
+          std::nullopt,
+          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+          dtype,
+          level_of_detail);
 
         {
-            auto writer = std::make_unique<zarr::ZarrV2ArrayWriter>(
-              std::move(config), thread_pool);
+            auto writer =
+              std::make_unique<zarr::V2Array>(config, thread_pool, nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));
@@ -116,7 +115,7 @@ main()
                                         nbytes_px;
 
         const fs::path data_root =
-          base_dir / std::to_string(config.level_of_detail);
+          base_dir / std::to_string(config->level_of_detail);
 
         CHECK(fs::is_directory(data_root));
 
@@ -147,8 +146,7 @@ main()
                       !fs::is_directory(z_dir / std::to_string(chunks_in_y)));
                 }
 
-                CHECK(
-                  !fs::is_directory(t_dir / std::to_string(chunks_in_z)));
+                CHECK(!fs::is_directory(t_dir / std::to_string(chunks_in_z)));
             }
 
             CHECK(!fs::is_directory(data_root / std::to_string(chunks_in_t)));

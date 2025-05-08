@@ -1,4 +1,4 @@
-#include "zarrv3.array.writer.hh"
+#include "v3.array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -103,18 +103,18 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
-        zarr::ArrayWriterConfig config = {
-            .dimensions = std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-            .dtype = dtype,
-            .level_of_detail = 4,
-            .bucket_name = std::nullopt,
-            .store_path = base_dir.string(),
-            .compression_params = std::nullopt,
-        };
+        auto config = std::make_shared<zarr::ArrayConfig>(
+          base_dir.string(),
+          "",
+          std::nullopt,
+          std::nullopt,
+          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+          dtype,
+          4);
 
         {
-            auto writer = std::make_unique<zarr::ZarrV3ArrayWriter>(
-              std::move(config), thread_pool);
+            auto writer =
+              std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));
@@ -139,7 +139,7 @@ main()
           checksum_size;
 
         const fs::path data_root =
-          base_dir / std::to_string(config.level_of_detail);
+          base_dir / std::to_string(config->level_of_detail);
         CHECK(fs::is_directory(data_root));
         for (auto z = 0; z < shards_in_z; ++z) {
             const auto z_dir = data_root / "c" / std::to_string(z);

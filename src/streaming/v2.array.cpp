@@ -1,4 +1,4 @@
-#include "zarrv2.array.writer.hh"
+#include "v2.array.hh"
 
 #include "definitions.hh"
 #include "macros.hh"
@@ -60,47 +60,51 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 }
 } // namespace
 
-zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool)
-  : ArrayWriter(config, thread_pool)
-{
-}
-
-zarr::ZarrV2ArrayWriter::ZarrV2ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayWriter(config, thread_pool, s3_connection_pool)
+zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
+                       std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : Array(std::move(config),
+          std::move(thread_pool),
+          std::move(s3_connection_pool))
 {
 }
 
 std::string
-zarr::ZarrV2ArrayWriter::data_root_() const
+zarr::V2Array::get_metadata_key() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
-           "/" + std::to_string(append_chunk_index_);
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
+    }
+    key += "/" + std::to_string(array_config_()->level_of_detail) + "/.zarray";
+    return key;
 }
 
 std::string
-zarr::ZarrV2ArrayWriter::metadata_path_() const
+zarr::V2Array::data_root_() const
 {
-    return config_.store_path + "/" + std::to_string(config_.level_of_detail) +
-           "/.zarray";
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
+    }
+    key += "/" + std::to_string(array_config_()->level_of_detail) + "/" +
+           std::to_string(append_chunk_index_);
+
+    return key;
 }
 
 const DimensionPartsFun
-zarr::ZarrV2ArrayWriter::parts_along_dimension_() const
+zarr::V2Array::parts_along_dimension_() const
 {
     return chunks_along_dimension;
 }
 
 void
-zarr::ZarrV2ArrayWriter::make_buffers_()
+zarr::V2Array::make_buffers_()
 {
     LOG_DEBUG("Creating chunk buffers");
 
-    const size_t n_chunks = config_.dimensions->number_of_chunks_in_memory();
+    const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     data_buffers_.resize(n_chunks); // no-op if already the correct size
 
     const auto n_bytes = bytes_to_allocate_per_chunk_();
@@ -112,13 +116,13 @@ zarr::ZarrV2ArrayWriter::make_buffers_()
 }
 
 BytePtr
-zarr::ZarrV2ArrayWriter::get_chunk_data_(uint32_t index)
+zarr::V2Array::get_chunk_data_(uint32_t index)
 {
     return data_buffers_[index].data();
 }
 
 bool
-zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
+zarr::V2Array::compress_and_flush_data_()
 {
     // construct paths to chunk sinks
     CHECK(data_paths_.empty());
@@ -127,10 +131,10 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
     const auto n_chunks = data_buffers_.size();
     CHECK(data_paths_.size() == n_chunks);
 
-    const auto compression_params = config_.compression_params;
-    const auto bytes_of_raw_chunk = config_.dimensions->bytes_per_chunk();
-    const auto bytes_per_px = bytes_of_type(config_.dtype);
-    const auto bucket_name = config_.bucket_name;
+    const auto compression_params = config_->compression_params;
+    const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
+    const auto bytes_per_px = bytes_of_type(config_->dtype);
+    const auto bucket_name = config_->bucket_name;
     auto connection_pool = s3_connection_pool_;
 
     // create parent directories if needed
@@ -225,7 +229,7 @@ zarr::ZarrV2ArrayWriter::compress_and_flush_data_()
 }
 
 bool
-zarr::ZarrV2ArrayWriter::write_array_metadata_()
+zarr::V2Array::write_array_metadata_()
 {
     if (!make_metadata_sink_()) {
         return false;
@@ -234,24 +238,24 @@ zarr::ZarrV2ArrayWriter::write_array_metadata_()
     using json = nlohmann::json;
 
     std::string dtype;
-    if (!sample_type_to_dtype(config_.dtype, dtype)) {
+    if (!sample_type_to_dtype(config_->dtype, dtype)) {
         return false;
     }
 
     std::vector<size_t> array_shape, chunk_shape;
 
     size_t append_size = frames_written_;
-    for (auto i = config_.dimensions->ndims() - 3; i > 0; --i) {
-        const auto& dim = config_.dimensions->at(i);
+    for (auto i = config_->dimensions->ndims() - 3; i > 0; --i) {
+        const auto& dim = config_->dimensions->at(i);
         const auto& array_size_px = dim.array_size_px;
         CHECK(array_size_px);
         append_size = (append_size + array_size_px - 1) / array_size_px;
     }
     array_shape.push_back(append_size);
 
-    chunk_shape.push_back(config_.dimensions->final_dim().chunk_size_px);
-    for (auto i = 1; i < config_.dimensions->ndims(); ++i) {
-        const auto& dim = config_.dimensions->at(i);
+    chunk_shape.push_back(config_->dimensions->final_dim().chunk_size_px);
+    for (auto i = 1; i < config_->dimensions->ndims(); ++i) {
+        const auto& dim = config_->dimensions->at(i);
         array_shape.push_back(dim.array_size_px);
         chunk_shape.push_back(dim.chunk_size_px);
     }
@@ -266,8 +270,8 @@ zarr::ZarrV2ArrayWriter::write_array_metadata_()
     metadata["filters"] = nullptr;
     metadata["dimension_separator"] = "/";
 
-    if (config_.compression_params) {
-        const BloscCompressionParams bcp = *config_.compression_params;
+    if (config_->compression_params) {
+        const BloscCompressionParams bcp = *config_->compression_params;
         metadata["compressor"] = json{ { "id", "blosc" },
                                        { "cname", bcp.codec_id },
                                        { "clevel", bcp.clevel },
@@ -283,13 +287,13 @@ zarr::ZarrV2ArrayWriter::write_array_metadata_()
 }
 
 void
-zarr::ZarrV2ArrayWriter::close_sinks_()
+zarr::V2Array::close_sinks_()
 {
     data_paths_.clear();
 }
 
 bool
-zarr::ZarrV2ArrayWriter::should_rollover_() const
+zarr::V2Array::should_rollover_() const
 {
     return true;
 }

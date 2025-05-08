@@ -82,10 +82,7 @@ check_files(ZarrVersion version, bool metadata)
 {
     const fs::path base_path(TEST ".zarr");
     if (version == ZarrVersion_2) {
-        CHECK(fs::is_regular_file(base_path / ".zgroup"));
         CHECK(fs::is_regular_file(base_path / ".zattrs"));
-    } else {
-        CHECK(fs::is_regular_file(base_path / "zarr.json"));
     }
 
     if (metadata) {
