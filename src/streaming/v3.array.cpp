@@ -68,9 +68,9 @@ shuffle_to_string(uint8_t shuffle)
 zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(std::move(config),
-          std::move(thread_pool),
-          std::move(s3_connection_pool))
+  : Array(config,
+          thread_pool,
+          s3_connection_pool)
   , current_layer_{ 0 }
 {
     const auto& dims = config_->dimensions;

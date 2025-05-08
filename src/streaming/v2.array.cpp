@@ -63,9 +63,9 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(std::move(config),
-          std::move(thread_pool),
-          std::move(s3_connection_pool))
+  : Array(config,
+          thread_pool,
+          s3_connection_pool)
 {
 }
 

@@ -24,9 +24,9 @@ dimension_type_to_string(ZarrDimensionType type)
 zarr::Group::Group(std::shared_ptr<GroupConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Node(std::move(config),
-         std::move(thread_pool),
-         std::move(s3_connection_pool))
+  : Node(config,
+         thread_pool,
+         s3_connection_pool)
 {
     // check that the config is a GroupConfig
     CHECK(std::dynamic_pointer_cast<GroupConfig>(config_));
