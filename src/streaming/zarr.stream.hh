@@ -85,7 +85,7 @@ struct ZarrStream_s
      * @param settings Struct containing settings to copy.
      * @return True if the output node was created successfully, false otherwise.
      */
-    [[nodiscard]] bool create_output_node_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool commit_settings_(const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.

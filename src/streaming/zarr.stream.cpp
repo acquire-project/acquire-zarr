@@ -335,10 +335,8 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     start_thread_pool_(settings->max_threads);
 
-    EXPECT(create_output_node_(settings), error_);
-
-    // create the data store
-    EXPECT(create_store_(), error_);
+    // commit settings and create the output store
+    EXPECT(commit_settings_(settings), error_);
 
     // allocate the base metadata sink (Zarr V2 only)
     EXPECT(create_base_metadata_sink_(), error_);
@@ -563,7 +561,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::create_output_node_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
@@ -586,6 +584,12 @@ ZarrStream_s::create_output_node_(const struct ZarrStreamSettings_s* settings)
                         zarr::bytes_of_type(settings->data_type);
 
     frame_buffer_.resize(frame_size_bytes_);
+
+    // create the data store
+    if (!create_store_()) {
+        set_error_("Failed to create the data store: " + error_);
+        return false;
+    }
 
     // configure root group
     auto config = std::make_shared<zarr::GroupConfig>(store_path_,
