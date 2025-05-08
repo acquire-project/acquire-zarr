@@ -17,6 +17,7 @@ For python: `pip install acquire-zarr`
 ### Installing dependencies
 
 This library has the following dependencies:
+
 - [c-blosc](https://github.com/Blosc/c-blosc) v1.21.5
 - [nlohmann-json](https://github.com/nlohmann/json) v3.11.3
 - [minio-cpp](https://github.com/minio/minio-cpp) v0.3.0
@@ -40,7 +41,8 @@ export PATH=\$VCPKG_ROOT:\$PATH
 EOF
 ```
 
-If you're using Windows, learn how to set environment variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
+If you're using Windows, learn how to set environment
+variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
 You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
 
 On the Mac, you will also need to install OpenMP using Homebrew:
@@ -199,7 +201,7 @@ settings.dimensions.extend([
 ])
 
 # Generate some random data: one time point, all channels, full frame
-my_frame_data = np.random.randint(0, 2**16, (3, 1080, 1920), dtype=np.uint16)
+my_frame_data = np.random.randint(0, 2 ** 16, (3, 1080, 1920), dtype=np.uint16)
 
 stream = aqz.ZarrStream(settings)
 stream.append(my_frame_data)
@@ -207,7 +209,8 @@ stream.append(my_frame_data)
 
 ### S3
 
-The library supports writing directly to S3-compatible storage. Configuration requires specifying the endpoint, bucket name, and region:
+The library supports writing directly to S3-compatible storage. Configuration requires specifying the endpoint, bucket
+name, and region:
 
 ```c
 ZarrStreamSettings settings = { /* ... */ };
@@ -247,6 +250,22 @@ The library authenticates with S3 exclusively through environment variables:
 - `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
 
 These must be set in the environment where your application runs.
+
+### Anaconda GLIBCXX issue
+
+If you encounter the error `GLIBCXX_3.4.30 not found` when working with the library in Python, it may be due to a
+mismatch between the version of `libstdc++` that ships with Anaconda and the one used by acquire-zarr. This usually
+manifests like so:
+
+```
+ImportError: /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libstdc++.so.6: version `GLIBCXX_3.4.30` not found (required by /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libacquire_zarr.so)
+```
+
+To resolve this, you can [install](https://stackoverflow.com/questions/48453497/anaconda-libstdc-so-6-version-glibcxx-3-4-20-not-found/73101774#73101774) the `libstdcxx-ng` package from conda-forge:
+
+```bash
+conda install -c conda-forge libstdcxx-ng
+```
 
 [Zarr]: https://zarr.readthedocs.io/en/stable/spec/v2.html
 
