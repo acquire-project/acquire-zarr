@@ -283,17 +283,25 @@ class PyZarrStreamSettings
         dimensions_ = dimensions;
     }
 
+    const std::string& output_key() const { return output_key_; }
+    void set_output_key(const std::string& key) { output_key_ = key; }
+
+    bool overwrite() const { return overwrite_; }
+    void set_overwrite(bool overwrite) { overwrite_ = overwrite; }
+
   private:
     std::string store_path_;
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
     std::optional<PyZarrCompressionSettings> compression_settings_{
         std::nullopt
     };
-    bool multiscale_ = false;
+    bool multiscale_{ false };
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     std::vector<PyZarrDimensionProperties> dimensions_;
+    std::string output_key_;
+    bool overwrite_{ false };
 };
 
 class PyZarrStream
@@ -729,6 +737,12 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("version"))
               settings.set_version(kwargs["version"].cast<ZarrVersion>());
 
+          if (kwargs.contains("output_key"))
+              settings.output_key(kwargs["output_key"].cast<std::string>());
+
+          if (kwargs.contains("overwrite"))
+              settings.set_overwrite(kwargs["overwrite"].cast<bool>());
+
           return settings;
       }))
       .def("__repr__",
@@ -818,7 +832,13 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrStreamSettings::set_version)
       .def_property("max_threads",
                     &PyZarrStreamSettings::max_threads,
-                    &PyZarrStreamSettings::set_max_threads);
+                    &PyZarrStreamSettings::set_max_threads)
+      .def_property("output_key",
+                    &PyZarrStreamSettings::output_key,
+                    &PyZarrStreamSettings::set_output_key)
+      .def_property("overwrite",
+                    &PyZarrStreamSettings::overwrite,
+                    &PyZarrStreamSettings::set_overwrite);
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
