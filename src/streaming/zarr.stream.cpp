@@ -338,12 +338,6 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     // commit settings and create the output store
     EXPECT(commit_settings_(settings), error_);
 
-    // allocate the base metadata sink (Zarr V2 only)
-    EXPECT(create_base_metadata_sink_(), error_);
-
-    // write base metadata
-    EXPECT(write_base_metadata_(), error_);
-
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
 }
@@ -428,8 +422,8 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     }
 
     // check if we have already written custom metadata
-    const std::string metadata_key = "acquire.json";
-    if (!metadata_sinks_.contains(metadata_key)) { // create metadata sink
+    if (!custom_metadata_sink_) {
+        const std::string metadata_key = "acquire.json";
         std::string base_path = store_path_;
         if (base_path.starts_with("file://")) {
             base_path = base_path.substr(7);
@@ -438,22 +432,18 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
         const auto sink_path = prefix + metadata_key;
 
         if (is_s3_acquisition_()) {
-            metadata_sinks_.emplace(
-              metadata_key,
-              zarr::make_s3_sink(
-                s3_settings_->bucket_name, sink_path, s3_connection_pool_));
+            custom_metadata_sink_ = zarr::make_s3_sink(
+              s3_settings_->bucket_name, sink_path, s3_connection_pool_);
         } else {
-            metadata_sinks_.emplace(metadata_key,
-                                    zarr::make_file_sink(sink_path));
+            custom_metadata_sink_ = zarr::make_file_sink(sink_path);
         }
     } else if (!overwrite) { // custom metadata already written, don't overwrite
         LOG_ERROR("Custom metadata already written, use overwrite flag");
         return ZarrStatusCode_WillNotOverwrite;
     }
 
-    const auto& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        LOG_ERROR("Metadata sink '" + metadata_key + "' not found");
+    if (!custom_metadata_sink_) {
+        LOG_ERROR("Custom metadata sink not found");
         return ZarrStatusCode_InternalError;
     }
 
@@ -466,7 +456,7 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     const auto metadata_str = metadata_json.dump(4);
     std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
                     metadata_str.size() };
-    if (!sink->write(0, data)) {
+    if (!custom_metadata_sink_->write(0, data)) {
         LOG_ERROR("Error writing custom metadata");
         return ZarrStatusCode_IOError;
     }
@@ -723,74 +713,6 @@ ZarrStream_s::init_frame_queue_()
     return true;
 }
 
-bool
-ZarrStream_s::create_base_metadata_sink_()
-{
-    if (version_ != ZarrVersion_2) {
-        return true;
-    }
-
-    const std::string zattrs_key = ".zattrs";
-
-    std::unique_ptr<zarr::Sink> zattrs_sink;
-    try {
-        if (s3_connection_pool_) {
-            zattrs_sink = zarr::make_s3_sink(s3_settings_->bucket_name,
-                                             store_path_ + "/" + zattrs_key,
-                                             s3_connection_pool_);
-        } else {
-            zattrs_sink = zarr::make_file_sink(store_path_ + "/" + zattrs_key);
-        }
-    } catch (const std::exception& e) {
-        set_error_("Error creating metadata sinks: " + std::string(e.what()));
-        return false;
-    }
-
-    if (!zattrs_sink) {
-        set_error_("Error creating metadata sinks");
-        return false;
-    }
-
-    metadata_sinks_.emplace(zattrs_key, std::move(zattrs_sink));
-
-    return true;
-}
-
-bool
-ZarrStream_s::write_base_metadata_()
-{
-    // must be Zarr V2, must be a group
-    auto group = zarr::downcast_node<zarr::V2Group>(std::move(output_node_));
-
-    if (!group) {
-        return true;
-    }
-
-    nlohmann::json metadata{
-        { "multiscales", group->get_ome_metadata() },
-    };
-    const std::string metadata_key = ".zattrs";
-
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        set_error_("Metadata sink '" + metadata_key + "'not found");
-        output_node_.reset(group.release());
-        return false;
-    }
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-
-    if (!sink->write(0, data)) {
-        set_error_("Error writing base metadata");
-        output_node_.reset(group.release());
-        return false;
-    }
-
-    output_node_.reset(group.release());
-    return true;
-}
-
 void
 ZarrStream_s::process_frame_queue_()
 {
@@ -870,14 +792,11 @@ finalize_stream(struct ZarrStream_s* stream)
         return true;
     }
 
-    for (auto& [sink_name, sink] : stream->metadata_sinks_) {
-        if (!zarr::finalize_sink(std::move(sink))) {
-            LOG_ERROR("Error finalizing Zarr stream. Failed to write ",
-                      sink_name);
-            return false;
-        }
+    if (stream->custom_metadata_sink_ &&
+        !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
+        LOG_ERROR(
+          "Error finalizing Zarr stream. Failed to write custom metadata");
     }
-    stream->metadata_sinks_.clear();
 
     stream->finalize_frame_queue_();
 

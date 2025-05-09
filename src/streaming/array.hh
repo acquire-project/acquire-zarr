@@ -73,7 +73,6 @@ class Array : public Node
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
     void make_data_paths_();
-    [[nodiscard]] bool make_metadata_sink_();
     virtual void make_buffers_() = 0;
 
     virtual BytePtr get_chunk_data_(uint32_t index) = 0;
@@ -85,8 +84,6 @@ class Array : public Node
 
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
     void rollover_();
-
-    [[nodiscard]] virtual bool write_array_metadata_() = 0;
 
     virtual void close_sinks_() = 0;
 

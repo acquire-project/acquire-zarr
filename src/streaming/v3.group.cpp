@@ -16,27 +16,31 @@ zarr::V3Group::V3Group(std::shared_ptr<GroupConfig> config,
     }
 }
 
-std::string
-zarr::V3Group::get_metadata_key() const
+std::vector<std::string>
+zarr::V3Group::metadata_keys_() const
 {
-    std::string key = config_->store_root;
-    if (!config_->group_key.empty()) {
-        key += "/" + config_->group_key;
-    }
-    key += "/zarr.json";
-
-    return key;
+    return { "zarr.json" };
 }
 
-nlohmann::json
-zarr::V3Group::get_ome_metadata() const
+bool
+zarr::V3Group::make_metadata_()
 {
-    nlohmann::json ome;
-    ome["version"] = "0.5";
-    ome["name"] = "/";
-    ome["multiscales"] = make_multiscales_metadata_();
+    metadata_sinks_.clear();
 
-    return ome;
+    nlohmann::json metadata = {
+        { "zarr_format", 3 },
+        { "consolidated_metadata", nullptr },
+        { "node_type", "group" },
+        { "attributes", nlohmann::json::object() },
+    };
+
+    if (!arrays_.empty()) {
+        metadata["attributes"]["ome"] = get_ome_metadata_();
+    }
+
+    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+
+    return true;
 }
 
 bool
@@ -62,18 +66,12 @@ zarr::V3Group::create_arrays_()
 }
 
 nlohmann::json
-zarr::V3Group::make_group_metadata_() const
+zarr::V3Group::get_ome_metadata_() const
 {
-    nlohmann::json metadata = {
-        { "zarr_format", 3 },
-        { "consolidated_metadata", nullptr },
-        { "node_type", "group" },
-        { "attributes", nlohmann::json::object() },
-    };
+    nlohmann::json ome;
+    ome["version"] = "0.5";
+    ome["name"] = "/";
+    ome["multiscales"] = make_multiscales_metadata_();
 
-    if (!arrays_.empty()) {
-        metadata["attributes"]["ome"] = get_ome_metadata();
-    }
-
-    return metadata;
+    return ome;
 }

@@ -57,7 +57,7 @@ zarr::Array::write_frame(ConstByteSpan data)
 
         if (should_rollover_()) {
             rollover_();
-            CHECK(write_array_metadata_());
+            CHECK(write_metadata_());
         }
 
         make_buffers_();
@@ -79,11 +79,14 @@ zarr::Array::close_()
         close_sinks_();
 
         if (frames_written_ > 0) {
-            CHECK(write_array_metadata_());
+            CHECK(write_metadata_());
+            for (auto& [key, sink] : metadata_sinks_) {
+                EXPECT(zarr::finalize_sink(std::move(sink)),
+                       "Failed to finalize metadata sink ",
+                       key);
+            }
         }
-        CHECK(finalize_sink(std::move(metadata_sink_)));
-
-        metadata_sink_.reset();
+        metadata_sinks_.clear();
         retval = true;
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to finalize array writer: ", exc.what());
@@ -123,27 +126,6 @@ zarr::Array::make_data_paths_()
         data_paths_ = construct_data_paths(
           data_root_(), *config_->dimensions, parts_along_dimension_());
     }
-}
-
-bool
-zarr::Array::make_metadata_sink_()
-{
-    if (metadata_sink_) {
-        return true;
-    }
-
-    const auto metadata_path = get_metadata_key();
-    metadata_sink_ = is_s3_array_() ? make_s3_sink(*config_->bucket_name,
-                                                   metadata_path,
-                                                   s3_connection_pool_)
-                                    : make_file_sink(metadata_path);
-
-    if (!metadata_sink_) {
-        LOG_ERROR("Failed to create metadata sink: ", metadata_path);
-        return false;
-    }
-
-    return true;
 }
 
 size_t

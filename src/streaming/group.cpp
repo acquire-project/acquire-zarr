@@ -63,27 +63,40 @@ zarr::Group::write_frame(ConstByteSpan data)
     return n_bytes;
 }
 
+std::string
+zarr::Group::node_path_() const
+{
+    std::string key = config_->store_root;
+    if (!config_->group_key.empty()) {
+        key += "/" + config_->group_key;
+    }
+
+    return key;
+}
+
 bool
 zarr::Group::close_()
 {
-    if (!write_metadata_()) {
-        LOG_ERROR("Error closing group: failed to write metadata");
-        return false;
-    }
-
-    if (!zarr::finalize_sink(std::move(metadata_sink_))) {
-        LOG_ERROR("Error closing group: failed to finalize metadata sink");
-        return false;
-    }
-    metadata_sink_.reset();
-
     for (auto i = 0; i < arrays_.size(); ++i) {
         if (!finalize_array(std::move(arrays_[i]))) {
             LOG_ERROR("Error closing group: failed to finalize array ", i);
             return false;
         }
     }
+
+    if (!write_metadata_()) {
+        LOG_ERROR("Error closing group: failed to write metadata");
+        return false;
+    }
+
+    for (auto& [key, sink] : metadata_sinks_) {
+        EXPECT(zarr::finalize_sink(std::move(sink)),
+               "Failed to finalize metadata sink ",
+               key);
+    }
+
     arrays_.clear();
+    metadata_sinks_.clear();
 
     return true;
 }
@@ -92,26 +105,6 @@ std::shared_ptr<zarr::GroupConfig>
 zarr::Group::group_config_() const
 {
     return std::dynamic_pointer_cast<GroupConfig>(config_);
-}
-
-bool
-zarr::Group::make_metadata_sink_()
-{
-    const std::string metadata_key_ = get_metadata_key();
-
-    try {
-        if (s3_connection_pool_) {
-            metadata_sink_ = zarr::make_s3_sink(
-              *config_->bucket_name, metadata_key_, s3_connection_pool_);
-        } else {
-            metadata_sink_ = zarr::make_file_sink(metadata_key_);
-        }
-    } catch (const std::exception& exc) {
-        LOG_ERROR("Error creating metadata sink: " + std::string(exc.what()));
-        return false;
-    }
-
-    return true;
 }
 
 bool
@@ -261,24 +254,6 @@ zarr::Group::write_multiscale_frames_(ConstByteSpan data)
                    n_bytes);
         }
     }
-}
-
-bool
-zarr::Group::write_metadata_()
-{
-    const auto metadata = make_group_metadata_();
-    if (metadata_sink_ == nullptr && !make_metadata_sink_()) {
-        return false;
-    }
-
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!metadata_sink_->write(0, data)) {
-        return false;
-    }
-
-    return true;
 }
 
 bool

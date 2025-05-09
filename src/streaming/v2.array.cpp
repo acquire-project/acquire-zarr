@@ -11,6 +11,8 @@
 #include <semaphore>
 #include <stdexcept>
 
+using json = nlohmann::json;
+
 namespace {
 [[nodiscard]]
 bool
@@ -70,27 +72,79 @@ zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
 }
 
 std::string
-zarr::V2Array::get_metadata_key() const
+zarr::V2Array::node_path_() const
 {
     std::string key = config_->store_root;
     if (!config_->group_key.empty()) {
         key += "/" + config_->group_key;
     }
-    key += "/" + std::to_string(array_config_()->level_of_detail) + "/.zarray";
+    key += "/" + std::to_string(array_config_()->level_of_detail);
     return key;
+}
+
+std::vector<std::string>
+zarr::V2Array::metadata_keys_() const
+{
+    return { ".zarray" };
+}
+
+bool
+zarr::V2Array::make_metadata_()
+{
+    metadata_strings_.clear();
+
+    std::string dtype;
+    if (!sample_type_to_dtype(config_->dtype, dtype)) {
+        return false;
+    }
+
+    std::vector<size_t> array_shape, chunk_shape;
+
+    size_t append_size = frames_written_;
+    for (auto i = config_->dimensions->ndims() - 3; i > 0; --i) {
+        const auto& dim = config_->dimensions->at(i);
+        const auto& array_size_px = dim.array_size_px;
+        CHECK(array_size_px);
+        append_size = (append_size + array_size_px - 1) / array_size_px;
+    }
+    array_shape.push_back(append_size);
+
+    chunk_shape.push_back(config_->dimensions->final_dim().chunk_size_px);
+    for (auto i = 1; i < config_->dimensions->ndims(); ++i) {
+        const auto& dim = config_->dimensions->at(i);
+        array_shape.push_back(dim.array_size_px);
+        chunk_shape.push_back(dim.chunk_size_px);
+    }
+
+    json metadata;
+    metadata["zarr_format"] = 2;
+    metadata["shape"] = array_shape;
+    metadata["chunks"] = chunk_shape;
+    metadata["dtype"] = dtype;
+    metadata["fill_value"] = 0;
+    metadata["order"] = "C";
+    metadata["filters"] = nullptr;
+    metadata["dimension_separator"] = "/";
+
+    if (config_->compression_params) {
+        const BloscCompressionParams bcp = *config_->compression_params;
+        metadata["compressor"] = json{ { "id", "blosc" },
+                                       { "cname", bcp.codec_id },
+                                       { "clevel", bcp.clevel },
+                                       { "shuffle", bcp.shuffle } };
+    } else {
+        metadata["compressor"] = nullptr;
+    }
+
+    metadata_strings_.emplace(".zarray", metadata.dump(4));
+
+    return true;
 }
 
 std::string
 zarr::V2Array::data_root_() const
 {
-    std::string key = config_->store_root;
-    if (!config_->group_key.empty()) {
-        key += "/" + config_->group_key;
-    }
-    key += "/" + std::to_string(array_config_()->level_of_detail) + "/" +
-           std::to_string(append_chunk_index_);
-
-    return key;
+    return node_path_() + "/" + std::to_string(append_chunk_index_);
 }
 
 const DimensionPartsFun
@@ -226,64 +280,6 @@ zarr::V2Array::compress_and_flush_data_()
 
     latch.wait();
     return static_cast<bool>(all_successful);
-}
-
-bool
-zarr::V2Array::write_array_metadata_()
-{
-    if (!make_metadata_sink_()) {
-        return false;
-    }
-
-    using json = nlohmann::json;
-
-    std::string dtype;
-    if (!sample_type_to_dtype(config_->dtype, dtype)) {
-        return false;
-    }
-
-    std::vector<size_t> array_shape, chunk_shape;
-
-    size_t append_size = frames_written_;
-    for (auto i = config_->dimensions->ndims() - 3; i > 0; --i) {
-        const auto& dim = config_->dimensions->at(i);
-        const auto& array_size_px = dim.array_size_px;
-        CHECK(array_size_px);
-        append_size = (append_size + array_size_px - 1) / array_size_px;
-    }
-    array_shape.push_back(append_size);
-
-    chunk_shape.push_back(config_->dimensions->final_dim().chunk_size_px);
-    for (auto i = 1; i < config_->dimensions->ndims(); ++i) {
-        const auto& dim = config_->dimensions->at(i);
-        array_shape.push_back(dim.array_size_px);
-        chunk_shape.push_back(dim.chunk_size_px);
-    }
-
-    json metadata;
-    metadata["zarr_format"] = 2;
-    metadata["shape"] = array_shape;
-    metadata["chunks"] = chunk_shape;
-    metadata["dtype"] = dtype;
-    metadata["fill_value"] = 0;
-    metadata["order"] = "C";
-    metadata["filters"] = nullptr;
-    metadata["dimension_separator"] = "/";
-
-    if (config_->compression_params) {
-        const BloscCompressionParams bcp = *config_->compression_params;
-        metadata["compressor"] = json{ { "id", "blosc" },
-                                       { "cname", bcp.codec_id },
-                                       { "clevel", bcp.clevel },
-                                       { "shuffle", bcp.shuffle } };
-    } else {
-        metadata["compressor"] = nullptr;
-    }
-
-    std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-    return metadata_sink_->write(0, data);
 }
 
 void

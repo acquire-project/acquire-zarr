@@ -67,8 +67,7 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
-    std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
-      metadata_sinks_;
+    std::unique_ptr<zarr::Sink> custom_metadata_sink_;
 
     bool is_s3_acquisition_() const;
 
@@ -103,12 +102,6 @@ struct ZarrStream_s
 
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();
-
-    /** @brief Create the metadata sinks. */
-    [[nodiscard]] bool create_base_metadata_sink_();
-
-    /** @brief Write per-acquisition metadata. */
-    [[nodiscard]] bool write_base_metadata_();
 
     /** @brief Process the frame queue. */
     void process_frame_queue_();

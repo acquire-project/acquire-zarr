@@ -13,9 +13,7 @@
 #include <semaphore>
 #include <stdexcept>
 
-#ifdef max
-#undef max
-#endif
+using json = nlohmann::json;
 
 namespace {
 std::string
@@ -88,15 +86,129 @@ zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
 }
 
 std::string
-zarr::V3Array::get_metadata_key() const
+zarr::V3Array::node_path_() const
 {
     std::string key = config_->store_root;
     if (!config_->group_key.empty()) {
         key += "/" + config_->group_key;
     }
-    key += "/" + std::to_string(array_config_()->level_of_detail) + "/zarr.json";
-
+    key += "/" + std::to_string(array_config_()->level_of_detail);
     return key;
+}
+
+std::vector<std::string>
+zarr::V3Array::metadata_keys_() const
+{
+    return { "zarr.json" };
+}
+
+bool
+zarr::V3Array::make_metadata_()
+{
+    metadata_strings_.clear();
+
+    std::vector<size_t> array_shape, chunk_shape, shard_shape;
+    const auto& dims = config_->dimensions;
+
+    size_t append_size = frames_written_;
+    for (auto i = dims->ndims() - 3; i > 0; --i) {
+        const auto& dim = dims->at(i);
+        const auto& array_size_px = dim.array_size_px;
+        CHECK(array_size_px);
+        append_size = (append_size + array_size_px - 1) / array_size_px;
+    }
+    array_shape.push_back(append_size);
+
+    const auto& final_dim = dims->final_dim();
+    chunk_shape.push_back(final_dim.chunk_size_px);
+    shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
+    for (auto i = 1; i < dims->ndims(); ++i) {
+        const auto& dim = dims->at(i);
+        array_shape.push_back(dim.array_size_px);
+        chunk_shape.push_back(dim.chunk_size_px);
+        shard_shape.push_back(dim.shard_size_chunks * chunk_shape.back());
+    }
+
+    json metadata;
+    metadata["shape"] = array_shape;
+    metadata["chunk_grid"] = json::object({
+      { "name", "regular" },
+      {
+        "configuration",
+        json::object({ { "chunk_shape", shard_shape } }),
+      },
+    });
+    metadata["chunk_key_encoding"] = json::object({
+      { "name", "default" },
+      {
+        "configuration",
+        json::object({ { "separator", "/" } }),
+      },
+    });
+    metadata["fill_value"] = 0;
+    metadata["attributes"] = json::object();
+    metadata["zarr_format"] = 3;
+    metadata["node_type"] = "array";
+    metadata["storage_transformers"] = json::array();
+    metadata["data_type"] = sample_type_to_dtype(config_->dtype);
+    metadata["storage_transformers"] = json::array();
+
+    std::vector<std::string> dimension_names(dims->ndims());
+    for (auto i = 0; i < dimension_names.size(); ++i) {
+        dimension_names[i] = dims->at(i).name;
+    }
+    metadata["dimension_names"] = dimension_names;
+
+    auto codecs = json::array();
+
+    auto sharding_indexed = json::object();
+    sharding_indexed["name"] = "sharding_indexed";
+
+    auto configuration = json::object();
+    configuration["chunk_shape"] = chunk_shape;
+
+    auto codec = json::object();
+    codec["configuration"] = json::object({ { "endian", "little" } });
+    codec["name"] = "bytes";
+
+    auto index_codec = json::object();
+    index_codec["configuration"] = json::object({ { "endian", "little" } });
+    index_codec["name"] = "bytes";
+
+    auto crc32_codec = json::object({ { "name", "crc32c" } });
+    configuration["index_codecs"] = json::array({
+      index_codec,
+      crc32_codec,
+    });
+
+    configuration["index_location"] = "end";
+    configuration["codecs"] = json::array({ codec });
+
+    if (config_->compression_params) {
+        const auto params = *config_->compression_params;
+
+        auto compression_config = json::object();
+        compression_config["blocksize"] = 0;
+        compression_config["clevel"] = params.clevel;
+        compression_config["cname"] = params.codec_id;
+        compression_config["shuffle"] = shuffle_to_string(params.shuffle);
+        compression_config["typesize"] = bytes_of_type(config_->dtype);
+
+        auto compression_codec = json::object();
+        compression_codec["configuration"] = compression_config;
+        compression_codec["name"] = "blosc";
+        configuration["codecs"].push_back(compression_codec);
+    }
+
+    sharding_indexed["configuration"] = configuration;
+
+    codecs.push_back(sharding_indexed);
+
+    metadata["codecs"] = codecs;
+
+    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+
+    return true;
 }
 
 size_t
@@ -163,14 +275,7 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 std::string
 zarr::V3Array::data_root_() const
 {
-    std::string key = config_->store_root;
-    if (!config_->group_key.empty()) {
-        key += "/" + config_->group_key;
-    }
-    key += "/" + std::to_string(array_config_()->level_of_detail) + "/c/" +
-           std::to_string(append_chunk_index_);
-
-    return key;
+    return node_path_() + "/c/" + std::to_string(append_chunk_index_);
 }
 
 const DimensionPartsFun
@@ -447,121 +552,6 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     return static_cast<bool>(all_successful);
-}
-
-bool
-zarr::V3Array::write_array_metadata_()
-{
-    if (!make_metadata_sink_()) {
-        return false;
-    }
-
-    using json = nlohmann::json;
-
-    std::vector<size_t> array_shape, chunk_shape, shard_shape;
-    const auto& dims = config_->dimensions;
-
-    size_t append_size = frames_written_;
-    for (auto i = dims->ndims() - 3; i > 0; --i) {
-        const auto& dim = dims->at(i);
-        const auto& array_size_px = dim.array_size_px;
-        CHECK(array_size_px);
-        append_size = (append_size + array_size_px - 1) / array_size_px;
-    }
-    array_shape.push_back(append_size);
-
-    const auto& final_dim = dims->final_dim();
-    chunk_shape.push_back(final_dim.chunk_size_px);
-    shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
-    for (auto i = 1; i < dims->ndims(); ++i) {
-        const auto& dim = dims->at(i);
-        array_shape.push_back(dim.array_size_px);
-        chunk_shape.push_back(dim.chunk_size_px);
-        shard_shape.push_back(dim.shard_size_chunks * chunk_shape.back());
-    }
-
-    json metadata;
-    metadata["shape"] = array_shape;
-    metadata["chunk_grid"] = json::object({
-      { "name", "regular" },
-      {
-        "configuration",
-        json::object({ { "chunk_shape", shard_shape } }),
-      },
-    });
-    metadata["chunk_key_encoding"] = json::object({
-      { "name", "default" },
-      {
-        "configuration",
-        json::object({ { "separator", "/" } }),
-      },
-    });
-    metadata["fill_value"] = 0;
-    metadata["attributes"] = json::object();
-    metadata["zarr_format"] = 3;
-    metadata["node_type"] = "array";
-    metadata["storage_transformers"] = json::array();
-    metadata["data_type"] = sample_type_to_dtype(config_->dtype);
-    metadata["storage_transformers"] = json::array();
-
-    std::vector<std::string> dimension_names(dims->ndims());
-    for (auto i = 0; i < dimension_names.size(); ++i) {
-        dimension_names[i] = dims->at(i).name;
-    }
-    metadata["dimension_names"] = dimension_names;
-
-    auto codecs = json::array();
-
-    auto sharding_indexed = json::object();
-    sharding_indexed["name"] = "sharding_indexed";
-
-    auto configuration = json::object();
-    configuration["chunk_shape"] = chunk_shape;
-
-    auto codec = json::object();
-    codec["configuration"] = json::object({ { "endian", "little" } });
-    codec["name"] = "bytes";
-
-    auto index_codec = json::object();
-    index_codec["configuration"] = json::object({ { "endian", "little" } });
-    index_codec["name"] = "bytes";
-
-    auto crc32_codec = json::object({ { "name", "crc32c" } });
-    configuration["index_codecs"] = json::array({
-      index_codec,
-      crc32_codec,
-    });
-
-    configuration["index_location"] = "end";
-    configuration["codecs"] = json::array({ codec });
-
-    if (config_->compression_params) {
-        const auto params = *config_->compression_params;
-
-        auto compression_config = json::object();
-        compression_config["blocksize"] = 0;
-        compression_config["clevel"] = params.clevel;
-        compression_config["cname"] = params.codec_id;
-        compression_config["shuffle"] = shuffle_to_string(params.shuffle);
-        compression_config["typesize"] = bytes_of_type(config_->dtype);
-
-        auto compression_codec = json::object();
-        compression_codec["configuration"] = compression_config;
-        compression_codec["name"] = "blosc";
-        configuration["codecs"].push_back(compression_codec);
-    }
-
-    sharding_indexed["configuration"] = configuration;
-
-    codecs.push_back(sharding_indexed);
-
-    metadata["codecs"] = codecs;
-
-    std::string metadata_str = metadata.dump(4);
-    std::span data = { reinterpret_cast<std::byte*>(metadata_str.data()),
-                       metadata_str.size() };
-
-    return metadata_sink_->write(0, data);
 }
 
 void

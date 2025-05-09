@@ -60,17 +60,19 @@ class Node
      */
     [[nodiscard]] virtual size_t write_frame(ConstByteSpan data) = 0;
 
-    /**
-     * @brief Get the metadata key for the node.
-     * @return The metadata key for the node.
-     */
-    [[nodiscard]] virtual std::string get_metadata_key() const = 0;
-
   protected:
     std::shared_ptr<NodeConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
-    std::unique_ptr<Sink> metadata_sink_;
+
+    std::unordered_map<std::string, std::string> metadata_strings_;
+    std::unordered_map<std::string, std::unique_ptr<Sink>> metadata_sinks_;
+
+    virtual std::string node_path_() const = 0;
+    [[nodiscard]] virtual bool make_metadata_() = 0;
+    virtual std::vector<std::string> metadata_keys_() const = 0;
+    [[nodiscard]] bool make_metadata_sinks_();
+    [[nodiscard]] bool write_metadata_();
 
     friend bool finalize_node(std::unique_ptr<Node>&& node);
 };

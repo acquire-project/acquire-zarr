@@ -28,26 +28,6 @@ bucket_exists(std::string_view bucket_name,
     return bucket_exists;
 }
 
-std::vector<std::string>
-construct_metadata_paths(ZarrVersion version)
-{
-    std::vector<std::string> paths;
-    switch (version) {
-        case ZarrVersion_2:
-            paths.emplace_back(".zattrs");
-            paths.emplace_back(".zgroup");
-            break;
-        case ZarrVersion_3:
-            paths.emplace_back("zarr.json");
-            break;
-        default:
-            throw std::runtime_error("Invalid Zarr version " +
-                                     std::to_string(static_cast<int>(version)));
-    }
-
-    return paths;
-}
-
 bool
 make_file_sinks(std::vector<std::string>& file_paths,
                 std::shared_ptr<zarr::ThreadPool> thread_pool,

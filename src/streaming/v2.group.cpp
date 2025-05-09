@@ -16,31 +16,28 @@ zarr::V2Group::V2Group(std::shared_ptr<GroupConfig> config,
     }
 }
 
-std::string
-zarr::V2Group::get_metadata_key() const
+std::vector<std::string>
+zarr::V2Group::metadata_keys_() const
 {
-    std::string key = config_->store_root;
-    if (!config_->group_key.empty()) {
-        key += "/" + config_->group_key;
-    }
-    key += "/.zgroup";
-
-    return key;
+    return { ".zattrs", ".zgroup" };
 }
 
-nlohmann::json
-zarr::V2Group::get_ome_metadata() const
+bool
+zarr::V2Group::make_metadata_()
 {
-    auto multiscales = make_multiscales_metadata_();
-    multiscales[0]["version"] = "0.4";
-    multiscales[0]["name"] = "/";
-    return multiscales;
-}
+    metadata_strings_.clear();
 
-nlohmann::json
-zarr::V2Group::make_group_metadata_() const
-{
-    return { { "zarr_format", 2 } };
+    nlohmann::json metadata;
+
+    // .zattrs
+    metadata = { { "multiscales", get_ome_metadata_() } };
+    metadata_strings_.emplace(".zattrs", metadata.dump(4));
+
+    // .zgroup
+    metadata = { { "zarr_format", 2 } };
+    metadata_strings_.emplace(".zgroup", metadata.dump(4));
+
+    return true;
 }
 
 bool
@@ -63,4 +60,13 @@ zarr::V2Group::create_arrays_()
     }
 
     return true;
+}
+
+nlohmann::json
+zarr::V2Group::get_ome_metadata_() const
+{
+    auto multiscales = make_multiscales_metadata_();
+    multiscales[0]["version"] = "0.4";
+    multiscales[0]["name"] = "/";
+    return multiscales;
 }

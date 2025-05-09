@@ -51,12 +51,6 @@ class Group : public Node
      */
     [[nodiscard]] size_t write_frame(ConstByteSpan data) override;
 
-    /**
-     * @brief Construct OME metadata for this group.
-     * @return JSON structure with OME metadata for this group.
-     */
-    virtual nlohmann::json get_ome_metadata() const = 0;
-
   protected:
     std::optional<zarr::Downsampler> downsampler_;
 
@@ -64,19 +58,20 @@ class Group : public Node
 
     size_t bytes_per_frame_;
 
+    std::string node_path_() const override;
+
     bool close_() override;
 
     std::shared_ptr<GroupConfig> group_config_() const;
 
-    /**
-     * @brief Create the metadata sink for this group.
-     * @return True if the metadata sink was successfully created, otherwise
-     * false.
-     */
-    bool make_metadata_sink_();
-
     /** @brief Create array writers. */
     [[nodiscard]] virtual bool create_arrays_() = 0;
+
+    /**
+     * @brief Construct OME metadata for this group.
+     * @return JSON structure with OME metadata for this group.
+     */
+    virtual nlohmann::json get_ome_metadata_() const = 0;
 
     /**
      * @brief Create a downsampler for multiscale acquisitions.
@@ -97,15 +92,6 @@ class Group : public Node
      * @param data The frame data to write.
      */
     void write_multiscale_frames_(ConstByteSpan data);
-
-    /** @brief Construct metadata for this group. */
-    [[nodiscard]] virtual nlohmann::json make_group_metadata_() const = 0;
-
-    /**
-     * @brief Write the metadata for this group.
-     * @return True if the metadata was successfully written, otherwise false.
-     */
-    [[nodiscard]] bool write_metadata_();
 
   private:
     friend bool finalize_group(std::unique_ptr<Group>&& group);
