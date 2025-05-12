@@ -2,8 +2,10 @@ set(project acquire-zarr)
 
 set(tests
         stream-zarr-v2-raw-to-filesystem
+        stream-zarr-v2-named-array-to-filesystem
         stream-zarr-v2-compressed-to-filesystem
         stream-zarr-v2-raw-to-s3
+        stream-zarr-v2-named-array-to-s3
         stream-zarr-v2-compressed-to-s3
         stream-zarr-v3-raw-to-filesystem
         stream-zarr-v3-compressed-to-filesystem

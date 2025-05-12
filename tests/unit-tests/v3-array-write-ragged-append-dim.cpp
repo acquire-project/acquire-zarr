@@ -39,8 +39,7 @@ const int level_of_detail = 4;
 void
 check_json()
 {
-    fs::path meta_path =
-      base_dir / std::to_string(level_of_detail) / "zarr.json";
+    fs::path meta_path = base_dir / "zarr.json";
     CHECK(fs::is_regular_file(meta_path));
 
     std::ifstream f(meta_path);
@@ -138,8 +137,7 @@ main()
           shard_width * shard_height * shard_planes * chunk_size + index_size +
           checksum_size;
 
-        const fs::path data_root =
-          base_dir / std::to_string(config->level_of_detail);
+        const fs::path data_root = base_dir;
         CHECK(fs::is_directory(data_root));
         for (auto z = 0; z < shards_in_z; ++z) {
             const auto z_dir = data_root / "c" / std::to_string(z);
