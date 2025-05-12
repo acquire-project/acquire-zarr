@@ -48,6 +48,7 @@ struct ZarrStream_s
 
     ZarrVersion version_;
     std::string store_path_;
+    std::string output_key_;
     std::optional<zarr::S3Settings> s3_settings_;
 
     std::unique_ptr<zarr::Node> output_node_;
@@ -80,6 +81,18 @@ struct ZarrStream_s
     [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
 
     /**
+     * @brief Configure the stream for a group.
+     * @param settings Struct containing settings to configure.
+     */
+    [[nodiscard]] bool configure_group_(const struct ZarrStreamSettings_s* settings);
+
+    /**
+     * @brief Configure the stream for an array.
+     * @param settings Struct containing settings to configure.
+     */
+    [[nodiscard]] bool configure_array_(const struct ZarrStreamSettings_s* settings);
+
+    /**
      * @brief Copy settings to the stream and create the output node.
      * @param settings Struct containing settings to copy.
      * @return True if the output node was created successfully, false otherwise.
@@ -97,8 +110,13 @@ struct ZarrStream_s
      */
     void set_error_(const std::string& msg);
 
-    /** @brief Create the data store. */
-    [[nodiscard]] bool create_store_();
+    /**
+     * @brief Create the data store.
+     * @param overwrite Delete everything in the store path if true.
+     * @return Return True if the store was created successfully, otherwise
+     * false.
+     */
+    [[nodiscard]] bool create_store_(bool overwrite);
 
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();

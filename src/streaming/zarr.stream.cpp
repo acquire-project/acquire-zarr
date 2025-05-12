@@ -10,6 +10,7 @@
 
 #include <bit> // bit_ceil
 #include <filesystem>
+#include <regex>
 
 namespace fs = std::filesystem;
 
@@ -190,6 +191,115 @@ make_array_dimensions(const ZarrDimensionProperties* dimensions,
                           scale);
     }
     return std::make_shared<ArrayDimensions>(std::move(dims), data_type);
+}
+
+bool
+is_valid_zarr_key(const std::string& key, std::string& error)
+{
+    // https://zarr-specs.readthedocs.io/en/latest/v3/core/index.html#node-names
+
+    // key cannot be empty
+    if (key.empty()) {
+        error = "Key is empty";
+        return false;
+    }
+
+    // key cannot end with '/'
+    if (key.back() == '/') {
+        error = "Key ends in '/'";
+        return false;
+    }
+
+    if (key.find('/') != std::string::npos) {
+        // path has slashes, check each segment
+        std::string segment;
+        std::istringstream stream(key);
+
+        while (std::getline(stream, segment, '/')) {
+            // skip empty segments (like in "/foo" where there's an empty
+            // segment at start)
+            if (segment.empty()) {
+                continue;
+            }
+
+            // segment must not be composed only of periods
+            if (std::regex_match(segment, std::regex("^\\.+$"))) {
+                error = "Invalid key segment '" + segment + "'";
+                return false;
+            }
+
+            // segment must not start with "__"
+            if (segment.substr(0, 2) == "__") {
+                error =
+                  "Key segment '" + segment + "' has reserved prefix '__'";
+                return false;
+            }
+        }
+    } else { // simple name, apply node name rules
+        // must not be composed only of periods
+        if (std::regex_match(key, std::regex("^\\.+$"))) {
+            error = "Invalid key '" + key + "'";
+            return false;
+        }
+
+        // must not start with "__"
+        if (key.substr(0, 2) == "__") {
+            error = " Key '" + key + "' has reserved prefix '__'";
+            return false;
+        }
+    }
+
+    // check that all characters are in recommended set
+    std::regex valid_chars("^[a-zA-Z0-9_.-]*$");
+
+    // for paths, apply to each segment
+    if (key.find('/') != std::string::npos) {
+        std::string segment;
+        std::istringstream stream(key);
+
+        while (std::getline(stream, segment, '/')) {
+            if (!segment.empty() && !std::regex_match(segment, valid_chars)) {
+                error = "Key segment '" + segment +
+                        "' contains invalid characters (should use only a-z, "
+                        "A-Z, 0-9, -, _, .)";
+                return false;
+            }
+        }
+    } else {
+        // for simple names
+        if (!std::regex_match(key, valid_chars)) {
+            error = "Key '" + key +
+                    "' contains invalid characters (should use only a-z, A-Z, "
+                    "0-9, -, _, .)";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string
+regularize_key(const char* key)
+{
+    if (key == nullptr) {
+        return "";
+    }
+
+    std::string regularized_key = zarr::trim(key);
+
+    // replace multiple consecutive slashes with single slashes
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("\\/+"), "/");
+
+    // remove leading slash
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("^\\/"), "");
+
+    // remove trailing slash
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex("\\/$"), "");
+
+    return regularized_key;
 }
 
 [[nodiscard]] bool
@@ -551,39 +661,20 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
 {
-    version_ = settings->version;
-    store_path_ = zarr::trim(settings->store_path);
-
     std::optional<std::string> bucket_name;
-    if (is_s3_acquisition(settings)) {
-        s3_settings_ = make_s3_settings(settings->s3_settings);
+    if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
     }
-
     auto compression_settings =
       make_compression_params(settings->compression_settings);
 
     auto dims = make_array_dimensions(
       settings->dimensions, settings->dimension_count, settings->data_type);
 
-    // initialize frame buffer
-    frame_size_bytes_ = dims->width_dim().array_size_px *
-                        dims->height_dim().array_size_px *
-                        zarr::bytes_of_type(settings->data_type);
-
-    frame_buffer_.resize(frame_size_bytes_);
-
-    // create the data store
-    if (!create_store_()) {
-        set_error_("Failed to create the data store: " + error_);
-        return false;
-    }
-
-    // configure root group
     auto config = std::make_shared<zarr::GroupConfig>(store_path_,
-                                                      "", // root group
+                                                      output_key_,
                                                       bucket_name,
                                                       compression_settings,
                                                       dims,
@@ -600,9 +691,97 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         }
     } catch (const std::exception& exc) {
         set_error_(exc.what());
+        return false;
     }
 
-    return output_node_ != nullptr;
+    return true;
+}
+
+bool
+ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
+{
+    std::optional<std::string> bucket_name;
+    if (s3_settings_) {
+        bucket_name = s3_settings_->bucket_name;
+    }
+    auto compression_settings =
+      make_compression_params(settings->compression_settings);
+
+    auto dims = make_array_dimensions(
+      settings->dimensions, settings->dimension_count, settings->data_type);
+
+    std::string parent_group_key =
+      output_key_.empty() ? "" : zarr::get_parent_paths({ output_key_ })[0];
+
+    auto config = std::make_shared<zarr::ArrayConfig>(store_path_,
+                                                      output_key_,
+                                                      bucket_name,
+                                                      compression_settings,
+                                                      dims,
+                                                      settings->data_type,
+                                                      0);
+
+    try {
+        if (version_ == ZarrVersion_2) {
+            output_node_ = std::make_unique<zarr::V2Array>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            output_node_ = std::make_unique<zarr::V3Array>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+    } catch (const std::exception& exc) {
+        set_error_(exc.what());
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
+{
+    std::string key = regularize_key(settings->output_key);
+    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
+        return false;
+    }
+    output_key_ = key;
+
+    version_ = settings->version;
+    store_path_ = zarr::trim(settings->store_path);
+
+    if (is_s3_acquisition(settings)) {
+        s3_settings_ = make_s3_settings(settings->s3_settings);
+    }
+
+    // initialize frame buffer
+    frame_size_bytes_ =
+      settings->dimensions[settings->dimension_count - 1].array_size_px *
+      settings->dimensions[settings->dimension_count - 2].array_size_px *
+      zarr::bytes_of_type(settings->data_type);
+
+    frame_buffer_.resize(frame_size_bytes_);
+
+    // create the data store
+    if (!create_store_(settings->overwrite)) {
+        set_error_("Failed to create the data store: " + error_);
+        return false;
+    }
+
+    if (output_key_.empty() || settings->multiscale) {
+        // create a group
+        if (!configure_group_(settings)) {
+            set_error_("Failed to configure group: " + error_);
+            return false;
+        }
+    } else {
+        // create an array
+        if (!configure_array_(settings)) {
+            set_error_("Failed to configure array: " + error_);
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void
@@ -626,7 +805,7 @@ ZarrStream_s::set_error_(const std::string& msg)
 }
 
 bool
-ZarrStream_s::create_store_()
+ZarrStream_s::create_store_(bool overwrite)
 {
     if (is_s3_acquisition_()) {
         // spin up S3 connection pool
@@ -647,7 +826,17 @@ ZarrStream_s::create_store_()
         }
         s3_connection_pool_->return_connection(std::move(conn));
     } else {
-        if (fs::exists(store_path_)) {
+        if (!overwrite) {
+            if (fs::is_directory(store_path_)) {
+                return true;
+            } else if (fs::exists(store_path_)) {
+                set_error_("Store path '" + store_path_ +
+                           "' already exists and is "
+                           "not a directory, and we "
+                           "are not overwriting.");
+                return false;
+            }
+        } else if (fs::exists(store_path_)) {
             // remove everything inside the store path
             std::error_code ec;
             fs::remove_all(store_path_, ec);
