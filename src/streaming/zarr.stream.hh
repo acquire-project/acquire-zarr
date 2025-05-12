@@ -118,6 +118,8 @@ struct ZarrStream_s
      */
     [[nodiscard]] bool create_store_(bool overwrite);
 
+    [[nodiscard]] bool write_intermediate_metadata_();
+
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();
 

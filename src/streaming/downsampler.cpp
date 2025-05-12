@@ -1,7 +1,7 @@
 #include "downsampler.hh"
 #include "macros.hh"
-#include "v2.array.hh"
-#include "v3.array.hh"
+
+#include <regex>
 
 namespace {
 template<typename T>
@@ -221,7 +221,9 @@ zarr::Downsampler::make_writer_configurations_(
 
         auto down_config = std::make_shared<ArrayConfig>(
           cur_config->store_root,
-          cur_config->group_key,
+          std::regex_replace(cur_config->node_key,
+                             std::regex("(\\d+)$"),
+                             std::to_string(cur_config->level_of_detail + 1)),
           cur_config->bucket_name,
           cur_config->compression_params,
           std::make_shared<ArrayDimensions>(std::move(down_dims),

@@ -11,7 +11,6 @@ class V2Array final : public Array
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:
-    std::string node_path_() const override;
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 

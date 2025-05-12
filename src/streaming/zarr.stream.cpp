@@ -863,6 +863,54 @@ ZarrStream_s::create_store_(bool overwrite)
 }
 
 bool
+ZarrStream_s::write_intermediate_metadata_()
+{
+    if (output_key_.empty()) {
+        return true; // no need to write metadata
+    }
+
+    std::optional<std::string> bucket_name;
+    if (s3_settings_) {
+        bucket_name = s3_settings_->bucket_name;
+    }
+
+    std::vector<std::string> paths = zarr::get_parent_paths({ output_key_ });
+    while (!paths.back().empty()) {
+        std::string parent_path = paths.back();
+        paths.push_back(
+          zarr::get_parent_paths({ parent_path })[0]); // get parent path
+    }
+
+    for (const auto& parent_group_key : paths) {
+        auto group_config =
+          std::make_shared<zarr::GroupConfig>(store_path_,
+                                              parent_group_key,
+                                              bucket_name,
+                                              std::nullopt,
+                                              nullptr,
+                                              ZarrDataTypeCount,
+                                              false);
+
+        std::unique_ptr<zarr::Group> group_node;
+        if (version_ == ZarrVersion_2) {
+            group_node = std::make_unique<zarr::V2Group>(
+              group_config, thread_pool_, s3_connection_pool_);
+        } else {
+            group_node = std::make_unique<zarr::V3Group>(
+              group_config, thread_pool_, s3_connection_pool_);
+        }
+
+        if (!zarr::finalize_group(std::move(group_node))) {
+            set_error_("Failed to write intermediate metadata for group '" +
+                       parent_group_key + "'");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
 ZarrStream_s::init_frame_queue_()
 {
     if (frame_queue_) {
@@ -991,6 +1039,11 @@ finalize_stream(struct ZarrStream_s* stream)
 
     if (!zarr::finalize_node(std::move(stream->output_node_))) {
         LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
+        return false;
+    }
+
+    if (!stream->write_intermediate_metadata_()) {
+        LOG_ERROR(stream->error_);
         return false;
     }
 
