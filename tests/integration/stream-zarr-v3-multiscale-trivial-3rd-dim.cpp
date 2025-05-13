@@ -50,6 +50,7 @@ setup()
         .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .downsampling_method = ZarrDownsamplingMethod_Mean,
     };
 
     ZarrCompressionSettings compression_settings = {

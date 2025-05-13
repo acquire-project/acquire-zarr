@@ -74,6 +74,7 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
+    ZarrDownsamplingMethod downsampling_method_;
     std::optional<zarr::Downsampler> downsampler_;
 
     std::vector<std::unique_ptr<zarr::ArrayWriter>> writers_;

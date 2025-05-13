@@ -33,6 +33,7 @@ extern "C"
         ZarrDataType data_type; /**< The pixel data type of the dataset. */
         ZarrVersion version; /**< The version of the Zarr format to use. 2 or 3. */
         unsigned int max_threads; /**< The maximum number of threads to use in the stream. Set to 0 to use the supported number of concurrent threads. */
+        ZarrDownsamplingMethod downsampling_method; /**< The downsampling method to use for multiscale streaming. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
