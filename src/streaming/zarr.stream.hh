@@ -1,13 +1,14 @@
 #pragma once
 
-#include "array.writer.hh"
+#include "array.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
+#include "group.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
-#include "zarr.dimension.hh"
+#include "array.dimensions.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -43,24 +44,15 @@ struct ZarrStream_s
                                          bool overwrite);
 
   private:
-    struct CompressionSettings
-    {
-        ZarrCompressor compressor;
-        ZarrCompressionCodec codec;
-        uint8_t level;
-        uint8_t shuffle;
-    };
-
     std::string error_; // error message. If nonempty, an error occurred.
 
     ZarrVersion version_;
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
-    std::optional<CompressionSettings> compression_settings_;
-    ZarrDataType dtype_;
-    std::shared_ptr<ArrayDimensions> dimensions_;
-    bool multiscale_;
 
+    std::unique_ptr<zarr::ZarrNode> output_node_;
+
+    size_t frame_size_bytes_;
     std::vector<std::byte> frame_buffer_;
     size_t frame_buffer_offset_;
 
@@ -68,20 +60,16 @@ struct ZarrStream_s
     std::mutex frame_queue_mutex_;
     std::condition_variable frame_queue_not_full_cv_;  // Space is available
     std::condition_variable frame_queue_not_empty_cv_; // Data is available
+    std::condition_variable frame_queue_empty_cv_;     // Queue is empty
     std::condition_variable frame_queue_finished_cv_;  // Done processing
     std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
-    std::optional<zarr::Downsampler> downsampler_;
-
-    std::vector<std::unique_ptr<zarr::ArrayWriter>> writers_;
-    std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>
-      metadata_sinks_;
+    std::unique_ptr<zarr::Sink> custom_metadata_sink_;
 
     bool is_s3_acquisition_() const;
-    bool is_compressed_acquisition_() const;
 
     /**
      * @brief Check that the settings are valid.
@@ -92,10 +80,11 @@ struct ZarrStream_s
     [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Copy settings to the stream.
+     * @brief Copy settings to the stream and create the output node.
      * @param settings Struct containing settings to copy.
+     * @return True if the output node was created successfully, false otherwise.
      */
-    void commit_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool commit_settings_(const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.
@@ -114,48 +103,11 @@ struct ZarrStream_s
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();
 
-    /** @brief Create the writers. */
-    [[nodiscard]] bool create_writers_();
-
-    /** @brief Create a downsampler for multiscale. */
-    [[nodiscard]] bool create_downsampler_();
-
-    /** @brief Create the metadata sinks. */
-    [[nodiscard]] bool create_metadata_sinks_();
-
-    /** @brief Write per-acquisition metadata. */
-    [[nodiscard]] bool write_base_metadata_();
-
-    /** @brief Write Zarr group metadata. */
-    [[nodiscard]] bool write_group_metadata_();
-
-    /** @brief Construct OME metadata pertaining to the multiscale pyramid. */
-    [[nodiscard]] nlohmann::json make_ome_metadata_() const;
-
-    /** @brief Create a configuration for a full-resolution ArrayWriter. */
-    zarr::ArrayWriterConfig make_array_writer_config_() const;
-
     /** @brief Process the frame queue. */
     void process_frame_queue_();
 
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
-
-    /**
-     * @brief Write a frame to the chunk buffers.
-     * @note This function splits the incoming frame into tiles and writes them
-     * to the chunk buffers. If we are writing multiscale frames, the function
-     * calls write_multiscale_frames_() to write the scaled frames.
-     * @param data The frame data to write.
-     * @return The number of bytes written of the full-resolution frame.
-     */
-    size_t write_frame_(ConstByteSpan data);
-
-    /**
-     * @brief Downsample the full-resolution frame to create multiscale frames.
-     * @param data The full-resolution frame data.
-     */
-    void write_multiscale_frames_(ConstByteSpan data);
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };

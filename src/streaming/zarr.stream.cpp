@@ -2,8 +2,10 @@
 #include "zarr.stream.hh"
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
-#include "zarrv2.array.writer.hh"
-#include "zarrv3.array.writer.hh"
+#include "v2.group.hh"
+#include "v3.group.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
 #include "sink.hh"
 
 #include <bit> // bit_ceil
@@ -25,7 +27,7 @@ is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
 }
 
 zarr::S3Settings
-construct_s3_settings(const ZarrS3Settings* settings)
+make_s3_settings(const ZarrS3Settings* settings)
 {
     zarr::S3Settings s3_settings{ .endpoint = zarr::trim(settings->endpoint),
                                   .bucket_name =
@@ -149,6 +151,45 @@ validate_custom_metadata(std::string_view metadata)
     }
 
     return true;
+}
+
+std::optional<zarr::BloscCompressionParams>
+make_compression_params(const ZarrCompressionSettings* settings)
+{
+    if (!settings) {
+        return std::nullopt;
+    }
+
+    return zarr::BloscCompressionParams(
+      zarr::blosc_codec_to_string(settings->codec),
+      settings->level,
+      settings->shuffle);
+}
+
+std::shared_ptr<ArrayDimensions>
+make_array_dimensions(const ZarrDimensionProperties* dimensions,
+                      size_t dimension_count,
+                      ZarrDataType data_type)
+{
+    std::vector<ZarrDimension> dims;
+    for (auto i = 0; i < dimension_count; ++i) {
+        const auto& dim = dimensions[i];
+        std::string unit;
+        if (dim.unit) {
+            unit = zarr::trim(dim.unit);
+        }
+
+        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
+
+        dims.emplace_back(dim.name,
+                          dim.type,
+                          dim.array_size_px,
+                          dim.chunk_size_px,
+                          dim.shard_size_chunks,
+                          unit,
+                          scale);
+    }
+    return std::make_shared<ArrayDimensions>(std::move(dims), data_type);
 }
 
 [[nodiscard]] bool
@@ -292,34 +333,13 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 {
     EXPECT(validate_settings_(settings), error_);
 
-    commit_settings_(settings);
-
     start_thread_pool_(settings->max_threads);
 
-    // allocate a frame buffer
-    frame_buffer_.resize(
-      zarr::bytes_of_frame(*dimensions_, static_cast<ZarrDataType>(dtype_)));
-
-    // create the data store
-    EXPECT(create_store_(), error_);
-
-    // create downsampler if needed
-    EXPECT(create_downsampler_(), error_);
+    // commit settings and create the output store
+    EXPECT(commit_settings_(settings), error_);
 
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
-
-    // allocate writers
-    EXPECT(create_writers_(), error_);
-
-    // allocate metadata sinks
-    EXPECT(create_metadata_sinks_(), error_);
-
-    // write base metadata
-    EXPECT(write_base_metadata_(), error_);
-
-    // write group metadata
-    EXPECT(write_group_metadata_(), error_);
 }
 
 size_t
@@ -402,8 +422,8 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     }
 
     // check if we have already written custom metadata
-    const std::string metadata_key = "acquire.json";
-    if (!metadata_sinks_.contains(metadata_key)) { // create metadata sink
+    if (!custom_metadata_sink_) {
+        const std::string metadata_key = "acquire.json";
         std::string base_path = store_path_;
         if (base_path.starts_with("file://")) {
             base_path = base_path.substr(7);
@@ -412,22 +432,18 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
         const auto sink_path = prefix + metadata_key;
 
         if (is_s3_acquisition_()) {
-            metadata_sinks_.emplace(
-              metadata_key,
-              zarr::make_s3_sink(
-                s3_settings_->bucket_name, sink_path, s3_connection_pool_));
+            custom_metadata_sink_ = zarr::make_s3_sink(
+              s3_settings_->bucket_name, sink_path, s3_connection_pool_);
         } else {
-            metadata_sinks_.emplace(metadata_key,
-                                    zarr::make_file_sink(sink_path));
+            custom_metadata_sink_ = zarr::make_file_sink(sink_path);
         }
     } else if (!overwrite) { // custom metadata already written, don't overwrite
         LOG_ERROR("Custom metadata already written, use overwrite flag");
         return ZarrStatusCode_WillNotOverwrite;
     }
 
-    const auto& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        LOG_ERROR("Metadata sink '" + metadata_key + "' not found");
+    if (!custom_metadata_sink_) {
+        LOG_ERROR("Custom metadata sink not found");
         return ZarrStatusCode_InternalError;
     }
 
@@ -440,7 +456,7 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     const auto metadata_str = metadata_json.dump(4);
     std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
                     metadata_str.size() };
-    if (!sink->write(0, data)) {
+    if (!custom_metadata_sink_->write(0, data)) {
         LOG_ERROR("Error writing custom metadata");
         return ZarrStatusCode_IOError;
     }
@@ -451,12 +467,6 @@ bool
 ZarrStream_s::is_s3_acquisition_() const
 {
     return s3_settings_.has_value();
-}
-
-bool
-ZarrStream_s::is_compressed_acquisition_() const
-{
-    return compression_settings_.has_value();
 }
 
 bool
@@ -540,48 +550,59 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     return true;
 }
 
-void
+bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
+    std::optional<std::string> bucket_name;
     if (is_s3_acquisition(settings)) {
-        s3_settings_ = construct_s3_settings(settings->s3_settings);
+        s3_settings_ = make_s3_settings(settings->s3_settings);
+        bucket_name = s3_settings_->bucket_name;
     }
 
-    if (is_compressed_acquisition(settings)) {
-        compression_settings_ = {
-            .compressor = settings->compression_settings->compressor,
-            .codec = settings->compression_settings->codec,
-            .level = settings->compression_settings->level,
-            .shuffle = settings->compression_settings->shuffle,
-        };
+    auto compression_settings =
+      make_compression_params(settings->compression_settings);
+
+    auto dims = make_array_dimensions(
+      settings->dimensions, settings->dimension_count, settings->data_type);
+
+    // initialize frame buffer
+    frame_size_bytes_ = dims->width_dim().array_size_px *
+                        dims->height_dim().array_size_px *
+                        zarr::bytes_of_type(settings->data_type);
+
+    frame_buffer_.resize(frame_size_bytes_);
+
+    // create the data store
+    if (!create_store_()) {
+        set_error_("Failed to create the data store: " + error_);
+        return false;
     }
 
-    dtype_ = settings->data_type;
+    // configure root group
+    auto config = std::make_shared<zarr::GroupConfig>(store_path_,
+                                                      "", // root group
+                                                      bucket_name,
+                                                      compression_settings,
+                                                      dims,
+                                                      settings->data_type,
+                                                      settings->multiscale);
 
-    std::vector<ZarrDimension> dims;
-    for (auto i = 0; i < settings->dimension_count; ++i) {
-        const auto& dim = settings->dimensions[i];
-        std::string unit = "";
-        if (dim.unit) {
-            unit = zarr::trim(dim.unit);
+    try {
+        if (version_ == ZarrVersion_2) {
+            output_node_ = std::make_unique<zarr::V2Group>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            output_node_ = std::make_unique<zarr::V3Group>(
+              config, thread_pool_, s3_connection_pool_);
         }
-
-        double scale = dim.scale == 0.0 ? 1.0 : dim.scale;
-
-        dims.emplace_back(dim.name,
-                          dim.type,
-                          dim.array_size_px,
-                          dim.chunk_size_px,
-                          dim.shard_size_chunks,
-                          unit,
-                          scale);
+    } catch (const std::exception& exc) {
+        set_error_(exc.what());
     }
-    dimensions_ = std::make_shared<ArrayDimensions>(std::move(dims), dtype_);
 
-    multiscale_ = settings->multiscale;
+    return output_node_ != nullptr;
 }
 
 void
@@ -664,17 +685,14 @@ ZarrStream_s::init_frame_queue_()
         return false;
     }
 
-    const auto frame_size = dimensions_->width_dim().array_size_px *
-                            dimensions_->height_dim().array_size_px *
-                            zarr::bytes_of_type(dtype_);
-
     // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
     const auto buffer_size_bytes = 2ULL << 30;
-    const auto frame_count = std::max(10ULL, buffer_size_bytes / frame_size);
+    const auto frame_count =
+      std::max(10ULL, buffer_size_bytes / frame_size_bytes_);
 
     try {
         frame_queue_ =
-          std::make_unique<zarr::FrameQueue>(frame_count, frame_size);
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes_);
 
         EXPECT(thread_pool_->push_job([this](std::string& err) {
             try {
@@ -695,290 +713,6 @@ ZarrStream_s::init_frame_queue_()
     return true;
 }
 
-bool
-ZarrStream_s::create_writers_()
-{
-    writers_.clear();
-
-    if (downsampler_) {
-        const auto& configs = downsampler_->writer_configurations();
-        writers_.resize(configs.size());
-
-        for (const auto& [lod, config] : configs) {
-            if (version_ == 2) {
-                writers_[lod] = std::make_unique<zarr::ZarrV2ArrayWriter>(
-                  config, thread_pool_, s3_connection_pool_);
-            } else {
-                writers_[lod] = std::make_unique<zarr::ZarrV3ArrayWriter>(
-                  config, thread_pool_, s3_connection_pool_);
-            }
-        }
-    } else {
-        const auto config = make_array_writer_config_();
-
-        if (version_ == 2) {
-            writers_.push_back(std::make_unique<zarr::ZarrV2ArrayWriter>(
-              config, thread_pool_, s3_connection_pool_));
-        } else {
-            writers_.push_back(std::make_unique<zarr::ZarrV3ArrayWriter>(
-              config, thread_pool_, s3_connection_pool_));
-        }
-    }
-
-    return true;
-}
-
-bool
-ZarrStream_s::create_downsampler_()
-{
-    if (!multiscale_) {
-        return true;
-    }
-
-    const auto config = make_array_writer_config_();
-
-    try {
-        downsampler_ = zarr::Downsampler(config);
-    } catch (const std::exception& exc) {
-        set_error_("Error creating downsampler: " + std::string(exc.what()));
-        return false;
-    }
-
-    return true;
-}
-
-bool
-ZarrStream_s::create_metadata_sinks_()
-{
-    try {
-        if (s3_connection_pool_) {
-            if (!make_metadata_s3_sinks(version_,
-                                        s3_settings_->bucket_name,
-                                        store_path_,
-                                        s3_connection_pool_,
-                                        metadata_sinks_)) {
-                set_error_("Error creating metadata sinks");
-                return false;
-            }
-        } else {
-            if (!make_metadata_file_sinks(
-                  version_, store_path_, thread_pool_, metadata_sinks_)) {
-                set_error_("Error creating metadata sinks");
-                return false;
-            }
-        }
-    } catch (const std::exception& e) {
-        set_error_("Error creating metadata sinks: " + std::string(e.what()));
-        return false;
-    }
-
-    return true;
-}
-
-bool
-ZarrStream_s::write_base_metadata_()
-{
-    nlohmann::json metadata;
-    std::string metadata_key;
-
-    if (version_ == 2) {
-        metadata["multiscales"] = make_ome_metadata_();
-
-        metadata_key = ".zattrs";
-    } else {
-        metadata["extensions"] = nlohmann::json::array();
-        metadata["metadata_encoding"] =
-          "https://purl.org/zarr/spec/protocol/core/3.0";
-        metadata["metadata_key_suffix"] = ".json";
-        metadata["zarr_format"] =
-          "https://purl.org/zarr/spec/protocol/core/3.0";
-
-        metadata_key = "zarr.json";
-    }
-
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        set_error_("Metadata sink '" + metadata_key + "'not found");
-        return false;
-    }
-
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-
-    if (!sink->write(0, data)) {
-        set_error_("Error writing base metadata");
-        return false;
-    }
-
-    return true;
-}
-
-bool
-ZarrStream_s::write_group_metadata_()
-{
-    nlohmann::json metadata;
-    std::string metadata_key;
-
-    if (version_ == 2) {
-        metadata = { { "zarr_format", 2 } };
-
-        metadata_key = ".zgroup";
-    } else {
-        const auto multiscales = make_ome_metadata_();
-        metadata["attributes"]["ome"] = multiscales;
-        metadata["zarr_format"] = 3;
-        metadata["consolidated_metadata"] = nullptr;
-        metadata["node_type"] = "group";
-
-        metadata_key = "zarr.json";
-    }
-
-    const std::unique_ptr<zarr::Sink>& sink = metadata_sinks_.at(metadata_key);
-    if (!sink) {
-        set_error_("Metadata sink '" + metadata_key + "'not found");
-        return false;
-    }
-
-    const std::string metadata_str = metadata.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!sink->write(0, data)) {
-        set_error_("Error writing group metadata");
-        return false;
-    }
-
-    return true;
-}
-
-nlohmann::json
-ZarrStream_s::make_ome_metadata_() const
-{
-    nlohmann::json multiscales;
-    const auto ndims = dimensions_->ndims();
-
-    auto& axes = multiscales[0]["axes"];
-    for (auto i = 0; i < ndims; ++i) {
-        const auto& dim = dimensions_->at(i);
-        const auto type = dimension_type_to_string(dim.type);
-        const std::string unit = dim.unit.has_value() ? *dim.unit : "";
-
-        if (!unit.empty()) {
-            axes.push_back({
-              { "name", dim.name.c_str() },
-              { "type", type },
-              { "unit", unit.c_str() },
-            });
-        } else {
-            axes.push_back({ { "name", dim.name.c_str() }, { "type", type } });
-        }
-    }
-
-    // spatial multiscale metadata
-    std::vector<double> scales(ndims);
-    for (auto i = 0; i < ndims; ++i) {
-        const auto& dim = dimensions_->at(i);
-        scales[i] = dim.scale;
-    }
-
-    multiscales[0]["datasets"] = {
-        {
-          { "path", "0" },
-          { "coordinateTransformations",
-            {
-              {
-                { "type", "scale" },
-                { "scale", scales },
-              },
-            } },
-        },
-    };
-
-    for (auto i = 1; i < writers_.size(); ++i) {
-        const auto& config = downsampler_->writer_configurations().at(i);
-
-        for (auto j = 0; j < ndims; ++j) {
-            const auto& base_dim = dimensions_->at(j);
-            const auto& down_dim = config.dimensions->at(j);
-            if (base_dim.type != ZarrDimensionType_Space) {
-                continue;
-            }
-
-            const auto base_size = base_dim.array_size_px;
-            const auto down_size = down_dim.array_size_px;
-            const auto ratio = (base_size + down_size - 1) / down_size;
-
-            // scale by next power of 2
-            scales[j] = base_dim.scale * std::bit_ceil(ratio);
-        }
-
-        multiscales[0]["datasets"].push_back({
-          { "path", std::to_string(i) },
-          { "coordinateTransformations",
-            {
-              {
-                { "type", "scale" },
-                { "scale", scales },
-              },
-            } },
-        });
-
-        // downsampling metadata
-        multiscales[0]["type"] = "local_mean";
-        multiscales[0]["metadata"] = {
-            { "description",
-              "The fields in the metadata describe how to reproduce this "
-              "multiscaling in scikit-image. The method and its parameters "
-              "are "
-              "given here." },
-            { "method", "skimage.transform.downscale_local_mean" },
-            { "version", "0.21.0" },
-            { "args", "[2]" },
-            { "kwargs", { "cval", 0 } },
-        };
-    }
-
-    if (version_ == ZarrVersion_2) {
-        multiscales[0]["version"] = "0.4";
-        multiscales[0]["name"] = "/";
-        return multiscales;
-    }
-
-    nlohmann::json ome;
-    ome["version"] = "0.5";
-    ome["name"] = "/";
-    ome["multiscales"] = multiscales;
-
-    return ome;
-}
-
-zarr::ArrayWriterConfig
-ZarrStream_s::make_array_writer_config_() const
-{
-    // construct Blosc compression parameters
-    std::optional<zarr::BloscCompressionParams> blosc_compression_params;
-    if (is_compressed_acquisition_()) {
-        blosc_compression_params = zarr::BloscCompressionParams(
-          zarr::blosc_codec_to_string(compression_settings_->codec),
-          compression_settings_->level,
-          compression_settings_->shuffle);
-    }
-
-    std::optional<std::string> s3_bucket_name;
-    if (is_s3_acquisition_()) {
-        s3_bucket_name = s3_settings_->bucket_name;
-    }
-
-    return {
-        .dimensions = dimensions_,
-        .dtype = dtype_,
-        .level_of_detail = 0,
-        .bucket_name = s3_bucket_name,
-        .store_path = store_path_,
-        .compression_params = blosc_compression_params,
-    };
-}
-
 void
 ZarrStream_s::process_frame_queue_()
 {
@@ -987,28 +721,45 @@ ZarrStream_s::process_frame_queue_()
         return;
     }
 
-    const auto bytes_of_frame = frame_buffer_.size();
-
     std::vector<std::byte> frame;
     while (process_frames_ || !frame_queue_->empty()) {
-        std::unique_lock lock(frame_queue_mutex_);
-        while (frame_queue_->empty() && process_frames_) {
-            frame_queue_not_empty_cv_.wait(lock);
-        }
+        {
+            std::unique_lock lock(frame_queue_mutex_);
+            while (frame_queue_->empty() && process_frames_) {
+                frame_queue_not_empty_cv_.wait_for(
+                  lock, std::chrono::milliseconds(100));
+            }
 
-        if (!process_frames_ && frame_queue_->empty()) {
-            break;
+            if (frame_queue_->empty()) {
+                frame_queue_empty_cv_.notify_all();
+
+                // If we should stop processing and the queue is empty, we're
+                // done
+                if (!process_frames_) {
+                    break;
+                } else {
+                    continue;
+                }
+            }
         }
 
         if (!frame_queue_->pop(frame)) {
             continue;
         }
 
-        // Signal that there's space available in the queue
-        frame_queue_not_full_cv_.notify_one();
-
-        EXPECT(write_frame_(frame) == bytes_of_frame,
+        EXPECT(output_node_->write_frame(frame) == frame_size_bytes_,
                "Failed to write frame to writer");
+
+        {
+            // Signal that there's space available in the queue
+            std::unique_lock lock(frame_queue_mutex_);
+            frame_queue_not_full_cv_.notify_one();
+
+            // Signal that the queue is empty, if applicable
+            if (frame_queue_->empty()) {
+                frame_queue_empty_cv_.notify_all();
+            }
+        }
     }
 
     CHECK(frame_queue_->empty());
@@ -1030,49 +781,7 @@ ZarrStream_s::finalize_frame_queue_()
 
     // Wait for frame processing to complete
     std::unique_lock lock(frame_queue_mutex_);
-    frame_queue_finished_cv_.wait(lock,
-                                  [this] { return frame_queue_->empty(); });
-}
-
-size_t
-ZarrStream_s::write_frame_(ConstByteSpan data)
-{
-    const auto bytes_of_full_frame = frame_buffer_.size();
-    const auto n_bytes = writers_[0]->write_frame(data);
-    EXPECT(n_bytes == bytes_of_full_frame, "");
-
-    if (n_bytes != data.size()) {
-        set_error_("Incomplete write to full-resolution array.");
-        return n_bytes;
-    }
-
-    write_multiscale_frames_(data);
-    return n_bytes;
-}
-
-void
-ZarrStream_s::write_multiscale_frames_(ConstByteSpan data)
-{
-    if (!multiscale_) {
-        return;
-    }
-
-    CHECK(downsampler_.has_value());
-    downsampler_->add_frame(data);
-
-    for (auto i = 1; i < writers_.size(); ++i) {
-        ByteVector downsampled_frame;
-        if (downsampler_->get_downsampled_frame(i, downsampled_frame)) {
-            const auto n_bytes = writers_[i]->write_frame(downsampled_frame);
-            EXPECT(n_bytes == downsampled_frame.size(),
-                   "Expected to write ",
-                   downsampled_frame.size(),
-                   " bytes to multiscale array ",
-                   i,
-                   "wrote ",
-                   n_bytes);
-        }
-    }
+    frame_queue_finished_cv_.wait(lock, [this] { return frame_queue_->empty(); });
 }
 
 bool
@@ -1083,30 +792,19 @@ finalize_stream(struct ZarrStream_s* stream)
         return true;
     }
 
-    if (!stream->write_group_metadata_()) {
-        LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
-        return false;
+    if (stream->custom_metadata_sink_ &&
+        !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
+        LOG_ERROR(
+          "Error finalizing Zarr stream. Failed to write custom metadata");
     }
-
-    for (auto& [sink_name, sink] : stream->metadata_sinks_) {
-        if (!finalize_sink(std::move(sink))) {
-            LOG_ERROR("Error finalizing Zarr stream. Failed to write ",
-                      sink_name);
-            return false;
-        }
-    }
-    stream->metadata_sinks_.clear();
 
     stream->finalize_frame_queue_();
 
-    for (auto i = 0; i < stream->writers_.size(); ++i) {
-        if (!finalize_array(std::move(stream->writers_[i]))) {
-            LOG_ERROR("Error finalizing Zarr stream. Failed to write array ",
-                      i);
-            return false;
-        }
+    if (!zarr::finalize_node(std::move(stream->output_node_))) {
+        LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
+        return false;
     }
-    stream->writers_.clear(); // flush before shutting down thread pool
+
     stream->thread_pool_->await_stop();
 
     return true;

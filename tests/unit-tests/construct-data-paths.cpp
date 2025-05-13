@@ -1,6 +1,6 @@
 #include "unit.test.macros.hh"
 #include "sink.hh"
-#include "zarr.dimension.hh"
+#include "array.dimensions.hh"
 
 #include <string>
 #include <unordered_set>
