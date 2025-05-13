@@ -272,6 +272,15 @@ class PyZarrStreamSettings
         max_threads_ = max_threads;
     }
 
+    ZarrDownsamplingMethod downsampling_method() const
+    {
+        return downsampling_method_;
+    }
+    void set_downsampling_method(ZarrDownsamplingMethod method)
+    {
+        downsampling_method_ = method;
+    }
+
     const std::vector<PyZarrDimensionProperties>& dimensions() const
     {
         return dimensions_;
@@ -294,6 +303,7 @@ class PyZarrStreamSettings
     ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     std::vector<PyZarrDimensionProperties> dimensions_;
+    ZarrDownsamplingMethod downsampling_method_{ ZarrDownsamplingMethod_None };
 };
 
 class PyZarrStream
@@ -588,6 +598,12 @@ PYBIND11_MODULE(acquire_zarr, m)
       .value(dimension_type_to_str(ZarrDimensionType_Other),
              ZarrDimensionType_Other);
 
+    py::enum_<ZarrDownsamplingMethod>(m, "DownsamplingMethod")
+      .value("NONE", ZarrDownsamplingMethod_None)
+      .value("MEAN", ZarrDownsamplingMethod_Mean)
+      .value("MIN", ZarrDownsamplingMethod_Min)
+      .value("MAX", ZarrDownsamplingMethod_Max);
+
     py::enum_<ZarrLogLevel>(m, "LogLevel")
       .value(log_level_to_str(ZarrLogLevel_Debug), ZarrLogLevel_Debug)
       .value(log_level_to_str(ZarrLogLevel_Info), ZarrLogLevel_Info)
@@ -729,6 +745,14 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("version"))
               settings.set_version(kwargs["version"].cast<ZarrVersion>());
 
+          if (kwargs.contains("max_threads"))
+              settings.set_max_threads(
+                kwargs["max_threads"].cast<unsigned int>());
+
+          if (kwargs.contains("downsampling_method"))
+              settings.set_downsampling_method(
+                kwargs["downsampling_method"].cast<ZarrDownsamplingMethod>());
+
           return settings;
       }))
       .def("__repr__",
@@ -818,7 +842,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrStreamSettings::set_version)
       .def_property("max_threads",
                     &PyZarrStreamSettings::max_threads,
-                    &PyZarrStreamSettings::set_max_threads);
+                    &PyZarrStreamSettings::set_max_threads)
+      .def_property("downsampling_method",
+                    &PyZarrStreamSettings::downsampling_method,
+                    &PyZarrStreamSettings::set_downsampling_method);
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
