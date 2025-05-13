@@ -6,9 +6,27 @@
 namespace {
 template<typename T>
 T
+decimate4(const T& a, const T& b, const T& c, const T& d)
+{
+    return a;
+}
+
+template<typename T>
+T
 mean4(const T& a, const T& b, const T& c, const T& d)
 {
     return (a + b + c + d) / 4;
+}
+
+template<typename T>
+typename std::enable_if<std::is_integral<T>::value, T>::type
+mean4(const T& a, const T& b, const T& c, const T& d)
+{
+    T mask = 3;
+    T result = a / 4 + b / 4 + c / 4 + d / 4;
+    T remainder = ((a & mask) + (b & mask) + (c & mask) + (d & mask)) / 4;
+
+    return result + remainder;
 }
 
 template<typename T>
@@ -49,9 +67,27 @@ max4(const T& a, const T& b, const T& c, const T& d)
 
 template<typename T>
 T
-average2(const T& a, const T& b)
+decimate2(const T& a, const T& b)
+{
+    return a;
+}
+
+template<typename T>
+T
+mean2(const T& a, const T& b)
 {
     return (a + b) / 2;
+}
+
+template<typename T>
+typename std::enable_if<std::is_integral<T>::value, T>::type
+mean2(const T& a, const T& b)
+{
+    T mask = 3;
+    T result = a / 2 + b / 2;
+    T remainder = ((a & mask) + (b & mask)) / 2;
+
+    return result + remainder;
 }
 
 template<typename T>
@@ -77,6 +113,9 @@ scale_image(ConstByteSpan src,
 {
     T (*scale_fun)(const T&, const T&, const T&, const T&) = nullptr;
     switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            scale_fun = decimate4<T>;
+            break;
         case ZarrDownsamplingMethod_Mean:
             scale_fun = mean4<T>;
             break;
@@ -142,8 +181,11 @@ average_two_frames(ByteVector& dst,
 {
     T (*average_fun)(const T&, const T&) = nullptr;
     switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            average_fun = decimate2<T>;
+            break;
         case ZarrDownsamplingMethod_Mean:
-            average_fun = average2<T>;
+            average_fun = mean2<T>;
             break;
         case ZarrDownsamplingMethod_Min:
             average_fun = min2<T>;
@@ -223,8 +265,7 @@ zarr::Downsampler::Downsampler(const ArrayWriterConfig& config,
                                      std::to_string(config.dtype));
     }
 
-    EXPECT(method > ZarrDownsamplingMethod_None &&
-             method < ZarrDownsamplingMethodCount,
+    EXPECT(method < ZarrDownsamplingMethodCount,
            "Invalid downsampling method: ",
            static_cast<int>(method));
     method_ = method;

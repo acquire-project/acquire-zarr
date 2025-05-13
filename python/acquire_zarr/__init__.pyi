@@ -206,19 +206,19 @@ class DownsamplingMethod:
     Method used to downsample frames.
 
     Attributes:
-      NONE: No downsampling.
-      MEAN: Average value of each 4x4 block of pixels
+      DECIMATE: Take the top left of each 4x4 block of pixels
+      MEAN: Take the mean value of each 4x4 block of pixels
       MIN: Take the minimum value of each 4x4 block of pixels
       MAX: Take the maximum value of each 4x4 block of pixels
     """
 
-    NONE: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.NONE: 0>
+    DECIMATE: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.DECIMATE: 0>
     MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 1>
     MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 2>
     MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 3>
     __members__: ClassVar[
         dict[str, DownsamplingMethod]
-    ]  # value = {'NONE': <DownsamplingMethod.NONE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
+    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
 
     def __eq__(self, other: Any) -> bool: ...
     def __getstate__(self) -> int: ...

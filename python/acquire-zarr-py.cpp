@@ -303,7 +303,9 @@ class PyZarrStreamSettings
     ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     std::vector<PyZarrDimensionProperties> dimensions_;
-    ZarrDownsamplingMethod downsampling_method_{ ZarrDownsamplingMethod_None };
+    ZarrDownsamplingMethod downsampling_method_{
+        ZarrDownsamplingMethod_Decimate
+    };
 };
 
 class PyZarrStream
@@ -600,7 +602,7 @@ PYBIND11_MODULE(acquire_zarr, m)
              ZarrDimensionType_Other);
 
     py::enum_<ZarrDownsamplingMethod>(m, "DownsamplingMethod")
-      .value("NONE", ZarrDownsamplingMethod_None)
+      .value("DECIMATE", ZarrDownsamplingMethod_Decimate)
       .value("MEAN", ZarrDownsamplingMethod_Mean)
       .value("MIN", ZarrDownsamplingMethod_Min)
       .value("MAX", ZarrDownsamplingMethod_Max);
