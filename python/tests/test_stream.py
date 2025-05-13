@@ -713,3 +713,64 @@ def test_custom_dimension_units_and_scales(store_path: Path):
     assert z_scale == 0.1
     assert y_scale == 0.9
     assert x_scale == 1.1
+
+
+@pytest.mark.parametrize(("output_key", "multiscale"),
+                         [
+                             ("labels", False),
+                             ("path/to/data", False),
+                             ("a/nested/multiscale/group", True),
+                         ])
+def test_stream_data_to_named_array(
+        settings: StreamSettings,
+        store_path: Path,
+        request: pytest.FixtureRequest,
+        output_key: str,
+        multiscale: bool,
+):
+    settings.store_path = str(store_path / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr")
+    settings.version = ZarrVersion.V3
+    settings.output_key = output_key
+    settings.multiscale = multiscale
+    settings.data_type = DataType.UINT16
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Create test data
+    data = np.zeros(
+        (
+            2 * settings.dimensions[0].chunk_size_px,
+            settings.dimensions[1].array_size_px,
+            settings.dimensions[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+    # Fill with recognizable pattern
+    for i in range(data.shape[0]):
+        data[i, :, :] = i + 1
+
+    stream.append(data)
+
+    del stream  # close the stream, flush the files
+
+    # Now verify the data is stored in the expected location
+    store_path_obj = Path(settings.store_path)
+    assert store_path_obj.is_dir()
+
+    # Open the Zarr group and navigate to the correct path
+    root_group = zarr.open(settings.store_path, mode="r")
+
+    # Navigate through the path to get to the array
+    current_group = root_group
+    path_parts = output_key.split('/')
+
+    for part in path_parts:
+        assert part in current_group, f"Path part '{part}' not found in group"
+        current_group = current_group[part]
+
+    array = current_group["0"] if multiscale else current_group
+
+    # Verify array shape and contents
+    assert array.shape == data.shape
+    assert np.array_equal(array, data)

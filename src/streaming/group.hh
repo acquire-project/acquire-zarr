@@ -58,8 +58,6 @@ class Group : public Node
 
     size_t bytes_per_frame_;
 
-    std::string node_path_() const override;
-
     bool close_() override;
 
     std::shared_ptr<GroupConfig> group_config_() const;

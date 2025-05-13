@@ -32,8 +32,7 @@ const int level_of_detail = 2;
 void
 check_json()
 {
-    fs::path zarray_path =
-      base_dir / std::to_string(level_of_detail) / ".zarray";
+    fs::path zarray_path = base_dir / ".zarray";
     CHECK(fs::is_regular_file(zarray_path));
 
     std::ifstream f(zarray_path);
@@ -114,8 +113,7 @@ main()
                                         chunk_planes * chunk_timepoints *
                                         nbytes_px;
 
-        const fs::path data_root =
-          base_dir / std::to_string(config->level_of_detail);
+        const fs::path data_root = base_dir;
 
         CHECK(fs::is_directory(data_root));
 

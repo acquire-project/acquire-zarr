@@ -161,10 +161,12 @@ setup()
 {
     ZarrStreamSettings settings = {
         .store_path = TEST,
+        .s3_settings = nullptr,
         .compression_settings = nullptr,
         .data_type = ZarrDataType_int32,
         .version = ZarrVersion_2,
         .max_threads = 0, // use all available threads
+        .output_key = "intermediate/path",
     };
 
     ZarrS3Settings s3_settings{
@@ -232,90 +234,6 @@ setup()
 }
 
 void
-verify_base_metadata(const nlohmann::json& meta)
-{
-    const auto multiscales = meta["multiscales"][0];
-    const auto ngff_version = multiscales["version"].get<std::string>();
-    EXPECT(ngff_version == "0.4",
-           "Expected version to be '0.4', but got '",
-           ngff_version,
-           "'");
-
-    const auto axes = multiscales["axes"];
-    EXPECT_EQ(size_t, axes.size(), 5);
-    std::string name, type, unit;
-
-    name = axes[0]["name"];
-    type = axes[0]["type"];
-    EXPECT(name == "t", "Expected name to be 't', but got '", name, "'");
-    EXPECT(type == "time", "Expected type to be 'time', but got '", type, "'");
-    EXPECT(!axes[0].contains("unit"),
-           "Expected unit to be missing, got ",
-           axes[0]["unit"].get<std::string>());
-
-    name = axes[1]["name"];
-    type = axes[1]["type"];
-    EXPECT(name == "c", "Expected name to be 'c', but got '", name, "'");
-    EXPECT(
-      type == "channel", "Expected type to be 'channel', but got '", type, "'");
-    EXPECT(!axes[1].contains("unit"),
-           "Expected unit to be missing, got ",
-           axes[1]["unit"].get<std::string>());
-
-    name = axes[2]["name"];
-    type = axes[2]["type"];
-    unit = axes[2]["unit"];
-    EXPECT(name == "z", "Expected name to be 'z', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "millimeter",
-           "Expected unit to be 'millimeter', but got '",
-           unit,
-           "'");
-
-    name = axes[3]["name"];
-    type = axes[3]["type"];
-    unit = axes[3]["unit"];
-    EXPECT(name == "y", "Expected name to be 'y', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
-
-    name = axes[4]["name"];
-    type = axes[4]["type"];
-    unit = axes[4]["unit"];
-    EXPECT(name == "x", "Expected name to be 'x', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
-
-    const auto datasets = multiscales["datasets"][0];
-    const std::string path = datasets["path"].get<std::string>();
-    EXPECT(path == "0", "Expected path to be '0', but got '", path, "'");
-
-    const auto coordinate_transformations =
-      datasets["coordinateTransformations"][0];
-
-    type = coordinate_transformations["type"].get<std::string>();
-    EXPECT(
-      type == "scale", "Expected type to be 'scale', but got '", type, "'");
-
-    const auto scale = coordinate_transformations["scale"];
-    EXPECT_EQ(size_t, scale.size(), 5);
-    EXPECT_EQ(double, scale[0].get<double>(), 1.0);
-    EXPECT_EQ(double, scale[1].get<double>(), 1.0);
-    EXPECT_EQ(double, scale[2].get<double>(), 1.4);
-    EXPECT_EQ(double, scale[3].get<double>(), 0.9);
-    EXPECT_EQ(double, scale[4].get<double>(), 0.9);
-}
-
-void
 verify_group_metadata(const nlohmann::json& meta)
 {
     const auto zarr_format = meta["zarr_format"].get<int>();
@@ -355,6 +273,7 @@ verify_array_metadata(const nlohmann::json& meta)
 void
 verify_and_cleanup()
 {
+
     minio::s3::BaseUrl url(s3_endpoint);
     url.https = s3_endpoint.starts_with("https://");
 
@@ -362,24 +281,24 @@ verify_and_cleanup()
                                           s3_secret_access_key);
     minio::s3::Client client(url, &provider);
 
-    std::string base_metadata_path = TEST "/.zattrs";
-    std::string group_metadata_path = TEST "/.zgroup";
-    std::string array_metadata_path = TEST "/0/.zarray";
+    std::string base_metadata_path = TEST "/.zgroup";
+    std::string group_metadata_path = TEST "/intermediate/.zgroup";
+    std::string array_metadata_path = TEST "/intermediate/path/.zarray";
 
     {
         EXPECT(object_exists(client, base_metadata_path),
-               "Object does not exist: ",
-               base_metadata_path);
+               "Object does not exist: %s",
+               base_metadata_path.c_str());
         std::string contents = get_object_contents(client, base_metadata_path);
-        nlohmann::json base_metadata = nlohmann::json::parse(contents);
+        nlohmann::json group_metadata = nlohmann::json::parse(contents);
 
-        verify_base_metadata(base_metadata);
+        verify_group_metadata(group_metadata);
     }
 
     {
         EXPECT(object_exists(client, group_metadata_path),
-               "Object does not exist: ",
-               group_metadata_path);
+               "Object does not exist: %s",
+               group_metadata_path.c_str());
         std::string contents = get_object_contents(client, group_metadata_path);
         nlohmann::json group_metadata = nlohmann::json::parse(contents);
 
@@ -406,7 +325,7 @@ verify_and_cleanup()
 
     // verify and clean up data files
     std::vector<std::string> data_files;
-    std::string data_root = TEST "/0";
+    std::string data_root = TEST "/intermediate/path";
 
     for (auto t = 0; t < chunks_in_t; ++t) {
         const auto t_dir = data_root + "/" + std::to_string(t);
@@ -423,8 +342,8 @@ verify_and_cleanup()
                     for (auto x = 0; x < chunks_in_x; ++x) {
                         const auto x_file = y_dir + "/" + std::to_string(x);
                         EXPECT(object_exists(client, x_file),
-                               "Object does not exist: %s",
-                               x_file.c_str());
+                               "Object does not exist: ",
+                               x_file);
                         const auto file_size = get_object_size(client, x_file);
                         EXPECT_EQ(size_t, file_size, expected_file_size);
                         data_files.push_back(x_file);
@@ -461,7 +380,9 @@ main()
             ZarrStatusCode status = ZarrStream_append(
               stream, frame.data(), bytes_of_frame, &bytes_out);
             EXPECT(status == ZarrStatusCode_Success,
-                   "Failed to append frame ", i, ": ",
+                   "Failed to append frame ",
+                   i,
+                   ": ",
                    Zarr_get_status_message(status));
             EXPECT_EQ(size_t, bytes_out, bytes_of_frame);
         }
@@ -472,7 +393,7 @@ main()
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Caught exception: ", e.what());
+        LOG_ERROR("Caught exception: %s", e.what());
     }
 
     return retval;

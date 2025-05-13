@@ -71,17 +71,6 @@ zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
 {
 }
 
-std::string
-zarr::V2Array::node_path_() const
-{
-    std::string key = config_->store_root;
-    if (!config_->group_key.empty()) {
-        key += "/" + config_->group_key;
-    }
-    key += "/" + std::to_string(array_config_()->level_of_detail);
-    return key;
-}
-
 std::vector<std::string>
 zarr::V2Array::metadata_keys_() const
 {

@@ -30,8 +30,10 @@ zarr::V2Group::make_metadata_()
     nlohmann::json metadata;
 
     // .zattrs
-    metadata = { { "multiscales", get_ome_metadata_() } };
-    metadata_strings_.emplace(".zattrs", metadata.dump(4));
+    if (!arrays_.empty()) {
+        metadata = { { "multiscales", get_ome_metadata_() } };
+        metadata_strings_.emplace(".zattrs", metadata.dump(4));
+    }
 
     // .zgroup
     metadata = { { "zarr_format", 2 } };

@@ -21,7 +21,7 @@ struct NodeConfig
                std::shared_ptr<ArrayDimensions> dimensions,
                ZarrDataType dtype)
       : store_root(store_root)
-      , group_key(group_key)
+      , node_key(group_key)
       , bucket_name(bucket_name)
       , compression_params(compression_params)
       , dimensions(std::move(dimensions))
@@ -32,7 +32,7 @@ struct NodeConfig
     virtual ~NodeConfig() = default;
 
     std::string store_root;
-    std::string group_key;
+    std::string node_key;
     std::optional<std::string> bucket_name;
     std::optional<BloscCompressionParams> compression_params;
     std::shared_ptr<ArrayDimensions> dimensions;
@@ -68,7 +68,7 @@ class Node
     std::unordered_map<std::string, std::string> metadata_strings_;
     std::unordered_map<std::string, std::unique_ptr<Sink>> metadata_sinks_;
 
-    virtual std::string node_path_() const = 0;
+    std::string node_path_() const;
     [[nodiscard]] virtual bool make_metadata_() = 0;
     virtual std::vector<std::string> metadata_keys_() const = 0;
     [[nodiscard]] bool make_metadata_sinks_();

@@ -17,7 +17,6 @@ class V3Array final : public Array
 
     std::unordered_map<std::string, std::unique_ptr<Sink>> s3_data_sinks_;
 
-    std::string node_path_() const override;
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 
