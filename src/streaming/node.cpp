@@ -5,9 +5,9 @@
 #include "macros.hh"
 #include "node.hh"
 
-zarr::Node::Node(std::shared_ptr<NodeConfig> config,
-                 std::shared_ptr<ThreadPool> thread_pool,
-                 std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+zarr::ZarrNode::ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
+                         std::shared_ptr<ThreadPool> thread_pool,
+                         std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_(config)
   , thread_pool_(thread_pool)
   , s3_connection_pool_(s3_connection_pool)
@@ -17,7 +17,7 @@ zarr::Node::Node(std::shared_ptr<NodeConfig> config,
 }
 
 bool
-zarr::Node::make_metadata_sinks_()
+zarr::ZarrNode::make_metadata_sinks_()
 {
     metadata_sinks_.clear();
 
@@ -41,7 +41,7 @@ zarr::Node::make_metadata_sinks_()
 }
 
 bool
-zarr::Node::write_metadata_()
+zarr::ZarrNode::write_metadata_()
 {
     if (!make_metadata_()) {
         LOG_ERROR("Failed to make metadata.");
@@ -78,7 +78,7 @@ zarr::Node::write_metadata_()
 }
 
 bool
-zarr::finalize_node(std::unique_ptr<Node>&& node)
+zarr::finalize_node(std::unique_ptr<ZarrNode>&& node)
 {
     if (!node) {
         LOG_INFO("Node is null, nothing to finalize.");

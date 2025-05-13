@@ -11,9 +11,7 @@
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Node(config,
-         thread_pool,
-         s3_connection_pool)
+  : ZarrNode(config, thread_pool, s3_connection_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }

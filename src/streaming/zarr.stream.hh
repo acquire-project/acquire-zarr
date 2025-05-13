@@ -50,7 +50,7 @@ struct ZarrStream_s
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
 
-    std::unique_ptr<zarr::Node> output_node_;
+    std::unique_ptr<zarr::ZarrNode> output_node_;
 
     size_t frame_size_bytes_;
     std::vector<std::byte> frame_buffer_;

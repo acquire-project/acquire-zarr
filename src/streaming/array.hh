@@ -8,7 +8,7 @@
 #include "thread.pool.hh"
 
 namespace zarr {
-struct ArrayConfig : public NodeConfig
+struct ArrayConfig : public ZarrNodeConfig
 {
     ArrayConfig() = default;
     ArrayConfig(std::string_view store_root,
@@ -18,12 +18,12 @@ struct ArrayConfig : public NodeConfig
                 std::shared_ptr<ArrayDimensions> dimensions,
                 ZarrDataType dtype,
                 int level_of_detail)
-      : NodeConfig(store_root,
-                   group_key,
-                   bucket_name,
-                   compression_params,
-                   dimensions,
-                   dtype)
+      : ZarrNodeConfig(store_root,
+                       group_key,
+                       bucket_name,
+                       compression_params,
+                       dimensions,
+                       dtype)
       , level_of_detail(level_of_detail)
     {
     }
@@ -31,7 +31,7 @@ struct ArrayConfig : public NodeConfig
     int level_of_detail{ 0 };
 };
 
-class Array : public Node
+class Array : public ZarrNode
 {
   public:
     Array(std::shared_ptr<ArrayConfig> config,
