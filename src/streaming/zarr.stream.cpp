@@ -588,6 +588,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     dimensions_ = std::make_shared<ArrayDimensions>(std::move(dims), dtype_);
 
     multiscale_ = settings->multiscale;
+    downsampling_method_ = settings->downsampling_method;
 }
 
 void
