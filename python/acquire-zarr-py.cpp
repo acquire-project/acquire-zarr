@@ -322,10 +322,14 @@ class PyZarrStream
             .data_type = settings.data_type(),
             .version = settings.version(),
             .max_threads = settings.max_threads(),
+            .overwrite = settings.multiscale(),
         };
 
         store_path_ = settings.store_path();
         stream_settings.store_path = store_path_.c_str();
+
+        output_key_ = settings.output_key();
+        stream_settings.output_key = output_key_.c_str();
 
         if (settings.s3().has_value()) {
             const auto& s3 = settings.s3().value();
@@ -529,6 +533,7 @@ class PyZarrStream
     ZarrStreamPtr stream_;
 
     std::string store_path_;
+    std::string output_key_;
 
     std::vector<std::string> dimension_names_;
     std::vector<std::string> dimension_units_;
@@ -738,7 +743,7 @@ PYBIND11_MODULE(acquire_zarr, m)
               settings.set_version(kwargs["version"].cast<ZarrVersion>());
 
           if (kwargs.contains("output_key"))
-              settings.output_key(kwargs["output_key"].cast<std::string>());
+              settings.set_output_key(kwargs["output_key"].cast<std::string>());
 
           if (kwargs.contains("overwrite"))
               settings.set_overwrite(kwargs["overwrite"].cast<bool>());
