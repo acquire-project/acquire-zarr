@@ -537,6 +537,12 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         }
     }
 
+    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+        error_ = "Invalid downsampling method: " +
+                 std::to_string(settings->downsampling_method);
+        return false;
+    }
+
     return true;
 }
 
@@ -738,7 +744,7 @@ ZarrStream_s::create_downsampler_()
     const auto config = make_array_writer_config_();
 
     try {
-        downsampler_ = zarr::Downsampler(config);
+        downsampler_ = zarr::Downsampler(config, downsampling_method_);
     } catch (const std::exception& exc) {
         set_error_("Error creating downsampler: " + std::string(exc.what()));
         return false;
