@@ -19,7 +19,7 @@ mean4(const T& a, const T& b, const T& c, const T& d)
 }
 
 template<typename T>
-typename std::enable_if<std::is_integral<T>::value, T>::type
+typename std::enable_if<std::is_integral<T>::value, T>::T
 mean4(const T& a, const T& b, const T& c, const T& d)
 {
     T mask = 3;
@@ -80,7 +80,7 @@ mean2(const T& a, const T& b)
 }
 
 template<typename T>
-typename std::enable_if<std::is_integral<T>::value, T>::type
+typename std::enable_if<std::is_integral<T>::value, T>::T
 mean2(const T& a, const T& b)
 {
     T mask = 3;
