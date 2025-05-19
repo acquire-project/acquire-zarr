@@ -5,9 +5,130 @@
 
 namespace {
 template<typename T>
-[[nodiscard]] ByteVector
-scale_image(ConstByteSpan src, size_t& width, size_t& height)
+T
+decimate4(const T& a, const T& b, const T& c, const T& d)
 {
+    return a;
+}
+
+template<typename T>
+T
+mean4(const T& a, const T& b, const T& c, const T& d)
+{
+    return (a + b + c + d) / 4;
+}
+
+template<typename T>
+typename std::enable_if<std::is_integral<T>::value, T>::T
+mean4(const T& a, const T& b, const T& c, const T& d)
+{
+    T mask = 3;
+    T result = a / 4 + b / 4 + c / 4 + d / 4;
+    T remainder = ((a & mask) + (b & mask) + (c & mask) + (d & mask)) / 4;
+
+    return result + remainder;
+}
+
+template<typename T>
+T
+min4(const T& a, const T& b, const T& c, const T& d)
+{
+    T val = a;
+    if (b < val) {
+        val = b;
+    }
+    if (c < val) {
+        val = c;
+    }
+    if (d < val) {
+        val = d;
+    }
+
+    return val;
+}
+
+template<typename T>
+T
+max4(const T& a, const T& b, const T& c, const T& d)
+{
+    T val = a;
+    if (b > val) {
+        val = b;
+    }
+    if (c > val) {
+        val = c;
+    }
+    if (d > val) {
+        val = d;
+    }
+
+    return val;
+}
+
+template<typename T>
+T
+decimate2(const T& a, const T& b)
+{
+    return a;
+}
+
+template<typename T>
+T
+mean2(const T& a, const T& b)
+{
+    return (a + b) / 2;
+}
+
+template<typename T>
+typename std::enable_if<std::is_integral<T>::value, T>::T
+mean2(const T& a, const T& b)
+{
+    T mask = 3;
+    T result = a / 2 + b / 2;
+    T remainder = ((a & mask) + (b & mask)) / 2;
+
+    return result + remainder;
+}
+
+template<typename T>
+T
+min2(const T& a, const T& b)
+{
+    return a < b ? a : b;
+}
+
+template<typename T>
+T
+max2(const T& a, const T& b)
+{
+    return a > b ? a : b;
+}
+
+template<typename T>
+[[nodiscard]] ByteVector
+scale_image(ConstByteSpan src,
+            size_t& width,
+            size_t& height,
+            ZarrDownsamplingMethod method)
+{
+    T (*scale_fun)(const T&, const T&, const T&, const T&) = nullptr;
+    switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            scale_fun = decimate4<T>;
+            break;
+        case ZarrDownsamplingMethod_Mean:
+            scale_fun = mean4<T>;
+            break;
+        case ZarrDownsamplingMethod_Min:
+            scale_fun = min4<T>;
+            break;
+        case ZarrDownsamplingMethod_Max:
+            scale_fun = max4<T>;
+            break;
+        default:
+            throw std::runtime_error("Invalid downsampling method");
+    }
+
     const auto bytes_of_src = src.size();
     const auto bytes_of_frame = width * height * sizeof(T);
 
@@ -40,10 +161,9 @@ scale_image(ConstByteSpan src, size_t& width, size_t& height)
             T here = src_as_T[src_idx];
             T right = src_as_T[src_idx + !pad_width];
             T down = src_as_T[src_idx + width * (!pad_height)];
-
             T diag = src_as_T[src_idx + width * (!pad_height) + (!pad_width)];
 
-            dst_as_T[dst_idx++] = (T)((here + right + down + diag) / factor);
+            dst_as_T[dst_idx++] = scale_fun(here, right, down, diag);
         }
     }
 
@@ -55,8 +175,28 @@ scale_image(ConstByteSpan src, size_t& width, size_t& height)
 
 template<typename T>
 void
-average_two_frames(ByteVector& dst, ConstByteSpan src)
+average_two_frames(ByteVector& dst,
+                   ConstByteSpan src,
+                   ZarrDownsamplingMethod method)
 {
+    T (*average_fun)(const T&, const T&) = nullptr;
+    switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            average_fun = decimate2<T>;
+            break;
+        case ZarrDownsamplingMethod_Mean:
+            average_fun = mean2<T>;
+            break;
+        case ZarrDownsamplingMethod_Min:
+            average_fun = min2<T>;
+            break;
+        case ZarrDownsamplingMethod_Max:
+            average_fun = max2<T>;
+            break;
+        default:
+            throw std::runtime_error("Invalid downsampling method");
+    }
+
     const auto bytes_of_dst = dst.size();
     const auto bytes_of_src = src.size();
     EXPECT(bytes_of_dst == bytes_of_src,
@@ -69,12 +209,13 @@ average_two_frames(ByteVector& dst, ConstByteSpan src)
 
     const auto num_pixels = bytes_of_src / sizeof(T);
     for (auto i = 0; i < num_pixels; ++i) {
-        dst_as_T[i] = static_cast<T>(0.5 * (dst_as_T[i] + src_as_T[i]));
+        dst_as_T[i] = average_fun(dst_as_T[i], src_as_T[i]);
     }
 }
 } // namespace
 
-zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config)
+zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
+                               ZarrDownsamplingMethod method)
 {
     make_writer_configurations_(config);
 
@@ -123,6 +264,11 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config)
             throw std::runtime_error("Invalid data type: " +
                                      std::to_string(config->dtype));
     }
+
+    EXPECT(method < ZarrDownsamplingMethodCount,
+           "Invalid downsampling method: ",
+           static_cast<int>(method));
+    method_ = method;
 }
 
 void
@@ -260,11 +406,11 @@ zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
     ConstByteSpan data = frame_data;
     ByteVector downsampled;
     for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height);
+        downsampled = scale_fun_(data, frame_width, frame_height, method_);
         auto it = partial_scaled_frames_.find(i);
         if (it != partial_scaled_frames_.end()) {
             // downsampled is the new frame
-            average2_fun_(downsampled, it->second);
+            average2_fun_(downsampled, it->second, method_);
             downsampled_frames_.emplace(i, downsampled);
 
             // clean up this LOD
@@ -291,7 +437,7 @@ zarr::Downsampler::downsample_2d_(ConstByteSpan frame_data)
     ConstByteSpan data = frame_data;
     ByteVector downsampled;
     for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height);
+        downsampled = scale_fun_(data, frame_width, frame_height, method_);
         downsampled_frames_.emplace(i, downsampled);
         data = downsampled;
     }

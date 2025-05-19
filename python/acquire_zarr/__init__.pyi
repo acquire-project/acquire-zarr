@@ -20,6 +20,7 @@ __all__ = [
     "DataType",
     "Dimension",
     "DimensionType",
+    "DownsamplingMethod",
     "LogLevel",
     "S3Settings",
     "StreamSettings",
@@ -183,6 +184,41 @@ class DimensionType:
     __members__: ClassVar[
         dict[str, DimensionType]
     ]  # value = {'SPACE': <DimensionType.SPACE: 0>, 'CHANNEL': <DimensionType.CHANNEL: 1>, 'TIME': <DimensionType.TIME: 2>, 'OTHER': <DimensionType.OTHER: 3>}
+
+    def __eq__(self, other: Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+
+
+class DownsamplingMethod:
+    """
+    Method used to downsample frames.
+
+    Attributes:
+      DECIMATE: Take the top left of each 4x4 block of pixels
+      MEAN: Take the mean value of each 4x4 block of pixels
+      MIN: Take the minimum value of each 4x4 block of pixels
+      MAX: Take the maximum value of each 4x4 block of pixels
+    """
+
+    DECIMATE: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.DECIMATE: 0>
+    MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 1>
+    MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 2>
+    MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 3>
+    __members__: ClassVar[
+        dict[str, DownsamplingMethod]
+    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
 
     def __eq__(self, other: Any) -> bool: ...
     def __getstate__(self) -> int: ...

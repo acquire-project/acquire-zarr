@@ -11,15 +11,15 @@
 #include <string>
 
 namespace zarr {
-struct NodeConfig
+struct ZarrNodeConfig
 {
-    NodeConfig() = default;
-    NodeConfig(std::string_view store_root,
-               std::string_view group_key,
-               std::optional<std::string> bucket_name,
-               std::optional<BloscCompressionParams> compression_params,
-               std::shared_ptr<ArrayDimensions> dimensions,
-               ZarrDataType dtype)
+    ZarrNodeConfig() = default;
+    ZarrNodeConfig(std::string_view store_root,
+                   std::string_view group_key,
+                   std::optional<std::string> bucket_name,
+                   std::optional<BloscCompressionParams> compression_params,
+                   std::shared_ptr<ArrayDimensions> dimensions,
+                   ZarrDataType dtype)
       : store_root(store_root)
       , node_key(group_key)
       , bucket_name(bucket_name)
@@ -29,7 +29,7 @@ struct NodeConfig
     {
     }
 
-    virtual ~NodeConfig() = default;
+    virtual ~ZarrNodeConfig() = default;
 
     std::string store_root;
     std::string node_key;
@@ -39,13 +39,13 @@ struct NodeConfig
     ZarrDataType dtype;
 };
 
-class Node
+class ZarrNode
 {
   public:
-    Node(std::shared_ptr<NodeConfig> config,
-         std::shared_ptr<ThreadPool> thread_pool,
-         std::shared_ptr<S3ConnectionPool> s3_connection_pool);
-    virtual ~Node() = default;
+    ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
+             std::shared_ptr<ThreadPool> thread_pool,
+             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    virtual ~ZarrNode() = default;
 
     /**
      * @brief Close the node and flush any remaining data.
@@ -61,7 +61,7 @@ class Node
     [[nodiscard]] virtual size_t write_frame(ConstByteSpan data) = 0;
 
   protected:
-    std::shared_ptr<NodeConfig> config_;
+    std::shared_ptr<ZarrNodeConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
 
@@ -74,14 +74,14 @@ class Node
     [[nodiscard]] bool make_metadata_sinks_();
     [[nodiscard]] bool write_metadata_();
 
-    friend bool finalize_node(std::unique_ptr<Node>&& node);
+    friend bool finalize_node(std::unique_ptr<ZarrNode>&& node);
 };
 
 template<class T>
 std::unique_ptr<T>
-downcast_node(std::unique_ptr<Node>&& node)
+downcast_node(std::unique_ptr<ZarrNode>&& node)
 {
-    Node* raw_ptr = node.release();
+    ZarrNode* raw_ptr = node.release();
     T* derived_ptr = dynamic_cast<T*>(raw_ptr);
 
     if (!derived_ptr) {
@@ -93,5 +93,5 @@ downcast_node(std::unique_ptr<Node>&& node)
 }
 
 [[nodiscard]] bool
-finalize_node(std::unique_ptr<Node>&& node);
+finalize_node(std::unique_ptr<ZarrNode>&& node);
 } // namespace zarr

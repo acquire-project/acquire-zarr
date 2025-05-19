@@ -11,7 +11,7 @@
 #include <optional>
 
 namespace zarr {
-struct GroupConfig : public NodeConfig
+struct GroupConfig : public ZarrNodeConfig
 {
     GroupConfig() = default;
     GroupConfig(std::string_view store_root,
@@ -20,21 +20,24 @@ struct GroupConfig : public NodeConfig
                 std::optional<BloscCompressionParams> compression_params,
                 std::shared_ptr<ArrayDimensions> dimensions,
                 ZarrDataType dtype,
-                bool multiscale)
-      : NodeConfig(store_root,
-                   group_key,
-                   bucket_name,
-                   compression_params,
-                   dimensions,
-                   dtype)
+                bool multiscale,
+                ZarrDownsamplingMethod downsampling_method)
+      : ZarrNodeConfig(store_root,
+                       group_key,
+                       bucket_name,
+                       compression_params,
+                       dimensions,
+                       dtype)
       , multiscale(multiscale)
+      , downsampling_method(downsampling_method)
     {
     }
 
     bool multiscale{ false };
+    ZarrDownsamplingMethod downsampling_method{ ZarrDownsamplingMethod_Mean };
 };
 
-class Group : public Node
+class Group : public ZarrNode
 {
   public:
     Group(std::shared_ptr<GroupConfig> config,

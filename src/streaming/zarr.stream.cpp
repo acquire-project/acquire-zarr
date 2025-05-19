@@ -657,6 +657,12 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         }
     }
 
+    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+        error_ = "Invalid downsampling method: " +
+                 std::to_string(settings->downsampling_method);
+        return false;
+    }
+
     return true;
 }
 
@@ -679,7 +685,8 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
                                                       compression_settings,
                                                       dims,
                                                       settings->data_type,
-                                                      settings->multiscale);
+                                                      settings->multiscale,
+                                                      settings->downsampling_method);
 
     try {
         if (version_ == ZarrVersion_2) {
@@ -749,6 +756,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
+    std::optional<std::string> bucket_name;
     if (is_s3_acquisition(settings)) {
         s3_settings_ = make_s3_settings(settings->s3_settings);
     }
@@ -889,7 +897,8 @@ ZarrStream_s::write_intermediate_metadata_()
                                               std::nullopt,
                                               nullptr,
                                               ZarrDataTypeCount,
-                                              false);
+                                              false,
+                                              ZarrDownsamplingMethodCount);
 
         std::unique_ptr<zarr::Group> group_node;
         if (version_ == ZarrVersion_2) {
@@ -1044,6 +1053,13 @@ finalize_stream(struct ZarrStream_s* stream)
 
     if (!stream->write_intermediate_metadata_()) {
         LOG_ERROR(stream->error_);
+        return false;
+    }
+
+    stream->finalize_frame_queue_();
+
+    if (!zarr::finalize_node(std::move(stream->output_node_))) {
+        LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
         return false;
     }
 

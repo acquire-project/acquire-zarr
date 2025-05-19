@@ -24,9 +24,7 @@ dimension_type_to_string(ZarrDimensionType type)
 zarr::Group::Group(std::shared_ptr<GroupConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Node(config,
-         thread_pool,
-         s3_connection_pool)
+  : ZarrNode(config, thread_pool, s3_connection_pool)
 {
     // check that the config is a GroupConfig
     CHECK(std::dynamic_pointer_cast<GroupConfig>(config_));
@@ -106,7 +104,8 @@ zarr::Group::create_downsampler_()
     const auto config = make_base_array_config_();
 
     try {
-        downsampler_ = zarr::Downsampler(config);
+        downsampler_ =
+          Downsampler(config, group_config_()->downsampling_method);
     } catch (const std::exception& exc) {
         LOG_ERROR("Error creating downsampler: " + std::string(exc.what()));
         return false;

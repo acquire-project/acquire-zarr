@@ -10,7 +10,8 @@ namespace zarr {
 class Downsampler
 {
   public:
-    explicit Downsampler(std::shared_ptr<ArrayConfig> config);
+    Downsampler(std::shared_ptr<ArrayConfig> config,
+                ZarrDownsamplingMethod method);
 
     /**
      * @brief Add a full-resolution frame to the downsampler.
@@ -35,8 +36,15 @@ class Downsampler
     writer_configurations() const;
 
   private:
-    std::function<ByteVector(ConstByteSpan, size_t&, size_t&)> scale_fun_;
-    std::function<void(ByteVector&, ConstByteSpan)> average2_fun_;
+    using ScaleFunT = std::function<
+      ByteVector(ConstByteSpan, size_t&, size_t&, ZarrDownsamplingMethod)>;
+    using Average2FunT =
+      std::function<void(ByteVector&, ConstByteSpan, ZarrDownsamplingMethod)>;
+
+    ZarrDownsamplingMethod method_;
+
+    ScaleFunT scale_fun_;
+    Average2FunT average2_fun_;
 
     std::unordered_map<int, std::shared_ptr<ArrayConfig>>
       writer_configurations_;

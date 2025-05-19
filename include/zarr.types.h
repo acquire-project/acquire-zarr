@@ -82,6 +82,15 @@ extern "C"
         ZarrDimensionTypeCount
     } ZarrDimensionType;
 
+    typedef enum
+    {
+        ZarrDownsamplingMethod_Decimate = 0,
+        ZarrDownsamplingMethod_Mean,
+        ZarrDownsamplingMethod_Min,
+        ZarrDownsamplingMethod_Max,
+        ZarrDownsamplingMethodCount,
+    } ZarrDownsamplingMethod;
+
     /**
      * @brief S3 settings for streaming to Zarr.
      */
