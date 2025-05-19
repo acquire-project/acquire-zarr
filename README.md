@@ -97,7 +97,7 @@ pip install .
 > It is highly recommended to use virtual environments for Python, e.g. using `venv` or `conda`. In this case, make sure
 > `pybind11` is installed in this environment, and that the environment is activated before installing the bindings.
 
-## Usage
+markdown## Usage
 
 The library provides two main interfaces.
 First, `ZarrStream`, representing an output stream to a Zarr dataset.
@@ -110,10 +110,9 @@ ZarrStreamSettings settings = (ZarrStreamSettings){
     .store_path = "my_stream.zarr",
     .data_type = ZarrDataType_uint16,
     .version = ZarrVersion_3,
+    .output_key = "dataset1",  // Optional: path within Zarr where data should be stored
+    .overwrite = true,         // Optional: remove existing data at store_path if true
 };
-settings.store_path = "my_stream.zarr";
-settings.data_type = ZarrDataType_uint16;
-settings.version = ZarrVersion_3;
 
 ZarrStreamSettings_create_dimension_array(&settings, 4);
 settings.dimensions[0] = (ZarrDimensionProperties){
@@ -124,29 +123,7 @@ settings.dimensions[0] = (ZarrDimensionProperties){
     .shard_size_chunks = 10, // 10 chunks per shard
 };
 
-settings.dimensions[1] = (ZarrDimensionProperties){
-    .name = "c",
-    .type = ZarrDimensionType_Channel,
-    .array_size_px = 3,     // 3 channels
-    .chunk_size_px = 1,     // 1 channel per chunk
-    .shard_size_chunks = 1, // 1 chunk per shard
-};
-
-settings.dimensions[2] = (ZarrDimensionProperties){
-    .name = "y",
-    .type = ZarrDimensionType_Space,
-    .array_size_px = 1080,  // height
-    .chunk_size_px = 270,   // 4 x 4 tiles of size 270 x 480
-    .shard_size_chunks = 2, // 2 x 2 tiles per shard
-};
-
-settings.dimensions[3] = (ZarrDimensionProperties){
-    .name = "x",
-    .type = ZarrDimensionType_Space,
-    .array_size_px = 1920,  // width
-    .chunk_size_px = 480,   // 4 x 4 tiles of size 270 x 480
-    .shard_size_chunks = 2, // 2 x 2 tiles per shard
-};
+// ... rest of dimensions configuration ...
 
 ZarrStream* stream = ZarrStream_create(&settings);
 
@@ -166,10 +143,12 @@ import numpy as np
 settings = aqz.StreamSettings(
     store_path="my_stream.zarr",
     data_type=aqz.DataType.UINT16,
-    version=aqz.ZarrVersion.V3
+    version=aqz.ZarrVersion.V3,
+    output_key="dataset1",  # Optional: path within Zarr where data should be stored
+    overwrite=True  # Optional: remove existing data at store_path if true
 )
 
-settings.dimensions.extend([
+settings.dimensions = [
     aqz.Dimension(
         name="t",
         type=aqz.DimensionType.TIME,
@@ -198,7 +177,7 @@ settings.dimensions.extend([
         chunk_size_px=480,
         shard_size_chunks=2
     )
-])
+]
 
 # Generate some random data: one time point, all channels, full frame
 my_frame_data = np.random.randint(0, 2 ** 16, (3, 1080, 1920), dtype=np.uint16)
@@ -206,6 +185,56 @@ my_frame_data = np.random.randint(0, 2 ** 16, (3, 1080, 1920), dtype=np.uint16)
 stream = aqz.ZarrStream(settings)
 stream.append(my_frame_data)
 ```
+
+### Organizing Data within a Zarr Container
+
+The library allows organizing data within a Zarr container through the `output_key` setting.
+This feature enables you to:
+
+1. Store multiple datasets in a single Zarr container
+2. Create hierarchical data organization
+3. Manage related acquisitions within a structured layout
+
+Example of storing multiple acquisitions in a single Zarr container:
+
+```python
+import acquire_zarr as aqz
+import numpy as np
+
+# Create a Zarr container with multiple datasets
+container_path = "experiment.zarr"
+
+# First acquisition - store in "sample1/brightfield"
+settings1 = aqz.StreamSettings(
+    store_path=container_path,
+    data_type=aqz.DataType.UINT16,
+    version=aqz.ZarrVersion.V3,
+    output_key="sample1/brightfield",
+    overwrite=False  # Don't overwrite existing data
+)
+# ... configure dimensions ...
+stream1 = aqz.ZarrStream(settings1)
+# ... append data ...
+
+# Second acquisition - store in "sample1/fluorescence"
+settings2 = aqz.StreamSettings(
+    store_path=container_path,
+    data_type=aqz.DataType.UINT16,
+    version=aqz.ZarrVersion.V3,
+    output_key="sample1/fluorescence",
+    overwrite=False  # Don't overwrite existing data
+)
+# ... configure dimensions ...
+stream2 = aqz.ZarrStream(settings2)
+# ... append data ...
+```
+
+The `output_key` parameter accepts a path-like string using forward slashes as separators.
+Intermediate groups will be automatically created in the Zarr hierarchy.
+If `output_key` is not specified, data will be written at the root of the Zarr container.
+The `overwrite` parameter controls whether existing data at the `store_path` is removed.
+When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
+When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.
 
 ### S3
 
