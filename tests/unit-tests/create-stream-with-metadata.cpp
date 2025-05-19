@@ -78,15 +78,9 @@ create_stream_no_metadata(ZarrVersion version)
 }
 
 void
-check_files(ZarrVersion version, bool metadata)
+check_files(bool metadata)
 {
     const fs::path base_path(TEST ".zarr");
-    if (version == ZarrVersion_2) {
-        CHECK(fs::is_regular_file(base_path / ".zgroup"));
-        CHECK(fs::is_regular_file(base_path / ".zattrs"));
-    } else {
-        CHECK(fs::is_regular_file(base_path / "zarr.json"));
-    }
 
     if (metadata) {
         CHECK(fs::is_regular_file(base_path / "acquire.json"));
@@ -119,7 +113,7 @@ main()
         {
             auto* stream = create_stream_no_metadata(ZarrVersion_2);
             CHECK(stream);
-            check_files(ZarrVersion_2, false);
+            check_files(false);
             ZarrStream_destroy(stream);
 
             CHECK(destroy_directory());
@@ -128,7 +122,7 @@ main()
         {
             auto* stream = create_stream_with_metadata(ZarrVersion_2);
             CHECK(stream);
-            check_files(ZarrVersion_2, true);
+            check_files(true);
             ZarrStream_destroy(stream);
 
             CHECK(destroy_directory());
@@ -137,7 +131,7 @@ main()
         {
             auto* stream = create_stream_no_metadata(ZarrVersion_3);
             CHECK(stream);
-            check_files(ZarrVersion_3, false);
+            check_files(false);
             ZarrStream_destroy(stream);
 
             CHECK(destroy_directory());
@@ -146,7 +140,7 @@ main()
         {
             auto* stream = create_stream_with_metadata(ZarrVersion_3);
             CHECK(stream);
-            check_files(ZarrVersion_3, true);
+            check_files(true);
             ZarrStream_destroy(stream);
 
             CHECK(destroy_directory());

@@ -2,7 +2,7 @@
 
 #include "acquire.zarr.h"
 #include "thread.pool.hh"
-#include "zarr.dimension.hh"
+#include "array.dimensions.hh"
 #include "definitions.hh"
 #include "blosc.compression.params.hh"
 

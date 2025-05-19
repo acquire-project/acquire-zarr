@@ -1,107 +1,32 @@
+#include "array.hh"
 #include "macros.hh"
-#include "array.writer.hh"
+#include "sink.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
-#include "sink.hh"
 
 #include <cmath>
 #include <functional>
 #include <stdexcept>
 
-#if defined(min) || defined(max)
-#undef min
-#undef max
-#endif
-
-bool
-zarr::downsample(const ArrayWriterConfig& config,
-                 ArrayWriterConfig& downsampled_config)
-{
-    // downsample dimensions
-    std::vector<ZarrDimension> downsampled_dims(config.dimensions->ndims());
-    for (auto i = 0; i < config.dimensions->ndims(); ++i) {
-        const auto& dim = config.dimensions->at(i);
-        // don't downsample channels
-        if (dim.type == ZarrDimensionType_Channel) {
-            downsampled_dims[i] = dim;
-        } else {
-            const uint32_t array_size_px =
-              (dim.array_size_px + (dim.array_size_px % 2)) / 2;
-
-            const uint32_t chunk_size_px =
-              dim.array_size_px == 0
-                ? dim.chunk_size_px
-                : std::min(dim.chunk_size_px, array_size_px);
-
-            CHECK(chunk_size_px);
-            const uint32_t n_chunks =
-              (array_size_px + chunk_size_px - 1) / chunk_size_px;
-
-            const uint32_t shard_size_chunks =
-              dim.array_size_px == 0
-                ? 1
-                : std::min(n_chunks, dim.shard_size_chunks);
-
-            downsampled_dims[i] = { dim.name,
-                                    dim.type,
-                                    array_size_px,
-                                    chunk_size_px,
-                                    shard_size_chunks };
-        }
-    }
-    downsampled_config.dimensions = std::make_shared<ArrayDimensions>(
-      std::move(downsampled_dims), config.dtype);
-
-    downsampled_config.level_of_detail = config.level_of_detail + 1;
-    downsampled_config.bucket_name = config.bucket_name;
-    downsampled_config.store_path = config.store_path;
-
-    downsampled_config.dtype = config.dtype;
-
-    // copy the Blosc compression parameters
-    downsampled_config.compression_params = config.compression_params;
-
-    // can we downsample downsampled_config?
-    for (auto i = 0; i < config.dimensions->ndims(); ++i) {
-        // downsampling made the chunk size strictly smaller
-        const auto& dim = config.dimensions->at(i);
-        const auto& downsampled_dim = downsampled_config.dimensions->at(i);
-
-        if (dim.chunk_size_px > downsampled_dim.chunk_size_px) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// Writer
-zarr::ArrayWriter::ArrayWriter(const ArrayWriterConfig& config,
-                               std::shared_ptr<ThreadPool> thread_pool)
-  : ArrayWriter(std::move(config), thread_pool, nullptr)
-{
-}
-
-zarr::ArrayWriter::ArrayWriter(
-  const ArrayWriterConfig& config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : config_{ config }
-  , thread_pool_{ thread_pool }
-  , s3_connection_pool_{ s3_connection_pool }
+zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
+                   std::shared_ptr<ThreadPool> thread_pool,
+                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : ZarrNode(config, thread_pool, s3_connection_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
-  , is_finalizing_{ false }
+  , is_closing_{ false }
 {
+    // check that the config is actually an ArrayConfig
+    CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
 }
 
 size_t
-zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
+zarr::Array::write_frame(ConstByteSpan data)
 {
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
-      bytes_of_frame(*config_.dimensions, config_.dtype);
+      bytes_of_frame(*config_->dimensions, config_->dtype);
 
     if (nbytes_frame != nbytes_data) {
         LOG_ERROR("Frame size mismatch: expected ",
@@ -130,7 +55,7 @@ zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
 
         if (should_rollover_()) {
             rollover_();
-            CHECK(write_array_metadata_());
+            CHECK(write_metadata_());
         }
 
         make_buffers_();
@@ -140,11 +65,46 @@ zarr::ArrayWriter::write_frame(std::span<const std::byte> data)
     return bytes_written;
 }
 
-size_t
-zarr::ArrayWriter::bytes_to_allocate_per_chunk_() const
+bool
+zarr::Array::close_()
 {
-    size_t bytes_per_chunk = config_.dimensions->bytes_per_chunk();
-    if (config_.compression_params) {
+    bool retval = false;
+    is_closing_ = true;
+    try {
+        if (bytes_to_flush_ > 0) {
+            CHECK(compress_and_flush_data_());
+        }
+        close_sinks_();
+
+        if (frames_written_ > 0) {
+            CHECK(write_metadata_());
+            for (auto& [key, sink] : metadata_sinks_) {
+                EXPECT(zarr::finalize_sink(std::move(sink)),
+                       "Failed to finalize metadata sink ",
+                       key);
+            }
+        }
+        metadata_sinks_.clear();
+        retval = true;
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to finalize array writer: ", exc.what());
+    }
+
+    is_closing_ = false;
+    return retval;
+}
+
+std::shared_ptr<zarr::ArrayConfig>
+zarr::Array::array_config_() const
+{
+    return std::dynamic_pointer_cast<ArrayConfig>(config_);
+}
+
+size_t
+zarr::Array::bytes_to_allocate_per_chunk_() const
+{
+    size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
+    if (config_->compression_params) {
         bytes_per_chunk += BLOSC_MAX_OVERHEAD;
     }
 
@@ -152,48 +112,27 @@ zarr::ArrayWriter::bytes_to_allocate_per_chunk_() const
 }
 
 bool
-zarr::ArrayWriter::is_s3_array_() const
+zarr::Array::is_s3_array_() const
 {
-    return config_.bucket_name.has_value();
+    return config_->bucket_name.has_value();
 }
 
 void
-zarr::ArrayWriter::make_data_paths_()
+zarr::Array::make_data_paths_()
 {
     if (data_paths_.empty()) {
         data_paths_ = construct_data_paths(
-          data_root_(), *config_.dimensions, parts_along_dimension_());
+          data_root_(), *config_->dimensions, parts_along_dimension_());
     }
-}
-
-bool
-zarr::ArrayWriter::make_metadata_sink_()
-{
-    if (metadata_sink_) {
-        return true;
-    }
-
-    const auto metadata_path = metadata_path_();
-    metadata_sink_ =
-      is_s3_array_()
-        ? make_s3_sink(*config_.bucket_name, metadata_path, s3_connection_pool_)
-        : make_file_sink(metadata_path);
-
-    if (!metadata_sink_) {
-        LOG_ERROR("Failed to create metadata sink: ", metadata_path);
-        return false;
-    }
-
-    return true;
 }
 
 size_t
-zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
+zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 {
     // break the frame into tiles and write them to the chunk buffers
-    const auto bytes_per_px = bytes_of_type(config_.dtype);
+    const auto bytes_per_px = bytes_of_type(config_->dtype);
 
-    const auto& dimensions = config_.dimensions;
+    const auto& dimensions = config_->dimensions;
 
     const auto& x_dim = dimensions->width_dim();
     const auto frame_cols = x_dim.array_size_px;
@@ -282,9 +221,9 @@ zarr::ArrayWriter::write_frame_to_chunks_(std::span<const std::byte> data)
 }
 
 bool
-zarr::ArrayWriter::should_flush_() const
+zarr::Array::should_flush_() const
 {
-    const auto& dims = config_.dimensions;
+    const auto& dims = config_->dimensions;
     size_t frames_before_flush = dims->final_dim().chunk_size_px;
     for (auto i = 1; i < dims->ndims() - 2; ++i) {
         frames_before_flush *= dims->at(i).array_size_px;
@@ -295,7 +234,7 @@ zarr::ArrayWriter::should_flush_() const
 }
 
 void
-zarr::ArrayWriter::rollover_()
+zarr::Array::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
@@ -304,32 +243,22 @@ zarr::ArrayWriter::rollover_()
 }
 
 bool
-zarr::finalize_array(std::unique_ptr<ArrayWriter>&& writer)
+zarr::finalize_array(std::unique_ptr<Array>&& array)
 {
-    if (writer == nullptr) {
+    if (array == nullptr) {
         LOG_INFO("Array writer is null. Nothing to finalize.");
         return true;
     }
 
-    writer->is_finalizing_ = true;
     try {
-        if (writer->bytes_to_flush_ > 0) {
-            CHECK(writer->compress_and_flush_data_());
+        if (!array->close_()) {
+            return false;
         }
-        if (writer->frames_written_ > 0) {
-            CHECK(writer->write_array_metadata_());
-        }
-        writer->close_sinks_();
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to finalize array writer: ", exc.what());
+        LOG_ERROR("Failed to close_ array: ", exc.what());
         return false;
     }
 
-    if (!finalize_sink(std::move(writer->metadata_sink_))) {
-        LOG_ERROR("Failed to finalize metadata sink");
-        return false;
-    }
-
-    writer.reset();
+    array.reset();
     return true;
 }
