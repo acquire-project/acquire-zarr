@@ -335,7 +335,7 @@ class PyZarrStream
             .version = settings.version(),
             .max_threads = settings.max_threads(),
             .downsampling_method = settings.downsampling_method(),
-            .overwrite = settings.multiscale(),
+            .overwrite = settings.overwrite(),
         };
 
         store_path_ = settings.store_path();
