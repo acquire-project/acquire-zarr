@@ -97,7 +97,7 @@ pip install .
 > It is highly recommended to use virtual environments for Python, e.g. using `venv` or `conda`. In this case, make sure
 > `pybind11` is installed in this environment, and that the environment is activated before installing the bindings.
 
-markdown## Usage
+## Usage
 
 The library provides two main interfaces.
 First, `ZarrStream`, representing an output stream to a Zarr dataset.
