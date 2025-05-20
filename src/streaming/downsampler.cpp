@@ -323,6 +323,10 @@ void
 zarr::Downsampler::make_writer_configurations_(
   std::shared_ptr<ArrayConfig> config)
 {
+    EXPECT(config, "Null pointer: config");
+    EXPECT(
+      config->node_key.ends_with("/0"), "Invalid node key: ", config->node_key);
+
     writer_configurations_.insert({ config->level_of_detail, config });
 
     const auto ndims = config->dimensions->ndims();
@@ -367,6 +371,8 @@ zarr::Downsampler::make_writer_configurations_(
 
         auto down_config = std::make_shared<ArrayConfig>(
           cur_config->store_root,
+          // the new node key has the same parent as the current, but
+          // substitutes the current level of detail with the new one
           std::regex_replace(cur_config->node_key,
                              std::regex("(\\d+)$"),
                              std::to_string(cur_config->level_of_detail + 1)),
