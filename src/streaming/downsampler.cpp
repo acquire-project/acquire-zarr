@@ -324,8 +324,10 @@ zarr::Downsampler::make_writer_configurations_(
   std::shared_ptr<ArrayConfig> config)
 {
     EXPECT(config, "Null pointer: config");
-    EXPECT(
-      config->node_key.ends_with("/0"), "Invalid node key: ", config->node_key);
+    EXPECT(config->node_key.ends_with("/0"),
+           "Invalid node key: '",
+           config->node_key,
+           "'");
 
     writer_configurations_.insert({ config->level_of_detail, config });
 

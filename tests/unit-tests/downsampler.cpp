@@ -32,10 +32,8 @@ test_basic_downsampling()
                                   { "x", ZarrDimensionType_Space, 10, 5, 1 } },
       ZarrDataType_uint8);
 
-    auto config = std::make_shared<zarr::ArrayConfig>();
-    config->dtype = ZarrDataType_uint8;
-    config->dimensions = dims;
-    config->level_of_detail = 0;
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -81,10 +79,8 @@ test_3d_downsampling()
                                   { "x", ZarrDimensionType_Space, 20, 5, 1 } },
       ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>();
-    config->dtype = ZarrDataType_uint16;
-    config->dimensions = dims;
-    config->level_of_detail = 0;
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -161,10 +157,8 @@ test_data_types()
             { "x", ZarrDimensionType_Space, 10, 5, 1 } },
           type);
 
-        auto config = std::make_shared<zarr::ArrayConfig>();
-        config->dtype = type;
-        config->dimensions = dims;
-        config->level_of_detail = 0;
+        auto config = std::make_shared<zarr::ArrayConfig>(
+          "", "/0", std::nullopt, std::nullopt, dims, type, 0);
 
         // Just test that constructor doesn't throw
         try {
@@ -257,10 +251,8 @@ test_writer_configurations()
     auto dims = std::make_shared<ArrayDimensions>(std::move(dimensions_to_move),
                                                   ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>();
-    config->dtype = ZarrDataType_uint16;
-    config->dimensions = dims;
-    config->level_of_detail = 0;
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
     const auto& configs = downsampler.writer_configurations();
@@ -310,10 +302,8 @@ test_edge_cases()
       },
       ZarrDataType_uint8);
 
-    auto config = std::make_shared<zarr::ArrayConfig>();
-    config->dtype = ZarrDataType_uint8;
-    config->dimensions = dims;
-    config->level_of_detail = 0;
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -341,7 +331,7 @@ test_min_max_downsampling()
       ZarrDataType_uint8);
 
     auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
 
     // Create a test image with a pattern that will show different results for min/max/mean
     ByteVector image(10 * 10 * sizeof(uint8_t), std::byte{ 0 });
@@ -419,7 +409,7 @@ test_3d_min_max_downsampling()
       ZarrDataType_uint16);
 
     auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
 
     // Test with min downsampling
     {
@@ -502,7 +492,7 @@ test_pattern_downsampling()
       ZarrDataType_uint16);
 
     auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
 
     // Create a test image with a gradient pattern
     ByteVector image(8 * 8 * sizeof(uint16_t), std::byte{ 0 });
