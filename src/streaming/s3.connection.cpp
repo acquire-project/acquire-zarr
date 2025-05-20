@@ -38,6 +38,7 @@ struct zarr::S3Connection::Impl
 {
     std::unique_ptr<minio::s3::Client> client;
     std::unique_ptr<minio::creds::Provider> provider;
+    std::list<minio::creds::Provider*> providers;
 };
 
 zarr::S3Connection::S3Connection(const S3Settings& settings)
@@ -45,14 +46,24 @@ zarr::S3Connection::S3Connection(const S3Settings& settings)
 {
     auto url = make_url(settings.endpoint, settings.region);
 
-    impl_->provider = std::make_unique<minio::creds::EnvAwsProvider>();
+    impl_->providers.push_back(new minio::creds::EnvAwsProvider());
+    impl_->providers.push_back(new minio::creds::AwsConfigProvider());
+    impl_->providers.push_back(new minio::creds::IamAwsProvider());
+    impl_->provider =
+      std::make_unique<minio::creds::ChainedProvider>(impl_->providers);
     impl_->client =
       std::make_unique<minio::s3::Client>(url, impl_->provider.get());
+    impl_->client->Debug(true);
 
     CHECK(impl_->client);
 }
 
-zarr::S3Connection::~S3Connection() = default;
+zarr::S3Connection::~S3Connection()
+{
+    for (auto& provider : impl_->providers) {
+        delete provider;
+    }
+};
 
 bool
 zarr::S3Connection::is_connection_valid()

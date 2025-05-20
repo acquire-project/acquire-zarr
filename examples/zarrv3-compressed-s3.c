@@ -21,8 +21,8 @@ main()
     // Ensure that you have set your S3 credentials in the environment variables
     // AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
     ZarrS3Settings s3 = {
-        .endpoint = "http://localhost:9000",
-        .bucket_name = "mybucket",
+        .endpoint = "https://s3.us-east-2.amazonaws.com",
+        .bucket_name = "acquire-zarr-playground",
     };
 
     // Configure stream settings
