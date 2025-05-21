@@ -60,7 +60,6 @@ setup()
         .s3_settings = nullptr,
         .multiscale = true,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .downsampling_method = ZarrDownsamplingMethod_Mean,
     };

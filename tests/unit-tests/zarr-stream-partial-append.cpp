@@ -172,7 +172,6 @@ main()
 
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
-    settings.version = ZarrVersion_2;
     settings.store_path = static_cast<const char*>(TEST ".zarr");
     settings.max_threads = 0;
     settings.data_type = ZarrDataType_uint8;

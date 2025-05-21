@@ -28,13 +28,6 @@ extern "C"
 
     typedef enum
     {
-        ZarrVersion_2 = 2,
-        ZarrVersion_3,
-        ZarrVersionCount
-    } ZarrVersion;
-
-    typedef enum
-    {
         ZarrLogLevel_Debug = 0,
         ZarrLogLevel_Info,
         ZarrLogLevel_Warning,

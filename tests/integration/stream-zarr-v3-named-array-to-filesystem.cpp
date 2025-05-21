@@ -60,7 +60,6 @@ setup()
         .s3_settings = nullptr,
         .compression_settings = nullptr,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .output_key = "path/to/data",
     };

@@ -177,7 +177,6 @@ setup()
     ZarrStreamSettings settings = {
         .store_path = TEST,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
     };
 

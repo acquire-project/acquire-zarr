@@ -59,7 +59,6 @@ setup()
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
     };
 

@@ -263,9 +263,6 @@ class PyZarrStreamSettings
     ZarrDataType data_type() const { return data_type_; }
     void set_data_type(ZarrDataType type) { data_type_ = type; }
 
-    ZarrVersion version() const { return version_; }
-    void set_version(ZarrVersion version) { version_ = version; }
-
     unsigned int max_threads() const { return max_threads_; }
     void set_max_threads(unsigned int max_threads)
     {
@@ -306,7 +303,6 @@ class PyZarrStreamSettings
     };
     bool multiscale_{ false };
     ZarrDataType data_type_{ ZarrDataType_uint8 };
-    ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     std::vector<PyZarrDimensionProperties> dimensions_;
     ZarrDownsamplingMethod downsampling_method_{
@@ -576,10 +572,6 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::bind_vector<std::vector<PyZarrDimensionProperties>>(m,
                                                             "VectorDimension");
 
-    py::enum_<ZarrVersion>(m, "ZarrVersion")
-      .value("V2", ZarrVersion_2)
-      .value("V3", ZarrVersion_3);
-
     py::enum_<ZarrDataType>(m, "DataType")
       .value(data_type_to_str(ZarrDataType_uint8), ZarrDataType_uint8)
       .value(data_type_to_str(ZarrDataType_uint16), ZarrDataType_uint16)
@@ -758,9 +750,6 @@ PYBIND11_MODULE(acquire_zarr, m)
           if (kwargs.contains("data_type"))
               settings.set_data_type(kwargs["data_type"].cast<ZarrDataType>());
 
-          if (kwargs.contains("version"))
-              settings.set_version(kwargs["version"].cast<ZarrVersion>());
-
           if (kwargs.contains("max_threads"))
               settings.set_max_threads(
                 kwargs["max_threads"].cast<unsigned int>());
@@ -797,8 +786,6 @@ PYBIND11_MODULE(acquire_zarr, m)
                repr +=
                  "], multiscale=" + multiscale + ", data_type=DataType." +
                  std::string(data_type_to_str(self.data_type())) +
-                 ", version=ZarrVersion." +
-                 std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
                  ", max_threads=" + std::to_string(self.max_threads()) + ")";
                return repr;
            })

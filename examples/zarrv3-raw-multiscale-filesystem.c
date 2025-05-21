@@ -16,7 +16,6 @@ main()
         .compression_settings = NULL,
         .multiscale = true,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
     };
 

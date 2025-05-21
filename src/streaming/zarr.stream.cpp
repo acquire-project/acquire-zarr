@@ -2,9 +2,7 @@
 #include "zarr.stream.hh"
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
-#include "v2.group.hh"
 #include "v3.group.hh"
-#include "v2.array.hh"
 #include "v3.array.hh"
 #include "sink.hh"
 
@@ -304,7 +302,6 @@ regularize_key(const char* key)
 
 [[nodiscard]] bool
 validate_dimension(const ZarrDimensionProperties* dimension,
-                   ZarrVersion version,
                    bool is_append,
                    std::string& error)
 {
@@ -329,7 +326,7 @@ validate_dimension(const ZarrDimensionProperties* dimension,
         return false;
     }
 
-    if (version == ZarrVersion_3 && dimension->shard_size_chunks == 0) {
+    if (dimension->shard_size_chunks == 0) {
         error = "Shard size must be nonzero";
         return false;
     }
@@ -587,15 +584,6 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    auto version = settings->version;
-    if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
-        error_ = "Invalid Zarr version: " + std::to_string(version);
-        return false;
-    } else if (version == ZarrVersion_2) {
-        LOG_WARNING("Zarr version 2 is deprecated and will be removed in a "
-                    "future release");
-    }
-
     if (settings->store_path == nullptr) {
         error_ = "Null pointer: store_path";
         return false;
@@ -654,8 +642,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 
     // validate the dimensions individually
     for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              settings->dimensions + i, version, i == 0, error_)) {
+        if (!validate_dimension(settings->dimensions + i, i == 0, error_)) {
             return false;
         }
     }
@@ -692,13 +679,8 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
                                                       settings->downsampling_method);
 
     try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2Group>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3Group>(
-              config, thread_pool_, s3_connection_pool_);
-        }
+        output_node_ = std::make_unique<zarr::V3Group>(
+          config, thread_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
         return false;
@@ -732,13 +714,8 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
                                                       0);
 
     try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2Array>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3Array>(
-              config, thread_pool_, s3_connection_pool_);
-        }
+        output_node_ = std::make_unique<zarr::V3Array>(
+          config, thread_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
         return false;
@@ -755,8 +732,6 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
     output_key_ = key;
-
-    version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
     std::optional<std::string> bucket_name;
@@ -904,13 +879,8 @@ ZarrStream_s::write_intermediate_metadata_()
                                               ZarrDownsamplingMethodCount);
 
         std::unique_ptr<zarr::Group> group_node;
-        if (version_ == ZarrVersion_2) {
-            group_node = std::make_unique<zarr::V2Group>(
-              group_config, thread_pool_, s3_connection_pool_);
-        } else {
-            group_node = std::make_unique<zarr::V3Group>(
-              group_config, thread_pool_, s3_connection_pool_);
-        }
+        group_node = std::make_unique<zarr::V3Group>(
+          group_config, thread_pool_, s3_connection_pool_);
 
         if (!zarr::finalize_group(std::move(group_node))) {
             set_error_("Failed to write intermediate metadata for group '" +

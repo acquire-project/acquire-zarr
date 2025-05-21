@@ -28,7 +28,6 @@ setup() {
     ZarrStreamSettings settings = {  
         .store_path = test_path_cstr,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
     };
 
     CHECK(ZarrStatusCode_Success == 

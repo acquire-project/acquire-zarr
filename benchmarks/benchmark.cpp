@@ -22,14 +22,12 @@ struct BenchmarkConfig
 {
     BenchmarkConfig()
       : chunk({ 1, 1, 1, 1, 1 })
-      , zarr_version(3)
       , chunks_per_shard_x(0)
       , chunks_per_shard_y(0)
     {
     }
 
     ChunkConfig chunk;
-    int zarr_version;
     std::string compression;
     std::string storage;
     unsigned int chunks_per_shard_x;
@@ -63,9 +61,7 @@ setup_stream(const BenchmarkConfig& config)
     ZarrStreamSettings settings = { .store_path = "benchmark.zarr",
                                     .s3_settings = nullptr,
                                     .compression_settings = nullptr,
-                                    .data_type = ZarrDataType_uint16,
-                                    .version = static_cast<ZarrVersion>(
-                                      config.zarr_version) };
+                                    .data_type = ZarrDataType_uint16 };
 
     ZarrCompressionSettings comp_settings = {};
     if (config.compression != "none") {
@@ -158,7 +154,6 @@ print_usage(const char* program_name)
       << "Usage: " << program_name << " [OPTIONS]\n"
       << "Options:\n"
       << "  --chunk t,c,z,y,x    Chunk dimensions (required)\n"
-      << "  --version VERSION    Zarr version (2 or 3, required)\n"
       << "  --compression TYPE   Compression type (none/lz4/zstd, required)\n"
       << "  --storage TYPE      Storage type (filesystem/s3, required)\n"
       << "  --shard-y NUM       Chunks per shard Y (required for v3)\n"
@@ -168,7 +163,7 @@ print_usage(const char* program_name)
       << "  --s3-access-key ID  S3 access key (required for s3 storage)\n"
       << "  --s3-secret-key KEY S3 secret key (required for s3 storage)\n\n"
       << "Output is written to stdout in CSV format. Values are:\n"
-      << "  Chunk dimensions (t,c,z,y,x), Zarr version, Compression type,\n"
+      << "  Chunk dimensions (t,c,z,y,x), Compression type,\n"
       << "  Storage type, Chunks per shard in Y, Chunks per shard in X, Time "
          "(s)\n";
 }
@@ -215,14 +210,6 @@ main(int argc, char* argv[])
                 return 1;
             }
             has_chunk = true;
-        } else if (arg == "--version" && i + 1 < argc) {
-            config.zarr_version = std::stoi(argv[++i]);
-            if (config.zarr_version != 2 && config.zarr_version != 3) {
-                std::cerr << "Invalid Zarr version: " << config.zarr_version
-                          << "\n";
-                print_usage(argv[0]);
-                return 1;
-            }
         } else if (arg == "--compression" && i + 1 < argc) {
             config.compression = argv[++i];
             if (config.compression != "none" && config.compression != "lz4" &&
@@ -288,9 +275,8 @@ main(int argc, char* argv[])
                                 std::to_string(config.chunk.x);
 
         // Write results to stdout
-        std::cout << chunk_str << "," << config.zarr_version << ","
-                  << config.compression << "," << config.storage << ","
-                  << config.chunks_per_shard_y << ","
+        std::cout << chunk_str << "," << "," << config.compression << ","
+                  << config.storage << "," << config.chunks_per_shard_y << ","
                   << config.chunks_per_shard_x << "," << std::fixed
                   << std::setprecision(3) << time << "\n";
 

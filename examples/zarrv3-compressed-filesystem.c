@@ -23,7 +23,6 @@ main()
         .s3_settings = NULL,
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
     };
 

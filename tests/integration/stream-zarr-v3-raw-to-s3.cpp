@@ -180,7 +180,6 @@ setup()
         .store_path = TEST,
         .compression_settings = nullptr,
         .data_type = ZarrDataType_uint16,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
     };
 
