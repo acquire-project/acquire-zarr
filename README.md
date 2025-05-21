@@ -5,12 +5,31 @@
 [![Build](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml)
 [![Tests](https://github.com/acquire-project/acquire-zarr/actions/workflows/test.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/test_pr.yml)
 [![Chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://acquire-imaging.zulipchat.com/)
+![PyPI - Version](https://img.shields.io/pypi/v/acquire-zarr)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/acquire-zarr)
 
-This library supports chunked, compressed, multiscale streaming to [Zarr][], with [OME-NGFF metadata].
+This library supports chunked, compressed, multiscale streaming to [Zarr][], both [version 2][] and [version 3][], with
+[OME-NGFF metadata].
 
-This code builds targets for python and C.
+This code builds targets for Python and C.
 
-For python: `pip install acquire-zarr`
+**Note:** Zarr Version 2 is deprecated and will be removed in a future release.
+We recommend using Zarr Version 3 for new projects.
+
+## Installing
+
+### Precompiled binaries
+
+C headers and precompiled binaries are available for Windows, Mac, and Linux on
+our [releases page](https://github.com/acquire-project/acquire-zarr/releases).
+
+### Python
+
+The library is available on PyPI and can be installed using pip:
+
+```bash
+pip install acquire-zarr
+```
 
 ## Building
 
@@ -306,15 +325,13 @@ To resolve this, you can [install](https://stackoverflow.com/questions/48453497/
 conda install -c conda-forge libstdcxx-ng
 ```
 
-[Zarr]: https://zarr.readthedocs.io/en/stable/spec/v2.html
+[Zarr]: https://zarr.dev/
+
+[version 2]: https://zarr-specs.readthedocs.io/en/latest/v2/v2.0.html
+
+[version 3]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 
 [Blosc]: https://github.com/Blosc/c-blosc
-
-[Blosc docs]: https://www.blosc.org/
-
-[Zarr v3]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
-
-[acquire-common]: https://github.com/acquire-project/acquire-common
 
 [vcpkg]: https://vcpkg.io/en/
 
