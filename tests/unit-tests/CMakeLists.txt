@@ -19,10 +19,6 @@ set(tests
         s3-sink-write
         s3-sink-write-multipart
         make-data-sinks
-        v2-array-write-frame-to-chunks
-        v2-array-write-even
-        v2-array-write-ragged-append-dim
-        v2-array-write-ragged-internal-dim
         v3-array-write-even
         v3-array-write-ragged-append-dim
         v3-array-write-ragged-internal-dim
@@ -51,13 +47,7 @@ foreach (name ${tests})
 
     add_test(NAME test-${tgt} COMMAND ${tgt})
 
-    set(test_labels "unit-tests")
-
-    if (name MATCHES ".*v2.*")
-        list(APPEND test_labels "deprecated")
-    else ()
-        list(APPEND test_labels "anyplatform;acquire-zarr")
-    endif ()
+    set(test_labels "anyplatform;acquire-zarr;unit-tests")
 
     if (name MATCHES ".*s3.*")
         list(APPEND test_labels "s3")
