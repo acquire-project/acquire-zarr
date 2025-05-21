@@ -1,7 +1,7 @@
 #pragma once
 
 #include "group.hh"
-#include "v3.array.hh"
+#include "array.hh"
 
 namespace zarr {
 class V3Group final : public Group

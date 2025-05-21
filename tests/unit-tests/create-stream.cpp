@@ -17,6 +17,7 @@ configure_stream_dimensions(ZarrStreamSettings* settings)
         .type = ZarrDimensionType_Time,
         .array_size_px = 100,
         .chunk_size_px = 10,
+        .shard_size_chunks = 1,
     };
 
     dim = settings->dimensions + 1;
@@ -25,6 +26,7 @@ configure_stream_dimensions(ZarrStreamSettings* settings)
         .type = ZarrDimensionType_Space,
         .array_size_px = 200,
         .chunk_size_px = 20,
+        .shard_size_chunks = 1,
     };
 
     dim = settings->dimensions + 2;
@@ -33,6 +35,7 @@ configure_stream_dimensions(ZarrStreamSettings* settings)
         .type = ZarrDimensionType_Space,
         .array_size_px = 300,
         .chunk_size_px = 30,
+        .shard_size_chunks = 1,
     };
 }
 

@@ -1,4 +1,4 @@
-#include "v3.array.hh"
+#include "array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -130,7 +130,7 @@ main()
 
         {
             auto writer =
-              std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
+              std::make_unique<zarr::Array>(config, thread_pool, nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             std::vector data(frame_size, std::byte(0));

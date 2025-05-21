@@ -3,7 +3,7 @@
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
 #include "v3.group.hh"
-#include "v3.array.hh"
+#include "array.hh"
 #include "sink.hh"
 
 #include <bit> // bit_ceil
@@ -714,7 +714,7 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
                                                       0);
 
     try {
-        output_node_ = std::make_unique<zarr::V3Array>(
+        output_node_ = std::make_unique<zarr::Array>(
           config, thread_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());

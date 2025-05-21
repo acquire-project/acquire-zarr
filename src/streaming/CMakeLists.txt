@@ -36,8 +36,6 @@ add_library(${tgt}
         node.cpp
         array.hh
         array.cpp
-        v3.array.hh
-        v3.array.cpp
         group.hh
         group.cpp
         v3.group.hh

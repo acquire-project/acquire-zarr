@@ -41,22 +41,26 @@ class Array : public ZarrNode
     [[nodiscard]] size_t write_frame(ConstByteSpan) override;
 
   protected:
-    /// Buffering
+    std::vector<std::string> data_paths_;
     std::vector<ByteVector> data_buffers_;
 
-    /// Filesystem
-    std::vector<std::string> data_paths_;
+    std::vector<size_t> shard_file_offsets_;
+    std::vector<std::vector<uint64_t>> shard_tables_;
 
-    /// Multithreading
+    std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
+
     std::mutex buffers_mutex_;
 
-    /// Bookkeeping
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
+    uint32_t current_layer_;
     uint32_t append_chunk_index_;
+
     bool is_closing_;
 
     [[nodiscard]] bool close_() override;
+    std::vector<std::string> metadata_keys_() const override;
+    bool make_metadata_() override;
 
     std::shared_ptr<ArrayConfig> array_config_() const;
 
@@ -69,23 +73,22 @@ class Array : public ZarrNode
     size_t bytes_to_allocate_per_chunk_() const;
 
     bool is_s3_array_() const;
-    virtual std::string data_root_() const = 0;
-    virtual const DimensionPartsFun parts_along_dimension_() const = 0;
+    std::string data_root_() const;
 
     void make_data_paths_();
-    virtual void make_buffers_() = 0;
+    void make_buffers_();
 
-    virtual BytePtr get_chunk_data_(uint32_t index) = 0;
+    BytePtr get_chunk_data_(uint32_t index);
 
     bool should_flush_() const;
-    virtual bool should_rollover_() const = 0;
+    bool should_rollover_() const;
 
     size_t write_frame_to_chunks_(std::span<const std::byte> data);
 
-    [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
+    size_t compute_chunk_offsets_and_defrag_(uint32_t shard_index);
+    [[nodiscard]] bool compress_and_flush_data_();
     void rollover_();
-
-    virtual void close_sinks_() = 0;
+    void close_sinks_();
 
   private:
     friend bool finalize_array(std::unique_ptr<Array>&& array);
