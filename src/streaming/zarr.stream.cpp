@@ -591,6 +591,9 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
         error_ = "Invalid Zarr version: " + std::to_string(version);
         return false;
+    } else if (version == ZarrVersion_2) {
+        LOG_WARNING("Zarr version 2 is deprecated and will be removed in a "
+                    "future release");
     }
 
     if (settings->store_path == nullptr) {
