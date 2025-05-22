@@ -34,7 +34,12 @@ zarr::Group::Group(std::shared_ptr<GroupConfig> config,
         ? 0
         : zarr::bytes_of_frame(*config_->dimensions, config_->dtype);
 
-    CHECK(create_downsampler_());
+    // dimensions may be null in the case of intermediate groups, e.g., the
+    // A in A/1
+    if (config_->dimensions) {
+        CHECK(create_downsampler_());
+        CHECK(create_arrays_());
+    }
 }
 
 size_t
@@ -88,10 +93,70 @@ zarr::Group::close_()
     return true;
 }
 
+bool
+zarr::Group::make_metadata_()
+{
+    metadata_sinks_.clear();
+
+    nlohmann::json metadata = {
+        { "zarr_format", 3 },
+        { "consolidated_metadata", nullptr },
+        { "node_type", "group" },
+        { "attributes", nlohmann::json::object() },
+    };
+
+    if (!arrays_.empty()) {
+        metadata["attributes"]["ome"] = get_ome_metadata_();
+    }
+
+    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+
+    return true;
+}
+
+std::vector<std::string>
+zarr::Group::metadata_keys_() const
+{
+    return { "zarr.json" };
+}
+
 std::shared_ptr<zarr::GroupConfig>
 zarr::Group::group_config_() const
 {
     return std::dynamic_pointer_cast<GroupConfig>(config_);
+}
+
+bool
+zarr::Group::create_arrays_()
+{
+    arrays_.clear();
+
+    if (downsampler_) {
+        const auto& configs = downsampler_->writer_configurations();
+        arrays_.resize(configs.size());
+
+        for (const auto& [lod, config] : configs) {
+            arrays_[lod] = std::make_unique<zarr::Array>(
+              config, thread_pool_, s3_connection_pool_);
+        }
+    } else {
+        const auto config = make_base_array_config_();
+        arrays_.push_back(std::make_unique<zarr::Array>(
+          config, thread_pool_, s3_connection_pool_));
+    }
+
+    return true;
+}
+
+nlohmann::json
+zarr::Group::get_ome_metadata_() const
+{
+    nlohmann::json ome;
+    ome["version"] = "0.5";
+    ome["name"] = "/";
+    ome["multiscales"] = make_multiscales_metadata_();
+
+    return ome;
 }
 
 bool

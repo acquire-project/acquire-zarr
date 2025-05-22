@@ -1,12 +1,12 @@
 set(project acquire-zarr)
 
 set(examples
-        zarrv3-raw-filesystem
-        zarrv3-compressed-filesystem
-        zarrv3-raw-multiscale-filesystem
-        zarrv3-raw-s3
-        zarrv3-compressed-s3
-        zarrv3-compressed-multiscale-s3
+        raw-filesystem
+        compressed-filesystem
+        raw-multiscale-filesystem
+        raw-s3
+        compressed-s3
+        compressed-multiscale-s3
 )
 
 foreach (name ${examples})

@@ -38,8 +38,6 @@ add_library(${tgt}
         array.cpp
         group.hh
         group.cpp
-        v3.group.hh
-        v3.group.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 

@@ -2,7 +2,7 @@
 #include "zarr.stream.hh"
 #include "acquire.zarr.h"
 #include "zarr.common.hh"
-#include "v3.group.hh"
+#include "group.hh"
 #include "array.hh"
 #include "sink.hh"
 
@@ -679,7 +679,7 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
                                                       settings->downsampling_method);
 
     try {
-        output_node_ = std::make_unique<zarr::V3Group>(
+        output_node_ = std::make_unique<zarr::Group>(
           config, thread_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
@@ -879,7 +879,7 @@ ZarrStream_s::write_intermediate_metadata_()
                                               ZarrDownsamplingMethodCount);
 
         std::unique_ptr<zarr::Group> group_node;
-        group_node = std::make_unique<zarr::V3Group>(
+        group_node = std::make_unique<zarr::Group>(
           group_config, thread_pool_, s3_connection_pool_);
 
         if (!zarr::finalize_group(std::move(group_node))) {

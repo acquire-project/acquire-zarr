@@ -48,12 +48,13 @@ verify_file_data(const ZarrStreamSettings& settings)
     const size_t row_size = settings.dimensions[2].array_size_px,
                  num_rows = settings.dimensions[1].array_size_px;
 
-    fs::path chunk_path = fs::path(settings.store_path) / "0" / "0" / "0" / "0";
-    CHECK(fs::is_regular_file(chunk_path));
+    fs::path shard_path =
+      fs::path(settings.store_path) / "0" / "c" / "0" / "0" / "0";
+    CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the first chunk file
     {
-        std::ifstream file(chunk_path, std::ios::binary);
+        std::ifstream file(shard_path, std::ios::binary);
         CHECK(file.is_open());
 
         // Get file size
@@ -68,7 +69,8 @@ verify_file_data(const ZarrStreamSettings& settings)
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows);
+    EXPECT_EQ(
+      int, buffer.size(), row_size* num_rows + 2 * sizeof(uint64_t) + 4);
     for (size_t row = 0; row < num_rows; ++row) {
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
@@ -77,12 +79,12 @@ verify_file_data(const ZarrStreamSettings& settings)
         }
     }
 
-    chunk_path = fs::path(settings.store_path) / "0" / "1" / "0" / "0";
-    CHECK(fs::is_regular_file(chunk_path));
+    shard_path = fs::path(settings.store_path) / "0" / "c" / "1" / "0" / "0";
+    CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
     {
-        std::ifstream file(chunk_path, std::ios::binary);
+        std::ifstream file(shard_path, std::ios::binary);
         CHECK(file.is_open());
 
         // Get file size
@@ -97,7 +99,8 @@ verify_file_data(const ZarrStreamSettings& settings)
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows);
+    EXPECT_EQ(
+      int, buffer.size(), row_size* num_rows + 2 * sizeof(uint64_t) + 4);
     for (size_t row = 0; row < num_rows; ++row) {
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
@@ -111,12 +114,12 @@ verify_file_data(const ZarrStreamSettings& settings)
     // starting at 96 and ending at 191
     uint8_t px_value = 96;
 
-    chunk_path = fs::path(settings.store_path) / "0" / "2" / "0" / "0";
-    CHECK(fs::is_regular_file(chunk_path));
+    shard_path = fs::path(settings.store_path) / "0" / "c" / "2" / "0" / "0";
+    CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
     {
-        std::ifstream file(chunk_path, std::ios::binary);
+        std::ifstream file(shard_path, std::ios::binary);
         CHECK(file.is_open());
 
         // Get file size
@@ -131,18 +134,19 @@ verify_file_data(const ZarrStreamSettings& settings)
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows);
+    EXPECT_EQ(
+      int, buffer.size(), row_size* num_rows + 2 * sizeof(uint64_t) + 4);
 
-    for (auto i = 0; i < buffer.size(); ++i) {
+    for (auto i = 0; i < row_size * num_rows; ++i) {
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 
-    chunk_path = fs::path(settings.store_path) / "0" / "3" / "0" / "0";
-    CHECK(fs::is_regular_file(chunk_path));
+    shard_path = fs::path(settings.store_path) / "0" / "c" / "3" / "0" / "0";
+    CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
     {
-        std::ifstream file(chunk_path, std::ios::binary);
+        std::ifstream file(shard_path, std::ios::binary);
         CHECK(file.is_open());
 
         // Get file size
@@ -157,9 +161,10 @@ verify_file_data(const ZarrStreamSettings& settings)
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows);
+    EXPECT_EQ(
+      int, buffer.size(), row_size* num_rows + 2 * sizeof(uint64_t) + 4);
 
-    for (auto i = 0; i < buffer.size(); ++i) {
+    for (auto i = 0; i < row_size * num_rows; ++i) {
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 }

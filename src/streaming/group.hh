@@ -62,17 +62,19 @@ class Group : public ZarrNode
     size_t bytes_per_frame_;
 
     bool close_() override;
+    bool make_metadata_() override;
+    std::vector<std::string> metadata_keys_() const override;
 
     std::shared_ptr<GroupConfig> group_config_() const;
 
     /** @brief Create array writers. */
-    [[nodiscard]] virtual bool create_arrays_() = 0;
+    [[nodiscard]] bool create_arrays_();
 
     /**
      * @brief Construct OME metadata for this group.
      * @return JSON structure with OME metadata for this group.
      */
-    virtual nlohmann::json get_ome_metadata_() const = 0;
+    nlohmann::json get_ome_metadata_() const;
 
     /**
      * @brief Create a downsampler for multiscale acquisitions.
@@ -82,7 +84,7 @@ class Group : public ZarrNode
     [[nodiscard]] bool create_downsampler_();
 
     /** @brief Construct OME multiscales metadata for this group. */
-    [[nodiscard]] virtual nlohmann::json make_multiscales_metadata_() const;
+    [[nodiscard]] nlohmann::json make_multiscales_metadata_() const;
 
     /** @brief Create a configuration for a full-resolution Array. */
     std::shared_ptr<zarr::ArrayConfig> make_base_array_config_() const;
