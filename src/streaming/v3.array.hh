@@ -15,7 +15,7 @@ class V3Array final : public Array
     std::vector<std::vector<uint64_t>> shard_tables_;
     uint32_t current_layer_;
 
-    std::unordered_map<std::string, std::unique_ptr<Sink>> s3_data_sinks_;
+    std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;

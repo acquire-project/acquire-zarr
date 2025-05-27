@@ -454,8 +454,8 @@ zarr::V3Array::compress_and_flush_data_()
                            compute_chunk_offsets_and_defrag_(shard_idx);
 
                          semaphore.acquire();
-                         if (s3_data_sinks_.contains(data_path)) {
-                             sink = std::move(s3_data_sinks_[data_path]);
+                         if (data_sinks_.contains(data_path)) {
+                             sink = std::move(data_sinks_[data_path]);
                          } else if (is_s3) {
                              sink = make_s3_sink(
                                *bucket_name, data_path, connection_pool);
@@ -508,10 +508,10 @@ zarr::V3Array::compress_and_flush_data_()
                      semaphore.release();
 
                      // save the S3 sink for later
-                     if (is_s3 && !s3_data_sinks_.contains(data_path)) {
-                         s3_data_sinks_.emplace(data_path, std::move(sink));
+                     if (is_s3 && !data_sinks_.contains(data_path)) {
+                         data_sinks_.emplace(data_path, std::move(sink));
                      } else if (is_s3) {
-                         s3_data_sinks_[data_path] = std::move(sink);
+                         data_sinks_[data_path] = std::move(sink);
                      }
 
                      shard_latch.count_down();
@@ -546,11 +546,11 @@ zarr::V3Array::close_sinks_()
 {
     data_paths_.clear();
 
-    for (auto& [path, sink] : s3_data_sinks_) {
+    for (auto& [path, sink] : data_sinks_) {
         EXPECT(
           finalize_sink(std::move(sink)), "Failed to finalize sink at ", path);
     }
-    s3_data_sinks_.clear();
+    data_sinks_.clear();
 }
 
 bool
