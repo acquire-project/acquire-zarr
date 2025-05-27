@@ -203,7 +203,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
     std::latch latch(unique_paths.size());
     for (const auto& path : unique_paths) {
-        auto job = [&path, &latch, &all_successful](std::string& err) {
+        auto job = [path, &latch, &all_successful](std::string& err) {
             bool success = true;
             if (fs::is_directory(path)) {
                 latch.count_down();

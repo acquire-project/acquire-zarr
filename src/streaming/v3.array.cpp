@@ -66,9 +66,7 @@ shuffle_to_string(uint8_t shuffle)
 zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config,
-          thread_pool,
-          s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
   , current_layer_{ 0 }
 {
     const auto& dims = config_->dimensions;
@@ -433,7 +431,7 @@ zarr::V3Array::compress_and_flush_data_()
         EXPECT(thread_pool_->push_job(
                  std::move([shard_idx,
                             is_s3,
-                            &data_path,
+                            data_path,
                             &chunk_table = shard_tables_[shard_idx],
                             file_offset = &shard_file_offsets_[shard_idx],
                             write_table,

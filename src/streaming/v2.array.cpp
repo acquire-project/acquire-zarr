@@ -65,9 +65,7 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config,
-          thread_pool,
-          s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
 {
 }
 
@@ -200,7 +198,7 @@ zarr::V2Array::compress_and_flush_data_()
                                 bytes_of_raw_chunk,
                                 &compression_params,
                                 is_s3,
-                                &data_path = data_paths_[i],
+                                data_path = data_paths_[i],
                                 chunk_ptr = get_chunk_data_(i),
                                 &bucket_name,
                                 connection_pool,
