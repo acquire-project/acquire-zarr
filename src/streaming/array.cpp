@@ -173,7 +173,7 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-#pragma omp parallel for reduction(+ : bytes_written)
+//#pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
