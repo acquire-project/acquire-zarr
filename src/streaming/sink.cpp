@@ -55,8 +55,9 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
         std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
 
-        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
-                                       std::string& err) -> bool {
+        std::string err;
+//        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
+//                                       std::string& err) -> bool {
             bool success = false;
 
             try {
@@ -71,9 +72,9 @@ make_file_sinks(std::vector<std::string>& file_paths,
             latch.count_down();
             all_successful.fetch_and((char)success);
 
-            return success;
-        }),
-               "Failed to push job to thread pool.");
+//            return success;
+//        }),
+//               "Failed to push job to thread pool.");
     }
 
     latch.wait();
