@@ -931,8 +931,8 @@ ZarrStream_s::init_frame_queue_()
         return false;
     }
 
-    // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
-    const auto buffer_size_bytes = 2ULL << 30;
+    // cap the frame buffer at 1 GiB, or 10 frames, whichever is larger
+    const auto buffer_size_bytes = 1ULL << 30;
     const auto frame_count =
       std::max(10ULL, buffer_size_bytes / frame_size_bytes_);
 
