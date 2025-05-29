@@ -168,18 +168,17 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    // Using the entire thread pool breaks in CI due to a likely resource
-    // contention. Using 75% of the thread pool should be enough to avoid, but
-    // we should still find a fix if we can.
-#pragma omp parallel for reduction(+ : bytes_written)                          \
-  num_threads(std::max(3 * thread_pool_->n_threads() / 4, 1u))
+    std::vector<std::byte*> chunk_data(n_tiles);
+    for (auto i = 0; i < n_tiles; ++i) {
+        chunk_data[i] = get_chunk_data_(group_offset + i);
+    }
+
+#pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
 
-        const auto chunk_idx =
-          group_offset + tile_idx_y * n_tiles_x + tile_idx_x;
-        const auto chunk_start = get_chunk_data_(chunk_idx);
+        const auto chunk_start = chunk_data[tile];
         auto chunk_pos = chunk_offset;
 
         for (auto k = 0; k < tile_rows; ++k) {

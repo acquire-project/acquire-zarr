@@ -65,9 +65,7 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config,
-          thread_pool,
-          s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
 {
 }
 
@@ -195,22 +193,25 @@ zarr::V2Array::compress_and_flush_data_()
           MAX_CONCURRENT_FILES);
 
         for (auto i = 0; i < n_chunks; ++i) {
-            EXPECT(thread_pool_->push_job(
-                     std::move([bytes_per_px,
-                                bytes_of_raw_chunk,
-                                &compression_params,
-                                is_s3,
-                                &data_path = data_paths_[i],
-                                chunk_ptr = get_chunk_data_(i),
-                                &bucket_name,
-                                connection_pool,
-                                &semaphore,
-                                &latch,
-                                &all_successful](std::string& err) {
+            auto* chunk_ptr = get_chunk_data_(i);
+            auto data_path = data_paths_[i];
+            std::string err;
+//            EXPECT(thread_pool_->push_job(
+//                     std::move([bytes_per_px,
+//                                bytes_of_raw_chunk,
+//                                &compression_params,
+//                                is_s3,
+//                                data_path = data_paths_[i],
+//                                chunk_ptr = get_chunk_data_(i),
+//                                &bucket_name,
+//                                connection_pool,
+//                                &semaphore,
+//                                &latch,
+//                                &all_successful](std::string& err) {
                          bool success = true;
                          if (!all_successful) {
                              latch.count_down();
-                             return false;
+//                             return false;
                          }
 
                          auto bytes_of_chunk = bytes_of_raw_chunk;
@@ -261,9 +262,9 @@ zarr::V2Array::compress_and_flush_data_()
                          }
 
                          all_successful.fetch_and(static_cast<char>(success));
-                         return success;
-                     })),
-                   "Failed to push job to thread pool");
+//                         return success;
+//                     })),
+//                   "Failed to push job to thread pool");
         }
     }
 
