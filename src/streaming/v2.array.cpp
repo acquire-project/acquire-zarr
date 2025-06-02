@@ -196,11 +196,11 @@ zarr::V2Array::compress_and_flush_data_()
             EXPECT(thread_pool_->push_job(
                      std::move([bytes_per_px,
                                 bytes_of_raw_chunk,
-                                &compression_params,
+                                compression_params,
                                 is_s3,
                                 data_path = data_paths_[i],
                                 chunk_ptr = get_chunk_data_(i),
-                                &bucket_name,
+                                bucket_name,
                                 connection_pool,
                                 &semaphore,
                                 &latch,

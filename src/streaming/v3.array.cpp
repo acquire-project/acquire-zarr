@@ -355,6 +355,7 @@ zarr::V3Array::compress_and_flush_data_()
 
     const auto n_shards = dims->number_of_shards();
     CHECK(data_paths_.size() == n_shards);
+    CHECK(data_buffers_.size() == n_shards);
 
     const auto chunks_in_memory = dims->number_of_chunks_in_memory();
     const auto n_layers = dims->chunk_layers_per_shard();
@@ -381,7 +382,6 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     // queue jobs to compress all chunks
-
     const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
     const auto bytes_per_px = bytes_of_type(config_->dtype);
 
@@ -451,7 +451,7 @@ zarr::V3Array::compress_and_flush_data_()
       MAX_CONCURRENT_FILES);
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         std::string err;
-        const auto& data_path = data_paths_[shard_idx];
+        const std::string data_path = data_paths_[shard_idx];
         auto* chunk_latch = chunk_latches_[shard_idx].get();
         auto* shard_ptr = data_buffers_[shard_idx].data();
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
