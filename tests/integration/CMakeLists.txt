@@ -39,7 +39,12 @@ foreach (name ${tests})
 
     add_test(NAME test-${tgt} COMMAND ${tgt})
 
-    set(test_labels "anyplatform;acquire-zarr")
+    set(test_labels "anyplatform;acquire-zarr;integration")
+
+    if (name MATCHES ".*v2.*")
+        list(APPEND test_labels "deprecated")
+    endif ()
+
     if (name MATCHES ".*s3.*")
         list(APPEND test_labels "s3")
     endif ()

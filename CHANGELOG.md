@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Users may now select the method used to downsample images (#108)
 - Added `output_key` option to specify the key/path in Zarr storage where data should be saved (#106)
 - Added `overwrite` flag to control whether existing data in the store path should be removed (#106)
+- Added support for IAM and config file options for S3 authentication (#109)
+
+### Deprecated
+
+- Streaming to Zarr V2 is now deprecated (#110)
 
 ## [0.4.0] - [2025-04-24](https://github.com/acquire-project/acquire-zarr/compare/v0.3.1...v0.4.0)
 
