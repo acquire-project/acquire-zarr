@@ -381,7 +381,7 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     // queue jobs to compress all chunks
-    const auto compression_params = config_->compression_params;
+
     const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
     const auto bytes_per_px = bytes_of_type(config_->dtype);
 
@@ -389,11 +389,12 @@ zarr::V3Array::compress_and_flush_data_()
         const auto chunk_idx = i + chunk_group_offset;
         const auto shard_idx = dims->shard_index_for_chunk(chunk_idx);
         const auto internal_idx = dims->shard_internal_index(chunk_idx);
-        auto& shard_table = shard_tables_[shard_idx];
+        auto* shard_table = shard_tables_.data() + shard_idx;
         auto* latch = chunk_latches_.at(shard_idx).get();
 
-        if (compression_params) {
-            std::string err;
+        if (config_->compression_params) {
+            const auto compression_params = config_->compression_params.value();
+
             auto* chunk_ptr = get_chunk_data_(i);
             if (!chunk_ptr) {
                 LOG_ERROR("Failed to get chunk data for chunk index ",
@@ -401,43 +402,42 @@ zarr::V3Array::compress_and_flush_data_()
                 latch->count_down();
                 return false;
             }
-            //            EXPECT(thread_pool_->push_job(
-            //                     std::move([bytes_per_px,
-            //                                bytes_of_raw_chunk,
-            //                                &compression_params,
-            //                                chunk_ptr = get_chunk_data_(i),
-            //                                &shard_table,
-            //                                internal_idx,
-            //                                &latch,
-            //                                &all_successful](std::string& err)
-            //                                {
-            bool success = true;
+            EXPECT(thread_pool_->push_job(
+                     std::move([bytes_per_px,
+                                bytes_of_raw_chunk,
+                                compression_params,
+                                chunk_ptr,
+                                shard_table,
+                                internal_idx,
+                                latch,
+                                &all_successful](std::string& err) {
+                         bool success = true;
 
-            try {
-                const int nb = compress_buffer_in_place(chunk_ptr,
-                                                        bytes_of_raw_chunk +
-                                                          BLOSC_MAX_OVERHEAD,
-                                                        bytes_of_raw_chunk,
-                                                        *compression_params,
-                                                        bytes_per_px);
-                EXPECT(nb > 0, "Failed to compress chunk");
+                         try {
+                             const int nb = compress_buffer_in_place(
+                               chunk_ptr,
+                               bytes_of_raw_chunk + BLOSC_MAX_OVERHEAD,
+                               bytes_of_raw_chunk,
+                               compression_params,
+                               bytes_per_px);
+                             EXPECT(nb > 0, "Failed to compress chunk");
 
-                // update shard table with size
-                shard_table[2 * internal_idx + 1] = nb;
-            } catch (const std::exception& exc) {
-                err = exc.what();
-                success = false;
-            }
+                             // update shard table with size
+                             shard_table->at(2 * internal_idx + 1) = nb;
+                         } catch (const std::exception& exc) {
+                             err = exc.what();
+                             success = false;
+                         }
 
-            latch->count_down();
+                         latch->count_down();
 
-            all_successful.fetch_and(static_cast<char>(success));
-            //                         return success;
-            //                     })),
-            //                   "Failed to push job to thread pool");
+                         all_successful.fetch_and(static_cast<char>(success));
+                         return success;
+                     })),
+                   "Failed to push job to thread pool");
         } else {
             // no compression, just update shard table with size
-            shard_table[2 * internal_idx + 1] = bytes_of_raw_chunk;
+            shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
             chunk_latches_[shard_idx]->count_down();
         }
     }
@@ -455,23 +455,23 @@ zarr::V3Array::compress_and_flush_data_()
         auto* chunk_latch = chunk_latches_[shard_idx].get();
         auto* shard_ptr = data_buffers_[shard_idx].data();
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
-        auto* chunk_table = shard_tables_.data() + shard_idx;
-//        EXPECT(
-//          thread_pool_->push_job(
-//            std::move([shard_idx,
-//                       is_s3,
-//                       data_path,
-//                       chunk_table = shard_tables_.data() + shard_idx,
-//                       file_offset = shard_file_offsets_.data() + shard_idx,
-//                       write_table,
-//                       shard_ptr = data_buffers_[shard_idx].data(),
-//                       bucket_name,
-//                       connection_pool,
-//                       &semaphore,
-//                       shard_latch = shard_latch_,
-//                       chunk_latch = chunk_latches_[shard_idx].get(),
-//                       &all_successful,
-//                       this](std::string& err) {
+        auto* shard_table = shard_tables_.data() + shard_idx;
+        EXPECT(
+          thread_pool_->push_job(
+            std::move([shard_idx,
+                       is_s3,
+                       data_path,
+                       shard_table,
+                       file_offset,
+                       write_table,
+                       shard_ptr,
+                       bucket_name,
+                       connection_pool,
+                       &semaphore,
+                       shard_latch = shard_latch_,
+                       chunk_latch,
+                       &all_successful,
+                       this](std::string& err) {
                 chunk_latch->wait();
 
                 bool success = true;
@@ -507,9 +507,9 @@ zarr::V3Array::compress_and_flush_data_()
 
                     if (write_table) {
                         const auto* table_ptr =
-                          reinterpret_cast<std::byte*>(chunk_table->data());
+                          reinterpret_cast<std::byte*>(shard_table->data());
                         const auto table_size =
-                          chunk_table->size() * sizeof(uint64_t);
+                          shard_table->size() * sizeof(uint64_t);
                         EXPECT(
                           sink->write(*file_offset, { table_ptr, table_size }),
                           "Failed to write table");
@@ -545,9 +545,9 @@ zarr::V3Array::compress_and_flush_data_()
                 shard_latch_->count_down();
 
                 all_successful.fetch_and(static_cast<char>(success));
-//                return success;
-//            })),
-//          "Failed to push job to thread pool");
+                return success;
+            })),
+          "Failed to push job to thread pool");
     }
 
     // wait for all threads to finish
