@@ -301,12 +301,25 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    std::vector<std::byte*> chunk_data(n_tiles);
+    std::vector<BytePtr> chunk_data(n_tiles);
     for (auto i = 0; i < n_tiles; ++i) {
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-#pragma omp parallel for
+    std::vector<BytePtr> sorted_chunk_data(chunk_data);
+    std::sort(sorted_chunk_data.begin(), sorted_chunk_data.end());
+    for (auto i = 1; i < n_tiles; ++i) {
+        const auto dist =
+          std::distance(sorted_chunk_data[i - 1], sorted_chunk_data[i]);
+        EXPECT(dist >= bytes_per_chunk,
+               "Chunk data pointers are not spaced correctly. "
+               "Distance: ",
+               dist,
+               ", expected at least ",
+               bytes_per_chunk);
+    }
+
+#pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
@@ -343,14 +356,13 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
                        bytes_per_chunk);
                 memcpy(
                   chunk_start + chunk_pos, data_ptr + region_start, nbytes);
-//                bytes_written += nbytes;
+                bytes_written += nbytes;
             }
             chunk_pos += bytes_per_row;
         }
     }
 
-//    return bytes_written;
-    return data_size;
+    return bytes_written;
 }
 
 bool
