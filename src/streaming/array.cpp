@@ -306,17 +306,12 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-#pragma omp parallel for reduction(+ : bytes_written)
+#pragma omp parallel for num_threads(1) reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
 
-        const auto chunk_start = get_chunk_data_(group_offset + tile);
-        EXPECT(chunk_start == chunk_data[tile],
-               "Chunk data pointer mismatch. Expected: ",
-               chunk_data[tile],
-               ", got: ",
-               chunk_start);
+        const auto chunk_start = chunk_data[tile];
         auto chunk_pos = chunk_offset;
 
         for (auto k = 0; k < tile_rows; ++k) {
