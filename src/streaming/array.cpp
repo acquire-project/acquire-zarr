@@ -185,6 +185,13 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
+    LOG_INFO("omp_get_max_threads(): ",
+             omp_get_max_threads(),
+             ", omp_threads: ",
+             omp_threads,
+             ", n_tiles: ",
+             n_tiles);
+
 #pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
