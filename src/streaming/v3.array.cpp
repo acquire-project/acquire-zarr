@@ -310,10 +310,11 @@ zarr::V3Array::get_chunk_data_(uint32_t index)
         chunk_indices[internal_idx] != index) {
         const auto it =
           std::find(chunk_indices.begin(), chunk_indices.end(), index);
-        if (it == chunk_indices.end()) {
-            LOG_ERROR("Chunk index ", index, " not found in shard ", shard_idx);
-            return nullptr;
-        }
+        EXPECT(it != chunk_indices.end(),
+               "Chunk index ",
+               index,
+               " not found in shard ",
+               shard_idx);
         internal_idx = std::distance(chunk_indices.begin(), it);
     }
 

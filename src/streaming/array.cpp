@@ -304,13 +304,19 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     std::vector<std::byte*> chunk_data(n_tiles);
     for (auto i = 0; i < n_tiles; ++i) {
         chunk_data[i] = get_chunk_data_(group_offset + i);
-        LOG_INFO("Chunk data pointer for tile ", i, ": ", chunk_data[i]);
+        volatile auto* test_ptr = chunk_data[i];
+        *test_ptr = static_cast<std::byte>(0xAA);
     }
 
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
+
+        volatile auto* test_ptr = chunk_data[tile];
+        if (*test_ptr != static_cast<std::byte>(0xAA)) {
+            fprintf(stderr, "Chunk corruption detected for tile %d\n", tile);
+        }
 
         const auto chunk_start = chunk_data[tile];
         auto chunk_pos = chunk_offset;
