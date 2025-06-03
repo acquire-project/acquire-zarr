@@ -306,7 +306,7 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-#pragma omp parallel for num_threads(1) reduction(+ : bytes_written)
+#pragma omp parallel for
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
@@ -343,13 +343,14 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
                        bytes_per_chunk);
                 memcpy(
                   chunk_start + chunk_pos, data_ptr + region_start, nbytes);
-                bytes_written += nbytes;
+//                bytes_written += nbytes;
             }
             chunk_pos += bytes_per_row;
         }
     }
 
-    return bytes_written;
+//    return bytes_written;
+    return data_size;
 }
 
 bool
