@@ -159,6 +159,11 @@ zarr::V2Array::make_buffers_()
 BytePtr
 zarr::V2Array::get_chunk_data_(uint32_t index)
 {
+    EXPECT(index < data_buffers_.size(),
+           "Index out of bounds: ",
+           index,
+           " vs. ",
+           data_buffers_.size());
     return data_buffers_[index].data();
 }
 

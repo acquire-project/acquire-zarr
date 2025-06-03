@@ -321,17 +321,15 @@ zarr::V3Array::get_chunk_data_(uint32_t index)
     const auto offset = internal_idx * n_bytes;
 
     const auto shard_size = shard.size();
-    if (offset + n_bytes > shard_size) {
-        LOG_ERROR("Attempted to access chunk data at index ",
-                  index,
-                  " with offset ",
-                  offset,
-                  " and n_bytes ",
-                  n_bytes,
-                  " in shard of size ",
-                  shard_size);
-        return nullptr;
-    }
+    EXPECT(offset + n_bytes <= shard_size,
+           "Attempted to access chunk data at index ",
+           index,
+           " with offset ",
+           offset,
+           " and n_bytes ",
+           n_bytes,
+           " in shard of size ",
+           shard_size);
 
     return shard.data() + offset;
 }
