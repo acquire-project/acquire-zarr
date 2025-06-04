@@ -569,15 +569,7 @@ def test_write_transposed_array(
 
     del stream  # close the stream, flush the files
 
-    try:
-        group = zarr.open(settings.store_path, mode="r")
-    except FileNotFoundError as e:
-        print(e)
-        for basename, _, filenames in os.walk(store_path):
-            for filename in filenames:
-                print(basename, filename, os.path.getsize(os.path.join(basename, filename)))
-        return
-
+    group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
 
     assert data.shape == array.shape
