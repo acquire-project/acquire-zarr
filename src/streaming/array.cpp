@@ -11,12 +11,10 @@
 #include <stdexcept>
 
 namespace {
-#ifdef __linux__
-const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
-#elif defined(_WIN32)
-const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
+#ifdef __APPLE__
+const int omp_threads = omp_get_max_threads(); // Full parallelization on macOS
 #else
-const int omp_threads = omp_get_max_threads();  // Full parallelization on macOS
+const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
 #endif
 } // namespace
 
@@ -185,12 +183,12 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-    LOG_INFO("omp_get_max_threads(): ",
-             omp_get_max_threads(),
-             ", omp_threads: ",
-             omp_threads,
-             ", n_tiles: ",
-             n_tiles);
+    LOG_DEBUG("Max threads: ",
+              omp_get_max_threads(),
+              ", allocated threads: ",
+              omp_threads,
+              ", n_tiles: ",
+              n_tiles);
 
 #pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
