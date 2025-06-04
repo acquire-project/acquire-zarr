@@ -36,6 +36,8 @@ jobs:
             vcpkg_triplet: "arm64-osx"
     permissions:
       actions: write
+    env:
+      OMP_STACKSIZE: 100M
 
     steps:
       - uses: actions/checkout@v3
@@ -85,6 +87,7 @@ jobs:
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
+      OMP_STACKSIZE: 100M
 
     steps:
       - uses: actions/checkout@v3
@@ -163,6 +166,8 @@ jobs:
           - "ubuntu-latest"
           - "windows-latest"
           - "macos-latest"
+    env:
+      OMP_STACKSIZE: 100M
 
     steps:
       - uses: actions/checkout@v3

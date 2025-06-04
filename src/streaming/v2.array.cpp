@@ -65,9 +65,7 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config,
-          thread_pool,
-          s3_connection_pool)
+  : Array(config, thread_pool, s3_connection_pool)
 {
 }
 
@@ -161,6 +159,11 @@ zarr::V2Array::make_buffers_()
 BytePtr
 zarr::V2Array::get_chunk_data_(uint32_t index)
 {
+    EXPECT(index < data_buffers_.size(),
+           "Index out of bounds: ",
+           index,
+           " vs. ",
+           data_buffers_.size());
     return data_buffers_[index].data();
 }
 
@@ -198,11 +201,11 @@ zarr::V2Array::compress_and_flush_data_()
             EXPECT(thread_pool_->push_job(
                      std::move([bytes_per_px,
                                 bytes_of_raw_chunk,
-                                &compression_params,
+                                compression_params,
                                 is_s3,
-                                &data_path = data_paths_[i],
+                                data_path = data_paths_[i],
                                 chunk_ptr = get_chunk_data_(i),
-                                &bucket_name,
+                                bucket_name,
                                 connection_pool,
                                 &semaphore,
                                 &latch,

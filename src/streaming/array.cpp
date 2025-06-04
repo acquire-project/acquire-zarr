@@ -4,9 +4,19 @@
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
+#include <omp.h>
+
 #include <cmath>
 #include <functional>
 #include <stdexcept>
+
+namespace {
+#ifdef __APPLE__
+const int omp_threads = omp_get_max_threads(); // Full parallelization on macOS
+#else
+const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
+#endif
+} // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
@@ -168,18 +178,25 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    // Using the entire thread pool breaks in CI due to a likely resource
-    // contention. Using 75% of the thread pool should be enough to avoid, but
-    // we should still find a fix if we can.
-#pragma omp parallel for reduction(+ : bytes_written)                          \
-  num_threads(std::max(3 * thread_pool_->n_threads() / 4, 1u))
+    std::vector<BytePtr> chunk_data(n_tiles);
+    for (auto i = 0; i < n_tiles; ++i) {
+        chunk_data[i] = get_chunk_data_(group_offset + i);
+    }
+
+    LOG_DEBUG("Max threads: ",
+              omp_get_max_threads(),
+              ", allocated threads: ",
+              omp_threads,
+              ", n_tiles: ",
+              n_tiles);
+
+#pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
 
-        const auto chunk_idx =
-          group_offset + tile_idx_y * n_tiles_x + tile_idx_x;
-        const auto chunk_start = get_chunk_data_(chunk_idx);
+        const auto chunk_start = chunk_data[tile];
+
         auto chunk_pos = chunk_offset;
 
         for (auto k = 0; k < tile_rows; ++k) {

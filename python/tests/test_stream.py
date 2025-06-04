@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 from pickle import FALSE
 
 import dotenv
@@ -569,7 +570,23 @@ def test_write_transposed_array(
 
     del stream  # close the stream, flush the files
 
-    group = zarr.open(settings.store_path, mode="r")
+    try:
+        group = zarr.open(settings.store_path, mode="r")
+    except FileNotFoundError as e:
+        # credit: https://stackoverflow.com/a/9728478
+        def list_files(startpath):
+            structure = ""
+            for root, dirs, files in os.walk(startpath):
+                level = root.replace(startpath, '').count(os.sep)
+                indent = ' ' * 4 * level
+                structure += ("{}{}/".format(indent, os.path.basename(root)) + "\n")
+                subindent = ' ' * 4 * (level + 1)
+                for f in files:
+                    structure += ("{}{}".format(subindent, f) + "\n")
+
+            return structure
+        raise FileNotFoundError(list_files(settings.store_path))
+
     array = group["0"]
 
     assert data.shape == array.shape
