@@ -44,9 +44,6 @@ class Array : public ZarrNode
     /// Buffering
     std::vector<ByteVector> data_buffers_;
 
-    /// Filesystem
-    std::vector<std::string> data_paths_;
-
     /// Multithreading
     std::mutex buffers_mutex_;
 
@@ -72,7 +69,7 @@ class Array : public ZarrNode
     virtual std::string data_root_() const = 0;
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
-    void make_data_paths_();
+    [[nodiscard]] std::vector<std::string> make_data_paths_();
     virtual void make_buffers_() = 0;
 
     virtual BytePtr get_chunk_data_(uint32_t index) = 0;
