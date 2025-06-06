@@ -87,7 +87,7 @@ zarr::Array::close_()
         metadata_sinks_.clear();
         retval = true;
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to finalize array writer: ", exc.what());
+        LOG_ERROR("Error closing array: ", exc.what());
     }
 
     is_closing_ = false;
@@ -117,18 +117,18 @@ zarr::Array::is_s3_array_() const
     return config_->bucket_name.has_value();
 }
 
-void
+std::vector<std::string>
 zarr::Array::make_data_paths_()
 {
-    if (data_paths_.empty()) {
-        data_paths_ = construct_data_paths(
-          data_root_(), *config_->dimensions, parts_along_dimension_());
-    }
+    return construct_data_paths(
+      data_root_(), *config_->dimensions, parts_along_dimension_());
 }
 
 size_t
 zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 {
+    std::unique_lock lock(buffers_mutex_);
+
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_->dtype);
 
@@ -171,8 +171,8 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     // Using the entire thread pool breaks in CI due to a likely resource
     // contention. Using 75% of the thread pool should be enough to avoid, but
     // we should still find a fix if we can.
-#pragma omp parallel for reduction(+ : bytes_written)                          \
-  num_threads(std::max(3 * thread_pool_->n_threads() / 4, 1u))
+#pragma omp parallel for reduction(+ : bytes_written)
+    // num_threads(std::max(3 * thread_pool_->n_threads() / 4, 1u))
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;

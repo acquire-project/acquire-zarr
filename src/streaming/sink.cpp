@@ -308,7 +308,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             }
 
             std::error_code ec;
-            if (!fs::create_directories(path, ec)) {
+            if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
                 err =
                   "Failed to create directory '" + path + "': " + ec.message();
                 success = false;
