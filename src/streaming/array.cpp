@@ -4,9 +4,19 @@
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
+#include <omp.h>
+
 #include <cmath>
 #include <functional>
 #include <stdexcept>
+
+namespace {
+#ifdef __APPLE__
+const int omp_threads = omp_get_max_threads(); // Full parallelization on macOS
+#else
+const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
+#endif
+} // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
@@ -178,8 +188,14 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
         chunk_data[i] = get_chunk_data_(group_offset + i);
     }
 
-#pragma omp parallel for schedule(static, 1) num_threads(1)                    \
-  reduction(+ : bytes_written)
+    LOG_DEBUG("Max threads: ",
+              omp_get_max_threads(),
+              ", allocated threads: ",
+              omp_threads,
+              ", n_tiles: ",
+              n_tiles);
+
+#pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         const auto tile_idx_y = tile / n_tiles_x;
         const auto tile_idx_x = tile % n_tiles_x;
