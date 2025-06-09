@@ -1047,15 +1047,15 @@ finalize_stream(struct ZarrStream_s* stream)
           "Error finalizing Zarr stream. Failed to write custom metadata");
     }
 
-    if (!stream->write_intermediate_metadata_()) {
-        LOG_ERROR(stream->error_);
-        return false;
-    }
-
     stream->finalize_frame_queue_();
 
     if (!zarr::finalize_node(std::move(stream->output_node_))) {
         LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
+        return false;
+    }
+
+    if (!stream->write_intermediate_metadata_()) {
+        LOG_ERROR(stream->error_);
         return false;
     }
 
