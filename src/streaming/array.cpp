@@ -48,6 +48,7 @@ zarr::Array::write_frame(ConstByteSpan data)
     }
 
     if (data_buffers_.empty()) {
+        std::unique_lock lock(buffers_mutex_);
         make_buffers_();
     }
 
@@ -61,6 +62,7 @@ zarr::Array::write_frame(ConstByteSpan data)
     ++frames_written_;
 
     if (should_flush_()) {
+        std::unique_lock lock(buffers_mutex_);
         CHECK(compress_and_flush_data_());
 
         if (should_rollover_()) {
@@ -82,6 +84,7 @@ zarr::Array::close_()
     is_closing_ = true;
     try {
         if (bytes_to_flush_ > 0) {
+            std::unique_lock lock(buffers_mutex_);
             CHECK(compress_and_flush_data_());
         }
         close_sinks_();
@@ -139,6 +142,8 @@ zarr::Array::make_data_paths_()
 size_t
 zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
 {
+    std::unique_lock lock(buffers_mutex_);
+
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_->dtype);
 
