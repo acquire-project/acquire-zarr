@@ -248,6 +248,17 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
         }
 
         const auto offset_to_copy_from = k * nbytes_chunk;
+        EXPECT(offset_to_copy_from + chunk_size < buffer.size(),
+               "Chunk size exceeds buffer size: ",
+               offset_to_copy_from + chunk_size,
+               " > ",
+               buffer.size());
+        EXPECT(offset_to_copy_to + chunk_size <= buffer.size(),
+               "Buffer overflow in defragmentation: ",
+               offset_to_copy_to + chunk_size,
+               " > ",
+               buffer.size());
+
         std::copy(buffer.begin() + offset_to_copy_from,
                   buffer.begin() + offset_to_copy_from + chunk_size,
                   buffer.begin() + offset_to_copy_to);
@@ -255,7 +266,11 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
         ++k;
     }
 
-    CHECK(offset_to_copy_to == shard_size);
+    EXPECT(offset_to_copy_to == shard_size,
+           "Defragmentation did not produce expected size: ",
+           offset_to_copy_to,
+           " != ",
+           shard_size);
     return shard_size;
 }
 
