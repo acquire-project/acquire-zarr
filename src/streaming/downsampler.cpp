@@ -338,37 +338,61 @@ zarr::Downsampler::make_writer_configurations_(
     while (do_downsample) {
         const auto& dims = cur_config->dimensions;
 
-        // downsample the final 3 dimensions
+        // downsample the final 2 or 3 dimensions
         std::vector<ZarrDimension> down_dims(ndims);
+
+        do_downsample = false;
         for (auto i = 0; i < ndims; ++i) {
             const auto& dim = dims->at(i);
-            if (i < ndims - 3 || dim.type != ZarrDimensionType_Space) {
+            if (i < ndims - 3 || dim.type != ZarrDimensionType_Space ||
+                dim.array_size_px <= dim.chunk_size_px) {
                 down_dims[i] = dim;
                 continue;
             }
 
+            // if we are here, there's still some downsampling to do
+            do_downsample = true;
+
+            // won't be the append dimension, so it should have already been
+            // validated, but let's be sure
+            EXPECT(dim.array_size_px > 0,
+                   "Invalid dimension size: ",
+                   dim.name,
+                   " = ",
+                   dim.array_size_px);
+
+            // this should absolutely always be nonzero, but again, let's check
+            EXPECT(dim.chunk_size_px > 0,
+                   "Invalid chunk size for dimension ",
+                   dim.name,
+                   ": ",
+                   dim.chunk_size_px);
+
+            // the smallest this can be is 1
             const uint32_t array_size_px =
               (dim.array_size_px + (dim.array_size_px % 2)) / 2;
 
+            // the smallest this can be is 1
             const uint32_t chunk_size_px =
-              dim.array_size_px == 0
-                ? dim.chunk_size_px
-                : std::min(dim.chunk_size_px, array_size_px);
+              std::min(dim.chunk_size_px, array_size_px);
 
-            CHECK(chunk_size_px);
+            // the smallest this can be is also 1
             const uint32_t n_chunks =
               (array_size_px + chunk_size_px - 1) / chunk_size_px;
 
             const uint32_t shard_size_chunks =
-              dim.array_size_px == 0
-                ? 1
-                : std::min(n_chunks, dim.shard_size_chunks);
+              std::min(n_chunks, dim.shard_size_chunks);
 
             down_dims[i] = { dim.name,
                              dim.type,
                              array_size_px,
                              chunk_size_px,
                              shard_size_chunks };
+        }
+
+        if (!do_downsample) {
+            // no more downsampling to do, so we are done
+            break;
         }
 
         auto down_config = std::make_shared<ArrayConfig>(
@@ -384,18 +408,6 @@ zarr::Downsampler::make_writer_configurations_(
                                             cur_config->dtype),
           cur_config->dtype,
           cur_config->level_of_detail + 1);
-
-        // can we downsample down_config?
-        for (auto i = 0; i < ndims; ++i) {
-            // downsampling made the chunk size strictly smaller
-            const auto& dim = cur_config->dimensions->at(i);
-            const auto& downsampled_dim = down_config->dimensions->at(i);
-
-            if (dim.chunk_size_px > downsampled_dim.chunk_size_px) {
-                do_downsample = false;
-                break;
-            }
-        }
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
