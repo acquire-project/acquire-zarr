@@ -9,7 +9,6 @@
 #include <crc32c/crc32c.h>
 
 #include <algorithm> // std::fill
-#include <latch>
 #include <semaphore>
 #include <stdexcept>
 
