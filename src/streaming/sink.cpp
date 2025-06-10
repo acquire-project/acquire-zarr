@@ -73,7 +73,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
             return success;
         }),
-               "Failed to push job to thread pool.");
+               "Failed to push sink creation job to thread pool.");
     }
 
     latch.wait();
@@ -300,7 +300,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
     std::latch latch(unique_paths.size());
     for (const auto& path : unique_paths) {
-        auto job = [&path, &latch, &all_successful](std::string& err) {
+        auto job = [path, &latch, &all_successful](std::string& err) {
             bool success = true;
             if (fs::is_directory(path)) {
                 latch.count_down();
@@ -308,7 +308,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             }
 
             std::error_code ec;
-            if (!fs::create_directories(path, ec)) {
+            if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
                 err =
                   "Failed to create directory '" + path + "': " + ec.message();
                 success = false;

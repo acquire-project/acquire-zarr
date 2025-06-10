@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `overwrite` flag to control whether existing data in the store path should be removed (#106)
 - Added support for IAM and config file options for S3 authentication (#109)
 
+## Changed
+
+- Limit OpenMP parallelization to single thread on systems with ≤4 cores to avoid crashes in constrained environments (
+  #111)
+- Improved thread safety with additional mutex protection for buffer operations (#111)
+- Enhanced error handling with more descriptive bounds checking and assertions (#111)
+
+### Fixed
+
+- Segmentation faults in containerized environments (CI, CoreWeave, Argo) caused by OpenMP threading issues (#111)
+- Race conditions in lambda capture and reference handling in thread pool jobs (#111)
+- Buffer overflow checks in V3 array defragmentation (#111)
+
 ### Deprecated
 
 - Streaming to Zarr V2 is now deprecated (#110)

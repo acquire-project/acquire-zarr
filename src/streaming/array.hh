@@ -47,9 +47,6 @@ class Array : public ZarrNode
     /// Filesystem
     std::vector<std::string> data_paths_;
 
-    /// Multithreading
-    std::mutex buffers_mutex_;
-
     /// Bookkeeping
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
@@ -88,6 +85,8 @@ class Array : public ZarrNode
     virtual void close_sinks_() = 0;
 
   private:
+    std::mutex buffers_mutex_;
+
     friend bool finalize_array(std::unique_ptr<Array>&& array);
 };
 
