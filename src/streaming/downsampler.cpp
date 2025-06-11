@@ -1,9 +1,40 @@
 #include "downsampler.hh"
 #include "macros.hh"
 
+#include <bit>
 #include <regex>
 
 namespace {
+ZarrDimension
+downsample_dimension(const ZarrDimension& dim)
+{
+    // the smallest this can be is 1
+    const uint32_t array_size_px =
+      (dim.array_size_px + (dim.array_size_px % 2)) / 2;
+
+    // the smallest this can be is 1
+    const uint32_t chunk_size_px = std::min(dim.chunk_size_px, array_size_px);
+
+    // the smallest this can be is also 1
+    const uint32_t n_chunks =
+      (array_size_px + chunk_size_px - 1) / chunk_size_px;
+
+    const uint32_t shard_size_chunks =
+      std::min(n_chunks, dim.shard_size_chunks);
+
+    std::string unit = dim.unit.has_value() ? *dim.unit : "";
+
+    double scale = dim.scale * 2.0;
+
+    return ZarrDimension(dim.name,
+                         dim.type,
+                         array_size_px,
+                         chunk_size_px,
+                         shard_size_chunks,
+                         unit,
+                         scale);
+}
+
 template<typename T>
 T
 decimate4(const T& a, const T& b, const T& c, const T& d)
@@ -331,88 +362,84 @@ zarr::Downsampler::make_writer_configurations_(
 
     writer_configurations_.insert({ config->level_of_detail, config });
 
+    const std::shared_ptr<ArrayDimensions>& base_dims = config->dimensions;
     const auto ndims = config->dimensions->ndims();
 
-    auto cur_config = config;
-    bool do_downsample = true;
-    while (do_downsample) {
-        const auto& dims = cur_config->dimensions;
+    const auto array_size_x = base_dims->width_dim().array_size_px;
+    const auto chunk_size_x = base_dims->width_dim().chunk_size_px;
+    const auto n_chunks_x = (array_size_x + chunk_size_x - 1) / chunk_size_x;
+    const auto n_levels_x = n_chunks_x > 1 ? std::bit_width(n_chunks_x - 1) : 0;
 
-        // downsample the final 2 or 3 dimensions
+    const auto array_size_y = base_dims->height_dim().array_size_px;
+    const auto chunk_size_y = base_dims->height_dim().chunk_size_px;
+    const auto n_chunks_y = (array_size_y + chunk_size_y - 1) / chunk_size_y;
+    const auto n_levels_y = n_chunks_y > 1 ? std::bit_width(n_chunks_y - 1) : 0;
+
+    // assume isotropic downsampling, so the number of levels is the same in
+    // both
+    const auto n_levels_xy = std::min(n_levels_x, n_levels_y);
+    auto n_levels = n_levels_xy;
+
+    if (base_dims->at(ndims - 3).type == ZarrDimensionType_Space) {
+        // if the 3rd dimension is spatial, we can downsample it as well
+        const auto array_size_z = base_dims->at(ndims - 3).array_size_px;
+        const auto chunk_size_z = base_dims->at(ndims - 3).chunk_size_px;
+        const auto n_chunks_z = (array_size_z + chunk_size_z - 1) / chunk_size_z;
+        const auto n_divs_z = n_chunks_z > 1 ? std::bit_width(n_chunks_z - 1) : 0;
+
+        n_levels = std::max(n_levels_xy, n_divs_z);
+    }
+
+    for (auto level = 1; level <= n_levels; ++level) {
+        const auto& prev_config = writer_configurations_.at(level - 1);
+        const auto& prev_dims = prev_config->dimensions;
+
         std::vector<ZarrDimension> down_dims(ndims);
 
-        do_downsample = false;
-        for (auto i = 0; i < ndims; ++i) {
-            const auto& dim = dims->at(i);
-            if (i < ndims - 3 || dim.type != ZarrDimensionType_Space ||
-                dim.array_size_px <= dim.chunk_size_px) {
-                down_dims[i] = dim;
-                continue;
-            }
-
-            // if we are here, there's still some downsampling to do
-            do_downsample = true;
-
-            // won't be the append dimension, so it should have already been
-            // validated, but let's be sure
-            EXPECT(dim.array_size_px > 0,
-                   "Invalid dimension size: ",
-                   dim.name,
-                   " = ",
-                   dim.array_size_px);
-
-            // this should absolutely always be nonzero, but again, let's check
-            EXPECT(dim.chunk_size_px > 0,
-                   "Invalid chunk size for dimension ",
-                   dim.name,
-                   ": ",
-                   dim.chunk_size_px);
-
-            // the smallest this can be is 1
-            const uint32_t array_size_px =
-              (dim.array_size_px + (dim.array_size_px % 2)) / 2;
-
-            // the smallest this can be is 1
-            const uint32_t chunk_size_px =
-              std::min(dim.chunk_size_px, array_size_px);
-
-            // the smallest this can be is also 1
-            const uint32_t n_chunks =
-              (array_size_px + chunk_size_px - 1) / chunk_size_px;
-
-            const uint32_t shard_size_chunks =
-              std::min(n_chunks, dim.shard_size_chunks);
-
-            down_dims[i] = { dim.name,
-                             dim.type,
-                             array_size_px,
-                             chunk_size_px,
-                             shard_size_chunks };
+        // we don't downsample these dimensions, so just copy them
+        for (auto i = 0; i < ndims - 3; ++i) {
+            down_dims[i] = prev_dims->at(i);
         }
 
-        if (!do_downsample) {
-            // no more downsampling to do, so we are done
-            break;
+        const auto& z_dim = prev_dims->at(ndims - 3);
+        if (z_dim.type == ZarrDimensionType_Space &&
+            z_dim.array_size_px > z_dim.chunk_size_px) {
+            down_dims[ndims - 3] = downsample_dimension(z_dim);
+        } else {
+            // not spatial or fully downsampled, so we just copy it
+            down_dims[ndims - 3] = z_dim;
+        }
+
+        const auto& y_dim = prev_dims->height_dim();
+        const auto& x_dim = prev_dims->width_dim();
+
+        if (std::min(y_dim.array_size_px, x_dim.array_size_px) >
+            std::max(y_dim.chunk_size_px, x_dim.chunk_size_px)) {
+            // downsample the final 2 dimensions
+            down_dims[ndims - 2] = downsample_dimension(y_dim);
+            down_dims[ndims - 1] = downsample_dimension(x_dim);
+        } else {
+            // not spatial or fully downsampled, so we just copy them
+            down_dims[ndims - 2] = y_dim;
+            down_dims[ndims - 1] = x_dim;
         }
 
         auto down_config = std::make_shared<ArrayConfig>(
-          cur_config->store_root,
+          prev_config->store_root,
           // the new node key has the same parent as the current, but
           // substitutes the current level of detail with the new one
-          std::regex_replace(cur_config->node_key,
+          std::regex_replace(prev_config->node_key,
                              std::regex("(\\d+)$"),
-                             std::to_string(cur_config->level_of_detail + 1)),
-          cur_config->bucket_name,
-          cur_config->compression_params,
+                             std::to_string(prev_config->level_of_detail + 1)),
+          prev_config->bucket_name,
+          prev_config->compression_params,
           std::make_shared<ArrayDimensions>(std::move(down_dims),
-                                            cur_config->dtype),
-          cur_config->dtype,
-          cur_config->level_of_detail + 1);
+                                            prev_config->dtype),
+          prev_config->dtype,
+          prev_config->level_of_detail + 1);
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
-
-        cur_config = down_config;
     }
 }
 
