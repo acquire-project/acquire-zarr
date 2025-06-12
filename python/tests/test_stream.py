@@ -795,13 +795,13 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     assert downsampled.shape == (50, 24, 32)
 
     for i in range(downsampled.shape[0]):
-        expected = downsampled[i, :, :]
-        actual = eval(saved_method)(full_res[i], *args, **kwargs).astype(
+        actual = downsampled[i, :, :]
+        expected = eval(saved_method)(full_res[i], *args, **kwargs).astype(
             data.dtype
         )
 
         # Check the downsampling method and arguments
-        np.testing.assert_array_equal(expected, actual)
+        np.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize(
@@ -880,37 +880,37 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     assert downsampled.shape == (50, 24, 32)
 
     for i in range(downsampled.shape[0]):
-        expected = downsampled[i, :, :]
+        actual = downsampled[i, :, :]
 
         if method == DownsamplingMethod.MEAN:
-            actual1 = eval(saved_method)(full_res[2 * i], *args, **kwargs)
-            actual2 = eval(saved_method)(full_res[2 * i + 1], *args, **kwargs)
-            actual = ((actual1 + actual2) / 2).astype(data.dtype)
+            expected1 = eval(saved_method)(full_res[2 * i], *args, **kwargs)
+            expected2 = eval(saved_method)(full_res[2 * i + 1], *args, **kwargs)
+            expected = ((expected1 + expected2) / 2).astype(data.dtype)
             np.testing.assert_allclose(
-                actual, expected, atol=1
+                expected, actual, atol=1
             )  # we may round slightly differently than skimage
             continue
 
         if method == DownsamplingMethod.DECIMATE:
-            actual = eval(saved_method)(
+            expected = eval(saved_method)(
                 full_res[2 * i], *args, **kwargs
             ).astype(data.dtype)
         else:
-            actual1 = eval(saved_method)(
+            expected1 = eval(saved_method)(
                 full_res[2 * i], *args, **kwargs
             ).astype(data.dtype)
-            actual2 = eval(saved_method)(
+            expected2 = eval(saved_method)(
                 full_res[2 * i + 1], *args, **kwargs
             ).astype(data.dtype)
 
             if method == DownsamplingMethod.MIN:
-                actual = np.minimum(actual1, actual2)
+                expected = np.minimum(expected1, expected2)
             elif method == DownsamplingMethod.MAX:
-                actual = np.maximum(actual1, actual2)
+                expected = np.maximum(expected1, expected2)
             else:
                 raise ValueError(f"Unknown downsampling method: {method}")
 
-        np.testing.assert_array_equal(expected, actual)
+        np.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize(
