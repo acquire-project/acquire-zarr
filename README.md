@@ -5,8 +5,8 @@
 [![Build](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/build.yml)
 [![Tests](https://github.com/acquire-project/acquire-zarr/actions/workflows/test.yml/badge.svg)](https://github.com/acquire-project/acquire-zarr/actions/workflows/test_pr.yml)
 [![Chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://acquire-imaging.zulipchat.com/)
-![PyPI - Version](https://img.shields.io/pypi/v/acquire-zarr)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/acquire-zarr)
+[![PyPI - Version](https://img.shields.io/pypi/v/acquire-zarr)](https://pypi.org/project/acquire-zarr/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/acquire-zarr)](https://pypistats.org/packages/acquire-zarr)
 
 This library supports chunked, compressed, multiscale streaming to [Zarr][], both [version 2][] and [version 3][], with
 [OME-NGFF metadata].
