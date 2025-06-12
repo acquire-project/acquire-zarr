@@ -503,7 +503,7 @@ def test_write_custom_metadata(
 
 
 def test_write_transposed_array(
-        store_path: Path,
+    store_path: Path,
 ):
     settings = StreamSettings(
         dimensions=[
@@ -549,7 +549,7 @@ def test_write_transposed_array(
     settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -2**16,
+        -(2**16),
         2**16 - 1,
         (
             settings.dimensions[0].chunk_size_px,
@@ -559,7 +559,7 @@ def test_write_transposed_array(
             settings.dimensions[3].array_size_px,
         ),
         dtype=np.int32,
-        )
+    )
     data = np.transpose(data, (0, 1, 2, 4, 3))
 
     stream = ZarrStream(settings)
@@ -577,7 +577,7 @@ def test_write_transposed_array(
 
 
 def test_column_ragged_sharding(
-        store_path: Path,
+    store_path: Path,
 ):
     settings = StreamSettings(
         dimensions=[
@@ -609,8 +609,8 @@ def test_column_ragged_sharding(
     settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -2 ** 16,
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.dimensions[0].array_size_px,
             settings.dimensions[1].array_size_px,
@@ -669,8 +669,8 @@ def test_custom_dimension_units_and_scales(store_path: Path):
     settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -2 ** 16,
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.dimensions[0].array_size_px,
             settings.dimensions[1].array_size_px,
@@ -710,18 +710,24 @@ def test_custom_dimension_units_and_scales(store_path: Path):
     assert x["type"] == "space"
     assert x["unit"] == "nanometer"
 
-    z_scale, y_scale, x_scale = multiscale["datasets"][0]["coordinateTransformations"][0]["scale"]
+    z_scale, y_scale, x_scale = multiscale["datasets"][0][
+        "coordinateTransformations"
+    ][0]["scale"]
 
     assert z_scale == 0.1
     assert y_scale == 0.9
     assert x_scale == 1.1
 
 
-@pytest.mark.parametrize(("method",),
-                         [(DownsamplingMethod.DECIMATE,),
-                          (DownsamplingMethod.MEAN,),
-                          (DownsamplingMethod.MIN,),
-                          (DownsamplingMethod.MAX,)])
+@pytest.mark.parametrize(
+    ("method",),
+    [
+        (DownsamplingMethod.DECIMATE,),
+        (DownsamplingMethod.MEAN,),
+        (DownsamplingMethod.MIN,),
+        (DownsamplingMethod.MAX,),
+    ],
+)
 def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings = StreamSettings(
         dimensions=[
@@ -755,8 +761,8 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings.downsampling_method = method
 
     data = np.random.randint(
-        -2 ** 16,
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.dimensions[0].array_size_px,
             settings.dimensions[1].array_size_px,
@@ -774,7 +780,7 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     group = zarr.open(settings.store_path, mode="r")
     metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
-    method = metadata["method"]
+    saved_method = metadata["method"]
     args = list(map(eval, metadata.get("args", [])))
     kwargs = {k: eval(v) for k, v in metadata.get("kwargs", {}).items()}
 
@@ -790,14 +796,23 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     for i in range(downsampled.shape[0]):
         expected = downsampled[i, :, :]
-        actual = eval(method)(full_res[i], *args, **kwargs).astype(data.dtype)
+        actual = eval(saved_method)(full_res[i], *args, **kwargs).astype(
+            data.dtype
+        )
 
         # Check the downsampling method and arguments
         np.testing.assert_array_equal(expected, actual)
 
 
-@pytest.mark.parametrize(("method",),
-                         [(DownsamplingMethod.MEAN,), (DownsamplingMethod.MIN,), (DownsamplingMethod.MAX,)])
+@pytest.mark.parametrize(
+    ("method",),
+    [
+        (DownsamplingMethod.DECIMATE,),
+        (DownsamplingMethod.MEAN,),
+        (DownsamplingMethod.MIN,),
+        (DownsamplingMethod.MAX,),
+    ],
+)
 def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings = StreamSettings(
         dimensions=[
@@ -832,7 +847,7 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     data = np.random.randint(
         0,
-        2 ** 16 - 1,
+        2**16 - 1,
         (
             settings.dimensions[0].array_size_px,
             settings.dimensions[1].array_size_px,
@@ -849,6 +864,11 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     del stream
 
     group = zarr.open(settings.store_path, mode="r")
+    metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
+    saved_method = metadata["method"]
+    args = list(map(eval, metadata.get("args", [])))
+    kwargs = {k: eval(v) for k, v in metadata.get("kwargs", {}).items()}
+
     assert "0" in group
 
     full_res = group["0"]
@@ -859,54 +879,59 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     downsampled = group["1"]
     assert downsampled.shape == (50, 24, 32)
 
-    expected = np.zeros((downsampled.shape[1], downsampled.shape[2]), dtype=data.dtype)
-    if method == DownsamplingMethod.MEAN:
-        for plane in range(downsampled.shape[0]):
-            actual = downsampled[plane, :, :]
+    for i in range(downsampled.shape[0]):
+        expected = downsampled[i, :, :]
 
-            expected = skimage.transform.downscale_local_mean(data[(2 * plane): 2 * (plane + 1), :, :],
-                                                              (2, 2, 2)).astype(
-                data.dtype).squeeze()
+        if method == DownsamplingMethod.MEAN:
+            actual1 = eval(saved_method)(full_res[2 * i], *args, **kwargs)
+            actual2 = eval(saved_method)(full_res[2 * i + 1], *args, **kwargs)
+            actual = ((actual1 + actual2) / 2).astype(data.dtype)
+            np.testing.assert_allclose(
+                actual, expected, atol=1
+            )  # we may round slightly differently than skimage
+            continue
 
-            np.testing.assert_allclose(actual, expected, atol=1)  # we may round slightly differently than skimage
-    elif method == DownsamplingMethod.MIN:
-        for plane in range(downsampled.shape[0]):
-            actual = downsampled[plane, :, :]
+        if method == DownsamplingMethod.DECIMATE:
+            actual = eval(saved_method)(
+                full_res[2 * i], *args, **kwargs
+            ).astype(data.dtype)
+        else:
+            actual1 = eval(saved_method)(
+                full_res[2 * i], *args, **kwargs
+            ).astype(data.dtype)
+            actual2 = eval(saved_method)(
+                full_res[2 * i + 1], *args, **kwargs
+            ).astype(data.dtype)
 
-            for row in range(0, data.shape[1], 2):
-                for col in range(0, data.shape[2], 2):
-                    expected[row // 2, col // 2] = np.min(
-                        data[(2 * plane):2 * (plane + 1), row:row + 2, col:col + 2]
-                    )
+            if method == DownsamplingMethod.MIN:
+                actual = np.minimum(actual1, actual2)
+            elif method == DownsamplingMethod.MAX:
+                actual = np.maximum(actual1, actual2)
+            else:
+                raise ValueError(f"Unknown downsampling method: {method}")
 
-            np.testing.assert_array_equal(actual, expected)
-    elif method == DownsamplingMethod.MAX:
-        for plane in range(downsampled.shape[0]):
-            actual = downsampled[plane, :, :]
-
-            for row in range(0, data.shape[1], 2):
-                for col in range(0, data.shape[2], 2):
-                    expected[row // 2, col // 2] = np.max(
-                        data[(2 * plane):2 * (plane + 1), row:row + 2, col:col + 2]
-                    )
-
-            np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(expected, actual)
 
 
-@pytest.mark.parametrize(("output_key", "multiscale"),
-                         [
-                             ("labels", False),
-                             ("path/to/data", False),
-                             ("a/nested/multiscale/group", True),
-                         ])
+@pytest.mark.parametrize(
+    ("output_key", "multiscale"),
+    [
+        ("labels", False),
+        ("path/to/data", False),
+        ("a/nested/multiscale/group", True),
+    ],
+)
 def test_stream_data_to_named_array(
-        settings: StreamSettings,
-        store_path: Path,
-        request: pytest.FixtureRequest,
-        output_key: str,
-        multiscale: bool,
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    output_key: str,
+    multiscale: bool,
 ):
-    settings.store_path = str(store_path / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr")
+    settings.store_path = str(
+        store_path
+        / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr"
+    )
     settings.version = ZarrVersion.V3
     settings.output_key = output_key
     settings.multiscale = multiscale
@@ -941,7 +966,7 @@ def test_stream_data_to_named_array(
 
     # Navigate through the path to get to the array
     current_group = root_group
-    path_parts = output_key.split('/')
+    path_parts = output_key.split("/")
 
     for part in path_parts:
         assert part in current_group, f"Path part '{part}' not found in group"
