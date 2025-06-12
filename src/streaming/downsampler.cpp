@@ -483,6 +483,7 @@ zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
         auto it = partial_scaled_frames_.find(i);
         if (it != partial_scaled_frames_.end()) {
             // downsampled is the new frame
+            downsampled.swap(it->second);
             average2_fun_(downsampled, it->second, method_);
             downsampled_frames_.emplace(i, downsampled);
 
