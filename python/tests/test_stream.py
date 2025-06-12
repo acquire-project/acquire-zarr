@@ -964,3 +964,78 @@ def test_stream_data_to_named_array(
     # Verify array shape and contents
     assert array.shape == data.shape
     assert np.array_equal(array, data)
+
+
+def test_anisotropic_downsampling(settings: StreamSettings,
+                                  store_path: Path):
+    settings.store_path = str(store_path / "anisotropic_downsampling.zarr")
+    settings.version = ZarrVersion.V3
+    settings.data_type = DataType.UINT8
+    settings.multiscale = True
+    settings.downsampling_method = DownsamplingMethod.MEAN
+    settings.dimensions = [
+        Dimension(
+            name="z",
+            kind=DimensionType.SPACE,
+            array_size_px=1000,
+            chunk_size_px=256,
+            shard_size_chunks=4,
+        ),
+        Dimension(
+            name="y",
+            kind=DimensionType.SPACE,
+            array_size_px=2000,
+            chunk_size_px=256,
+            shard_size_chunks=8,
+        ),
+        Dimension(
+            name="x",
+            kind=DimensionType.SPACE,
+            array_size_px=2000,
+            chunk_size_px=256,
+            shard_size_chunks=8,
+        ),
+    ]
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Create test data
+    data = np.random.randint(
+        0,
+        2 ** 8 - 1,
+        (
+            settings.dimensions[0].array_size_px,
+            settings.dimensions[1].array_size_px,
+            settings.dimensions[2].array_size_px,
+        ),
+        dtype=np.uint8,
+    )
+
+    stream.append(data)
+    del stream  # close the stream, flush the files
+
+    # Open the Zarr group and verify the data
+    group = zarr.open(settings.store_path, mode="r")
+    assert "0" in group
+    array = group["0"]
+    assert array.shape == data.shape
+    assert array.chunks == (256, 256, 256)
+    # don't check the data itself, this is done elsewhere
+
+    assert "1" in group
+    array = group["1"]
+    assert array.shape == (500, 1000, 1000)
+    assert array.chunks == (256, 256, 256)
+
+    assert "2" in group
+    array = group["2"]
+    assert array.shape == (250, 500, 500)
+    assert array.chunks == (250, 256, 256)
+
+    assert "3" in group
+    array = group["3"]
+    assert array.shape == (250, 250, 250)
+    assert array.chunks == (250, 250, 250)
+
+    assert "4" not in group  # No further downsampling

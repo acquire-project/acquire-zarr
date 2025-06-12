@@ -8,6 +8,10 @@
 
 #include "acquire.zarr.h"
 
+#ifdef _DEBUG
+#include <crtdbg.h>
+#endif
+
 namespace py = pybind11;
 
 namespace {

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #111)
 - Improved thread safety with additional mutex protection for buffer operations (#111)
 - Enhanced error handling with more descriptive bounds checking and assertions (#111)
+- Decouple XY and Z downsampling for anisotropic volumes (#117)
 
 ### Fixed
 
