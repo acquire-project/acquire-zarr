@@ -14,7 +14,7 @@ import zarr
 from numcodecs import blosc as ncblosc
 from zarr.codecs import blosc as zblosc
 import s3fs
-from skimage.transform import downscale_local_mean
+import skimage
 
 dotenv.load_dotenv()
 
@@ -718,7 +718,10 @@ def test_custom_dimension_units_and_scales(store_path: Path):
 
 
 @pytest.mark.parametrize(("method",),
-                         [(DownsamplingMethod.MEAN,), (DownsamplingMethod.MIN,), (DownsamplingMethod.MAX,)])
+                         [(DownsamplingMethod.DECIMATE,),
+                          (DownsamplingMethod.MEAN,),
+                          (DownsamplingMethod.MIN,),
+                          (DownsamplingMethod.MAX,)])
 def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings = StreamSettings(
         dimensions=[
@@ -770,6 +773,11 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     del stream
 
     group = zarr.open(settings.store_path, mode="r")
+    metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
+    method = metadata["method"]
+    args = list(map(eval, metadata.get("args", [])))
+    kwargs = {k: eval(v) for k, v in metadata.get("kwargs", {}).items()}
+
     assert "0" in group
 
     full_res = group["0"]
@@ -780,33 +788,12 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     downsampled = group["1"]
     assert downsampled.shape == (50, 24, 32)
 
-    expected = np.zeros((downsampled.shape[1], downsampled.shape[2]), dtype=data.dtype)
-    if method == DownsamplingMethod.MEAN:
-        for plane in range(downsampled.shape[0]):
-            expected = downscale_local_mean(data[plane, :, :], (2, 2)).astype(data.dtype)
-            actual = downsampled[plane, :, :]
+    for i in range(downsampled.shape[0]):
+        expected = downsampled[i, :, :]
+        actual = eval(method)(full_res[i], *args, **kwargs).astype(data.dtype)
 
-            np.testing.assert_array_equal(actual, expected)
-    elif method == DownsamplingMethod.MIN:
-        for plane in range(downsampled.shape[0]):
-            actual = downsampled[plane, :, :]
-
-            for row in range(0, data.shape[1], 2):
-                for col in range(0, data.shape[2], 2):
-                    expected[row // 2, col // 2] = np.min(
-                        data[plane, row:row + 2, col:col + 2]
-                    )
-
-            np.testing.assert_array_equal(actual, expected)
-    elif method == DownsamplingMethod.MAX:
-        for plane in range(downsampled.shape[0]):
-            for row in range(0, data.shape[1], 2):
-                for col in range(0, data.shape[2], 2):
-                    expected[row // 2, col // 2] = np.max(
-                        data[plane, row:row + 2, col:col + 2]
-                    )
-
-            np.testing.assert_array_equal(downsampled[plane, :, :], expected)
+        # Check the downsampling method and arguments
+        np.testing.assert_array_equal(expected, actual)
 
 
 @pytest.mark.parametrize(("method",),
@@ -877,7 +864,8 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
         for plane in range(downsampled.shape[0]):
             actual = downsampled[plane, :, :]
 
-            expected = downscale_local_mean(data[(2 * plane): 2 * (plane + 1), :, :], (2, 2, 2)).astype(
+            expected = skimage.transform.downscale_local_mean(data[(2 * plane): 2 * (plane + 1), :, :],
+                                                              (2, 2, 2)).astype(
                 data.dtype).squeeze()
 
             np.testing.assert_allclose(actual, expected, atol=1)  # we may round slightly differently than skimage

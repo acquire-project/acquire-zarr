@@ -300,6 +300,71 @@ zarr::Downsampler::writer_configurations() const
     return writer_configurations_;
 }
 
+std::string
+zarr::Downsampler::downsampling_method() const
+{
+    switch (method_) {
+        case ZarrDownsamplingMethod_Decimate:
+            return "decimate";
+        case ZarrDownsamplingMethod_Mean:
+            return "local_mean";
+        case ZarrDownsamplingMethod_Min:
+            return "local_min";
+        case ZarrDownsamplingMethod_Max:
+            return "local_max";
+        default:
+            throw std::runtime_error("Invalid downsampling method: " +
+                                     std::to_string(method_));
+    }
+}
+
+nlohmann::json
+zarr::Downsampler::get_metadata() const
+{
+    nlohmann::json metadata;
+    switch (method_) {
+        case ZarrDownsamplingMethod_Mean:
+            metadata["description"] =
+              "The fields in the metadata describe how to reproduce this "
+              "multiscaling in scikit-image. The method and its parameters "
+              "are given here.";
+            metadata["method"] = "skimage.transform.downscale_local_mean";
+            metadata["version"] = "0.25.2";
+            metadata["kwargs"] = { { "factors", "(2, 2)" }, { "cval", "0" } };
+            break;
+        case ZarrDownsamplingMethod_Decimate:
+            metadata["description"] =
+              "Subsampling by taking every 2nd pixel/voxel (top-left corner of "
+              "each 2x2 block). "
+              "Equivalent to numpy array slicing with stride 2.";
+            metadata["method"] = "np.ndarray.__getitem__";
+            metadata["version"] = "2.2.6";
+            metadata["args"] = { "(slice(0, None, 2), slice(0, None, 2))" };
+            break;
+        case ZarrDownsamplingMethod_Min:
+            metadata["description"] =
+              "Minimum pooling over 2x2 blocks. Equivalent to reshaping into "
+              "blocks and taking numpy.min along block dimensions.";
+            metadata["method"] = "skimage.measure.block_reduce";
+            metadata["version"] = "0.25.2";
+            metadata["kwargs"] = { { "func", "np.min" } };
+            break;
+        case ZarrDownsamplingMethod_Max:
+            metadata["description"] =
+              "Maximum pooling over 2x2 blocks. Equivalent to reshaping into "
+              "blocks and taking numpy.max along block dimensions.";
+            metadata["method"] = "skimage.measure.block_reduce";
+            metadata["version"] = "0.25.2";
+            metadata["kwargs"] = { { "func", "np.max" } };
+            break;
+        default:
+            throw std::runtime_error("Invalid downsampling method: " +
+                                     std::to_string(method_));
+    }
+
+    return metadata;
+}
+
 bool
 zarr::Downsampler::is_3d_downsample_() const
 {

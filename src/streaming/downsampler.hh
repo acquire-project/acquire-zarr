@@ -4,6 +4,8 @@
 #include "array.dimensions.hh"
 #include "array.hh"
 
+#include "nlohmann/json.hpp"
+
 #include <unordered_map>
 
 namespace zarr {
@@ -34,6 +36,9 @@ class Downsampler
 
     const std::unordered_map<int, std::shared_ptr<zarr::ArrayConfig>>&
     writer_configurations() const;
+
+    std::string downsampling_method() const;
+    nlohmann::json get_metadata() const;
 
   private:
     using ScaleFunT = std::function<

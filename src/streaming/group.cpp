@@ -190,18 +190,8 @@ zarr::Group::make_multiscales_metadata_() const
         });
 
         // downsampling metadata
-        multiscales[0]["type"] = "local_mean";
-        multiscales[0]["metadata"] = {
-            { "description",
-              "The fields in the metadata describe how to reproduce this "
-              "multiscaling in scikit-image. The method and its parameters "
-              "are "
-              "given here." },
-            { "method", "skimage.transform.downscale_local_mean" },
-            { "version", "0.21.0" },
-            { "args", "[2]" },
-            { "kwargs", { "cval", 0 } },
-        };
+        multiscales[0]["type"] = downsampler_->downsampling_method();
+        multiscales[0]["metadata"] = downsampler_->get_metadata();
     }
 
     return multiscales;
