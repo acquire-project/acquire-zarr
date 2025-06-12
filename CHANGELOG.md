@@ -10,12 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Users may now select the method used to downsample images (#108)
+- Downsampling metadata now includes reproducible method specifications with exact library functions and parameters (
+  #118)
 - Added `output_key` option to specify the key/path in Zarr storage where data should be saved (#106)
 - Added `overwrite` flag to control whether existing data in the store path should be removed (#106)
 - Added support for IAM and config file options for S3 authentication (#109)
 
 ## Changed
 
+- Downsampling operations are now serializable and reproducible using standard library functions (#118)
+- Enhanced test coverage for all downsampling methods with metadata validation (#118)
 - Limit OpenMP parallelization to single thread on systems with ≤4 cores to avoid crashes in constrained environments (
   #111)
 - Improved thread safety with additional mutex protection for buffer operations (#111)
@@ -26,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Segmentation faults in containerized environments (CI, CoreWeave, Argo) caused by OpenMP threading issues (#111)
 - Race conditions in lambda capture and reference handling in thread pool jobs (#111)
 - Buffer overflow checks in V3 array defragmentation (#111)
+-
 
 ### Deprecated
 
