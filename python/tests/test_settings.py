@@ -89,7 +89,7 @@ def test_set_dimensions(settings):
             array_size_px=7,
             chunk_size_px=8,
             shard_size_chunks=9,
-        )
+        ),
     ]
 
     assert len(settings.dimensions) == 3
@@ -194,7 +194,7 @@ def test_set_dimensions_in_constructor():
                 array_size_px=7,
                 chunk_size_px=8,
                 shard_size_chunks=9,
-            )
+            ),
         ]
     )
 
@@ -217,6 +217,7 @@ def test_set_dimensions_in_constructor():
     assert settings.dimensions[2].array_size_px == 7
     assert settings.dimensions[2].chunk_size_px == 8
     assert settings.dimensions[2].shard_size_chunks == 9
+
 
 def test_set_multiscale(settings):
     assert settings.multiscale is False
