@@ -82,72 +82,6 @@ make_file_sinks(std::vector<std::string>& file_paths,
 }
 
 bool
-make_file_sinks(
-  const std::string& base_dir,
-  const std::vector<std::string>& file_paths,
-  std::shared_ptr<zarr::ThreadPool> thread_pool,
-  std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>& sinks)
-{
-    if (file_paths.empty()) {
-        return true;
-    }
-
-    // create the parent directories if they don't exist
-    const std::string prefix = base_dir.empty() ? "" : base_dir + "/";
-    {
-        std::vector<std::string> paths_with_parents(file_paths.size());
-        for (auto i = 0; i < file_paths.size(); ++i) {
-            paths_with_parents[i] = prefix + file_paths[i];
-        }
-
-        if (!zarr::make_dirs(zarr::get_parent_paths(paths_with_parents),
-                             thread_pool)) {
-            LOG_ERROR("Failed to make parent directories");
-            return false;
-        }
-    }
-
-    std::atomic<char> all_successful = 1;
-
-    const auto n_files = file_paths.size();
-    std::latch latch(n_files);
-
-    sinks.clear();
-    for (const auto& filename : file_paths) {
-        sinks[filename] = nullptr;
-        std::unique_ptr<zarr::Sink>* psink = &sinks[filename];
-        const auto file_path = prefix + filename;
-
-        EXPECT(thread_pool->push_job(
-                 [filename = file_path, psink, &latch, &all_successful](
-                   std::string& err) -> bool {
-                     bool success = false;
-
-                     try {
-                         if (all_successful) {
-                             *psink =
-                               std::make_unique<zarr::FileSink>(filename);
-                         }
-                         success = true;
-                     } catch (const std::exception& exc) {
-                         err = "Failed to create file '" + filename +
-                               "': " + exc.what();
-                     }
-
-                     latch.count_down();
-                     all_successful.fetch_and((char)success);
-
-                     return success;
-                 }),
-               "Failed to push job to thread pool.");
-    }
-
-    latch.wait();
-
-    return (bool)all_successful;
-}
-
-bool
 make_s3_sinks(std::string_view bucket_name,
               const std::vector<std::string>& object_keys,
               std::shared_ptr<zarr::S3ConnectionPool> connection_pool,
@@ -171,37 +105,6 @@ make_s3_sinks(std::string_view bucket_name,
     for (auto i = 0; i < n_objects; ++i) {
         sinks[i] = std::make_unique<zarr::S3Sink>(
           bucket_name, object_keys[i], connection_pool);
-    }
-
-    return true;
-}
-
-bool
-make_s3_sinks(
-  std::string_view bucket_name,
-  std::string_view base_path,
-  const std::vector<std::string>& object_keys,
-  std::shared_ptr<zarr::S3ConnectionPool> connection_pool,
-  std::unordered_map<std::string, std::unique_ptr<zarr::Sink>>& sinks)
-{
-    if (object_keys.empty()) {
-        return true;
-    }
-
-    if (bucket_name.empty()) {
-        LOG_ERROR("Bucket name not provided.");
-        return false;
-    }
-
-    if (!connection_pool) {
-        LOG_ERROR("S3 connection pool not provided.");
-        return false;
-    }
-
-    sinks.clear();
-    for (const auto& key : object_keys) {
-        sinks[key] = std::make_unique<zarr::S3Sink>(
-          bucket_name, std::string(base_path) + "/" + key, connection_pool);
     }
 
     return true;
