@@ -305,10 +305,81 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
 void
 zarr::Downsampler::add_frame(ConstByteSpan frame_data)
 {
-    if (is_3d_downsample_()) {
-        downsample_3d_(frame_data);
-    } else {
-        downsample_2d_(frame_data);
+    const auto& base_dims = writer_configurations_[0]->dimensions;
+    size_t frame_width = base_dims->width_dim().array_size_px;
+    size_t frame_height = base_dims->height_dim().array_size_px;
+
+    ConstByteSpan data = frame_data;
+    ByteVector next_level_frame;
+    for (auto level = 1; level < n_levels_(); ++level) {
+        const auto& prev_dims = writer_configurations_[level - 1]->dimensions;
+        const auto prev_width = prev_dims->width_dim().array_size_px;
+        const auto prev_height = prev_dims->height_dim().array_size_px;
+        const auto prev_planes =
+          prev_dims->at(prev_dims->ndims() - 3).array_size_px;
+
+        EXPECT(prev_width == frame_width && prev_height == frame_height,
+               "Frame dimensions do not match expected dimensions: ",
+               prev_width,
+               "x",
+               prev_height,
+               " vs. ",
+               frame_width,
+               "x",
+               frame_height);
+
+        const auto& next_dims = writer_configurations_[level]->dimensions;
+        const auto next_width = next_dims->width_dim().array_size_px;
+        const auto next_height = next_dims->height_dim().array_size_px;
+        const auto next_planes =
+          next_dims->at(next_dims->ndims() - 3).array_size_px;
+
+        // only downsample if this level's XY size is smaller than the last
+        if (next_width < prev_width || next_height < prev_height) {
+            next_level_frame =
+              scale_fun_(data, frame_width, frame_height, method_);
+        } else {
+            next_level_frame = ByteVector(data.begin(), data.end());
+        }
+
+        EXPECT(next_width == frame_width && next_height == frame_height,
+               "Downsampled dimensions do not match expected dimensions: ",
+               next_width,
+               "x",
+               next_height,
+               " vs. ",
+               frame_width,
+               "x",
+               frame_height);
+
+        // only average if this level's Z size is smaller than the last
+        if (next_planes < prev_planes) {
+            auto it = partial_scaled_frames_.find(level);
+            if (it != partial_scaled_frames_.end()) {
+                // downsampled is the new frame
+                average2_fun_(next_level_frame, it->second, method_);
+                downsampled_frames_.emplace(level, next_level_frame);
+
+                // clean up this LOD
+                partial_scaled_frames_.erase(it);
+
+                // set up for next iteration
+                if (level + 1 < writer_configurations_.size()) {
+                    data = next_level_frame;
+                }
+            } else {
+                partial_scaled_frames_.emplace(level, next_level_frame);
+                break;
+            }
+        } else {
+            // no downsampling in Z, so we can just pass the data to the next
+            // level
+            downsampled_frames_.emplace(level, next_level_frame);
+
+            if (level + 1 < writer_configurations_.size()) {
+                data = next_level_frame;
+            }
+        }
     }
 }
 
@@ -329,19 +400,6 @@ const std::unordered_map<int, std::shared_ptr<zarr::ArrayConfig>>&
 zarr::Downsampler::writer_configurations() const
 {
     return writer_configurations_;
-}
-
-bool
-zarr::Downsampler::is_3d_downsample_() const
-{
-    // the width and depth dimensions are always spatial -- if the 3rd dimension
-    // is also spatial and nontrivial, then we downsample in 3 dimensions
-    const auto& dims = writer_configurations_.at(0)->dimensions;
-    const auto ndims = dims->ndims();
-
-    const auto& third_dim = dims->at(ndims - 3);
-    return third_dim.type == ZarrDimensionType_Space &&
-           third_dim.array_size_px > 1;
 }
 
 size_t
@@ -440,52 +498,5 @@ zarr::Downsampler::make_writer_configurations_(
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
-    }
-}
-
-void
-zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
-{
-    const auto& dims = writer_configurations_[0]->dimensions;
-    size_t frame_width = dims->width_dim().array_size_px;
-    size_t frame_height = dims->height_dim().array_size_px;
-
-    ConstByteSpan data = frame_data;
-    ByteVector downsampled;
-    for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height, method_);
-        auto it = partial_scaled_frames_.find(i);
-        if (it != partial_scaled_frames_.end()) {
-            // downsampled is the new frame
-            average2_fun_(downsampled, it->second, method_);
-            downsampled_frames_.emplace(i, downsampled);
-
-            // clean up this LOD
-            partial_scaled_frames_.erase(it);
-
-            // set up for next iteration
-            if (i + 1 < writer_configurations_.size()) {
-                data = downsampled;
-            }
-        } else {
-            partial_scaled_frames_.emplace(i, downsampled);
-            break;
-        }
-    }
-}
-
-void
-zarr::Downsampler::downsample_2d_(ConstByteSpan frame_data)
-{
-    const auto& dims = writer_configurations_[0]->dimensions;
-    size_t frame_width = dims->width_dim().array_size_px;
-    size_t frame_height = dims->height_dim().array_size_px;
-
-    ConstByteSpan data = frame_data;
-    ByteVector downsampled;
-    for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height, method_);
-        downsampled_frames_.emplace(i, downsampled);
-        data = downsampled;
     }
 }
