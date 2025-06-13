@@ -1,5 +1,7 @@
 #include <utility>
 
+#include <fmt/format.h>
+
 #include "array.hh"
 #include "group.hh"
 #include "macros.hh"
@@ -19,10 +21,10 @@ zarr::ZarrNode::ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
 std::string
 zarr::ZarrNode::node_path_() const
 {
-    std::string key = config_->store_root;
-    if (!config_->node_key.empty()) {
-        key += "/" + config_->node_key;
-    }
+    std::string key =
+      config_->node_key.empty()
+        ? config_->store_root
+        : fmt::format("{}/{}", config_->store_root, config_->node_key);
 
     return key;
 }
@@ -35,7 +37,7 @@ zarr::ZarrNode::make_metadata_sinks_()
     try {
         const auto sink_keys = metadata_keys_();
         for (const auto& key : sink_keys) {
-            const std::string path = node_path_() + "/" + key;
+            const std::string path = fmt::format("{}/{}", node_path_(), key);
             std::unique_ptr<Sink> sink =
               config_->bucket_name
                 ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)

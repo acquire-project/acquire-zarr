@@ -1,9 +1,11 @@
 #include "definitions.hh"
 #include "macros.hh"
 
-#include <string_view>
+#include <fmt/format.h>
 
 #include <cstring>
+#include <string_view>
+
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -24,8 +26,8 @@ init_handle(void** handle, std::string_view filename)
     if (*fd < 0) {
         const auto err = get_last_error_as_string();
         delete fd;
-        throw std::runtime_error("Failed to open file: '" +
-                                 std::string(filename) + "': " + err);
+        throw std::runtime_error(fmt::format(
+          "Failed to open file: '{}': {}", std::string(filename), err));
     }
     *handle = (void*)fd;
 }
@@ -46,7 +48,8 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
         ssize_t written = pwrite(*fd, cur, remaining, offset);
         if (written < 0) {
             const auto err = get_last_error_as_string();
-            throw std::runtime_error("Failed to write to file: " + err);
+            throw std::runtime_error(
+              fmt::format("Failed to write to file: {}", err));
         }
         retries += (written == 0) ? 1 : 0;
         offset += written;

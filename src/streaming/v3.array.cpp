@@ -5,6 +5,7 @@
 #include "sink.hh"
 #include "zarr.common.hh"
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <crc32c/crc32c.h>
 
@@ -40,8 +41,8 @@ sample_type_to_dtype(ZarrDataType t)
         case ZarrDataType_float64:
             return "float64";
         default:
-            throw std::runtime_error("Invalid ZarrDataType: " +
-                                     std::to_string(static_cast<int>(t)));
+            throw std::runtime_error(
+              fmt::format("Invalid ZarrDataType: {}", static_cast<int>(t)));
     }
 }
 
@@ -56,8 +57,8 @@ shuffle_to_string(uint8_t shuffle)
         case 2:
             return "bitshuffle";
         default:
-            throw std::runtime_error("Invalid shuffle value: " +
-                                     std::to_string(shuffle));
+            throw std::runtime_error(
+              fmt::format("Invalid shuffle value: {}", shuffle));
     }
 }
 } // namespace
@@ -276,7 +277,7 @@ zarr::V3Array::compute_chunk_offsets_and_defrag_(uint32_t shard_index)
 std::string
 zarr::V3Array::data_root_() const
 {
-    return node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    return fmt::format("{}/c/{}", node_path_(), append_chunk_index_);
 }
 
 const DimensionPartsFun
@@ -510,7 +511,8 @@ zarr::V3Array::compress_and_flush_data_()
                     if (!success) {
                         semaphore.release();
 
-                        err = "Failed to write shard at path " + data_path;
+                        err = fmt::format("Failed to write shard at path '{}'",
+                                          data_path);
                         shard_latch_->count_down();
                         all_successful = 0;
                         return false;
@@ -543,7 +545,10 @@ zarr::V3Array::compress_and_flush_data_()
                                data_path);
                     }
                 } catch (const std::exception& exc) {
-                    err = "Failed to flush data: " + std::string(exc.what());
+                    err =
+                      fmt::format("Exception writing shard at path '{}': {}",
+                                  data_path,
+                                  exc.what());
                     success = false;
                 }
                 semaphore.release();
