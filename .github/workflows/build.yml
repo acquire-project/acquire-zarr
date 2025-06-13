@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - "main"
+  pull_request: # TODO (aliddell): remove this before merge
+    branches:
+      - "main"
 
 jobs:
   build:
@@ -86,7 +89,7 @@ jobs:
           - "macos-latest" # arm
           - "macos-13" # x86_64
         python:
-          - "3.13"
+          - "3.13.3"
 
     runs-on: ${{ matrix.platform }}
 
