@@ -1,9 +1,40 @@
 #include "downsampler.hh"
 #include "macros.hh"
 
+#include <bit>
 #include <regex>
 
 namespace {
+ZarrDimension
+downsample_dimension(const ZarrDimension& dim)
+{
+    // the smallest this can be is 1
+    const uint32_t array_size_px =
+      (dim.array_size_px + (dim.array_size_px % 2)) / 2;
+
+    // the smallest this can be is 1
+    const uint32_t chunk_size_px = std::min(dim.chunk_size_px, array_size_px);
+
+    // the smallest this can be is also 1
+    const uint32_t n_chunks =
+      (array_size_px + chunk_size_px - 1) / chunk_size_px;
+
+    const uint32_t shard_size_chunks =
+      std::min(n_chunks, dim.shard_size_chunks);
+
+    std::string unit = dim.unit.has_value() ? *dim.unit : "";
+
+    double scale = dim.scale * 2.0;
+
+    return ZarrDimension(dim.name,
+                         dim.type,
+                         array_size_px,
+                         chunk_size_px,
+                         shard_size_chunks,
+                         unit,
+                         scale);
+}
+
 template<typename T>
 T
 decimate4(const T& a, const T& b, const T& c, const T& d)
@@ -274,10 +305,83 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
 void
 zarr::Downsampler::add_frame(ConstByteSpan frame_data)
 {
-    if (is_3d_downsample_()) {
-        downsample_3d_(frame_data);
-    } else {
-        downsample_2d_(frame_data);
+    const auto& base_dims = writer_configurations_[0]->dimensions;
+    size_t frame_width = base_dims->width_dim().array_size_px;
+    size_t frame_height = base_dims->height_dim().array_size_px;
+
+    ConstByteSpan data = frame_data;
+    ByteVector next_level_frame;
+    for (auto level = 1; level < n_levels_(); ++level) {
+        const auto& prev_dims = writer_configurations_[level - 1]->dimensions;
+        const auto prev_width = prev_dims->width_dim().array_size_px;
+        const auto prev_height = prev_dims->height_dim().array_size_px;
+        const auto prev_planes =
+          prev_dims->at(prev_dims->ndims() - 3).array_size_px;
+
+        EXPECT(prev_width == frame_width && prev_height == frame_height,
+               "Frame dimensions do not match expected dimensions: ",
+               prev_width,
+               "x",
+               prev_height,
+               " vs. ",
+               frame_width,
+               "x",
+               frame_height);
+
+        const auto& next_dims = writer_configurations_[level]->dimensions;
+        const auto next_width = next_dims->width_dim().array_size_px;
+        const auto next_height = next_dims->height_dim().array_size_px;
+        const auto next_planes =
+          next_dims->at(next_dims->ndims() - 3).array_size_px;
+
+        // only downsample if this level's XY size is smaller than the last
+        if (next_width < prev_width || next_height < prev_height) {
+            next_level_frame =
+              scale_fun_(data, frame_width, frame_height, method_);
+        } else {
+            next_level_frame = ByteVector(data.begin(), data.end());
+        }
+
+        EXPECT(next_width == frame_width && next_height == frame_height,
+               "Downsampled dimensions do not match expected dimensions: ",
+               next_width,
+               "x",
+               next_height,
+               " vs. ",
+               frame_width,
+               "x",
+               frame_height);
+
+        // only average if this level's Z size is smaller than the last
+        if (next_planes < prev_planes) {
+            auto it = partial_scaled_frames_.find(level);
+            if (it != partial_scaled_frames_.end()) {
+                // average2_fun_ writes to next_level_frame
+                // swap here so that decimate2 can take it->second
+                next_level_frame.swap(it->second);
+                average2_fun_(next_level_frame, it->second, method_);
+                downsampled_frames_.emplace(level, next_level_frame);
+
+                // clean up this LOD
+                partial_scaled_frames_.erase(it);
+
+                // set up for next iteration
+                if (level + 1 < writer_configurations_.size()) {
+                    data = next_level_frame;
+                }
+            } else {
+                partial_scaled_frames_.emplace(level, next_level_frame);
+                break;
+            }
+        } else {
+            // no downsampling in Z, so we can just pass the data to the next
+            // level
+            downsampled_frames_.emplace(level, next_level_frame);
+
+            if (level + 1 < writer_configurations_.size()) {
+                data = next_level_frame;
+            }
+        }
     }
 }
 
@@ -365,19 +469,6 @@ zarr::Downsampler::get_metadata() const
     return metadata;
 }
 
-bool
-zarr::Downsampler::is_3d_downsample_() const
-{
-    // the width and depth dimensions are always spatial -- if the 3rd dimension
-    // is also spatial and nontrivial, then we downsample in 3 dimensions
-    const auto& dims = writer_configurations_.at(0)->dimensions;
-    const auto ndims = dims->ndims();
-
-    const auto& third_dim = dims->at(ndims - 3);
-    return third_dim.type == ZarrDimensionType_Space &&
-           third_dim.array_size_px > 1;
-}
-
 size_t
 zarr::Downsampler::n_levels_() const
 {
@@ -396,123 +487,83 @@ zarr::Downsampler::make_writer_configurations_(
 
     writer_configurations_.insert({ config->level_of_detail, config });
 
+    const std::shared_ptr<ArrayDimensions>& base_dims = config->dimensions;
     const auto ndims = config->dimensions->ndims();
 
-    auto cur_config = config;
-    bool do_downsample = true;
-    while (do_downsample) {
-        const auto& dims = cur_config->dimensions;
+    const auto array_size_x = base_dims->width_dim().array_size_px;
+    const auto chunk_size_x = base_dims->width_dim().chunk_size_px;
+    const auto n_chunks_x = (array_size_x + chunk_size_x - 1) / chunk_size_x;
+    const auto n_levels_x = n_chunks_x > 1 ? std::bit_width(n_chunks_x - 1) : 0;
 
-        // downsample the final 3 dimensions
+    const auto array_size_y = base_dims->height_dim().array_size_px;
+    const auto chunk_size_y = base_dims->height_dim().chunk_size_px;
+    const auto n_chunks_y = (array_size_y + chunk_size_y - 1) / chunk_size_y;
+    const auto n_levels_y = n_chunks_y > 1 ? std::bit_width(n_chunks_y - 1) : 0;
+
+    // assume isotropic downsampling, so the number of levels is the same in
+    // both
+    const auto n_levels_xy = std::min(n_levels_x, n_levels_y);
+    auto n_levels = n_levels_xy;
+
+    if (base_dims->at(ndims - 3).type == ZarrDimensionType_Space) {
+        // if the 3rd dimension is spatial, we can downsample it as well
+        const auto array_size_z = base_dims->at(ndims - 3).array_size_px;
+        const auto chunk_size_z = base_dims->at(ndims - 3).chunk_size_px;
+        const auto n_chunks_z = (array_size_z + chunk_size_z - 1) / chunk_size_z;
+        const auto n_divs_z = n_chunks_z > 1 ? std::bit_width(n_chunks_z - 1) : 0;
+
+        n_levels = std::max(n_levels_xy, n_divs_z);
+    }
+
+    for (auto level = 1; level <= n_levels; ++level) {
+        const auto& prev_config = writer_configurations_.at(level - 1);
+        const auto& prev_dims = prev_config->dimensions;
+
         std::vector<ZarrDimension> down_dims(ndims);
-        for (auto i = 0; i < ndims; ++i) {
-            const auto& dim = dims->at(i);
-            if (i < ndims - 3 || dim.type != ZarrDimensionType_Space) {
-                down_dims[i] = dim;
-                continue;
-            }
 
-            const uint32_t array_size_px =
-              (dim.array_size_px + (dim.array_size_px % 2)) / 2;
+        // we don't downsample these dimensions, so just copy them
+        for (auto i = 0; i < ndims - 3; ++i) {
+            down_dims[i] = prev_dims->at(i);
+        }
 
-            const uint32_t chunk_size_px =
-              dim.array_size_px == 0
-                ? dim.chunk_size_px
-                : std::min(dim.chunk_size_px, array_size_px);
+        const auto& z_dim = prev_dims->at(ndims - 3);
+        if (z_dim.type == ZarrDimensionType_Space &&
+            z_dim.array_size_px > z_dim.chunk_size_px) {
+            down_dims[ndims - 3] = downsample_dimension(z_dim);
+        } else {
+            // not spatial or fully downsampled, so we just copy it
+            down_dims[ndims - 3] = z_dim;
+        }
 
-            CHECK(chunk_size_px);
-            const uint32_t n_chunks =
-              (array_size_px + chunk_size_px - 1) / chunk_size_px;
+        const auto& y_dim = prev_dims->height_dim();
+        const auto& x_dim = prev_dims->width_dim();
 
-            const uint32_t shard_size_chunks =
-              dim.array_size_px == 0
-                ? 1
-                : std::min(n_chunks, dim.shard_size_chunks);
-
-            down_dims[i] = { dim.name,
-                             dim.type,
-                             array_size_px,
-                             chunk_size_px,
-                             shard_size_chunks };
+        if (std::min(y_dim.array_size_px, x_dim.array_size_px) >
+            std::max(y_dim.chunk_size_px, x_dim.chunk_size_px)) {
+            // downsample the final 2 dimensions
+            down_dims[ndims - 2] = downsample_dimension(y_dim);
+            down_dims[ndims - 1] = downsample_dimension(x_dim);
+        } else {
+            // not spatial or fully downsampled, so we just copy them
+            down_dims[ndims - 2] = y_dim;
+            down_dims[ndims - 1] = x_dim;
         }
 
         auto down_config = std::make_shared<ArrayConfig>(
-          cur_config->store_root,
+          prev_config->store_root,
           // the new node key has the same parent as the current, but
           // substitutes the current level of detail with the new one
-          std::regex_replace(cur_config->node_key,
+          std::regex_replace(prev_config->node_key,
                              std::regex("(\\d+)$"),
-                             std::to_string(cur_config->level_of_detail + 1)),
-          cur_config->bucket_name,
-          cur_config->compression_params,
+                             std::to_string(prev_config->level_of_detail + 1)),
+          prev_config->bucket_name,
+          prev_config->compression_params,
           std::make_shared<ArrayDimensions>(std::move(down_dims),
-                                            cur_config->dtype),
-          cur_config->dtype,
-          cur_config->level_of_detail + 1);
-
-        // can we downsample down_config?
-        for (auto i = 0; i < ndims; ++i) {
-            // downsampling made the chunk size strictly smaller
-            const auto& dim = cur_config->dimensions->at(i);
-            const auto& downsampled_dim = down_config->dimensions->at(i);
-
-            if (dim.chunk_size_px > downsampled_dim.chunk_size_px) {
-                do_downsample = false;
-                break;
-            }
-        }
+                                            prev_config->dtype),
+          prev_config->dtype,
+          prev_config->level_of_detail + 1);
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
-
-        cur_config = down_config;
-    }
-}
-
-void
-zarr::Downsampler::downsample_3d_(ConstByteSpan frame_data)
-{
-    const auto& dims = writer_configurations_[0]->dimensions;
-    size_t frame_width = dims->width_dim().array_size_px;
-    size_t frame_height = dims->height_dim().array_size_px;
-
-    ConstByteSpan data = frame_data;
-    ByteVector downsampled;
-    for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height, method_);
-        auto it = partial_scaled_frames_.find(i);
-        if (it != partial_scaled_frames_.end()) {
-            // downsampled is the new frame
-            downsampled.swap(it->second);
-            average2_fun_(downsampled, it->second, method_);
-            downsampled_frames_.emplace(i, downsampled);
-
-            // clean up this LOD
-            partial_scaled_frames_.erase(it);
-
-            // set up for next iteration
-            if (i + 1 < writer_configurations_.size()) {
-                data = downsampled;
-            }
-        } else {
-            partial_scaled_frames_.emplace(i, downsampled);
-            break;
-        }
-    }
-}
-
-void
-zarr::Downsampler::downsample_2d_(ConstByteSpan frame_data)
-{
-    const auto& dims = writer_configurations_[0]->dimensions;
-    size_t frame_width = dims->width_dim().array_size_px;
-    size_t frame_height = dims->height_dim().array_size_px;
-
-    ConstByteSpan data = frame_data;
-    ByteVector downsampled;
-    for (auto i = 1; i < n_levels_(); ++i) {
-        downsampled = scale_fun_(data, frame_width, frame_height, method_);
-        downsampled_frames_.emplace(i, downsampled);
-        data = downsampled;
     }
 }

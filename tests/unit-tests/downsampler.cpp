@@ -39,7 +39,7 @@ test_basic_downsampling()
 
     // Check writer configurations
     const auto& writer_configs = downsampler.writer_configurations();
-    EXPECT_EQ(size_t, writer_configs.size(), 3);
+    EXPECT_EQ(size_t, writer_configs.size(), 2);
     EXPECT(writer_configs.count(1) > 0, "Level 1 configuration missing");
 
     // Create an image with all pixels set to 100
@@ -240,7 +240,7 @@ test_writer_configurations()
     std::vector<ZarrDimension> dimensions = {
         { "t", ZarrDimensionType_Time, 100, 10, 1 },  // Non-spatial
         { "c", ZarrDimensionType_Channel, 3, 3, 1 },  // Non-spatial
-        { "z", ZarrDimensionType_Space, 64, 8, 1 },   // Spatial
+        { "z", ZarrDimensionType_Space, 128, 8, 1 },  // Spatial
         { "y", ZarrDimensionType_Space, 512, 64, 1 }, // Spatial
         { "x", ZarrDimensionType_Space, 512, 64, 1 }  // Spatial
     };
@@ -258,35 +258,119 @@ test_writer_configurations()
     const auto& configs = downsampler.writer_configurations();
 
     // We should have some levels based on dimensions
-    EXPECT(configs.size() > 0, "No writer configurations were created");
+    EXPECT(configs.size() == 5,
+           "Expected 5 downsampling levels, got ",
+           configs.size());
 
     // Check that spatial dimensions are downsampled
     for (const auto& [level, lvl_config] : configs) {
-        if (level == 0)
+        if (level == 0) {
             continue; // Skip original config
+        }
 
+        const auto& lvl_dims = lvl_config->dimensions;
         // Check that non-spatial dimensions are unchanged
-        EXPECT_EQ(uint32_t, lvl_config->dimensions->at(0).array_size_px, 100);
-        EXPECT_EQ(uint32_t, lvl_config->dimensions->at(1).array_size_px, 3);
+        EXPECT_EQ(uint32_t, lvl_dims->at(0).array_size_px, 100);
+        EXPECT_EQ(uint32_t, lvl_dims->at(1).array_size_px, 3);
 
         // Check that spatial dimensions are downsampled
-        for (auto i = 0; i < 5; ++i) {
-            if (i < 2) {
-                EXPECT_EQ(uint32_t,
-                          lvl_config->dimensions->at(i).array_size_px,
-                          dimensions[i].array_size_px);
-                continue;
-            }
+        for (auto i = 2; i < 5; ++i) {
+            uint32_t expected_array_size =
+              std::max(dimensions[i].chunk_size_px,
+                       dimensions[i].array_size_px / (1 << level));
 
-            uint32_t expected = (dimensions[i].array_size_px +
-                                 (dimensions[i].array_size_px % 2)) /
-                                2;
-            for (int j = 1; j < level; ++j) {
-                expected = (expected + (expected % 2)) / 2;
-            }
-            EXPECT_EQ(
-              uint32_t, lvl_config->dimensions->at(i).array_size_px, expected);
+            EXPECT_EQ(uint32_t,
+                      lvl_config->dimensions->at(i).array_size_px,
+                      expected_array_size);
         }
+    }
+}
+
+void
+test_anisotropic_writer_configurations()
+{
+    // Test with different dimensions to check resolution hierarchy
+    std::vector<ZarrDimension> dimensions = {
+        { "t", ZarrDimensionType_Time, 100, 10, 1 },    // Non-spatial
+        { "c", ZarrDimensionType_Channel, 3, 3, 1 },    // Non-spatial
+        { "z", ZarrDimensionType_Space, 1000, 128, 1 }, // Spatial
+        { "y", ZarrDimensionType_Space, 2000, 512, 1 }, // Spatial
+        { "x", ZarrDimensionType_Space, 2000, 256, 1 }  // Spatial
+    };
+
+    // we need to keep `dimensions` around for assertions
+    auto dimensions_to_move = dimensions;
+
+    auto dims = std::make_shared<ArrayDimensions>(std::move(dimensions_to_move),
+                                                  ZarrDataType_uint16);
+
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+
+    zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
+    const auto& configs = downsampler.writer_configurations();
+
+    // We should have some levels based on dimensions
+    EXPECT(configs.size() == 4,
+           "Expected 4 downsampling levels, got ",
+           configs.size());
+
+    // Check that spatial dimensions & only spatial dimensions are downsampled
+    for (const auto& [level, lvl_config] : configs) {
+        if (level == 0) {
+            continue; // Skip original config
+        }
+
+        const auto& lvl_dims = lvl_config->dimensions;
+        // Check that non-spatial dimensions are unchanged
+        EXPECT_EQ(uint32_t, lvl_dims->at(0).array_size_px, 100);
+        EXPECT_EQ(uint32_t, lvl_dims->at(1).array_size_px, 3);
+    }
+
+    // Check that spatial dimensions are downsampled
+    {
+        const auto level = 1;
+        const auto lvl_config = configs.at(level);
+        const auto& lvl_dims = lvl_config->dimensions;
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).array_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 1000);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 512);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 1000);
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
+    }
+
+    {
+        const auto level = 2;
+        const auto lvl_config = configs.at(level);
+        const auto& lvl_dims = lvl_config->dimensions;
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).array_size_px, 250);
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
+    }
+
+    {
+        const auto level = 3;
+        const auto lvl_config = configs.at(level);
+        const auto& lvl_dims = lvl_config->dimensions;
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).array_size_px, 125);
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 125);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
     }
 }
 
@@ -580,6 +664,7 @@ main()
         test_3d_downsampling();
         test_data_types();
         test_writer_configurations();
+        test_anisotropic_writer_configurations();
         test_edge_cases();
         test_min_max_downsampling();
         test_3d_min_max_downsampling();
