@@ -86,7 +86,7 @@ jobs:
           - "macos-latest" # arm
           - "macos-13" # x86_64
         python:
-          - "3.13"
+          - "3.13.3"
 
     runs-on: ${{ matrix.platform }}
 
