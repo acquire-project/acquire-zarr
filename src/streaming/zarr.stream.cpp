@@ -1,12 +1,14 @@
-#include "macros.hh"
-#include "zarr.stream.hh"
 #include "acquire.zarr.h"
-#include "zarr.common.hh"
-#include "v2.group.hh"
-#include "v3.group.hh"
-#include "v2.array.hh"
-#include "v3.array.hh"
+#include "macros.hh"
 #include "sink.hh"
+#include "v2.array.hh"
+#include "v2.group.hh"
+#include "v3.array.hh"
+#include "v3.group.hh"
+#include "zarr.common.hh"
+#include "zarr.stream.hh"
+
+#include <blosc.h>
 
 #include <bit> // bit_ceil
 #include <filesystem>
@@ -382,7 +384,7 @@ scale_image(ConstByteSpan src, size_t& width, size_t& height)
     const auto size_downscaled =
       static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
 
-    ByteVector dst(size_downscaled, static_cast<std::byte>(0));
+    ByteVector dst(size_downscaled, 0);
     auto* dst_as_T = reinterpret_cast<T*>(dst.data());
     auto* src_as_T = reinterpret_cast<const T*>(src.data());
 
@@ -461,7 +463,7 @@ ZarrStream::append(const void* data_, size_t nbytes)
         return 0;
     }
 
-    auto* data = static_cast<const std::byte*>(data_);
+    auto* data = static_cast<const uint8_t*>(data_);
 
     const size_t bytes_of_frame = frame_buffer_.size();
     size_t bytes_written = 0; // bytes written out of the input data
@@ -473,9 +475,8 @@ ZarrStream::append(const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset_, bytes_remaining);
 
-            memcpy(frame_buffer_.data() + frame_buffer_offset_,
-                   data + bytes_written,
-                   bytes_to_copy);
+            frame_buffer_.assign_at(frame_buffer_offset_,
+                                    { data + bytes_written, bytes_to_copy });
             frame_buffer_offset_ += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
@@ -485,6 +486,7 @@ ZarrStream::append(const void* data_, size_t nbytes)
                 while (!frame_queue_->push(frame_buffer_) && process_frames_) {
                     frame_queue_not_full_cv_.wait(lock);
                 }
+                frame_buffer_.resize(bytes_of_frame);
 
                 if (process_frames_) {
                     frame_queue_not_empty_cv_.notify_one();
@@ -496,11 +498,12 @@ ZarrStream::append(const void* data_, size_t nbytes)
                 frame_buffer_offset_ = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
-            memcpy(frame_buffer_.data(), data, bytes_remaining);
+            frame_buffer_.assign_at(0, { data, bytes_remaining });
             frame_buffer_offset_ = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            ConstByteSpan frame(data, bytes_of_frame);
+            zarr::LockedBuffer frame;
+            frame.assign({ data, bytes_of_frame });
 
             std::unique_lock lock(frame_queue_mutex_);
             while (!frame_queue_->push(frame) && process_frames_) {
@@ -564,7 +567,7 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     );
 
     const auto metadata_str = metadata_json.dump(4);
-    std::span data{ reinterpret_cast<const std::byte*>(metadata_str.data()),
+    std::span data{ reinterpret_cast<const uint8_t*>(metadata_str.data()),
                     metadata_str.size() };
     if (!custom_metadata_sink_->write(0, data)) {
         LOG_ERROR("Error writing custom metadata");
@@ -970,7 +973,7 @@ ZarrStream_s::process_frame_queue_()
         return;
     }
 
-    std::vector<std::byte> frame;
+    zarr::LockedBuffer frame;
     while (process_frames_ || !frame_queue_->empty()) {
         {
             std::unique_lock lock(frame_queue_mutex_);
