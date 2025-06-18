@@ -183,7 +183,7 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 
     auto frame = data.take();
 
-#pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
+#pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         auto& chunk_buffer = chunk_buffers_[tile + group_offset];
         bytes_written += chunk_buffer.with_lock([chunk_offset,
