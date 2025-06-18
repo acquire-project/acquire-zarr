@@ -5,7 +5,7 @@
 #include "thread.pool.hh"
 #include "array.dimensions.hh"
 
-#include <cstddef> // size_t, std::byte
+#include <cstddef> // size_t
 #include <memory>  // std::unique_ptr
 #include <span>    // std::span
 

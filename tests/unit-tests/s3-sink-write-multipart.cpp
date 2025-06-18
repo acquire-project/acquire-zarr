@@ -58,7 +58,7 @@ main()
 
         pool->return_connection(std::move(conn));
 
-        std::vector<std::byte> data((5 << 20) + 1, std::byte{ 0 });
+        std::vector<uint8_t> data((5 << 20) + 1, 0);
         {
             auto sink =
               std::make_unique<zarr::S3Sink>(settings.bucket_name, object_name, pool);
