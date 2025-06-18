@@ -1,8 +1,8 @@
 #pragma once
 
-#include "definitions.hh"
-#include "array.dimensions.hh"
 #include "array.hh"
+#include "array.dimensions.hh"
+#include "definitions.hh"
 
 #include "nlohmann/json.hpp"
 
@@ -19,9 +19,9 @@ class Downsampler
      * @brief Add a full-resolution frame to the downsampler.
      * @note Downsampled frames are cached internally and can be retrieved, per
      * level, by calling get_downsampled_frame().
-     * @param frame_data The full-resolution frame data.
+     * @param frame The full-resolution frame data.
      */
-    void add_frame(ConstByteSpan frame_data);
+    void add_frame(LockedBuffer& frame);
 
     /**
      * @brief Get the downsampled frame for the given level, removing it from
@@ -32,7 +32,7 @@ class Downsampler
      * @param[out] frame_data The downsampled frame data.
      * @return True if the downsampled frame was found, false otherwise.
      */
-    bool get_downsampled_frame(int level, ByteVector& frame_data);
+    bool get_downsampled_frame(int level, LockedBuffer& frame_data);
 
     const std::unordered_map<int, std::shared_ptr<zarr::ArrayConfig>>&
     writer_configurations() const;
