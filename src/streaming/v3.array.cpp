@@ -267,52 +267,6 @@ zarr::V3Array::parts_along_dimension_() const
     return shards_along_dimension;
 }
 
-zarr::LockedBuffer&
-zarr::V3Array::get_shard_for_chunk_with_offset_(uint32_t index, size_t& offset)
-{
-    const auto& dims = config_->dimensions;
-    const auto shard_idx = dims->shard_index_for_chunk(index);
-    EXPECT(
-      shard_idx < chunk_buffers_.size(), "Invalid shard index: ", shard_idx);
-
-    auto& shard = chunk_buffers_[shard_idx];
-    const auto shard_size = shard.size();
-
-    auto internal_idx = dims->shard_internal_index(index);
-    const auto& chunk_indices = dims->chunk_indices_for_shard(shard_idx);
-
-    // ragged shard
-    if (internal_idx >= chunk_indices.size() ||
-        chunk_indices[internal_idx] != index) {
-        const auto it =
-          std::find(chunk_indices.begin(), chunk_indices.end(), index);
-        EXPECT(it != chunk_indices.end(),
-               "Chunk index ",
-               index,
-               " not found in shard ",
-               shard_idx);
-        internal_idx = std::distance(chunk_indices.begin(), it);
-    }
-
-    const auto n_bytes = bytes_to_allocate_per_chunk_();
-
-    // don't set offset yet, need to check size first
-    const auto tmp_offset = internal_idx * n_bytes;
-
-    EXPECT(offset + n_bytes <= shard_size,
-           "Attempted to access chunk data at index ",
-           index,
-           " with offset ",
-           tmp_offset,
-           " and n_bytes ",
-           n_bytes,
-           " in shard of size ",
-           shard_size);
-
-    offset = tmp_offset;
-    return shard;
-}
-
 bool
 zarr::V3Array::compress_and_flush_data_()
 {

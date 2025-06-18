@@ -31,8 +31,6 @@ class V3Array final : public Array
     void close_sinks_() override;
     bool should_rollover_() const override;
 
-    LockedBuffer& get_shard_for_chunk_with_offset_(uint32_t chunk_index,
-                                                   size_t& offset);
     ByteVector consolidate_chunks_(uint32_t shard_index);
 };
 } // namespace zarr
