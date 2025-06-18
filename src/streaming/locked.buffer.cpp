@@ -3,6 +3,30 @@
 
 #include <blosc.h>
 
+zarr::LockedBuffer::LockedBuffer(std::vector<uint8_t>&& data)
+  : data_(std::move(data))
+{
+}
+
+zarr::LockedBuffer::LockedBuffer(zarr::LockedBuffer&& other) noexcept
+  : data_(std::move(other.data_))
+{
+}
+
+zarr::LockedBuffer&
+zarr::LockedBuffer::operator=(zarr::LockedBuffer&& other) noexcept
+{
+    if (this != &other) {
+        std::unique_lock lock1(mutex_, std::defer_lock);
+        std::unique_lock lock2(other.mutex_, std::defer_lock);
+        std::lock(lock1, lock2); // avoid deadlock
+
+        data_ = std::move(other.data_);
+    }
+
+    return *this;
+}
+
 void
 zarr::LockedBuffer::resize(size_t n)
 {
@@ -24,6 +48,53 @@ zarr::LockedBuffer::size() const
 {
     std::unique_lock lock(mutex_);
     return data_.size();
+}
+
+void
+zarr::LockedBuffer::assign(ConstByteSpan data)
+{
+    std::unique_lock lock(mutex_);
+    data_.assign(data.begin(), data.end());
+}
+
+void
+zarr::LockedBuffer::assign(ByteVector&& data)
+{
+    std::unique_lock lock(mutex_);
+    data_ = std::move(data);
+}
+
+void
+zarr::LockedBuffer::assign_at(size_t offset, ConstByteSpan data)
+{
+    std::unique_lock lock(mutex_);
+    if (offset + data.size() > data_.size()) {
+        data_.resize(offset + data.size());
+    }
+    std::copy(data.begin(), data.end(), data_.begin() + offset);
+}
+
+void
+zarr::LockedBuffer::swap(zarr::LockedBuffer& other)
+{
+    std::unique_lock lock(mutex_);
+    other.with_lock([this](ByteVector& other_data) { data_.swap(other_data); });
+}
+
+void
+zarr::LockedBuffer::clear()
+{
+    std::unique_lock lock(mutex_);
+    data_.clear();
+}
+
+std::vector<uint8_t>
+zarr::LockedBuffer::take()
+{
+    std::unique_lock lock(mutex_);
+    std::vector<uint8_t> result = std::move(data_);
+    data_ = std::vector<uint8_t>{}; // Fresh empty vector
+    return result;
 }
 
 bool
@@ -53,6 +124,7 @@ zarr::LockedBuffer::compress(const zarr::BloscCompressionParams& params,
         return false;
     }
 
-    data_.swap(compressed_data);
+    compressed_data.resize(n_bytes_compressed);
+    data_ = compressed_data;
     return true;
 }

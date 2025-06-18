@@ -63,21 +63,4 @@ chunks_along_dimension(const ZarrDimension& dimension);
  */
 uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
-
-/**
- * @brief Compress a buffer in place.
- * @param buffer The buffer to compress.
- * @param bytes_of_buffer The size of the buffer.
- * @param bytes_of_content The number of bytes of content in the buffer. It must
- * hold that bytes_of_content + BLOSC_MAX_OVERHEAD <= bytes_of_buffer.
- * @param params The compression parameters.
- * @param typesize The size of the data type.
- * @return The size of the compressed buffer, or -1 if compression failed.
- */
-int
-compress_buffer_in_place(BytePtr buffer,
-                         size_t bytes_of_buffer,
-                         size_t bytes_of_content,
-                         const zarr::BloscCompressionParams& params,
-                         size_t typesize);
 } // namespace zarr
