@@ -77,7 +77,7 @@ zarr::ZarrNode::write_metadata_()
             return false;
         }
 
-        std::span data{ reinterpret_cast<const std::byte*>(metadata.data()),
+        std::span data{ reinterpret_cast<const uint8_t*>(metadata.data()),
                         metadata.size() };
         if (!sink->write(0, data)) {
             LOG_ERROR("Failed to write metadata for key: ", key);
