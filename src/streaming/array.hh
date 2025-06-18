@@ -56,14 +56,6 @@ class Array : public ZarrNode
 
     [[nodiscard]] bool close_() override;
 
-    /**
-     * @brief Compute the number of bytes to allocate for a single chunk.
-     * @note Allocate the usual chunk size, plus the maximum Blosc overhead if
-     * we're compressing.
-     * @return The number of bytes to allocate per chunk.
-     */
-    size_t bytes_to_allocate_per_chunk_() const;
-
     bool is_s3_array_() const;
     virtual std::string data_root_() const = 0;
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;

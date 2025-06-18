@@ -115,17 +115,6 @@ zarr::Array::close_()
     return retval;
 }
 
-size_t
-zarr::Array::bytes_to_allocate_per_chunk_() const
-{
-    size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
-    if (config_->compression_params) {
-        bytes_per_chunk += BLOSC_MAX_OVERHEAD;
-    }
-
-    return bytes_per_chunk;
-}
-
 bool
 zarr::Array::is_s3_array_() const
 {
