@@ -130,6 +130,15 @@ class ArrayDimensions
       uint32_t shard_index) const;
 
     /**
+     * @brief Get the chunk indices for a specific layer within a shard.
+     * @param shard_index The index of the shard.
+     * @param layer
+     * @return
+     */
+    std::vector<uint32_t> chunk_indices_for_shard_layer(uint32_t shard_index,
+                                                        uint32_t layer) const;
+
+    /**
      * @brief Get the streaming index of a chunk within a shard.
      * @param chunk_index The index of the chunk.
      * @return The index of the chunk within the shard.

@@ -2,8 +2,6 @@
 
 #include "acquire.zarr.h"
 
-#include <blosc.h>
-
 #include <string>
 #include <string_view>
 

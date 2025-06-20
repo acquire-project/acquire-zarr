@@ -252,7 +252,13 @@ verify_file_data()
                         const auto x_file = y_dir / std::to_string(x);
                         CHECK(fs::is_regular_file(x_file));
                         const auto file_size = fs::file_size(x_file);
-                        EXPECT_EQ(size_t, file_size, expected_file_size);
+                        EXPECT(file_size == expected_file_size,
+                               "Expected file size == ",
+                               expected_file_size,
+                               " for file ",
+                               x_file.string(),
+                               ", got ",
+                               file_size);
                     }
 
                     CHECK(!fs::is_regular_file(y_dir /
@@ -334,6 +340,11 @@ main()
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
+    }
+
+    // cleanup
+    if (fs::exists(test_path)) {
+        fs::remove_all(test_path);
     }
 
     return retval;

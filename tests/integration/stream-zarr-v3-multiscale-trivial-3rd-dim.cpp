@@ -210,12 +210,14 @@ main()
         // Verify the multiscale metadata reflects our expectations
         verify_multiscale_metadata();
 
-        // Clean up
-        fs::remove_all(test_path);
-
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
+    }
+
+    // cleanup
+    if (fs::exists(test_path)) {
+        fs::remove_all(test_path);
     }
 
     return retval;

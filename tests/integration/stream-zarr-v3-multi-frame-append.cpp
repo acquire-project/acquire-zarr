@@ -148,13 +148,14 @@ main()
 
         verify_data();
 
-        // Clean up
-        LOG_DEBUG("Test completed successfully, cleaning up");
-        // fs::remove_all(test_path);
-
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
+    }
+
+    // cleanup
+    if (fs::exists(test_path)) {
+        fs::remove_all(test_path);
     }
 
     return retval;
