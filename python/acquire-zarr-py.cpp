@@ -633,6 +633,23 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::class_<PyZarrS3Settings>(m, "S3Settings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
+          // throw a TypeError if any unexpected keyword arguments are
+          // provided
+          std::vector<std::string> permitted_kwargs = {
+              "endpoint",
+              "bucket_name",
+              "region",
+          };
+          for (const auto& key : kwargs) {
+              if (std::find(permitted_kwargs.begin(),
+                            permitted_kwargs.end(),
+                            key.first.cast<std::string>()) ==
+                  permitted_kwargs.end()) {
+                  throw py::type_error("Unexpected keyword argument: " +
+                                       key.first.cast<std::string>());
+              }
+          }
+
           PyZarrS3Settings settings;
           if (kwargs.contains("endpoint"))
               settings.set_endpoint(kwargs["endpoint"].cast<std::string>());
@@ -656,6 +673,24 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrCompressionSettings>(
       m, "CompressionSettings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
+          // throw a TypeError if any unexpected keyword arguments are
+          // provided
+          std::vector<std::string> permitted_kwargs = {
+              "compressor",
+              "codec",
+              "level",
+              "shuffle",
+          };
+          for (const auto& key : kwargs) {
+              if (std::find(permitted_kwargs.begin(),
+                            permitted_kwargs.end(),
+                            key.first.cast<std::string>()) ==
+                  permitted_kwargs.end()) {
+                  throw py::type_error("Unexpected keyword argument: " +
+                                       key.first.cast<std::string>());
+              }
+          }
+
           PyZarrCompressionSettings settings;
           if (kwargs.contains("compressor"))
               settings.set_compressor(
@@ -685,6 +720,27 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::class_<PyZarrDimensionProperties>(m, "Dimension", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
+          // throw a TypeError if any unexpected keyword arguments are
+          // provided
+          std::vector<std::string> permitted_kwargs = {
+              "name",
+              "kind",
+              "unit",
+              "scale",
+              "array_size_px",
+              "chunk_size_px",
+              "shard_size_chunks",
+          };
+          for (const auto& key : kwargs) {
+              if (std::find(permitted_kwargs.begin(),
+                            permitted_kwargs.end(),
+                            key.first.cast<std::string>()) ==
+                  permitted_kwargs.end()) {
+                  throw py::type_error("Unexpected keyword argument: " +
+                                       key.first.cast<std::string>());
+              }
+          }
+
           PyZarrDimensionProperties props;
           if (kwargs.contains("name"))
               props.set_name(kwargs["name"].cast<std::string>());
@@ -728,8 +784,25 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrDimensionProperties::set_shard_size_chunks);
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](py::kwargs kwargs) {
-          PyZarrStreamSettings settings;
+          // throw a TypeError if any unexpected keyword arguments are
+          // provided
+          std::vector<std::string> permitted_kwargs = {
+              "store_path",          "s3",         "compression", "dimensions",
+              "multiscale",          "data_type",  "version",     "max_threads",
+              "downsampling_method", "output_key", "overwrite",
+          };
 
+          for (const auto& key : kwargs) {
+              if (std::find(permitted_kwargs.begin(),
+                            permitted_kwargs.end(),
+                            key.first.cast<std::string>()) ==
+                  permitted_kwargs.end()) {
+                  throw py::type_error("Unexpected keyword argument: " +
+                                       key.first.cast<std::string>());
+              }
+          }
+
+          PyZarrStreamSettings settings;
           if (kwargs.contains("store_path"))
               settings.set_store_path(kwargs["store_path"].cast<std::string>());
 
