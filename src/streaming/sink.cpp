@@ -72,8 +72,14 @@ make_file_sinks(std::vector<std::string>& file_paths,
             return success;
         };
 
-        EXPECT(thread_pool->push_job(std::move(job)),
-               "Failed to push sink creation job to thread pool.");
+        std::string err;
+        if (!job(err)) {
+            LOG_ERROR(err);
+            latch.count_down();
+            all_successful = 0;
+        }
+//        EXPECT(thread_pool->push_job(std::move(job)),
+//               "Failed to push sink creation job to thread pool.");
     }
 
     latch.wait();
@@ -223,9 +229,11 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             return success;
         };
 
-        if (!thread_pool->push_job(std::move(job))) {
-            LOG_ERROR("Failed to push job to thread pool.");
-            return false;
+        std::string err;
+        if (!job(err)) {
+            LOG_ERROR(err);
+            latch.count_down();
+            all_successful = 0;
         }
     }
 
