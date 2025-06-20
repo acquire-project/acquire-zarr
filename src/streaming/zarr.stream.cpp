@@ -946,16 +946,20 @@ ZarrStream_s::init_frame_queue_()
         frame_queue_ =
           std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes_);
 
-        EXPECT(thread_pool_->push_job([this](std::string& err) {
+        auto job = [this](std::string& err) {
             try {
                 process_frame_queue_();
             } catch (const std::exception& e) {
-                err = e.what();
+                err = "Error processing frame queue: " + std::string(e.what());
+                set_error_(err);
+
                 return false;
             }
 
             return true;
-        }),
+        };
+
+        EXPECT(thread_pool_->push_job(std::move(job)),
                "Failed to push job to thread pool.");
     } catch (const std::exception& e) {
         set_error_("Error creating frame queue: " + std::string(e.what()));

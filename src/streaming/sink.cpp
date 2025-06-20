@@ -55,24 +55,24 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
         std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
 
-        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
-                                       std::string& err) -> bool {
+        auto job =
+          [filename, psink, &latch, &all_successful](std::string& err) -> bool {
             bool success = false;
 
             try {
-                if (all_successful) {
-                    *psink = std::make_unique<zarr::FileSink>(filename);
-                }
+                *psink = std::make_unique<zarr::FileSink>(filename);
                 success = true;
             } catch (const std::exception& exc) {
                 err = "Failed to create file '" + filename + "': " + exc.what();
             }
 
             latch.count_down();
-            all_successful.fetch_and((char)success);
+            all_successful.fetch_and(static_cast<char>(success));
 
             return success;
-        }),
+        };
+
+        EXPECT(thread_pool->push_job(std::move(job)),
                "Failed to push sink creation job to thread pool.");
     }
 
