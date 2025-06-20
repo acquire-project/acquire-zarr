@@ -282,7 +282,32 @@ class S3Settings:
     def __repr__(self) -> str: ...
 
 class StreamSettings:
-    """Settings for the Zarr stream."""
+    """Settings for configuring a Zarr stream.
+
+    This class encapsulates all the configuration options needed to create a Zarr stream,
+    including storage location, compression settings, dimension properties, and format options.
+
+    Attributes:
+        store_path: Path to the store. Can be a filesystem path or S3 key prefix.
+            For S3, this becomes the key prefix within the specified bucket.
+        s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
+        compression: Optional compression settings for chunks. If None, no compression is applied.
+        dimensions: List of dimension properties defining the dataset structure.
+            Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
+        multiscale: Whether to generate multiple levels of detail (image pyramid).
+        data_type: The pixel data type for the dataset.
+        version: Zarr format version to use (V2 or V3).
+        max_threads: Maximum number of threads for parallel processing.
+        custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
+        downsampling_method: Method used for generating multiscale levels when multiscale=True.
+        output_key: Key within the Zarr dataset where streamed data should be stored.
+        overwrite: If True, removes any existing data at store_path before writing.
+
+    Note:
+        For S3 storage with endpoint "s3://my-endpoint.com", bucket "my-bucket", and
+        store_path "my-dataset.zarr", the final location will be
+        "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
+    """
 
     compression: Optional[CompressionSettings]
     custom_metadata: Optional[str]
@@ -293,6 +318,9 @@ class StreamSettings:
     store_path: str
     version: ZarrVersion
     max_threads: int
+    downsampling_method: DownsamplingMethod
+    output_key: str
+    overwrite: bool
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
