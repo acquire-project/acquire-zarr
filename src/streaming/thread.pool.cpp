@@ -5,8 +5,9 @@
 zarr::ThreadPool::ThreadPool(unsigned int n_threads, ErrorCallback&& err)
   : error_handler_{ std::move(err) }
 {
-    const auto max_threads = std::max(std::thread::hardware_concurrency(), 1u);
-    n_threads = std::clamp(n_threads, 1u, max_threads);
+    //    const auto max_threads = std::max(std::thread::hardware_concurrency(),
+    //    1u); n_threads = std::clamp(n_threads, 1u, max_threads);
+    n_threads = 1; // TODO (aliddell): revert this
 
     for (auto i = 0; i < n_threads; ++i) {
         threads_.emplace_back([this] { process_tasks_(); });

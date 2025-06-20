@@ -352,8 +352,14 @@ zarr::V3Array::compress_and_flush_data_()
                 return success;
             };
 
-            EXPECT(thread_pool_->push_job(std::move(job)),
-                   "Failed to push job to thread pool");
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR("Failed to compress chunk: ", err);
+                latch->count_down();
+                all_successful = 0;
+            }
+            //            EXPECT(thread_pool_->push_job(std::move(job)),
+            //                   "Failed to push job to thread pool");
         } else {
             // no compression, just update shard table with size
             shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
@@ -369,7 +375,6 @@ zarr::V3Array::compress_and_flush_data_()
     std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
       MAX_CONCURRENT_FILES);
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
-        std::string err;
         const std::string data_path = data_paths_[shard_idx];
         auto* chunk_latch = chunk_latches_[shard_idx].get();
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
@@ -459,8 +464,14 @@ zarr::V3Array::compress_and_flush_data_()
             return success;
         };
 
-        EXPECT(thread_pool_->push_job(std::move(job)),
-               "Failed to push job to thread pool");
+        std::string err;
+        if (!job(err)) {
+            LOG_ERROR("Failed to write shard ", shard_idx, ": ", err);
+            shard_latch_->count_down();
+            all_successful = 0;
+        }
+        //        EXPECT(thread_pool_->push_job(std::move(job)),
+        //               "Failed to push job to thread pool");
     }
 
     // wait for all threads to finish
