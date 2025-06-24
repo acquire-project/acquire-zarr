@@ -241,13 +241,8 @@ zarr::V2Array::compress_and_flush_data_()
             return success;
         };
 
-        std::string err;
-        if (!job(err)) {
-            LOG_ERROR(err);
-            all_successful = 0;
-        }
-        //        EXPECT(thread_pool_->push_job(std::move(job)),
-        //               "Failed to push job to thread pool");
+        EXPECT(thread_pool_->push_job(std::move(job)),
+               "Failed to push compress and flush job to thread pool");
     }
 
     latch.wait();
