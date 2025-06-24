@@ -50,7 +50,7 @@ zarr::FrameQueue::pop(LockedBuffer& frame)
     }
 
     frame.swap(buffer_[read_pos].data);
-    buffer_[read_pos].data.clear(); // don't need the data originally in frame anymore
+    buffer_[read_pos].data.clear(); // don't need the data in frame anymore
     buffer_[read_pos].ready.store(false, std::memory_order_release);
 
     read_pos_.store((read_pos + 1) % capacity_, std::memory_order_release);
@@ -92,6 +92,17 @@ zarr::FrameQueue::bytes_used() const
 }
 
 bool
+zarr::FrameQueue::full() const
+{
+    // Queue is full when the next write position equals read position
+    size_t write = write_pos_.load(std::memory_order_relaxed);
+    size_t next_write = (write + 1) % capacity_;
+    size_t read = read_pos_.load(std::memory_order_acquire);
+
+    return (next_write == read);
+}
+
+bool
 zarr::FrameQueue::empty() const
 {
     // Queue is empty when read position equals write position
@@ -102,13 +113,9 @@ zarr::FrameQueue::empty() const
     return (read == write);
 }
 
-bool
-zarr::FrameQueue::full() const
+void
+zarr::FrameQueue::clear()
 {
-    // Queue is full when the next write position equals read position
-    size_t write = write_pos_.load(std::memory_order_relaxed);
-    size_t next_write = (write + 1) % capacity_;
-    size_t read = read_pos_.load(std::memory_order_acquire);
-
-    return (next_write == read);
+    read_pos_.store(write_pos_.load(std::memory_order_acquire),
+                    std::memory_order_release);
 }

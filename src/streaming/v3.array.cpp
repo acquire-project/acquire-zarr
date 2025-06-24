@@ -358,12 +358,6 @@ zarr::V3Array::compress_and_flush_data_()
                 return success;
             };
 
-            std::string err;
-            if (!job(err)) {
-                LOG_ERROR("Failed to compress chunk: ", err);
-                all_successful = 0;
-            }
-
             EXPECT(thread_pool_->push_job(std::move(job)),
                    "Failed to push compress job to thread pool");
         } else {

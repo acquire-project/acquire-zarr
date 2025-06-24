@@ -23,6 +23,7 @@ class FrameQueue
     size_t bytes_used() const;
     bool full() const;
     bool empty() const;
+    void clear();
 
   private:
     struct Frame
