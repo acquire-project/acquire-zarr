@@ -72,14 +72,8 @@ make_file_sinks(std::vector<std::string>& file_paths,
             return success;
         };
 
-        std::string err;
-        if (!job(err)) {
-            LOG_ERROR(err);
-            latch.count_down();
-            all_successful = 0;
-        }
-//        EXPECT(thread_pool->push_job(std::move(job)),
-//               "Failed to push sink creation job to thread pool.");
+        EXPECT(thread_pool->push_job(std::move(job)),
+               "Failed to push sink creation job to thread pool.");
     }
 
     latch.wait();
