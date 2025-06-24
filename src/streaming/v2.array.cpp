@@ -179,24 +179,26 @@ zarr::V2Array::compress_and_flush_data_()
                     &semaphore,
                     &latch,
                     &all_successful](std::string& err) {
-            bool success = true;
+            bool success = false;
             if (!all_successful) {
                 latch.count_down();
+                err = "Other jobs in batch have failed, not proceeding";
                 return false;
             }
 
             try {
-                // compress the chunk
-                if (compression_params) {
-                    EXPECT(
-                      chunk_buffer.compress(*compression_params, bytes_per_px),
-                      "Failed to compress chunk at path ",
-                      data_path);
-                }
-
-                // create a new sink
                 std::unique_ptr<Sink> sink;
                 semaphore.acquire();
+
+                // compress the chunk
+                if (compression_params &&
+                    !chunk_buffer.compress(*compression_params, bytes_per_px)) {
+                    err = "Failed to compress chunk at path " + data_path;
+                    latch.count_down();
+                    semaphore.release();
+                    all_successful.fetch_and(false);
+                    return false;
+                }
 
                 if (is_s3) {
                     sink =
@@ -205,22 +207,28 @@ zarr::V2Array::compress_and_flush_data_()
                     sink = make_file_sink(data_path);
                 }
 
-                // write the chunk to the sink
-                success =
-                  chunk_buffer.with_lock([&sink, &err](const auto& buf) {
-                      if (!sink->write(0, buf)) {
-                          err = "Failed to write chunk";
-                          return false;
-                      }
-                      return true;
-                  });
+                // try to write the chunk to the sink
+                success = chunk_buffer.with_lock(
+                  [&sink](const auto& buf) { return sink->write(0, buf); });
+                if (!success) {
+                    err = "Failed to write chunk to " + data_path;
+                    latch.count_down();
+                    semaphore.release();
+                    all_successful.fetch_and(false);
+                    return false;
+                }
 
-                EXPECT(finalize_sink(std::move(sink)),
-                       "Failed to finalize sink at path ",
-                       data_path);
+                if (!finalize_sink(std::move(sink))) {
+                    err = "Failed to finalize sink at path " + data_path;
+                    latch.count_down();
+                    semaphore.release();
+                    all_successful.fetch_and(false);
+                    return false;
+                }
 
                 semaphore.release();
                 latch.count_down();
+                success = true;
             } catch (const std::exception& exc) {
                 semaphore.release();
                 latch.count_down();
@@ -236,7 +244,6 @@ zarr::V2Array::compress_and_flush_data_()
         std::string err;
         if (!job(err)) {
             LOG_ERROR(err);
-            latch.count_down();
             all_successful = 0;
         }
         //        EXPECT(thread_pool_->push_job(std::move(job)),
