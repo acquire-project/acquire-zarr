@@ -223,12 +223,8 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             return success;
         };
 
-        std::string err;
-        if (!job(err)) {
-            LOG_ERROR(err);
-            latch.count_down();
-            all_successful = 0;
-        }
+        EXPECT(thread_pool->push_job(std::move(job)),
+               "Failed to push directory creation job to thread pool.");
     }
 
     latch.wait();
