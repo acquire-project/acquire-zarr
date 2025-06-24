@@ -632,17 +632,27 @@ PYBIND11_MODULE(acquire_zarr, m)
       .value(log_level_to_str(ZarrLogLevel_None), ZarrLogLevel_None);
 
     py::class_<PyZarrS3Settings>(m, "S3Settings", py::dynamic_attr())
-      .def(py::init([](py::kwargs kwargs) {
-          PyZarrS3Settings settings;
-          if (kwargs.contains("endpoint"))
-              settings.set_endpoint(kwargs["endpoint"].cast<std::string>());
-          if (kwargs.contains("bucket_name"))
-              settings.set_bucket_name(
-                kwargs["bucket_name"].cast<std::string>());
-          if (kwargs.contains("region"))
-              settings.set_region(kwargs["region"].cast<std::string>());
-          return settings;
-      }))
+      .def(py::init([](std::optional<std::string> endpoint,
+                       std::optional<std::string> bucket_name,
+                       std::optional<std::string> region) {
+               PyZarrS3Settings settings;
+
+               if (endpoint) {
+                   settings.set_endpoint(*endpoint);
+               }
+               if (bucket_name) {
+                   settings.set_bucket_name(*bucket_name);
+               }
+               if (region) {
+                   settings.set_region(*region);
+               }
+
+               return settings;
+           }),
+           py::kw_only(),
+           py::arg("endpoint") = std::nullopt,
+           py::arg("bucket_name") = std::nullopt,
+           py::arg("region") = std::nullopt)
       .def("__repr__", [](const PyZarrS3Settings& self) { return self.repr(); })
       .def_property("endpoint",
                     &PyZarrS3Settings::endpoint,
@@ -655,19 +665,31 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::class_<PyZarrCompressionSettings>(
       m, "CompressionSettings", py::dynamic_attr())
-      .def(py::init([](py::kwargs kwargs) {
-          PyZarrCompressionSettings settings;
-          if (kwargs.contains("compressor"))
-              settings.set_compressor(
-                kwargs["compressor"].cast<ZarrCompressor>());
-          if (kwargs.contains("codec"))
-              settings.set_codec(kwargs["codec"].cast<ZarrCompressionCodec>());
-          if (kwargs.contains("level"))
-              settings.set_level(kwargs["level"].cast<uint8_t>());
-          if (kwargs.contains("shuffle"))
-              settings.set_shuffle(kwargs["shuffle"].cast<uint8_t>());
-          return settings;
-      }))
+      .def(py::init([](std::optional<ZarrCompressor> compressor,
+                       std::optional<ZarrCompressionCodec> codec,
+                       std::optional<int> level,
+                       std::optional<int> shuffle) {
+               PyZarrCompressionSettings settings;
+
+               if (compressor) {
+                   settings.set_compressor(*compressor);
+               }
+               if (codec) {
+                   settings.set_codec(*codec);
+               }
+               if (level) {
+                   settings.set_level(*level);
+               }
+               if (shuffle) {
+                   settings.set_shuffle(*shuffle);
+               }
+               return settings;
+           }),
+           py::kw_only(),
+           py::arg("compressor") = std::nullopt,
+           py::arg("codec") = std::nullopt,
+           py::arg("level") = std::nullopt,
+           py::arg("shuffle") = std::nullopt)
       .def("__repr__",
            [](const PyZarrCompressionSettings& self) { return self.repr(); })
       .def_property("compressor",
@@ -684,25 +706,47 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrCompressionSettings::set_shuffle);
 
     py::class_<PyZarrDimensionProperties>(m, "Dimension", py::dynamic_attr())
-      .def(py::init([](py::kwargs kwargs) {
-          PyZarrDimensionProperties props;
-          if (kwargs.contains("name"))
-              props.set_name(kwargs["name"].cast<std::string>());
-          if (kwargs.contains("kind"))
-              props.set_type(kwargs["kind"].cast<ZarrDimensionType>());
-          if (kwargs.contains("unit"))
-              props.set_unit(kwargs["unit"].cast<std::optional<std::string>>());
-          if (kwargs.contains("scale"))
-              props.set_scale(kwargs["scale"].cast<double>());
-          if (kwargs.contains("array_size_px"))
-              props.set_array_size_px(kwargs["array_size_px"].cast<uint32_t>());
-          if (kwargs.contains("chunk_size_px"))
-              props.set_chunk_size_px(kwargs["chunk_size_px"].cast<uint32_t>());
-          if (kwargs.contains("shard_size_chunks"))
-              props.set_shard_size_chunks(
-                kwargs["shard_size_chunks"].cast<uint32_t>());
-          return props;
-      }))
+      .def(py::init([](std::optional<std::string> name,
+                       std::optional<ZarrDimensionType> kind,
+                       std::optional<std::string> unit,
+                       std::optional<double> scale,
+                       std::optional<uint32_t> array_size_px,
+                       std::optional<uint32_t> chunk_size_px,
+                       std::optional<uint32_t> shard_size_chunks) {
+               PyZarrDimensionProperties props;
+
+               if (name) {
+                   props.set_name(*name);
+               }
+               if (kind) {
+                   props.set_type(*kind);
+               }
+               if (unit) {
+                   props.set_unit(*unit);
+               }
+               if (scale) {
+                   props.set_scale(*scale);
+               }
+               if (array_size_px) {
+                   props.set_array_size_px(*array_size_px);
+               }
+               if (chunk_size_px) {
+                   props.set_chunk_size_px(*chunk_size_px);
+               }
+               if (shard_size_chunks) {
+                   props.set_shard_size_chunks(*shard_size_chunks);
+               }
+
+               return props;
+           }),
+           py::kw_only(),
+           py::arg("name") = std::nullopt,
+           py::arg("kind") = std::nullopt,
+           py::arg("unit") = std::nullopt,
+           py::arg("scale") = std::nullopt,
+           py::arg("array_size_px") = std::nullopt,
+           py::arg("chunk_size_px") = std::nullopt,
+           py::arg("shard_size_chunks") = std::nullopt)
       .def("__repr__",
            [](const PyZarrDimensionProperties& self) { return self.repr(); })
       .def_property("name",
@@ -727,60 +771,73 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrDimensionProperties::shard_size_chunks,
                     &PyZarrDimensionProperties::set_shard_size_chunks);
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
-      .def(py::init([](py::kwargs kwargs) {
-          PyZarrStreamSettings settings;
+      .def(
+        py::init([](std::optional<std::string> store_path,
+                    std::optional<PyZarrS3Settings> s3,
+                    std::optional<PyZarrCompressionSettings> compression,
+                    std::optional<py::list> dimensions,
+                    std::optional<bool> multiscale,
+                    std::optional<ZarrDataType> data_type,
+                    std::optional<ZarrVersion> version,
+                    std::optional<unsigned> max_threads,
+                    std::optional<ZarrDownsamplingMethod> downsampling_method,
+                    std::optional<std::string> output_key,
+                    std::optional<bool> overwrite) {
+            PyZarrStreamSettings settings;
+            if (store_path) {
+                settings.set_store_path(*store_path);
+            }
+            if (s3) {
+                settings.set_s3(*s3);
+            }
+            if (compression) {
+                settings.set_compression(*compression);
+            }
+            if (dimensions) {
+                auto dims = *dimensions;
+                std::vector<PyZarrDimensionProperties> dims_vec(dims.size());
 
-          if (kwargs.contains("store_path"))
-              settings.set_store_path(kwargs["store_path"].cast<std::string>());
+                for (auto i = 0; i < dims.size(); ++i) {
+                    dims_vec[i] = dims[i].cast<PyZarrDimensionProperties>();
+                }
+                settings.set_dimensions(dims_vec);
+            }
+            if (multiscale) {
+                settings.set_multiscale(*multiscale);
+            }
+            if (data_type) {
+                settings.set_data_type(*data_type);
+            }
+            if (version) {
+                settings.set_version(*version);
+            }
+            if (max_threads) {
+                settings.set_max_threads(*max_threads);
+            }
+            if (downsampling_method) {
+                settings.set_downsampling_method(*downsampling_method);
+            }
+            if (output_key) {
+                settings.set_output_key(*output_key);
+            }
+            if (overwrite) {
+                settings.set_overwrite(*overwrite);
+            }
 
-          if (kwargs.contains("s3") && !kwargs["s3"].is_none()) {
-              auto s3 = kwargs["s3"].cast<PyZarrS3Settings>();
-              settings.set_s3(s3);
-          }
-
-          if (kwargs.contains("compression") &&
-              !kwargs["compression"].is_none()) {
-              auto compression =
-                kwargs["compression"].cast<PyZarrCompressionSettings>();
-              settings.set_compression(compression);
-          }
-
-          if (kwargs.contains("dimensions")) {
-              py::list dims_list = kwargs["dimensions"].cast<py::list>();
-              std::vector<PyZarrDimensionProperties> dims(dims_list.size());
-
-              for (auto i = 0; i < dims_list.size(); ++i) {
-                  auto dim = dims_list[i].cast<PyZarrDimensionProperties>();
-                  dims[i] = dim;
-              }
-              settings.set_dimensions(dims);
-          }
-
-          if (kwargs.contains("multiscale"))
-              settings.set_multiscale(kwargs["multiscale"].cast<bool>());
-
-          if (kwargs.contains("data_type"))
-              settings.set_data_type(kwargs["data_type"].cast<ZarrDataType>());
-
-          if (kwargs.contains("version"))
-              settings.set_version(kwargs["version"].cast<ZarrVersion>());
-
-          if (kwargs.contains("max_threads"))
-              settings.set_max_threads(
-                kwargs["max_threads"].cast<unsigned int>());
-
-          if (kwargs.contains("downsampling_method"))
-              settings.set_downsampling_method(
-                kwargs["downsampling_method"].cast<ZarrDownsamplingMethod>());
-
-          if (kwargs.contains("output_key"))
-              settings.set_output_key(kwargs["output_key"].cast<std::string>());
-
-          if (kwargs.contains("overwrite"))
-              settings.set_overwrite(kwargs["overwrite"].cast<bool>());
-
-          return settings;
-      }))
+            return settings;
+        }),
+        py::kw_only(),
+        py::arg("store_path") = std::nullopt,
+        py::arg("s3") = std::nullopt,
+        py::arg("compression") = std::nullopt,
+        py::arg("dimensions") = std::nullopt,
+        py::arg("multiscale") = std::nullopt,
+        py::arg("data_type") = std::nullopt,
+        py::arg("version") = std::nullopt,
+        py::arg("max_threads") = std::nullopt,
+        py::arg("downsampling_method") = std::nullopt,
+        py::arg("output_key") = std::nullopt,
+        py::arg("overwrite") = std::nullopt)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
