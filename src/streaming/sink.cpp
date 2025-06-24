@@ -78,8 +78,8 @@ make_file_sinks(std::vector<std::string>& file_paths,
             latch.count_down();
             all_successful = 0;
         }
-//        EXPECT(thread_pool->push_job(std::move(job)),
-//               "Failed to push sink creation job to thread pool.");
+        //        EXPECT(thread_pool->push_job(std::move(job)),
+        //               "Failed to push sink creation job to thread pool.");
     }
 
     latch.wait();
@@ -187,7 +187,10 @@ zarr::get_parent_paths(const std::vector<std::string>& file_paths)
 {
     std::unordered_set<std::string> unique_paths;
     for (const auto& file_path : file_paths) {
-        unique_paths.emplace(fs::path(file_path).parent_path().string());
+        const auto path = fs::path(file_path).parent_path().string();
+        if (!path.empty()) {
+            unique_paths.emplace(path);
+        }
     }
 
     return { unique_paths.begin(), unique_paths.end() };
