@@ -363,8 +363,9 @@ zarr::V3Array::compress_and_flush_data_()
                 LOG_ERROR("Failed to compress chunk: ", err);
                 all_successful = 0;
             }
-            //            EXPECT(thread_pool_->push_job(std::move(job)),
-            //                   "Failed to push job to thread pool");
+
+            EXPECT(thread_pool_->push_job(std::move(job)),
+                   "Failed to push compress job to thread pool");
         } else {
             // no compression, just update shard table with size
             shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
@@ -491,13 +492,8 @@ zarr::V3Array::compress_and_flush_data_()
             return success;
         };
 
-        std::string err;
-        if (!job(err)) {
-            LOG_ERROR("Failed to write shard ", shard_idx, ": ", err);
-            all_successful = 0;
-        }
-        //        EXPECT(thread_pool_->push_job(std::move(job)),
-        //               "Failed to push job to thread pool");
+        EXPECT(thread_pool_->push_job(std::move(job)),
+               "Failed to push data flush job to thread pool");
     }
 
     // wait for all threads to finish
