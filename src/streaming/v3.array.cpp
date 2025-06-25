@@ -358,8 +358,15 @@ zarr::V3Array::compress_and_flush_data_()
                 return success;
             };
 
-            EXPECT(thread_pool_->push_job(std::move(job)),
-                   "Failed to push compress job to thread pool");
+            // one thread is reserved for processing the frame queue and runs the
+            // entire lifetime of the stream
+            if (thread_pool_->n_threads() == 1 ||
+                !thread_pool_->push_job(std::move(job))) {
+                std::string err;
+                if (!job(err)) {
+                    LOG_ERROR(err);
+                }
+            }
         } else {
             // no compression, just update shard table with size
             shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
@@ -486,8 +493,15 @@ zarr::V3Array::compress_and_flush_data_()
             return success;
         };
 
-        EXPECT(thread_pool_->push_job(std::move(job)),
-               "Failed to push data flush job to thread pool");
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool_->n_threads() == 1 ||
+            !thread_pool_->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
+        }
     }
 
     // wait for all threads to finish
