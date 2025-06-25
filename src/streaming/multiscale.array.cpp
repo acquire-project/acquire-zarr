@@ -89,6 +89,10 @@ zarr::MultiscaleArray::close_()
 bool
 zarr::MultiscaleArray::create_downsampler_()
 {
+    if (!config_->downsampling_method) {
+        return true; // no downsampling method specified, nothing to do
+    }
+
     const auto config = make_base_array_config_();
 
     try {
@@ -200,6 +204,10 @@ zarr::MultiscaleArray::make_base_array_config_() const
 void
 zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
 {
+    if (!downsampler_) {
+        return; // no downsampler, nothing to do
+    }
+
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
