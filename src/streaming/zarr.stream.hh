@@ -52,7 +52,7 @@ struct ZarrStream_s
     std::string output_key_;
     std::optional<zarr::S3Settings> s3_settings_;
 
-    std::unique_ptr<zarr::ZarrNode> output_node_;
+    std::unique_ptr<zarr::ArrayBase> output_node_;
 
     size_t frame_size_bytes_;
     zarr::LockedBuffer frame_buffer_;
@@ -79,26 +79,31 @@ struct ZarrStream_s
      * @param settings Struct containing settings to validate.
      * @return true if settings are valid, false otherwise.
      */
-    [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool validate_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Configure the stream for a group.
      * @param settings Struct containing settings to configure.
      */
-    [[nodiscard]] bool configure_group_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool configure_group_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      */
-    [[nodiscard]] bool configure_array_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool configure_array_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.
      * @param settings Struct containing settings to copy.
-     * @return True if the output node was created successfully, false otherwise.
+     * @return True if the output node was created successfully, false
+     * otherwise.
      */
-    [[nodiscard]] bool commit_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool commit_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.

@@ -24,7 +24,7 @@ dimension_type_to_string(ZarrDimensionType type)
 zarr::Group::Group(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ZarrNode(config, thread_pool, s3_connection_pool)
+  : ArrayBase(config, thread_pool, s3_connection_pool)
 {
     // check that the config is a ArrayConfig
     CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));

@@ -1,15 +1,15 @@
 #pragma once
 
+#include "array.base.hh"
 #include "blosc.compression.params.hh"
 #include "definitions.hh"
 #include "file.sink.hh"
 #include "locked.buffer.hh"
-#include "node.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
 
 namespace zarr {
-class Array : public ZarrNode
+class Array : public ArrayBase
 {
   public:
     Array(std::shared_ptr<ArrayConfig> config,

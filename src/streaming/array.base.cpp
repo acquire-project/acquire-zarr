@@ -1,13 +1,12 @@
 #include <utility>
 
-#include "array.hh"
+#include "array.base.hh"
 #include "group.hh"
 #include "macros.hh"
-#include "node.hh"
 
-zarr::ZarrNode::ZarrNode(std::shared_ptr<ArrayConfig> config,
-                         std::shared_ptr<ThreadPool> thread_pool,
-                         std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
+                           std::shared_ptr<ThreadPool> thread_pool,
+                           std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_(config)
   , thread_pool_(thread_pool)
   , s3_connection_pool_(s3_connection_pool)
@@ -17,7 +16,7 @@ zarr::ZarrNode::ZarrNode(std::shared_ptr<ArrayConfig> config,
 }
 
 std::string
-zarr::ZarrNode::node_path_() const
+zarr::ArrayBase::node_path_() const
 {
     std::string key = config_->store_root;
     if (!config_->node_key.empty()) {
@@ -28,7 +27,7 @@ zarr::ZarrNode::node_path_() const
 }
 
 bool
-zarr::ZarrNode::make_metadata_sinks_()
+zarr::ArrayBase::make_metadata_sinks_()
 {
     metadata_sinks_.clear();
 
@@ -56,7 +55,7 @@ zarr::ZarrNode::make_metadata_sinks_()
 }
 
 bool
-zarr::ZarrNode::write_metadata_()
+zarr::ArrayBase::write_metadata_()
 {
     if (!make_metadata_()) {
         LOG_ERROR("Failed to make metadata.");
@@ -93,7 +92,7 @@ zarr::ZarrNode::write_metadata_()
 }
 
 bool
-zarr::finalize_node(std::unique_ptr<ZarrNode>&& node)
+zarr::finalize_node(std::unique_ptr<ArrayBase>&& node)
 {
     if (!node) {
         LOG_INFO("Node is null, nothing to finalize.");

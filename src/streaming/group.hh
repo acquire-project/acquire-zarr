@@ -2,7 +2,6 @@
 
 #include "array.hh"
 #include "downsampler.hh"
-#include "node.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
@@ -11,7 +10,7 @@
 #include <optional>
 
 namespace zarr {
-class Group : public ZarrNode
+class Group : public ArrayBase
 {
   public:
     Group(std::shared_ptr<ArrayConfig> config,

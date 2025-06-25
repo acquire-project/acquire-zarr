@@ -3,6 +3,7 @@
 #include "array.dimensions.hh"
 #include "blosc.compression.params.hh"
 #include "definitions.hh"
+#include "locked.buffer.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -54,13 +55,13 @@ struct ArrayConfig
     bool multiscale;
 };
 
-class ZarrNode
+class ArrayBase
 {
   public:
-    ZarrNode(std::shared_ptr<ArrayConfig> config,
-             std::shared_ptr<ThreadPool> thread_pool,
-             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
-    virtual ~ZarrNode() = default;
+    ArrayBase(std::shared_ptr<ArrayConfig> config,
+              std::shared_ptr<ThreadPool> thread_pool,
+              std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    virtual ~ArrayBase() = default;
 
     /**
      * @brief Close the node and flush any remaining data.
@@ -89,14 +90,14 @@ class ZarrNode
     [[nodiscard]] bool make_metadata_sinks_();
     [[nodiscard]] bool write_metadata_();
 
-    friend bool finalize_node(std::unique_ptr<ZarrNode>&& node);
+    friend bool finalize_node(std::unique_ptr<ArrayBase>&& node);
 };
 
 template<class T>
 std::unique_ptr<T>
-downcast_node(std::unique_ptr<ZarrNode>&& node)
+downcast_node(std::unique_ptr<ArrayBase>&& node)
 {
-    ZarrNode* raw_ptr = node.release();
+    ArrayBase* raw_ptr = node.release();
     T* derived_ptr = dynamic_cast<T*>(raw_ptr);
 
     if (!derived_ptr) {
@@ -108,5 +109,5 @@ downcast_node(std::unique_ptr<ZarrNode>&& node)
 }
 
 [[nodiscard]] bool
-finalize_node(std::unique_ptr<ZarrNode>&& node);
+finalize_node(std::unique_ptr<ArrayBase>&& node);
 } // namespace zarr

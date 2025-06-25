@@ -34,8 +34,8 @@ add_library(${tgt}
         ${PLATFORM_FILE_SINK_CPP}
         s3.sink.hh
         s3.sink.cpp
-        node.hh
-        node.cpp
+        array.base.hh
+        array.base.cpp
         array.hh
         array.cpp
         v2.array.hh
