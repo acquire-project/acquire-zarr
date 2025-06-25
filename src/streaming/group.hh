@@ -11,36 +11,10 @@
 #include <optional>
 
 namespace zarr {
-struct GroupConfig : public ZarrNodeConfig
-{
-    GroupConfig() = default;
-    GroupConfig(std::string_view store_root,
-                std::string_view group_key,
-                std::optional<std::string> bucket_name,
-                std::optional<BloscCompressionParams> compression_params,
-                std::shared_ptr<ArrayDimensions> dimensions,
-                ZarrDataType dtype,
-                bool multiscale,
-                ZarrDownsamplingMethod downsampling_method)
-      : ZarrNodeConfig(store_root,
-                       group_key,
-                       bucket_name,
-                       compression_params,
-                       dimensions,
-                       dtype)
-      , multiscale(multiscale)
-      , downsampling_method(downsampling_method)
-    {
-    }
-
-    bool multiscale{ false };
-    ZarrDownsamplingMethod downsampling_method{ ZarrDownsamplingMethod_Mean };
-};
-
 class Group : public ZarrNode
 {
   public:
-    Group(std::shared_ptr<GroupConfig> config,
+    Group(std::shared_ptr<ArrayConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
@@ -62,8 +36,6 @@ class Group : public ZarrNode
     size_t bytes_per_frame_;
 
     bool close_() override;
-
-    std::shared_ptr<GroupConfig> group_config_() const;
 
     /** @brief Create array writers. */
     [[nodiscard]] virtual bool create_arrays_() = 0;

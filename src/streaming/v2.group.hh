@@ -7,7 +7,7 @@ namespace zarr {
 class V2Group final : public Group
 {
   public:
-    V2Group(std::shared_ptr<GroupConfig> config,
+    V2Group(std::shared_ptr<ArrayConfig> config,
             std::shared_ptr<ThreadPool> thread_pool,
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 

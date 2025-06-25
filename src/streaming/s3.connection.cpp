@@ -112,7 +112,12 @@ zarr::S3Connection::put_object(std::string_view bucket_name,
                                     data.size());
     std::basic_istream stream(&buffer);
 
-    LOG_DEBUG("Putting object ", object_name, " in bucket ", bucket_name);
+    LOG_DEBUG("Putting object ",
+              object_name,
+              " with ",
+              data.size(),
+              " bytes into bucket ",
+              bucket_name);
     minio::s3::PutObjectArgs args(stream, static_cast<long>(data.size()), 0);
     args.bucket = bucket_name;
     args.object = object_name;
@@ -230,10 +235,9 @@ zarr::S3Connection::upload_multipart_object_part(std::string_view bucket_name,
 }
 
 bool
-zarr::S3Connection::complete_multipart_object(
-  std::string_view bucket_name,
-  std::string_view object_name,
-  std::string_view upload_id,
+zarr::S3Connection::complete_multipart_object(std::string_view bucket_name,
+                                              std::string_view object_name,
+                                              std::string_view upload_id,
                                               const std::vector<S3Part>& parts)
 {
     EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");

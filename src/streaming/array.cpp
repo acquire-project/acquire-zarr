@@ -16,10 +16,6 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
   , append_chunk_index_{ 0 }
   , is_closing_{ false }
 {
-    // check that the config is actually an ArrayConfig
-    EXPECT(std::dynamic_pointer_cast<ArrayConfig>(config_),
-           "Invalid array config");
-
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
     chunk_buffers_ = std::vector<LockedBuffer>(n_chunks);

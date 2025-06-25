@@ -686,14 +686,14 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
       settings->dimensions, settings->dimension_count, settings->data_type);
 
     auto config =
-      std::make_shared<zarr::GroupConfig>(store_path_,
+      std::make_shared<zarr::ArrayConfig>(store_path_,
                                           output_key_,
                                           bucket_name,
                                           compression_settings,
                                           dims,
                                           settings->data_type,
-                                          settings->multiscale,
-                                          settings->downsampling_method);
+                                          settings->downsampling_method,
+                                          0);
 
     try {
         if (version_ == ZarrVersion_2) {
@@ -733,6 +733,7 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
                                                       compression_settings,
                                                       dims,
                                                       settings->data_type,
+                                                      std::nullopt,
                                                       0);
 
     try {
@@ -898,14 +899,14 @@ ZarrStream_s::write_intermediate_metadata_()
 
     for (const auto& parent_group_key : paths) {
         auto group_config =
-          std::make_shared<zarr::GroupConfig>(store_path_,
+          std::make_shared<zarr::ArrayConfig>(store_path_,
                                               parent_group_key,
                                               bucket_name,
                                               std::nullopt,
                                               nullptr,
                                               ZarrDataTypeCount,
-                                              false,
-                                              ZarrDownsamplingMethodCount);
+                                              std::nullopt,
+                                              0);
 
         std::unique_ptr<zarr::Group> group_node;
         if (version_ == ZarrVersion_2) {

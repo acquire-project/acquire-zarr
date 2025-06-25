@@ -126,6 +126,7 @@ main()
           std::nullopt,
           std::make_shared<ArrayDimensions>(std::move(dims), dtype),
           dtype,
+          std::nullopt,
           5);
 
         {

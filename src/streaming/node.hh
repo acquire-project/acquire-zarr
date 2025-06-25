@@ -11,25 +11,36 @@
 #include <string>
 
 namespace zarr {
-struct ZarrNodeConfig
+struct ArrayConfig
 {
-    ZarrNodeConfig() = default;
-    ZarrNodeConfig(std::string_view store_root,
-                   std::string_view group_key,
-                   std::optional<std::string> bucket_name,
-                   std::optional<BloscCompressionParams> compression_params,
-                   std::shared_ptr<ArrayDimensions> dimensions,
-                   ZarrDataType dtype)
+    ArrayConfig() = default;
+    ArrayConfig(std::string_view store_root,
+                std::string_view group_key,
+                std::optional<std::string> bucket_name,
+                std::optional<BloscCompressionParams> compression_params,
+                std::shared_ptr<ArrayDimensions> dimensions,
+                ZarrDataType dtype,
+                std::optional<ZarrDownsamplingMethod> downsampling_method,
+                uint8_t level_of_detail)
       : store_root(store_root)
       , node_key(group_key)
       , bucket_name(bucket_name)
       , compression_params(compression_params)
       , dimensions(std::move(dimensions))
       , dtype(dtype)
+      , downsampling_method(downsampling_method)
+      , level_of_detail(level_of_detail)
+      , multiscale(downsampling_method.has_value())
     {
+        if (downsampling_method.has_value() &&
+            *downsampling_method >= ZarrDownsamplingMethodCount) {
+            throw std::runtime_error(
+              "Invalid downsampling method: " +
+              std::to_string(static_cast<int>(*downsampling_method)));
+        }
     }
 
-    virtual ~ZarrNodeConfig() = default;
+    virtual ~ArrayConfig() = default;
 
     std::string store_root;
     std::string node_key;
@@ -37,12 +48,16 @@ struct ZarrNodeConfig
     std::optional<BloscCompressionParams> compression_params;
     std::shared_ptr<ArrayDimensions> dimensions;
     ZarrDataType dtype;
+    std::optional<ZarrDownsamplingMethod> downsampling_method;
+    uint8_t level_of_detail;
+
+    bool multiscale;
 };
 
 class ZarrNode
 {
   public:
-    ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
+    ZarrNode(std::shared_ptr<ArrayConfig> config,
              std::shared_ptr<ThreadPool> thread_pool,
              std::shared_ptr<S3ConnectionPool> s3_connection_pool);
     virtual ~ZarrNode() = default;
@@ -61,7 +76,7 @@ class ZarrNode
     [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
 
   protected:
-    std::shared_ptr<ZarrNodeConfig> config_;
+    std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
 

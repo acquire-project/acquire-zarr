@@ -511,8 +511,10 @@ zarr::Downsampler::make_writer_configurations_(
         // if the 3rd dimension is spatial, we can downsample it as well
         const auto array_size_z = base_dims->at(ndims - 3).array_size_px;
         const auto chunk_size_z = base_dims->at(ndims - 3).chunk_size_px;
-        const auto n_chunks_z = (array_size_z + chunk_size_z - 1) / chunk_size_z;
-        const auto n_divs_z = n_chunks_z > 1 ? std::bit_width(n_chunks_z - 1) : 0;
+        const auto n_chunks_z =
+          (array_size_z + chunk_size_z - 1) / chunk_size_z;
+        const auto n_divs_z =
+          n_chunks_z > 1 ? std::bit_width(n_chunks_z - 1) : 0;
 
         n_levels = std::max(n_levels_xy, n_divs_z);
     }
@@ -563,6 +565,7 @@ zarr::Downsampler::make_writer_configurations_(
           std::make_shared<ArrayDimensions>(std::move(down_dims),
                                             prev_config->dtype),
           prev_config->dtype,
+          prev_config->downsampling_method,
           prev_config->level_of_detail + 1);
 
         writer_configurations_.emplace(down_config->level_of_detail,

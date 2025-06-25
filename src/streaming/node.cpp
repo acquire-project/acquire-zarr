@@ -5,7 +5,7 @@
 #include "macros.hh"
 #include "node.hh"
 
-zarr::ZarrNode::ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
+zarr::ZarrNode::ZarrNode(std::shared_ptr<ArrayConfig> config,
                          std::shared_ptr<ThreadPool> thread_pool,
                          std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_(config)

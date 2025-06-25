@@ -2,12 +2,10 @@
 #include "v3.group.hh"
 #include "zarr.common.hh"
 
-zarr::V3Group::V3Group(std::shared_ptr<GroupConfig> config,
+zarr::V3Group::V3Group(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Group(config,
-          thread_pool,
-          s3_connection_pool)
+  : Group(config, thread_pool, s3_connection_pool)
 {
     // dimensions may be null in the case of intermediate groups, e.g., the
     // A in A/1

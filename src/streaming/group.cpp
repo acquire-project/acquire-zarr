@@ -21,13 +21,13 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
-zarr::Group::Group(std::shared_ptr<GroupConfig> config,
+zarr::Group::Group(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ZarrNode(config, thread_pool, s3_connection_pool)
 {
-    // check that the config is a GroupConfig
-    CHECK(std::dynamic_pointer_cast<GroupConfig>(config_));
+    // check that the config is a ArrayConfig
+    CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
 
     bytes_per_frame_ =
       config_->dimensions == nullptr
@@ -88,24 +88,17 @@ zarr::Group::close_()
     return true;
 }
 
-std::shared_ptr<zarr::GroupConfig>
-zarr::Group::group_config_() const
-{
-    return std::dynamic_pointer_cast<GroupConfig>(config_);
-}
-
 bool
 zarr::Group::create_downsampler_()
 {
-    if (!group_config_()->multiscale) {
+    if (!config_->multiscale) {
         return true;
     }
 
     const auto config = make_base_array_config_();
 
     try {
-        downsampler_ =
-          Downsampler(config, group_config_()->downsampling_method);
+        downsampler_ = Downsampler(config, *config_->downsampling_method);
     } catch (const std::exception& exc) {
         LOG_ERROR("Error creating downsampler: " + std::string(exc.what()));
         return false;
@@ -206,13 +199,14 @@ zarr::Group::make_base_array_config_() const
                                          config_->compression_params,
                                          config_->dimensions,
                                          config_->dtype,
+                                         std::nullopt,
                                          0);
 }
 
 void
 zarr::Group::write_multiscale_frames_(LockedBuffer& data)
 {
-    if (!group_config_()->multiscale) {
+    if (!config_->multiscale) {
         return;
     }
 
