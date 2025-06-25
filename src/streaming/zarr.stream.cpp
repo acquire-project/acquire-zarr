@@ -849,27 +849,39 @@ ZarrStream_s::write_intermediate_metadata_()
           zarr::get_parent_paths({ parent_path })[0]); // get parent path
     }
 
-    for (const auto& parent_group_key : paths) {
-        auto group_config =
-          std::make_shared<zarr::ArrayConfig>(store_path_,
-                                              parent_group_key,
-                                              bucket_name,
-                                              std::nullopt,
-                                              nullptr,
-                                              ZarrDataTypeCount,
-                                              std::nullopt,
-                                              0);
+    std::string metadata_key;
+    nlohmann::json group_metadata;
+    if (version_ == ZarrVersion_2) {
+        metadata_key = ".zgroup";
+        group_metadata = { { "zarr_format", 2 } };
+    } else {
+        metadata_key = "zarr.json";
+        group_metadata = {
+            { "zarr_format", 3 },
+            { "consolidated_metadata", nullptr },
+            { "node_type", "group" },
+            { "attributes", nlohmann::json::object() },
+        };
+    }
+    const std::string metadata_str = group_metadata.dump(4);
+    ConstByteSpan metadata_span(
+      reinterpret_cast<const uint8_t*>(metadata_str.data()),
+      metadata_str.size());
 
-        std::unique_ptr<zarr::MultiscaleArray> group_node;
-        if (version_ == ZarrVersion_2) {
-            group_node = std::make_unique<zarr::V2MultiscaleArray>(
-              group_config, thread_pool_, s3_connection_pool_);
+    for (const auto& parent_group_key : paths) {
+        const std::string sink_path =
+          store_path_ + "/" + parent_group_key + "/" + metadata_key;
+
+        std::unique_ptr<zarr::Sink> metadata_sink;
+        if (is_s3_acquisition_()) {
+            metadata_sink = zarr::make_s3_sink(
+              bucket_name.value(), sink_path, s3_connection_pool_);
         } else {
-            group_node = std::make_unique<zarr::V3MultiscaleArray>(
-              group_config, thread_pool_, s3_connection_pool_);
+            metadata_sink = zarr::make_file_sink(sink_path);
         }
 
-        if (!zarr::finalize_group(std::move(group_node))) {
+        if (!metadata_sink->write(0, metadata_span) ||
+            !zarr::finalize_sink(std::move(metadata_sink))) {
             set_error_("Failed to write intermediate metadata for group '" +
                        parent_group_key + "'");
             return false;

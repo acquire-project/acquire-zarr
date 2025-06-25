@@ -101,7 +101,10 @@ zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
                  std::shared_ptr<S3ConnectionPool> s3_connection_pool,
                  ZarrVersion format)
 {
-    const auto multiscale = config->downsampling_method.has_value();
+    // create a multiscale array at the dataset root (node_key is empty) or if
+    // we have a genuine multiscale dataset
+    const auto multiscale =
+      config->node_key.empty() || config->downsampling_method.has_value();
     EXPECT(format < ZarrVersionCount,
            "Invalid Zarr format: ",
            static_cast<int>(format));
@@ -118,7 +121,7 @@ zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
     } else {
         if (format == ZarrVersion_2) {
             array = std::make_unique<V2Array>(
-                    config, thread_pool, s3_connection_pool);
+              config, thread_pool, s3_connection_pool);
         } else {
             array = std::make_unique<V3Array>(
               config, thread_pool, s3_connection_pool);
