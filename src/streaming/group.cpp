@@ -21,9 +21,10 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
-zarr::Group::Group(std::shared_ptr<ArrayConfig> config,
-                   std::shared_ptr<ThreadPool> thread_pool,
-                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+zarr::MultiscaleArray::MultiscaleArray(
+  std::shared_ptr<ArrayConfig> config,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayBase(config, thread_pool, s3_connection_pool)
 {
     // check that the config is a ArrayConfig
@@ -38,7 +39,7 @@ zarr::Group::Group(std::shared_ptr<ArrayConfig> config,
 }
 
 size_t
-zarr::Group::write_frame(LockedBuffer& data)
+zarr::MultiscaleArray::write_frame(LockedBuffer& data)
 {
     if (arrays_.empty()) {
         LOG_WARNING("Attempt to write to group with no arrays");
@@ -62,7 +63,7 @@ zarr::Group::write_frame(LockedBuffer& data)
 }
 
 bool
-zarr::Group::close_()
+zarr::MultiscaleArray::close_()
 {
     for (auto i = 0; i < arrays_.size(); ++i) {
         if (!finalize_array(std::move(arrays_[i]))) {
@@ -89,7 +90,7 @@ zarr::Group::close_()
 }
 
 bool
-zarr::Group::create_downsampler_()
+zarr::MultiscaleArray::create_downsampler_()
 {
     if (!config_->multiscale) {
         return true;
@@ -108,7 +109,7 @@ zarr::Group::create_downsampler_()
 }
 
 nlohmann::json
-zarr::Group::make_multiscales_metadata_() const
+zarr::MultiscaleArray::make_multiscales_metadata_() const
 {
     nlohmann::json multiscales;
     const auto ndims = config_->dimensions->ndims();
@@ -191,7 +192,7 @@ zarr::Group::make_multiscales_metadata_() const
 }
 
 std::shared_ptr<zarr::ArrayConfig>
-zarr::Group::make_base_array_config_() const
+zarr::MultiscaleArray::make_base_array_config_() const
 {
     return std::make_shared<ArrayConfig>(config_->store_root,
                                          config_->node_key + "/0",
@@ -204,7 +205,7 @@ zarr::Group::make_base_array_config_() const
 }
 
 void
-zarr::Group::write_multiscale_frames_(LockedBuffer& data)
+zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
 {
     if (!config_->multiscale) {
         return;
@@ -229,22 +230,22 @@ zarr::Group::write_multiscale_frames_(LockedBuffer& data)
 }
 
 bool
-zarr::finalize_group(std::unique_ptr<Group>&& group)
+zarr::finalize_group(std::unique_ptr<MultiscaleArray>&& array)
 {
-    if (group == nullptr) {
-        LOG_INFO("Group is null. Nothing to finalize.");
+    if (array == nullptr) {
+        LOG_INFO("MultiscaleArray is null. Nothing to finalize.");
         return true;
     }
 
     try {
-        if (!group->close_()) {
+        if (!array->close_()) {
             return false;
         }
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to close_ group: ", exc.what());
+        LOG_ERROR("Failed to close multiscale array: ", exc.what());
         return false;
     }
 
-    group.reset();
+    array.reset();
     return true;
 }

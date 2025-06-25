@@ -4,7 +4,7 @@
 #include "v2.array.hh"
 
 namespace zarr {
-class V2Group final : public Group
+class V2Group final : public MultiscaleArray
 {
   public:
     V2Group(std::shared_ptr<ArrayConfig> config,

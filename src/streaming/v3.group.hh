@@ -4,7 +4,7 @@
 #include "v3.array.hh"
 
 namespace zarr {
-class V3Group final : public Group
+class V3Group final : public MultiscaleArray
 {
   public:
     V3Group(std::shared_ptr<ArrayConfig> config,

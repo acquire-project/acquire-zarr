@@ -99,10 +99,10 @@ zarr::finalize_node(std::unique_ptr<ArrayBase>&& node)
         return true;
     }
 
-    if (auto group = downcast_node<Group>(std::move(node))) {
-        if (!finalize_group(std::move(group))) {
-            LOG_ERROR("Failed to finalize group.");
-            node.reset(group.release());
+    if (auto ms_array = downcast_node<MultiscaleArray>(std::move(node))) {
+        if (!finalize_group(std::move(ms_array))) {
+            LOG_ERROR("Failed to finalize multiscale array.");
+            node.reset(ms_array.release());
             return false;
         }
     } else if (auto array = downcast_node<Array>(std::move(node))) {

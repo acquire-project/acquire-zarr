@@ -10,12 +10,12 @@
 #include <optional>
 
 namespace zarr {
-class Group : public ArrayBase
+class MultiscaleArray : public ArrayBase
 {
   public:
-    Group(std::shared_ptr<ArrayConfig> config,
-          std::shared_ptr<ThreadPool> thread_pool,
-          std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    MultiscaleArray(std::shared_ptr<ArrayConfig> config,
+                    std::shared_ptr<ThreadPool> thread_pool,
+                    std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
     /**
      * @brief Write a frame to the group.
@@ -66,10 +66,10 @@ class Group : public ArrayBase
     void write_multiscale_frames_(LockedBuffer& data);
 
   private:
-    friend bool finalize_group(std::unique_ptr<Group>&& group);
+    friend bool finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 };
 
 [[nodiscard]]
 bool
-finalize_group(std::unique_ptr<Group>&& group);
+finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 } // namespace zarr

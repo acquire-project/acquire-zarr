@@ -908,7 +908,7 @@ ZarrStream_s::write_intermediate_metadata_()
                                               std::nullopt,
                                               0);
 
-        std::unique_ptr<zarr::Group> group_node;
+        std::unique_ptr<zarr::MultiscaleArray> group_node;
         if (version_ == ZarrVersion_2) {
             group_node = std::make_unique<zarr::V2Group>(
               group_config, thread_pool_, s3_connection_pool_);
