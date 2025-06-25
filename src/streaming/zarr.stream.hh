@@ -83,13 +83,6 @@ struct ZarrStream_s
       const struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Configure the stream for a group.
-     * @param settings Struct containing settings to configure.
-     */
-    [[nodiscard]] bool configure_group_(
-      const struct ZarrStreamSettings_s* settings);
-
-    /**
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      */

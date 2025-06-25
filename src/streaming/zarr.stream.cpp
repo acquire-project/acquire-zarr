@@ -1,9 +1,8 @@
 #include "acquire.zarr.h"
+#include "array.base.hh"
 #include "macros.hh"
 #include "sink.hh"
-#include "v2.array.hh"
 #include "v2.multiscale.array.hh"
-#include "v3.array.hh"
 #include "v3.multiscale.array.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
@@ -673,45 +672,6 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
-{
-    std::optional<std::string> bucket_name;
-    if (s3_settings_) {
-        bucket_name = s3_settings_->bucket_name;
-    }
-    auto compression_settings =
-      make_compression_params(settings->compression_settings);
-
-    auto dims = make_array_dimensions(
-      settings->dimensions, settings->dimension_count, settings->data_type);
-
-    auto config =
-      std::make_shared<zarr::ArrayConfig>(store_path_,
-                                          output_key_,
-                                          bucket_name,
-                                          compression_settings,
-                                          dims,
-                                          settings->data_type,
-                                          settings->downsampling_method,
-                                          0);
-
-    try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2MultiscaleArray>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3MultiscaleArray>(
-              config, thread_pool_, s3_connection_pool_);
-        }
-    } catch (const std::exception& exc) {
-        set_error_(exc.what());
-        return false;
-    }
-
-    return true;
-}
-
-bool
 ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
 {
     std::optional<std::string> bucket_name;
@@ -727,27 +687,36 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
     std::string parent_group_key =
       output_key_.empty() ? "" : zarr::get_parent_paths({ output_key_ })[0];
 
+    std::optional<ZarrDownsamplingMethod> downsampling_method;
+    if (settings->multiscale) {
+        downsampling_method = settings->downsampling_method;
+    }
     auto config = std::make_shared<zarr::ArrayConfig>(store_path_,
                                                       output_key_,
                                                       bucket_name,
                                                       compression_settings,
                                                       dims,
                                                       settings->data_type,
-                                                      std::nullopt,
+                                                      downsampling_method,
                                                       0);
 
     try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2Array>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3Array>(
-              config, thread_pool_, s3_connection_pool_);
-        }
+        output_node_ =
+          zarr::make_array(config, thread_pool_, s3_connection_pool_, version_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
+    }
+
+    if (output_node_ == nullptr) {
         return false;
     }
+
+    // initialize frame buffer
+    frame_size_bytes_ = dims->width_dim().array_size_px *
+                        dims->height_dim().array_size_px *
+                        zarr::bytes_of_type(settings->data_type);
+
+    frame_buffer_.resize(frame_size_bytes_);
 
     return true;
 }
@@ -769,32 +738,15 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         s3_settings_ = make_s3_settings(settings->s3_settings);
     }
 
-    // initialize frame buffer
-    frame_size_bytes_ =
-      settings->dimensions[settings->dimension_count - 1].array_size_px *
-      settings->dimensions[settings->dimension_count - 2].array_size_px *
-      zarr::bytes_of_type(settings->data_type);
-
-    frame_buffer_.resize(frame_size_bytes_);
-
     // create the data store
     if (!create_store_(settings->overwrite)) {
         set_error_("Failed to create the data store: " + error_);
         return false;
     }
 
-    if (output_key_.empty() || settings->multiscale) {
-        // create a group
-        if (!configure_group_(settings)) {
-            set_error_("Failed to configure group: " + error_);
-            return false;
-        }
-    } else {
-        // create an array
-        if (!configure_array_(settings)) {
-            set_error_("Failed to configure array: " + error_);
-            return false;
-        }
+    if (!configure_array_(settings)) {
+        set_error_("Failed to configure array: " + error_);
+        return false;
     }
 
     return true;
