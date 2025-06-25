@@ -44,8 +44,8 @@ add_library(${tgt}
         v3.array.cpp
         group.hh
         group.cpp
-        v2.group.hh
-        v2.group.cpp
+        v2.multiscale.array.hh
+        v2.multiscale.array.cpp
         v3.group.hh
         v3.group.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
