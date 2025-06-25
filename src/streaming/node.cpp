@@ -41,6 +41,10 @@ zarr::ZarrNode::make_metadata_sinks_()
                 ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
                 : make_file_sink(path);
 
+            if (sink == nullptr) {
+                LOG_ERROR("Failed to create metadata sink for ", key);
+                return false;
+            }
             metadata_sinks_.emplace(key, std::move(sink));
         }
     } catch (const std::exception& exc) {

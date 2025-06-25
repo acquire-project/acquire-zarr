@@ -206,6 +206,13 @@ zarr::V2Array::compress_and_flush_data_()
                 } else {
                     sink = make_file_sink(data_path);
                 }
+                if (sink == nullptr) {
+                    err = "Failed to create sink for " + data_path;
+                    latch.count_down();
+                    semaphore.release();
+                    all_successful.fetch_and(false);
+                    return false;
+                }
 
                 // try to write the chunk to the sink
                 success = chunk_buffer.with_lock(

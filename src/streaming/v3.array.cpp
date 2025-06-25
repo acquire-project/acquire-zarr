@@ -358,8 +358,8 @@ zarr::V3Array::compress_and_flush_data_()
                 return success;
             };
 
-            // one thread is reserved for processing the frame queue and runs the
-            // entire lifetime of the stream
+            // one thread is reserved for processing the frame queue and runs
+            // the entire lifetime of the stream
             if (thread_pool_->n_threads() == 1 ||
                 !thread_pool_->push_job(std::move(job))) {
                 std::string err;
@@ -413,11 +413,22 @@ zarr::V3Array::compress_and_flush_data_()
                 if (data_sinks_.contains(data_path)) { // S3 sink, constructed
                     sink = std::move(data_sinks_[data_path]);
                     data_sinks_.erase(data_path);
-                } else if (is_s3) { // S3 sink, not yet constructed
+                }
+
+                if (!sink && is_s3) { // S3 sink, not yet constructed
                     sink =
                       make_s3_sink(*bucket_name, data_path, connection_pool);
-                } else { // file sink
+                } else if (!is_s3) { // file sink
                     sink = make_file_sink(data_path);
+                }
+
+                if (sink == nullptr) {
+                    err = "Failed to create sink for " + data_path;
+
+                    semaphore.release();
+                    shard_latch_->count_down();
+                    all_successful.fetch_and(0);
+                    return false;
                 }
 
                 success = sink->write(*file_offset, shard_data);
