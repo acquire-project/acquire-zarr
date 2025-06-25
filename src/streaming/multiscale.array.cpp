@@ -35,7 +35,7 @@ zarr::MultiscaleArray::MultiscaleArray(
         ? 0
         : zarr::bytes_of_frame(*config_->dimensions, config_->dtype);
 
-    CHECK(create_downsampler_());
+    EXPECT(create_downsampler_(), "Failed to create downsampler");
 }
 
 size_t
@@ -92,20 +92,16 @@ zarr::MultiscaleArray::close_()
 bool
 zarr::MultiscaleArray::create_downsampler_()
 {
-    if (!config_->multiscale) {
-        return true;
-    }
-
     const auto config = make_base_array_config_();
 
     try {
-        downsampler_ = Downsampler(config, *config_->downsampling_method);
+        downsampler_ =
+          std::make_unique<Downsampler>(config, *config_->downsampling_method);
     } catch (const std::exception& exc) {
         LOG_ERROR("Error creating downsampler: " + std::string(exc.what()));
-        return false;
     }
 
-    return true;
+    return downsampler_ != nullptr;
 }
 
 nlohmann::json
@@ -207,11 +203,6 @@ zarr::MultiscaleArray::make_base_array_config_() const
 void
 zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
 {
-    if (!config_->multiscale) {
-        return;
-    }
-
-    CHECK(downsampler_.has_value());
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {

@@ -28,7 +28,7 @@ class MultiscaleArray : public ArrayBase
     [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
 
   protected:
-    std::optional<zarr::Downsampler> downsampler_;
+    std::unique_ptr<zarr::Downsampler> downsampler_;
 
     std::vector<std::unique_ptr<Array>> arrays_;
 
