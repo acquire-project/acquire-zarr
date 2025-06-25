@@ -1,6 +1,6 @@
 #pragma once
 
-#include "group.hh"
+#include "multiscale.array.hh"
 #include "v3.array.hh"
 
 namespace zarr {

@@ -42,8 +42,8 @@ add_library(${tgt}
         v2.array.cpp
         v3.array.hh
         v3.array.cpp
-        group.hh
-        group.cpp
+        multiscale.array.hh
+        multiscale.array.cpp
         v2.multiscale.array.hh
         v2.multiscale.array.cpp
         v3.multiscale.array.hh

@@ -1,5 +1,5 @@
-#include "group.hh"
 #include "macros.hh"
+#include "multiscale.array.hh"
 #include "zarr.common.hh"
 
 namespace {

@@ -1,7 +1,7 @@
 #include <utility>
 
 #include "array.base.hh"
-#include "group.hh"
+#include "multiscale.array.hh"
 #include "macros.hh"
 
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
