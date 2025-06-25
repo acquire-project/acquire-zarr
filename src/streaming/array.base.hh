@@ -90,6 +90,12 @@ class ArrayBase
     friend bool finalize_node(std::unique_ptr<ArrayBase>&& node);
 };
 
+std::unique_ptr<ArrayBase>
+make_array(std::shared_ptr<zarr::ArrayConfig> config,
+           std::shared_ptr<ThreadPool> thread_pool,
+           std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+           ZarrVersion format);
+
 template<class T>
 std::unique_ptr<T>
 downcast_node(std::unique_ptr<ArrayBase>&& node)

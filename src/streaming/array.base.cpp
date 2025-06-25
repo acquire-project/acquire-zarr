@@ -3,6 +3,10 @@
 #include "array.base.hh"
 #include "multiscale.array.hh"
 #include "macros.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
+#include "v2.multiscale.array.hh"
+#include "v3.multiscale.array.hh"
 
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
@@ -89,6 +93,39 @@ zarr::ArrayBase::write_metadata_()
     }
 
     return true;
+}
+
+std::unique_ptr<zarr::ArrayBase>
+zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
+                 std::shared_ptr<ThreadPool> thread_pool,
+                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+                 ZarrVersion format)
+{
+    const auto multiscale = config->downsampling_method.has_value();
+    EXPECT(format < ZarrVersionCount,
+           "Invalid Zarr format: ",
+           static_cast<int>(format));
+
+    std::unique_ptr<ArrayBase> array;
+    if (multiscale) {
+        if (format == ZarrVersion_2) {
+            array = std::make_unique<V2MultiscaleArray>(
+              config, thread_pool, s3_connection_pool);
+        } else {
+            array = std::make_unique<V3MultiscaleArray>(
+              config, thread_pool, s3_connection_pool);
+        }
+    } else {
+        if (format == ZarrVersion_2) {
+            array = std::make_unique<V2Array>(
+                    config, thread_pool, s3_connection_pool);
+        } else {
+            array = std::make_unique<V3Array>(
+              config, thread_pool, s3_connection_pool);
+        }
+    }
+
+    return array;
 }
 
 bool
