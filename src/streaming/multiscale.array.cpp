@@ -27,9 +27,6 @@ zarr::MultiscaleArray::MultiscaleArray(
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayBase(config, thread_pool, s3_connection_pool)
 {
-    // check that the config is a ArrayConfig
-    CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
-
     bytes_per_frame_ =
       config_->dimensions == nullptr
         ? 0
