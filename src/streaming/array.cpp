@@ -3,9 +3,7 @@
 #include "sink.hh"
 #include "zarr.common.hh"
 
-#include <omp.h>
-
-#include <cstring> // memcpy
+#include <cstring>
 #include <functional>
 #include <stdexcept>
 
