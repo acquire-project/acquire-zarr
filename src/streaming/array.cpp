@@ -5,6 +5,7 @@
 
 #include <omp.h>
 
+#include <cstring> // memcpy
 #include <functional>
 #include <stdexcept>
 
