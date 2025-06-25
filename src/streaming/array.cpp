@@ -2,22 +2,12 @@
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
-#include "zarr.stream.hh"
 
-#include <blosc.h>
 #include <omp.h>
 
-#include <cmath>
+#include <cstring> // memcpy
 #include <functional>
 #include <stdexcept>
-
-namespace {
-#ifdef __APPLE__
-const int omp_threads = omp_get_max_threads(); // Full parallelization on macOS
-#else
-const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
-#endif
-} // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
