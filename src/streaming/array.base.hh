@@ -31,7 +31,6 @@ struct ArrayConfig
       , dtype(dtype)
       , downsampling_method(downsampling_method)
       , level_of_detail(level_of_detail)
-      , multiscale(downsampling_method.has_value())
     {
         if (downsampling_method.has_value() &&
             *downsampling_method >= ZarrDownsamplingMethodCount) {
@@ -51,8 +50,6 @@ struct ArrayConfig
     ZarrDataType dtype;
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     uint8_t level_of_detail;
-
-    bool multiscale;
 };
 
 class ArrayBase
