@@ -4,7 +4,7 @@
 #include "v2.array.hh"
 #include "v2.multiscale.array.hh"
 #include "v3.array.hh"
-#include "v3.group.hh"
+#include "v3.multiscale.array.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
@@ -700,7 +700,7 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
             output_node_ = std::make_unique<zarr::V2MultiscaleArray>(
               config, thread_pool_, s3_connection_pool_);
         } else {
-            output_node_ = std::make_unique<zarr::V3Group>(
+            output_node_ = std::make_unique<zarr::V3MultiscaleArray>(
               config, thread_pool_, s3_connection_pool_);
         }
     } catch (const std::exception& exc) {
@@ -913,7 +913,7 @@ ZarrStream_s::write_intermediate_metadata_()
             group_node = std::make_unique<zarr::V2MultiscaleArray>(
               group_config, thread_pool_, s3_connection_pool_);
         } else {
-            group_node = std::make_unique<zarr::V3Group>(
+            group_node = std::make_unique<zarr::V3MultiscaleArray>(
               group_config, thread_pool_, s3_connection_pool_);
         }
 
