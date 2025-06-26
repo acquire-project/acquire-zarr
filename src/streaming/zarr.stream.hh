@@ -36,6 +36,15 @@ struct ZarrStream_s
     size_t append(const void* data, size_t nbytes);
 
     /**
+     * @brief Append data to the stream with a specific key.
+     * @param key The key to associate with the data.
+     * @param data_ Pointer to the data to append.
+     * @param nbytes The number of bytes to append.
+     * @return The number of bytes appended.
+     */
+    size_t append(const std::string& key, const void* data_, size_t nbytes);
+
+    /**
      * @brief Write custom metadata to the stream.
      * @param custom_metadata JSON-formatted custom metadata to write.
      * @param overwrite If true, overwrite any existing custom metadata.
@@ -60,7 +69,6 @@ struct ZarrStream_s
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
 
-    std::string output_key_; // TODO (aliddell): remove this
     std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
 
     std::atomic<bool> process_frames_{ true };

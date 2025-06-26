@@ -455,13 +455,26 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 size_t
 ZarrStream::append(const void* data_, size_t nbytes)
 {
-    EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
+    const std::string output_key = output_arrays_.begin()->first;
+    return append(output_key, data_, nbytes);
+}
 
-    if (0 == nbytes) {
+size_t
+ZarrStream::append(const std::string& key, const void* data_, size_t nbytes)
+{
+    EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
+    auto it = output_arrays_.find(key);
+    EXPECT(it != output_arrays_.end(),
+           "Cannot append data: key '",
+           key,
+           "' not configured");
+    EXPECT(data_ != nullptr, "Cannot append data: data pointer is null");
+
+    if (nbytes == 0) {
         return 0;
     }
 
-    auto& output = output_arrays_.at(output_key_);
+    auto& output = it->second;
     auto& frame_buffer = output.frame_buffer;
     auto& frame_buffer_offset = output.frame_buffer_offset;
 
@@ -682,7 +695,6 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
         set_error_("Invalid output key: '" + key + "'");
         return false;
     }
-    output_key_ = key;
 
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
@@ -699,7 +711,7 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
         downsampling_method = settings->downsampling_method;
     }
     auto config = std::make_shared<zarr::ArrayConfig>(store_path_,
-                                                      output_key_,
+                                                      key,
                                                       bucket_name,
                                                       compression_settings,
                                                       dims,
@@ -837,7 +849,9 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    if (output_key_.empty()) {
+    const std::string output_key =
+      output_arrays_.begin()->first; // TODO (aliddell): remove
+    if (output_key.empty()) {
         return true; // no need to write metadata
     }
 
@@ -846,7 +860,7 @@ ZarrStream_s::write_intermediate_metadata_()
         bucket_name = s3_settings_->bucket_name;
     }
 
-    std::vector<std::string> paths = zarr::get_parent_paths({ output_key_ });
+    std::vector<std::string> paths = zarr::get_parent_paths({ output_key });
     while (!paths.back().empty()) {
         std::string parent_path = paths.back();
         paths.push_back(
@@ -953,6 +967,9 @@ ZarrStream_s::process_frame_queue_()
         return;
     }
 
+    const std::string output_key =
+      output_arrays_.begin()->first; // TODO (aliddell): remove
+
     zarr::LockedBuffer frame;
     while (process_frames_ || !frame_queue_->empty()) {
         {
@@ -979,9 +996,9 @@ ZarrStream_s::process_frame_queue_()
             continue;
         }
 
-        if (auto it = output_arrays_.find(output_key_);
+        if (auto it = output_arrays_.find(output_key);
             it == output_arrays_.end()) {
-            set_error_("Output node not found for key: " + output_key_);
+            set_error_("Output node not found for key: '" + output_key + "'");
             std::unique_lock lock(frame_queue_mutex_);
             frame_queue_finished_cv_.notify_all();
             return;
