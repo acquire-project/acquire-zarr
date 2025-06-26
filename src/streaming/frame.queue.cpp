@@ -50,7 +50,6 @@ zarr::FrameQueue::pop(LockedBuffer& frame)
     }
 
     frame.swap(buffer_[read_pos].data);
-    buffer_[read_pos].data.clear(); // don't need the data in frame anymore
     buffer_[read_pos].ready.store(false, std::memory_order_release);
 
     read_pos_.store((read_pos + 1) % capacity_, std::memory_order_release);
