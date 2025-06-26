@@ -29,7 +29,8 @@ extern "C"
                                      the stream. Set to 0 to use the supported
                                      number of concurrent threads. */
         bool overwrite; /**< Remove everything in store_path if true. */
-        ZarrArraySettings array; /**< The settings for the Zarr array being streamed. */
+        ZarrArraySettings* arrays; /**< The settings for the Zarr arrays being streamed. */
+        size_t array_count; /**< The number of arrays in the Zarr stream. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;

@@ -398,6 +398,141 @@ validate_array_settings(const ZarrArraySettings* settings,
     return true;
 }
 
+[[nodiscard]] bool
+is_numeric_string(const std::string& str)
+{
+    if (str.empty()) {
+        return false;
+    }
+
+    for (char c : str) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+is_reserved_metadata_file(const std::string& name, ZarrVersion version)
+{
+    if (version == ZarrVersion_2) {
+        return name == ".zarray" || name == ".zattrs" || name == ".zgroup";
+    } else if (version == ZarrVersion_3) {
+        return name == "zarr.json";
+    }
+
+    return false;
+}
+
+[[nodiscard]] bool
+is_reserved_multiscale_child(const std::string& name, ZarrVersion version)
+{
+    // Check for numeric strings (resolution levels)
+    if (is_numeric_string(name)) {
+        return true;
+    }
+
+    // Check for metadata files
+    return is_reserved_metadata_file(name, version);
+}
+
+[[nodiscard]] std::string
+get_filename(const std::string& path)
+{
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash == std::string::npos) {
+        return path; // No slash, entire string is filename
+    }
+
+    return path.substr(last_slash + 1);
+}
+
+[[nodiscard]] bool
+validate_path_hierarchy(
+  const std::string& current_path,
+  const std::unordered_map<std::string, bool>& path_to_multiscale,
+  ZarrVersion version,
+  std::string& error)
+{
+    std::string parent_path = current_path;
+
+    // Walk up the parent chain
+    while (true) {
+        auto last_slash = parent_path.find_last_of('/');
+        if (last_slash == std::string::npos) {
+            break; // Reached root
+        }
+
+        std::string immediate_parent = parent_path.substr(0, last_slash);
+        std::string child_segment = parent_path.substr(last_slash + 1);
+
+        auto parent_it = path_to_multiscale.find(immediate_parent);
+        if (parent_it != path_to_multiscale.end()) {
+            bool parent_is_multiscale = parent_it->second;
+
+            if (!parent_is_multiscale) {
+                // Non-multiscale arrays reserve entire subtree, kick it out
+                error = "Cannot nest array '" + current_path +
+                        "' under non-multiscale array '" + immediate_parent +
+                        "'";
+                return false;
+            } else {
+                // Child segment conflicts with reserved names
+                if (is_reserved_multiscale_child(child_segment, version)) {
+                    error = "Reserved child name '" + child_segment +
+                            "' under multiscale array '" + immediate_parent;
+                    return false;
+                }
+            }
+        }
+
+        parent_path = immediate_parent;
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+validate_array_structure(const ZarrArraySettings* settings,
+                         ZarrVersion version,
+                         size_t array_count,
+                         std::string& error)
+{
+    if (settings == nullptr) {
+        error = "Null pointer: settings";
+        return false;
+    }
+
+    // Build map of all array paths and their properties
+    std::unordered_map<std::string, bool> path_to_multiscale;
+
+    for (size_t i = 0; i < array_count; ++i) {
+        const char* path = settings[i].output_key ? settings[i].output_key : "";
+        std::string path_str = regularize_key(path);
+
+        // Check for reserved metadata filenames only
+        std::string filename = get_filename(path_str);
+        if (is_reserved_metadata_file(filename, version)) {
+            error = "Reserved metadata filename not allowed: " + filename;
+            return false;
+        }
+
+        path_to_multiscale[path_str] = settings[i].multiscale;
+    }
+
+    // Check hierarchy conflicts
+    for (const auto& [current_path, is_multiscale] : path_to_multiscale) {
+        if (!validate_path_hierarchy(
+              current_path, path_to_multiscale, version, error)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 std::string
 dimension_type_to_string(ZarrDimensionType type)
 {
@@ -690,7 +825,22 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (!validate_array_settings(&settings->array, version, error_)) {
+    if (settings->array_count == 0) {
+        error_ = "No arrays configured in the settings";
+        return false;
+    }
+
+    // validate the arrays individually
+    for (auto i = 0; i < settings->array_count; ++i) {
+        const auto& array_settings = settings->arrays[i];
+        if (!validate_array_settings(&array_settings, version, error_)) {
+            return false;
+        }
+    }
+
+    // validate the arrays as a collection
+    if (!validate_array_structure(
+          settings->arrays, version, settings->array_count, error_)) {
         return false;
     }
 
@@ -770,9 +920,13 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (!configure_array_(&settings->array)) {
-        set_error_("Failed to configure array: " + error_);
-        return false;
+    for (auto i = 0; i < settings->array_count; ++i) {
+        const auto& array_settings = settings->arrays[i];
+        if (!configure_array_(&array_settings)) {
+            set_error_("Failed to configure array '" +
+                       std::string(array_settings.output_key) + "': " + error_);
+            return false;
+        }
     }
 
     return true;

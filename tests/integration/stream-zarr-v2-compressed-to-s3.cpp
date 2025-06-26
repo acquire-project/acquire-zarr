@@ -159,13 +159,15 @@ remove_items(minio::s3::Client& client,
 ZarrStream*
 setup()
 {
+    ZarrArraySettings array = {
+        .data_type = ZarrDataType_int32,
+    };
     ZarrStreamSettings settings = {
         .store_path = TEST,
         .version = ZarrVersion_2,
         .max_threads = 0, // use all available threads
-        .array = {
-          .data_type = ZarrDataType_int32,
-        },
+        .arrays = &array,
+        .array_count = 1,
     };
 
     ZarrS3Settings s3_settings{
@@ -184,12 +186,12 @@ setup()
         .level = 1,
         .shuffle = 1,
     };
-    settings.array.compression_settings = &compression_settings;
+    settings.arrays->compression_settings = &compression_settings;
 
-    CHECK_OK(ZarrArraySettings_create_dimension_array(&settings.array, 5));
+    CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 5));
 
     ZarrDimensionProperties* dim;
-    dim = settings.array.dimensions;
+    dim = settings.arrays->dimensions;
     *dim = DIM("t",
                ZarrDimensionType_Time,
                array_timepoints,
@@ -198,7 +200,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.array.dimensions + 1;
+    dim = settings.arrays->dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
@@ -207,7 +209,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.array.dimensions + 2;
+    dim = settings.arrays->dimensions + 2;
     *dim = DIM("z",
                ZarrDimensionType_Space,
                array_planes,
@@ -216,7 +218,7 @@ setup()
                "millimeter",
                1.4);
 
-    dim = settings.array.dimensions + 3;
+    dim = settings.arrays->dimensions + 3;
     *dim = DIM("y",
                ZarrDimensionType_Space,
                array_height,
@@ -225,7 +227,7 @@ setup()
                "micrometer",
                0.9);
 
-    dim = settings.array.dimensions + 4;
+    dim = settings.arrays->dimensions + 4;
     *dim = DIM("x",
                ZarrDimensionType_Space,
                array_width,
@@ -235,7 +237,7 @@ setup()
                0.9);
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrArraySettings_destroy_dimension_array(&settings.array);
+    ZarrStreamSettings_destroy_arrays(&settings);
 
     return stream;
 }

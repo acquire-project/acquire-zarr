@@ -122,18 +122,23 @@ The library provides two main interfaces.
 First, `ZarrStream`, representing an output stream to a Zarr dataset.
 Second, `ZarrStreamSettings` to configure a Zarr stream.
 
-A typical use case for a 4-dimensional acquisition might look like this:
+A typical use case for a single-array, 4-dimensional acquisition might look like this:
 
 ```c
-ZarrStreamSettings settings = (ZarrStreamSettings){
-    .store_path = "my_stream.zarr",
+ZarrArraySettings array {
+    .output_key = "my-array", // Optional: path within Zarr where data should be stored
     .data_type = ZarrDataType_uint16,
-    .version = ZarrVersion_3,
-    .output_key = "dataset1",  // Optional: path within Zarr where data should be stored
-    .overwrite = true,         // Optional: remove existing data at store_path if true
 };
 
-ZarrArraySettings_create_dimension_array(&settings.array, 4);
+ZarrStreamSettings settings = (ZarrStreamSettings){
+    .store_path = "my_stream.zarr",
+    .version = ZarrVersion_3,
+    .overwrite = true,         // Optional: remove existing data at store_path if true
+    .arrays = &array,
+    .array_count = 1,         // Number of arrays in the stream
+};
+
+ZarrArraySettings_create_dimension_array(&array, 4);
 settings.dimensions[0] = (ZarrDimensionProperties){
     .name = "t",
     .type = ZarrDimensionType_Time,
@@ -147,7 +152,7 @@ settings.dimensions[0] = (ZarrDimensionProperties){
 ZarrStream* stream = ZarrStream_create(&settings);
 
 // You can now safely free the dimensions array
-ZarrArraySettings_destroy_dimension_array(&settings.array);
+ZarrArraySettings_destroy_dimension_array(&array);
 
 size_t bytes_written;
 ZarrStream_append(stream, my_frame_data, my_frame_size, &bytes_written);

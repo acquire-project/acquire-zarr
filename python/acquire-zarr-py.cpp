@@ -400,7 +400,7 @@ class PyZarrStream
             dimension_props.push_back(properties);
         }
 
-        stream_settings.array.dimensions = dimension_props.data();
+        stream_settings.arrays->dimensions = dimension_props.data();
         stream_settings.array.dimension_count = dims.size();
 
         stream_ =

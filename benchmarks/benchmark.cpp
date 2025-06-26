@@ -87,8 +87,8 @@ setup_stream(const BenchmarkConfig& config)
         settings.s3_settings = &s3_settings;
     }
 
-    ZarrArraySettings_create_dimension_array(&settings.array, 5);
-    auto* dims = settings.array.dimensions;
+    ZarrArraySettings_create_dimension_array(settings.arrays, 5);
+    auto* dims = settings.arrays->dimensions;
 
     dims[0] = { .name = "t",
                 .type = ZarrDimensionType_Time,

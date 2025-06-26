@@ -11,7 +11,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
           ZarrArraySettings_create_dimension_array(settings, 3));
-    ZarrDimensionProperties *dim = settings->dimensions;
+    ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
         .name = "t",
@@ -60,7 +60,9 @@ main()
         CHECK(!fs::exists(settings.store_path));
 
         // allocate dimensions
-        configure_stream_dimensions(&settings.array);
+        CHECK(ZarrStatusCode_Success ==
+              ZarrStreamSettings_create_arrays(&settings, 1));
+        configure_stream_dimensions(settings.arrays);
         stream = ZarrStream_create(&settings);
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));
@@ -74,8 +76,11 @@ main()
     ZarrStream_destroy(stream);
 
     std::error_code ec;
-    if (fs::is_directory(settings.store_path) && !fs::remove_all(settings.store_path, ec)) {
+    if (fs::is_directory(settings.store_path) &&
+        !fs::remove_all(settings.store_path, ec)) {
         LOG_ERROR("Failed to remove store path: ", ec.message().c_str());
     }
+
+    ZarrStreamSettings_destroy_arrays(&settings);
     return retval;
 }
