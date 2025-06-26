@@ -22,7 +22,7 @@ struct ArrayConfig
                 std::shared_ptr<ArrayDimensions> dimensions,
                 ZarrDataType dtype,
                 std::optional<ZarrDownsamplingMethod> downsampling_method,
-                uint8_t level_of_detail)
+                uint16_t level_of_detail)
       : store_root(store_root)
       , node_key(group_key)
       , bucket_name(bucket_name)
@@ -49,7 +49,7 @@ struct ArrayConfig
     std::shared_ptr<ArrayDimensions> dimensions;
     ZarrDataType dtype;
     std::optional<ZarrDownsamplingMethod> downsampling_method;
-    uint8_t level_of_detail;
+    uint16_t level_of_detail;
 };
 
 class ArrayBase

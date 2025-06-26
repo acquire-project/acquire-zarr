@@ -51,7 +51,12 @@ zarr::Array::write_frame(LockedBuffer& data)
     const auto bytes_written = write_frame_to_chunks_(data);
     EXPECT(bytes_written == nbytes_data, "Failed to write frame to chunks");
 
-    LOG_DEBUG("Wrote ", bytes_written, " bytes of frame ", frames_written_);
+    LOG_DEBUG("Wrote ",
+              bytes_written,
+              " bytes of frame ",
+              frames_written_,
+              " to LOD ",
+              config_->level_of_detail);
     bytes_to_flush_ += bytes_written;
     ++frames_written_;
 
