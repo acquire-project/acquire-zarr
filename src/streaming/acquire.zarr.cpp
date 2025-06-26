@@ -96,6 +96,48 @@ extern "C"
         }
     }
 
+    ZarrStatusCode ZarrStreamSettings_create_arrays(
+      ZarrStreamSettings* settings,
+      size_t array_count)
+    {
+        EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
+
+        ZarrArraySettings* arrays = nullptr;
+
+        try {
+            arrays = new ZarrArraySettings[array_count];
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for arrays");
+            return ZarrStatusCode_OutOfMemory;
+        }
+
+        ZarrStreamSettings_destroy_arrays(settings);
+        settings->arrays = arrays;
+        settings->array_count = array_count;
+
+        return ZarrStatusCode_Success;
+    }
+
+    void ZarrStreamSettings_destroy_arrays(ZarrStreamSettings* settings)
+    {
+        if (settings == nullptr) {
+            return;
+        }
+
+        if (settings->arrays == nullptr) {
+            settings->array_count = 0;
+            return;
+        }
+
+        // destroy dimension arrays for each ZarrArraySettings
+        for (auto i = 0; i < settings->array_count; ++i) {
+            ZarrArraySettings_destroy_dimension_array(&settings->arrays[i]);
+        }
+        delete[] settings->arrays;
+        settings->arrays = nullptr;
+        settings->array_count = 0;
+    }
+
     ZarrStatusCode ZarrArraySettings_create_dimension_array(
       ZarrArraySettings* settings,
       size_t dimension_count)
