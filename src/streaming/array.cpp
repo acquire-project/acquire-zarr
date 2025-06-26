@@ -19,11 +19,6 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
     chunk_buffers_ = std::vector<LockedBuffer>(n_chunks);
-    for (auto& chunk : chunk_buffers_) {
-        chunk.resize_and_fill(config_->dimensions->bytes_per_chunk(), 0);
-    }
-
-    fill_buffers_();
 }
 
 size_t
@@ -42,7 +37,7 @@ zarr::Array::write_frame(LockedBuffer& data)
         return 0;
     }
 
-    if (chunk_buffers_.empty()) {
+    if (bytes_to_flush_ == 0) { // first frame, we need to init the buffers
         fill_buffers_();
     }
 
@@ -67,8 +62,6 @@ zarr::Array::write_frame(LockedBuffer& data)
             rollover_();
             CHECK(write_metadata_());
         }
-
-        fill_buffers_();
         bytes_to_flush_ = 0;
     }
 
