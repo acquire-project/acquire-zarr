@@ -17,25 +17,15 @@ extern "C"
      * supplying an endpoint "s3://my-endpoint.com" and a bucket "my-bucket" with a
      * store_path of "my-dataset.zarr" will result in the store being written to
      * "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
-     * @note The dimensions array may be allocated with ZarrStreamSettings_create_dimension_array
-     * and freed with ZarrStreamSettings_destroy_dimension_array. The order in which you
-     * set the dimension properties in the array should match the order of the dimensions
-     * from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
      */
     typedef struct ZarrStreamSettings_s
     {
         const char* store_path; /**< Path to the store. Filesystem path or S3 key prefix. */
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
-        ZarrCompressionSettings* compression_settings; /**< Optional chunk compression settings for the store. */
-        ZarrDimensionProperties* dimensions; /**< The properties of each dimension in the dataset. */
-        size_t dimension_count; /**< The number of dimensions in the dataset. */
-        bool multiscale; /**< Whether to stream to multiple levels of detail. */
-        ZarrDataType data_type; /**< The pixel data type of the dataset. */
         ZarrVersion version; /**< The version of the Zarr format to use. 2 or 3. */
         unsigned int max_threads; /**< The maximum number of threads to use in the stream. Set to 0 to use the supported number of concurrent threads. */
-        ZarrDownsamplingMethod downsampling_method; /**< The downsampling method to use for multiscale streaming. */
-        const char* output_key; /**< The key in the Zarr dataset where the streamed data should go. */
         bool overwrite; /**< Remove everything in store_path if true. */
+        ZarrArraySettings array; /**< The settings for the Zarr array being streamed. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -72,13 +62,14 @@ extern "C"
      * @param dimension_count The number of dimensions in the dataset to allocate memory for.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode ZarrStreamSettings_create_dimension_array(ZarrStreamSettings* settings, size_t dimension_count);
+    ZarrStatusCode ZarrArraySettings_create_dimension_array(
+      ZarrArraySettings* settings, size_t dimension_count);
 
     /**
      * @brief Free memory for the dimension array in the Zarr stream settings struct.
      * @param[in, out] settings The Zarr stream settings struct containing the dimension array to free.
      */
-    void ZarrStreamSettings_destroy_dimension_array(ZarrStreamSettings* settings);
+    void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings);
 
     /**
      * @brief Create a Zarr stream.

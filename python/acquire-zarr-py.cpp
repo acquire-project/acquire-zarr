@@ -331,22 +331,25 @@ class PyZarrStream
         ZarrStreamSettings stream_settings{
             .store_path = nullptr,
             .s3_settings = nullptr,
-            .compression_settings = nullptr,
-            .dimensions = nullptr,
-            .dimension_count = 0,
-            .multiscale = settings.multiscale(),
-            .data_type = settings.data_type(),
             .version = settings.version(),
             .max_threads = settings.max_threads(),
-            .downsampling_method = settings.downsampling_method(),
             .overwrite = settings.overwrite(),
+            .array = {
+              .output_key = nullptr,
+              .compression_settings = nullptr,
+              .dimensions = nullptr,
+              .dimension_count = 0,
+              .data_type = settings.data_type(),
+              .multiscale = settings.multiscale(),
+              .downsampling_method = settings.downsampling_method(),
+            }
         };
 
         store_path_ = settings.store_path();
         stream_settings.store_path = store_path_.c_str();
 
         output_key_ = settings.output_key();
-        stream_settings.output_key = output_key_.c_str();
+        stream_settings.array.output_key = output_key_.c_str();
 
         if (settings.s3().has_value()) {
             const auto& s3 = settings.s3().value();
@@ -372,7 +375,7 @@ class PyZarrStream
             compression_settings.codec = settings.compression()->codec();
             compression_settings.level = settings.compression()->level();
             compression_settings.shuffle = settings.compression()->shuffle();
-            stream_settings.compression_settings = &compression_settings;
+            stream_settings.array.compression_settings = &compression_settings;
         }
 
         const auto& dims = settings.dimensions();
@@ -397,8 +400,8 @@ class PyZarrStream
             dimension_props.push_back(properties);
         }
 
-        stream_settings.dimensions = dimension_props.data();
-        stream_settings.dimension_count = dims.size();
+        stream_settings.array.dimensions = dimension_props.data();
+        stream_settings.array.dimension_count = dims.size();
 
         stream_ =
           ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);

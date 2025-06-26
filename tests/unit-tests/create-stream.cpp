@@ -7,9 +7,10 @@
 namespace fs = std::filesystem;
 
 void
-configure_stream_dimensions(ZarrStreamSettings* settings)
+configure_stream_dimensions(ZarrArraySettings* settings)
 {
-    CHECK(ZarrStatusCode_Success == ZarrStreamSettings_create_dimension_array(settings, 3));
+    CHECK(ZarrStatusCode_Success ==
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties *dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -59,7 +60,7 @@ main()
         CHECK(!fs::exists(settings.store_path));
 
         // allocate dimensions
-        configure_stream_dimensions(&settings);
+        configure_stream_dimensions(&settings.array);
         stream = ZarrStream_create(&settings);
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));

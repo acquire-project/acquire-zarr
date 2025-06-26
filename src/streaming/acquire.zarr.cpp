@@ -96,14 +96,13 @@ extern "C"
         }
     }
 
-    ZarrStatusCode ZarrStreamSettings_create_dimension_array(
-      struct ZarrStreamSettings_s* settings,
+    ZarrStatusCode ZarrArraySettings_create_dimension_array(
+      ZarrArraySettings* settings,
       size_t dimension_count)
     {
         EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
-        EXPECT_VALID_ARGUMENT(dimension_count >= 3,
-                              "Invalid dimension count: ",
-                              dimension_count);
+        EXPECT_VALID_ARGUMENT(
+          dimension_count >= 3, "Invalid dimension count: ", dimension_count);
 
         ZarrDimensionProperties* dimensions = nullptr;
 
@@ -114,15 +113,14 @@ extern "C"
             return ZarrStatusCode_OutOfMemory;
         }
 
-        ZarrStreamSettings_destroy_dimension_array(settings);
+        ZarrArraySettings_destroy_dimension_array(settings);
         settings->dimensions = dimensions;
         settings->dimension_count = dimension_count;
 
         return ZarrStatusCode_Success;
     }
 
-    void ZarrStreamSettings_destroy_dimension_array(
-      struct ZarrStreamSettings_s* settings)
+    void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings)
     {
         if (settings == nullptr) {
             return;

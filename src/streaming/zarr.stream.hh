@@ -99,8 +99,7 @@ struct ZarrStream_s
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      */
-    [[nodiscard]] bool configure_array_(
-      const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.

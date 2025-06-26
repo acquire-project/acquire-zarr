@@ -13,17 +13,19 @@ main()
     ZarrStreamSettings settings = {
         .store_path = "output_v3_multiscale.zarr",
         .s3_settings = NULL,
-        .compression_settings = NULL,
-        .multiscale = true,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .array = {
+          .compression_settings = NULL,
+          .data_type = ZarrDataType_uint16,
+          .multiscale = true,
+        },
     };
 
     // Set up 5D array (t, c, z, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
+    ZarrArraySettings_create_dimension_array(&settings.array, 5);
 
-    settings.dimensions[0] = (ZarrDimensionProperties){
+    settings.array.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 10,
@@ -31,7 +33,7 @@ main()
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[1] = (ZarrDimensionProperties){
+    settings.array.dimensions[1] = (ZarrDimensionProperties){
         .name = "c",
         .type = ZarrDimensionType_Channel,
         .array_size_px = 8,
@@ -39,7 +41,7 @@ main()
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[2] = (ZarrDimensionProperties){
+    settings.array.dimensions[2] = (ZarrDimensionProperties){
         .name = "z",
         .type = ZarrDimensionType_Space,
         .array_size_px = 6,
@@ -47,7 +49,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[3] = (ZarrDimensionProperties){
+    settings.array.dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -55,7 +57,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[4] = (ZarrDimensionProperties){
+    settings.array.dimensions[4] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -66,7 +68,7 @@ main()
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
     // Free Dimension array
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(&settings.array);
 
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");

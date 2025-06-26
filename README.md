@@ -133,7 +133,7 @@ ZarrStreamSettings settings = (ZarrStreamSettings){
     .overwrite = true,         // Optional: remove existing data at store_path if true
 };
 
-ZarrStreamSettings_create_dimension_array(&settings, 4);
+ZarrArraySettings_create_dimension_array(&settings.array, 4);
 settings.dimensions[0] = (ZarrDimensionProperties){
     .name = "t",
     .type = ZarrDimensionType_Time,
@@ -145,6 +145,9 @@ settings.dimensions[0] = (ZarrDimensionProperties){
 // ... rest of dimensions configuration ...
 
 ZarrStream* stream = ZarrStream_create(&settings);
+
+// You can now safely free the dimensions array
+ZarrArraySettings_destroy_dimension_array(&settings.array);
 
 size_t bytes_written;
 ZarrStream_append(stream, my_frame_data, my_frame_size, &bytes_written);

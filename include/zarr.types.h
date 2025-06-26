@@ -134,6 +134,10 @@ extern "C"
 
     /**
      * @brief Properties of a Zarr array.
+     * @note The dimensions array may be allocated with ZarrArraySettings_create_dimension_array
+     * and freed with ZarrArraySettings_destroy_dimension_array. The order in which you
+     * set the dimension properties in the array should match the order of the dimensions
+     * from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
      */
     typedef struct
     {

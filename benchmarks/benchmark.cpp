@@ -75,7 +75,7 @@ setup_stream(const BenchmarkConfig& config)
                                 : ZarrCompressionCodec_BloscZstd;
         comp_settings.level = 1;
         comp_settings.shuffle = 1;
-        settings.compression_settings = &comp_settings;
+        settings.array.compression_settings = &comp_settings;
     }
 
     ZarrS3Settings s3_settings = {};
@@ -87,8 +87,8 @@ setup_stream(const BenchmarkConfig& config)
         settings.s3_settings = &s3_settings;
     }
 
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
-    auto* dims = settings.dimensions;
+    ZarrArraySettings_create_dimension_array(&settings.array, 5);
+    auto* dims = settings.array.dimensions;
 
     dims[0] = { .name = "t",
                 .type = ZarrDimensionType_Time,

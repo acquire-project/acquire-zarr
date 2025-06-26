@@ -27,15 +27,17 @@ setup() {
 
     ZarrStreamSettings settings = {  
         .store_path = test_path_cstr,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
+        .array = {
+          .data_type = ZarrDataType_uint16
+        }
     };
 
-    CHECK(ZarrStatusCode_Success == 
-          ZarrStreamSettings_create_dimension_array(&settings, 3));
+    CHECK(ZarrStatusCode_Success ==
+          ZarrArraySettings_create_dimension_array(&settings.array, 3));
 
     // Configure dimensions [t, y, x]
-    settings.dimensions[0] = {
+    settings.array.dimensions[0] = {
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0, // Append dimension
@@ -43,7 +45,7 @@ setup() {
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[1] = {
+    settings.array.dimensions[1] = {
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = array_height,
@@ -51,7 +53,7 @@ setup() {
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[2] = {
+    settings.array.dimensions[2] = {
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = array_width,
@@ -60,7 +62,7 @@ setup() {
     };
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(&settings.array);
     CHECK(stream != nullptr);
     return stream;
 }

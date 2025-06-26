@@ -21,16 +21,18 @@ main()
     ZarrStreamSettings settings = {
         .store_path = "output_v3_compressed.zarr",
         .s3_settings = NULL,
-        .compression_settings = &compression,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .array = {
+          .compression_settings = &compression,
+          .data_type = ZarrDataType_uint16,
+        },
     };
 
     // Set up dimensions (t, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 3);
+    ZarrArraySettings_create_dimension_array(&settings.array, 3);
 
-    settings.dimensions[0] = (ZarrDimensionProperties){
+    settings.array.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0,
@@ -38,7 +40,7 @@ main()
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[1] = (ZarrDimensionProperties){
+    settings.array.dimensions[1] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -46,7 +48,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[2] = (ZarrDimensionProperties){
+    settings.array.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -57,7 +59,7 @@ main()
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
     // Free Dimension array
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(&settings.array);
 
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");

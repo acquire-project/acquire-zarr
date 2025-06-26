@@ -8,10 +8,10 @@
 namespace fs = std::filesystem;
 
 void
-configure_stream_dimensions(ZarrStreamSettings* settings)
+configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-          ZarrStreamSettings_create_dimension_array(settings, 3));
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -42,8 +42,8 @@ void
 verify_file_data(const ZarrStreamSettings& settings)
 {
     std::vector<uint8_t> buffer;
-    const size_t row_size = settings.dimensions[2].array_size_px,
-                 num_rows = settings.dimensions[1].array_size_px;
+    const size_t row_size = settings.array.dimensions[2].array_size_px,
+                 num_rows = settings.array.dimensions[1].array_size_px;
 
     fs::path chunk_path = fs::path(settings.store_path) / "0" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(chunk_path));
@@ -175,11 +175,11 @@ main()
     settings.version = ZarrVersion_2;
     settings.store_path = static_cast<const char*>(TEST ".zarr");
     settings.max_threads = 0;
-    settings.data_type = ZarrDataType_uint8;
+    settings.array.data_type = ZarrDataType_uint8;
 
     try {
         // allocate dimensions
-        configure_stream_dimensions(&settings);
+        configure_stream_dimensions(&settings.array);
         stream = ZarrStream_create(&settings);
 
         CHECK(nullptr != stream);
@@ -213,7 +213,7 @@ main()
         stream = nullptr;
 
         verify_file_data(settings);
-        ZarrStreamSettings_destroy_dimension_array(&settings);
+        ZarrArraySettings_destroy_dimension_array(&settings.array);
 
         retval = 0;
     } catch (const std::exception& exception) {
@@ -225,8 +225,8 @@ main()
         ZarrStream_destroy(stream);
     }
 
-    if (settings.dimensions) {
-        ZarrStreamSettings_destroy_dimension_array(&settings);
+    if (settings.array.dimensions) {
+        ZarrArraySettings_destroy_dimension_array(&settings.array);
     }
 
     std::error_code ec;

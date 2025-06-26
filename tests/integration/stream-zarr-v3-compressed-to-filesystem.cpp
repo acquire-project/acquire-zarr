@@ -58,9 +58,11 @@ setup()
     ZarrStreamSettings settings = {
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .array = {
+          .data_type = ZarrDataType_uint16,
+        }
     };
 
     ZarrCompressionSettings compression_settings = {
@@ -69,11 +71,11 @@ setup()
         .level = 2,
         .shuffle = 2,
     };
-    settings.compression_settings = &compression_settings;
+    settings.array.compression_settings = &compression_settings;
 
-    CHECK_OK(ZarrStreamSettings_create_dimension_array(&settings, 5));
+    CHECK_OK(ZarrArraySettings_create_dimension_array(&settings.array, 5));
 
-    ZarrDimensionProperties* dim = settings.dimensions;
+    ZarrDimensionProperties* dim = settings.array.dimensions;
     *dim = DIM("t",
                ZarrDimensionType_Time,
                array_timepoints,
@@ -82,7 +84,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 1;
+    dim = settings.array.dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
@@ -91,7 +93,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 2;
+    dim = settings.array.dimensions + 2;
     *dim = DIM("z",
                ZarrDimensionType_Space,
                array_planes,
@@ -100,7 +102,7 @@ setup()
                "millimeter",
                1.4);
 
-    dim = settings.dimensions + 3;
+    dim = settings.array.dimensions + 3;
     *dim = DIM("y",
                ZarrDimensionType_Space,
                array_height,
@@ -109,7 +111,7 @@ setup()
                "micrometer",
                0.9);
 
-    dim = settings.dimensions + 4;
+    dim = settings.array.dimensions + 4;
     *dim = DIM("x",
                ZarrDimensionType_Space,
                array_width,
@@ -119,7 +121,7 @@ setup()
                0.9);
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(&settings.array);
 
     return stream;
 }

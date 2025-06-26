@@ -690,52 +690,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (settings->data_type >= ZarrDataTypeCount) {
-        error_ = "Invalid data type: " + std::to_string(settings->data_type);
-        return false;
-    }
-
-    if (!validate_compression_settings(settings->compression_settings,
-                                       error_)) {
-        return false;
-    }
-
-    if (settings->dimensions == nullptr) {
-        error_ = "Null pointer: dimensions";
-        return false;
-    }
-
-    // we must have at least 3 dimensions
-    const size_t ndims = settings->dimension_count;
-    if (ndims < 3) {
-        error_ = "Invalid number of dimensions: " + std::to_string(ndims) +
-                 ". Must be at least 3";
-        return false;
-    }
-
-    // check the final dimension (width), must be space
-    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
-        error_ = "Last dimension must be of type Space";
-        return false;
-    }
-
-    // check the penultimate dimension (height), must be space
-    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
-        error_ = "Second to last dimension must be of type Space";
-        return false;
-    }
-
-    // validate the dimensions individually
-    for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              settings->dimensions + i, version, i == 0, error_)) {
-            return false;
-        }
-    }
-
-    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
-        error_ = "Invalid downsampling method: " +
-                 std::to_string(settings->downsampling_method);
+    if (!validate_array_settings(&settings->array, version, error_)) {
         return false;
     }
 
@@ -743,7 +698,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::configure_array_(const ZarrArraySettings* settings)
 {
     std::string key = regularize_key(settings->output_key);
     if (!key.empty() && !is_valid_zarr_key(key, error_)) {
@@ -815,7 +770,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (!configure_array_(settings)) {
+    if (!configure_array_(&settings->array)) {
         set_error_("Failed to configure array: " + error_);
         return false;
     }
