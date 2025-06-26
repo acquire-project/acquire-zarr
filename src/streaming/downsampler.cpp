@@ -309,8 +309,10 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
     size_t frame_width = base_dims->width_dim().array_size_px;
     size_t frame_height = base_dims->height_dim().array_size_px;
 
-    frame.with_lock([&](auto& data) {
+    frame.with_lock([&](const auto& data) {
+        ByteVector current_frame(data.begin(), data.end());
         ByteVector next_level_frame;
+
         for (auto level = 1; level < n_levels_(); ++level) {
             const auto& prev_dims =
               writer_configurations_[level - 1]->dimensions;
@@ -338,9 +340,10 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
             // only downsample if this level's XY size is smaller than the last
             if (next_width < prev_width || next_height < prev_height) {
                 next_level_frame =
-                  scale_fun_(data, frame_width, frame_height, method_);
+                  scale_fun_(current_frame, frame_width, frame_height, method_);
             } else {
-                next_level_frame = ByteVector(data.begin(), data.end());
+                next_level_frame.assign(current_frame.begin(),
+                                        current_frame.end());
             }
 
             EXPECT(next_width == frame_width && next_height == frame_height,
@@ -368,7 +371,8 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
 
                     // set up for next iteration
                     if (level + 1 < writer_configurations_.size()) {
-                        data = next_level_frame;
+                        current_frame.assign(next_level_frame.begin(),
+                                             next_level_frame.end());
                     }
                 } else {
                     partial_scaled_frames_.emplace(level, next_level_frame);
@@ -380,7 +384,8 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
                 downsampled_frames_.emplace(level, next_level_frame);
 
                 if (level + 1 < writer_configurations_.size()) {
-                    data = next_level_frame;
+                    current_frame.assign(next_level_frame.begin(),
+                                         next_level_frame.end());
                 }
             }
         }
