@@ -8,6 +8,8 @@
 #include "v3.array.hh"
 #include "sink.hh"
 
+#include <fmt/format.h>
+
 #include <bit> // bit_ceil
 #include <filesystem>
 #include <regex>
@@ -51,9 +53,9 @@ validate_s3_settings(const ZarrS3Settings* settings, std::string& error)
 
     std::string trimmed = zarr::trim(settings->bucket_name);
     if (trimmed.length() < 3 || trimmed.length() > 63) {
-        error = "Invalid length for S3 bucket name: " +
-                std::to_string(trimmed.length()) +
-                ". Must be between 3 and 63 characters";
+        error = fmt::format("Invalid length for S3 bucket name: {}. Must be "
+                            "between 3 and 63 characters",
+                            trimmed.length());
         return false;
     }
 
@@ -71,8 +73,9 @@ validate_filesystem_store_path(std::string_view data_root, std::string& error)
 
     // parent path must exist and be a directory
     if (!fs::exists(parent_path) || !fs::is_directory(parent_path)) {
-        error = "Parent path '" + parent_path.string() +
-                "' does not exist or is not a directory";
+        error =
+          fmt::format("Parent path '{}' does not exist or is not a directory",
+                      parent_path.string());
         return false;
     }
 
@@ -83,7 +86,8 @@ validate_filesystem_store_path(std::string_view data_root, std::string& error)
                 fs::perms::others_write)) != fs::perms::none;
 
     if (!is_writable) {
-        error = "Parent path '" + parent_path.string() + "' is not writable";
+        error =
+          fmt::format("Parent path '{}' is not writable", parent_path.string());
         return false;
     }
 
@@ -95,12 +99,14 @@ validate_compression_settings(const ZarrCompressionSettings* settings,
                               std::string& error)
 {
     if (settings->compressor >= ZarrCompressorCount) {
-        error = "Invalid compressor: " + std::to_string(settings->compressor);
+        error = fmt::format("Invalid compressor: {}",
+                            static_cast<int>(settings->compressor));
         return false;
     }
 
     if (settings->codec >= ZarrCompressionCodecCount) {
-        error = "Invalid compression codec: " + std::to_string(settings->codec);
+        error = fmt::format("Invalid compression codec: {}",
+                            static_cast<int>(settings->codec));
         return false;
     }
 
@@ -113,19 +119,20 @@ validate_compression_settings(const ZarrCompressionSettings* settings,
 
     if (settings->level > 9) {
         error =
-          "Invalid compression level: " + std::to_string(settings->level) +
-          ". Must be between 0 and 9";
+          fmt::format("Invalid compression level: {}. Must be between 0 and 9",
+                      settings->level);
         return false;
     }
 
     if (settings->shuffle != BLOSC_NOSHUFFLE &&
         settings->shuffle != BLOSC_SHUFFLE &&
         settings->shuffle != BLOSC_BITSHUFFLE) {
-        error = "Invalid shuffle: " + std::to_string(settings->shuffle) +
-                ". Must be " + std::to_string(BLOSC_NOSHUFFLE) +
-                " (no shuffle), " + std::to_string(BLOSC_SHUFFLE) +
-                " (byte  shuffle), or " + std::to_string(BLOSC_BITSHUFFLE) +
-                " (bit shuffle)";
+        error = fmt::format("Invalid shuffle: {}. Must be {} (no "
+                            "shuffle), {} (byte  shuffle), or {} (bit shuffle)",
+                            settings->shuffle,
+                            BLOSC_NOSHUFFLE,
+                            BLOSC_SHUFFLE,
+                            BLOSC_BITSHUFFLE);
         return false;
     }
 
@@ -224,27 +231,27 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
             // segment must not be composed only of periods
             if (std::regex_match(segment, std::regex("^\\.+$"))) {
-                error = "Invalid key segment '" + segment + "'";
+                error = fmt::format("Invalid key segment '{}'", segment);
                 return false;
             }
 
             // segment must not start with "__"
             if (segment.substr(0, 2) == "__") {
-                error =
-                  "Key segment '" + segment + "' has reserved prefix '__'";
+                error = fmt::format("Key segment '{}' has reserved prefix '__'",
+                                    segment);
                 return false;
             }
         }
     } else { // simple name, apply node name rules
         // must not be composed only of periods
         if (std::regex_match(key, std::regex("^\\.+$"))) {
-            error = "Invalid key '" + key + "'";
+            error = fmt::format("Invalid key '{}'", key);
             return false;
         }
 
         // must not start with "__"
         if (key.substr(0, 2) == "__") {
-            error = " Key '" + key + "' has reserved prefix '__'";
+            error = fmt::format("Key '{}' has reserved prefix '__'", key);
             return false;
         }
     }
@@ -259,18 +266,19 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
         while (std::getline(stream, segment, '/')) {
             if (!segment.empty() && !std::regex_match(segment, valid_chars)) {
-                error = "Key segment '" + segment +
-                        "' contains invalid characters (should use only a-z, "
-                        "A-Z, 0-9, -, _, .)";
+                error =
+                  fmt::format("Key segment '{}' contains invalid characters "
+                              "(should use only a-z, A-Z, 0-9, -, _, .)",
+                              segment);
                 return false;
             }
         }
     } else {
         // for simple names
         if (!std::regex_match(key, valid_chars)) {
-            error = "Key '" + key +
-                    "' contains invalid characters (should use only a-z, A-Z, "
-                    "0-9, -, _, .)";
+            error = fmt::format("Key '{}' contains invalid characters "
+                                "(should use only a-z, A-Z, 0-9, -, _, .)",
+                                key);
             return false;
         }
     }
@@ -314,7 +322,9 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     }
 
     if (dimension->type >= ZarrDimensionTypeCount) {
-        error = "Invalid dimension type: " + std::to_string(dimension->type);
+        error = fmt::format("Invalid dimension type {} for dimension '{}'",
+                            static_cast<int>(dimension->type),
+                            dimension->name);
         return false;
     }
 
@@ -324,8 +334,8 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     }
 
     if (dimension->chunk_size_px == 0) {
-        error =
-          "Invalid chunk size: " + std::to_string(dimension->chunk_size_px);
+        error = fmt::format("Invalid chunk size for dimension '{}': 0",
+                            dimension->name);
         return false;
     }
 
@@ -589,7 +599,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 
     auto version = settings->version;
     if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
-        error_ = "Invalid Zarr version: " + std::to_string(version);
+        error_ =
+          fmt::format("Invalid Zarr version: {}", static_cast<int>(version));
         return false;
     } else if (version == ZarrVersion_2) {
         LOG_WARNING("Zarr version 2 is deprecated and will be removed in a "
@@ -617,7 +628,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     }
 
     if (settings->data_type >= ZarrDataTypeCount) {
-        error_ = "Invalid data type: " + std::to_string(settings->data_type);
+        error_ = fmt::format("Invalid data type: {}",
+                             static_cast<int>(settings->data_type));
         return false;
     }
 
@@ -635,8 +647,9 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     // we must have at least 3 dimensions
     const size_t ndims = settings->dimension_count;
     if (ndims < 3) {
-        error_ = "Invalid number of dimensions: " + std::to_string(ndims) +
-                 ". Must be at least 3";
+        error_ = fmt::format("Invalid number of dimensions: {}. Must be at "
+                             "least 3",
+                             ndims);
         return false;
     }
 
@@ -661,8 +674,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     }
 
     if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
-        error_ = "Invalid downsampling method: " +
-                 std::to_string(settings->downsampling_method);
+        error_ = fmt::format("Invalid downsampling method: {}",
+                             static_cast<int>(settings->downsampling_method));
         return false;
     }
 
@@ -774,20 +787,23 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 
     // create the data store
     if (!create_store_(settings->overwrite)) {
-        set_error_("Failed to create the data store: " + error_);
+        set_error_(fmt::format(
+          "Failed to create data store at '{}': {}", store_path_, error_));
         return false;
     }
 
     if (output_key_.empty() || settings->multiscale) {
         // create a group
         if (!configure_group_(settings)) {
-            set_error_("Failed to configure group: " + error_);
+            set_error_(fmt::format(
+              "Failed to configure group '{}': {}", output_key_, error_));
             return false;
         }
     } else {
         // create an array
         if (!configure_array_(settings)) {
-            set_error_("Failed to configure array: " + error_);
+            set_error_(fmt::format(
+              "Failed to configure array '{}': {}", output_key_, error_));
             return false;
         }
     }
@@ -824,8 +840,8 @@ ZarrStream_s::create_store_(bool overwrite)
             s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
               std::thread::hardware_concurrency(), *s3_settings_);
         } catch (const std::exception& e) {
-            set_error_("Error creating S3 connection pool: " +
-                       std::string(e.what()));
+            set_error_(
+              fmt::format("Error creating S3 connection pool: {}", e.what()));
             return false;
         }
 
@@ -841,10 +857,10 @@ ZarrStream_s::create_store_(bool overwrite)
             if (fs::is_directory(store_path_)) {
                 return true;
             } else if (fs::exists(store_path_)) {
-                set_error_("Store path '" + store_path_ +
-                           "' already exists and is "
-                           "not a directory, and we "
-                           "are not overwriting.");
+                set_error_(fmt::format("Store path '{}' already exists and "
+                                       "is not a directory, and we are not "
+                                       "overwriting.",
+                                       store_path_));
                 return false;
             }
         } else if (fs::exists(store_path_)) {
@@ -853,8 +869,10 @@ ZarrStream_s::create_store_(bool overwrite)
             fs::remove_all(store_path_, ec);
 
             if (ec) {
-                set_error_("Failed to remove existing store path '" +
-                           store_path_ + "': " + ec.message());
+                set_error_(fmt::format("Failed to remove existing store "
+                                       "path '{}': {}",
+                                       store_path_,
+                                       ec.message()));
                 return false;
             }
         }
@@ -863,8 +881,10 @@ ZarrStream_s::create_store_(bool overwrite)
         {
             std::error_code ec;
             if (!fs::create_directories(store_path_, ec)) {
-                set_error_("Failed to create store path '" + store_path_ +
-                           "': " + ec.message());
+                set_error_(fmt::format("Failed to create store path "
+                                       "'{}': {}",
+                                       store_path_,
+                                       ec.message()));
                 return false;
             }
         }
@@ -913,8 +933,9 @@ ZarrStream_s::write_intermediate_metadata_()
         }
 
         if (!zarr::finalize_group(std::move(group_node))) {
-            set_error_("Failed to write intermediate metadata for group '" +
-                       parent_group_key + "'");
+            set_error_(fmt::format("Failed to write intermediate "
+                                   "metadata for group '{}'",
+                                   parent_group_key));
             return false;
         }
     }
@@ -955,7 +976,7 @@ ZarrStream_s::init_frame_queue_()
         }),
                "Failed to push job to thread pool.");
     } catch (const std::exception& e) {
-        set_error_("Error creating frame queue: " + std::string(e.what()));
+        set_error_(fmt::format("Error creating frame queue: {}", e.what()));
         return false;
     }
 

@@ -1,6 +1,8 @@
 #include "definitions.hh"
 #include "macros.hh"
 
+#include <fmt/format.h>
+
 #include <string_view>
 
 #include <windows.h>
@@ -51,8 +53,8 @@ init_handle(void** handle, std::string_view filename)
     if (*fd == INVALID_HANDLE_VALUE) {
         const auto err = get_last_error_as_string();
         delete fd;
-        throw std::runtime_error("Failed to open file: '" +
-                                 std::string(filename) + "': " + err);
+        throw std::runtime_error(fmt::format(
+          "Failed to open file: '{}': {}", std::string(filename), err));
     }
     *handle = reinterpret_cast<void*>(fd);
 }

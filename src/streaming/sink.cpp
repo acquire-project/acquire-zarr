@@ -2,7 +2,8 @@
 #include "file.sink.hh"
 #include "s3.sink.hh"
 #include "macros.hh"
-#include "zarr.common.hh"
+
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -65,7 +66,8 @@ make_file_sinks(std::vector<std::string>& file_paths,
                 }
                 success = true;
             } catch (const std::exception& exc) {
-                err = "Failed to create file '" + filename + "': " + exc.what();
+                err = fmt::format(
+                  "Failed to create file '{}': {}", filename, exc.what());
             }
 
             latch.count_down();
@@ -149,8 +151,8 @@ zarr::construct_data_paths(std::string_view base_path,
             paths_queue.pop();
 
             for (auto k = 0; k < n_parts; ++k) {
-                const auto kstr = std::to_string(k);
-                paths_queue.push(path + (path.empty() ? kstr : "/" + kstr));
+                paths_queue.push(path.empty() ? fmt::format("{}", k)
+                                              : fmt::format("{}/{}", path, k));
             }
         }
     }
@@ -169,7 +171,7 @@ zarr::construct_data_paths(std::string_view base_path,
             const auto path = paths_queue.front();
             paths_queue.pop();
             for (auto j = 0; j < n_parts; ++j)
-                paths_out.push_back(path + "/" + std::to_string(j));
+                paths_out.push_back(fmt::format("{}/{}", path, j));
         }
     }
 
@@ -212,8 +214,8 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
             std::error_code ec;
             if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
-                err =
-                  "Failed to create directory '" + path + "': " + ec.message();
+                err = fmt::format(
+                  "Failed to create directory '{}': {}", path, ec.message());
                 success = false;
             }
 

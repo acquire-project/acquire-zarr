@@ -5,6 +5,7 @@
 #include "sink.hh"
 #include "zarr.common.hh"
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <latch>
@@ -131,7 +132,7 @@ zarr::V2Array::make_metadata_()
 std::string
 zarr::V2Array::data_root_() const
 {
-    return node_path_() + "/" + std::to_string(append_chunk_index_);
+    return fmt::format("{}/{}", node_path_(), append_chunk_index_);
 }
 
 const DimensionPartsFun

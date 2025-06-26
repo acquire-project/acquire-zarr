@@ -107,7 +107,7 @@ zarr::Group::create_downsampler_()
         downsampler_ =
           Downsampler(config, group_config_()->downsampling_method);
     } catch (const std::exception& exc) {
-        LOG_ERROR("Error creating downsampler: " + std::string(exc.what()));
+        LOG_ERROR("Error creating downsampler: ", exc.what());
         return false;
     }
 
