@@ -23,13 +23,14 @@ test_basic_operations()
     zarr::LockedBuffer frame(std::move(data));
 
     // Pushing
-    CHECK(queue.push(frame));
+    CHECK(queue.push(frame, "foo"));
     CHECK(queue.size() == 1);
     CHECK(!queue.empty());
 
     // Popping
     zarr::LockedBuffer received_frame;
-    CHECK(queue.pop(received_frame));
+    std::string received_key;
+    CHECK(queue.pop(received_frame, received_key));
     CHECK(received_frame.size() == 1024);
     CHECK(queue.size() == 0);
     CHECK(queue.empty());
@@ -40,6 +41,7 @@ test_basic_operations()
             CHECK(data[i] == i % 256);
         }
     });
+    CHECK(received_key == "foo");
 }
 
 void
@@ -51,25 +53,27 @@ test_capacity()
     // Fill the queue
     for (size_t i = 0; i < capacity; ++i) {
         zarr::LockedBuffer frame(std::move(ByteVector(100, i)));
-        bool result = queue.push(frame);
+        bool result = queue.push(frame, std::to_string(i));
         CHECK(result);
     }
 
     // Queue should be full (next push should fail)
     zarr::LockedBuffer extra_frame(std::move(ByteVector(100)));
-    bool push_result = queue.push(extra_frame);
+    bool push_result = queue.push(extra_frame, std::to_string(capacity));
     CHECK(!push_result);
     CHECK(queue.size() == capacity);
 
     // Remove one item
     zarr::LockedBuffer received_frame;
-    bool pop_result = queue.pop(received_frame);
+    std::string received_key;
+    bool pop_result = queue.pop(received_frame, received_key);
     CHECK(pop_result);
     CHECK(queue.size() == capacity - 1);
+    CHECK(received_key == "0");
 
     // Should be able to push again
     zarr::LockedBuffer new_frame(std::move(ByteVector(100, 99)));
-    push_result = queue.push(new_frame);
+    push_result = queue.push(new_frame, std::to_string(capacity));
     CHECK(push_result);
     CHECK(queue.size() == capacity);
 }
@@ -91,7 +95,7 @@ test_producer_consumer()
               std::move(ByteVector(frame_size, i % 256)));
 
             // Try until successful
-            while (!queue.push(frame)) {
+            while (!queue.push(frame, "spam")) {
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
             }
         }
@@ -103,13 +107,15 @@ test_producer_consumer()
 
         while (frames_received < n_frames) {
             zarr::LockedBuffer frame;
-            if (queue.pop(frame)) {
+            std::string received_key;
+            if (queue.pop(frame, received_key)) {
                 // Verify frame data (first byte should match frame number %
                 // 256)
                 CHECK(frame.size() > 0);
                 CHECK(frame.with_lock([&frames_received](auto& data) {
                     return data[0] == (frames_received % 256);
                 }));
+                CHECK(received_key == "spam");
                 frames_received++;
             } else {
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -143,10 +149,12 @@ test_throughput()
     // Push and pop in a loop
     const size_t iterations = 100;
     zarr::LockedBuffer received_frame;
+    std::string received_key;
     for (size_t i = 0; i < iterations; ++i) {
-        CHECK(queue.push(data));
-        CHECK(queue.pop(received_frame));
+        CHECK(queue.push(data, std::to_string(i)));
+        CHECK(queue.pop(received_frame, received_key));
         CHECK(received_frame.size() == frame_size);
+        CHECK(received_key == std::to_string(i));
         data.assign(ByteVector(frame_size, 42)); // Reuse the buffer
     }
 

@@ -498,7 +498,8 @@ ZarrStream::append(const std::string& key, const void* data_, size_t nbytes)
             // ready to enqueue the frame buffer
             if (frame_buffer_offset == bytes_of_frame) {
                 std::unique_lock lock(frame_queue_mutex_);
-                while (!frame_queue_->push(frame_buffer) && process_frames_) {
+                while (!frame_queue_->push(frame_buffer, key) &&
+                       process_frames_) {
                     frame_queue_not_full_cv_.wait(lock);
                 }
                 frame_buffer.resize(bytes_of_frame);
@@ -521,7 +522,7 @@ ZarrStream::append(const std::string& key, const void* data_, size_t nbytes)
             frame.assign({ data, bytes_of_frame });
 
             std::unique_lock lock(frame_queue_mutex_);
-            while (!frame_queue_->push(frame) && process_frames_) {
+            while (!frame_queue_->push(frame, key) && process_frames_) {
                 frame_queue_not_full_cv_.wait(lock);
             }
 
@@ -967,8 +968,7 @@ ZarrStream_s::process_frame_queue_()
         return;
     }
 
-    const std::string output_key =
-      output_arrays_.begin()->first; // TODO (aliddell): remove
+    std::string output_key;
 
     zarr::LockedBuffer frame;
     while (process_frames_ || !frame_queue_->empty()) {
@@ -992,18 +992,18 @@ ZarrStream_s::process_frame_queue_()
             }
         }
 
-        if (!frame_queue_->pop(frame)) {
+        if (!frame_queue_->pop(frame, output_key)) {
             continue;
         }
 
         if (auto it = output_arrays_.find(output_key);
             it == output_arrays_.end()) {
+            // If we have gotten here, something has gone seriously wrong
             set_error_("Output node not found for key: '" + output_key + "'");
             std::unique_lock lock(frame_queue_mutex_);
             frame_queue_finished_cv_.notify_all();
             return;
         } else {
-            const auto& output_key = it->first;
             auto& output_node = it->second;
 
             if (output_node.array->write_frame(frame) != frame.size()) {
