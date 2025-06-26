@@ -116,7 +116,7 @@ extern "C"
     } ZarrCompressionSettings;
 
     /**
-     * @brief Properties of a dimension of the Zarr array.
+     * @brief Properties of a dimension of a Zarr array.
      */
     typedef struct
     {
@@ -131,6 +131,20 @@ extern "C"
         const char* unit;           /** Unit of the dimension */
         double scale;               /**< Scale of the dimension */
     } ZarrDimensionProperties;
+
+    /**
+     * @brief Properties of a Zarr array.
+     */
+    typedef struct
+    {
+        const char* output_key;
+        ZarrCompressionSettings* compression_settings;
+        ZarrDimensionProperties* dimensions;
+        size_t dimension_count;
+        ZarrDataType data_type;
+        bool multiscale;
+        ZarrDownsamplingMethod downsampling_method;
+    } ZarrArraySettings;
 
 #ifdef __cplusplus
 }

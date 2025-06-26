@@ -22,12 +22,6 @@ is_s3_acquisition(const struct ZarrStreamSettings_s* settings)
     return nullptr != settings->s3_settings;
 }
 
-bool
-is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
-{
-    return nullptr != settings->compression_settings;
-}
-
 zarr::S3Settings
 make_s3_settings(const ZarrS3Settings* settings)
 {
@@ -95,6 +89,10 @@ validate_filesystem_store_path(std::string_view data_root, std::string& error)
 validate_compression_settings(const ZarrCompressionSettings* settings,
                               std::string& error)
 {
+    if (settings == nullptr) { // no compression, OK
+        return true;
+    }
+
     if (settings->compressor >= ZarrCompressorCount) {
         error = "Invalid compressor: " + std::to_string(settings->compressor);
         return false;
@@ -225,27 +223,26 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
             // segment must not be composed only of periods
             if (std::regex_match(segment, std::regex("^\\.+$"))) {
-                error = "Invalid key segment '" + segment + "'";
+                error = "Key segment contains only periods";
                 return false;
             }
 
             // segment must not start with "__"
             if (segment.substr(0, 2) == "__") {
-                error =
-                  "Key segment '" + segment + "' has reserved prefix '__'";
+                error = "Key segment has reserved prefix '__'";
                 return false;
             }
         }
     } else { // simple name, apply node name rules
         // must not be composed only of periods
         if (std::regex_match(key, std::regex("^\\.+$"))) {
-            error = "Invalid key '" + key + "'";
+            error = "Key contains only periods";
             return false;
         }
 
         // must not start with "__"
         if (key.substr(0, 2) == "__") {
-            error = " Key '" + key + "' has reserved prefix '__'";
+            error = " Key has reserved prefix '__'";
             return false;
         }
     }
@@ -260,18 +257,16 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
         while (std::getline(stream, segment, '/')) {
             if (!segment.empty() && !std::regex_match(segment, valid_chars)) {
-                error = "Key segment '" + segment +
-                        "' contains invalid characters (should use only a-z, "
-                        "A-Z, 0-9, -, _, .)";
+                error = "Key segment contains invalid characters (should use "
+                        "only a-z, A-Z, 0-9, -, _, .)";
                 return false;
             }
         }
     } else {
         // for simple names
         if (!std::regex_match(key, valid_chars)) {
-            error = "Key '" + key +
-                    "' contains invalid characters (should use only a-z, A-Z, "
-                    "0-9, -, _, .)";
+            error = "Key contains invalid characters (should use only a-z, "
+                    "A-Z, 0-9, -, _, .)";
             return false;
         }
     }
@@ -286,19 +281,15 @@ regularize_key(const char* key)
         return "";
     }
 
-    std::string regularized_key = zarr::trim(key);
+    std::string regularized_key{ key };
+
+    // replace leading and trailing whitespace and/or slashes
+    regularized_key = std::regex_replace(
+      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
 
     // replace multiple consecutive slashes with single slashes
     regularized_key =
-      std::regex_replace(regularized_key, std::regex("\\/+"), "/");
-
-    // remove leading slash
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex("^\\/"), "");
-
-    // remove trailing slash
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex("\\/$"), "");
+      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
 
     return regularized_key;
 }
@@ -337,6 +328,70 @@ validate_dimension(const ZarrDimensionProperties* dimension,
 
     if (dimension->scale < 0.0) {
         error = "Scale must be non-negative";
+        return false;
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+validate_array_settings(const ZarrArraySettings* settings,
+                        ZarrVersion version,
+                        std::string& error)
+{
+    if (settings == nullptr) {
+        error = "Null pointer: settings";
+        return false;
+    }
+
+    std::string key = regularize_key(settings->output_key);
+    if (!key.empty() && !is_valid_zarr_key(key, error)) {
+        error = "Invalid output key: '" + key + "': " + error;
+        return false;
+    }
+
+    if (!validate_compression_settings(settings->compression_settings, error)) {
+        return false;
+    }
+
+    if (settings->dimensions == nullptr) {
+        error = "Null pointer: dimensions";
+        return false;
+    }
+
+    // we must have at least 3 dimensions
+    const size_t ndims = settings->dimension_count;
+    if (ndims < 3) {
+        error = "Invalid number of dimensions: " + std::to_string(ndims) +
+                ". Must be at least 3";
+        return false;
+    }
+
+    // check the final dimension (width), must be space
+    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+        error = "Last dimension must be of type Space";
+        return false;
+    }
+
+    // check the penultimate dimension (height), must be space
+    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+        error = "Second to last dimension must be of type Space";
+        return false;
+    }
+
+    // validate the dimensions individually
+    for (size_t i = 0; i < ndims; ++i) {
+        if (!validate_dimension(
+              settings->dimensions + i, version, i == 0, error)) {
+            return false;
+        }
+    }
+
+    // we don't care about downsampling method if not multiscale
+    if (settings->multiscale &&
+        settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+        error = "Invalid downsampling method: " +
+                std::to_string(settings->downsampling_method);
         return false;
     }
 
@@ -640,8 +695,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (is_compressed_acquisition(settings) &&
-        !validate_compression_settings(settings->compression_settings,
+    if (!validate_compression_settings(settings->compression_settings,
                                        error_)) {
         return false;
     }
