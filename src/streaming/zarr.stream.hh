@@ -1,14 +1,15 @@
 #pragma once
 
 #include "array.hh"
+#include "array.dimensions.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
 #include "group.hh"
+#include "locked.buffer.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
-#include "array.dimensions.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -54,7 +55,7 @@ struct ZarrStream_s
     std::unique_ptr<zarr::ZarrNode> output_node_;
 
     size_t frame_size_bytes_;
-    std::vector<std::byte> frame_buffer_;
+    zarr::LockedBuffer frame_buffer_;
     size_t frame_buffer_offset_;
 
     std::atomic<bool> process_frames_{ true };

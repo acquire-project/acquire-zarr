@@ -41,6 +41,10 @@ zarr::ZarrNode::make_metadata_sinks_()
                 ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
                 : make_file_sink(path);
 
+            if (sink == nullptr) {
+                LOG_ERROR("Failed to create metadata sink for ", key);
+                return false;
+            }
             metadata_sinks_.emplace(key, std::move(sink));
         }
     } catch (const std::exception& exc) {
@@ -77,7 +81,7 @@ zarr::ZarrNode::write_metadata_()
             return false;
         }
 
-        std::span data{ reinterpret_cast<const std::byte*>(metadata.data()),
+        std::span data{ reinterpret_cast<const uint8_t*>(metadata.data()),
                         metadata.size() };
         if (!sink->write(0, data)) {
             LOG_ERROR("Failed to write metadata for key: ", key);

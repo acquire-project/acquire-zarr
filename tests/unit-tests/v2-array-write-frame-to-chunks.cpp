@@ -52,8 +52,7 @@ main()
         zarr::V2Array writer(config, thread_pool, nullptr);
 
         const size_t frame_size = array_width * array_height * nbytes_px;
-        std::vector data_(frame_size, std::byte(0));
-        std::span data(data_.data(), data_.size());
+        zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
 
         for (auto i = 0; i < n_frames; ++i) {
             CHECK(writer.write_frame(data) == frame_size);
@@ -68,5 +67,6 @@ main()
     if (fs::exists(base_dir)) {
         fs::remove_all(base_dir);
     }
+
     return retval;
 }

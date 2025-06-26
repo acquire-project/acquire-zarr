@@ -177,7 +177,7 @@ scale_image(ConstByteSpan src,
     const auto h_pad = height + (height % downscale);
     const auto size_downscaled = w_pad * h_pad * bytes_of_type / factor;
 
-    ByteVector dst(size_downscaled, static_cast<std::byte>(0));
+    ByteVector dst(size_downscaled, 0);
     auto* dst_as_T = reinterpret_cast<T*>(dst.data());
     auto* src_as_T = reinterpret_cast<const T*>(src.data());
 
@@ -303,94 +303,101 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
 }
 
 void
-zarr::Downsampler::add_frame(ConstByteSpan frame_data)
+zarr::Downsampler::add_frame(LockedBuffer& frame)
 {
     const auto& base_dims = writer_configurations_[0]->dimensions;
     size_t frame_width = base_dims->width_dim().array_size_px;
     size_t frame_height = base_dims->height_dim().array_size_px;
 
-    ConstByteSpan data = frame_data;
-    ByteVector next_level_frame;
-    for (auto level = 1; level < n_levels_(); ++level) {
-        const auto& prev_dims = writer_configurations_[level - 1]->dimensions;
-        const auto prev_width = prev_dims->width_dim().array_size_px;
-        const auto prev_height = prev_dims->height_dim().array_size_px;
-        const auto prev_planes =
-          prev_dims->at(prev_dims->ndims() - 3).array_size_px;
+    frame.with_lock([&](const auto& data) {
+        ByteVector current_frame(data.begin(), data.end());
+        ByteVector next_level_frame;
 
-        EXPECT(prev_width == frame_width && prev_height == frame_height,
-               "Frame dimensions do not match expected dimensions: ",
-               prev_width,
-               "x",
-               prev_height,
-               " vs. ",
-               frame_width,
-               "x",
-               frame_height);
+        for (auto level = 1; level < n_levels_(); ++level) {
+            const auto& prev_dims =
+              writer_configurations_[level - 1]->dimensions;
+            const auto prev_width = prev_dims->width_dim().array_size_px;
+            const auto prev_height = prev_dims->height_dim().array_size_px;
+            const auto prev_planes =
+              prev_dims->at(prev_dims->ndims() - 3).array_size_px;
 
-        const auto& next_dims = writer_configurations_[level]->dimensions;
-        const auto next_width = next_dims->width_dim().array_size_px;
-        const auto next_height = next_dims->height_dim().array_size_px;
-        const auto next_planes =
-          next_dims->at(next_dims->ndims() - 3).array_size_px;
+            EXPECT(prev_width == frame_width && prev_height == frame_height,
+                   "Frame dimensions do not match expected dimensions: ",
+                   prev_width,
+                   "x",
+                   prev_height,
+                   " vs. ",
+                   frame_width,
+                   "x",
+                   frame_height);
 
-        // only downsample if this level's XY size is smaller than the last
-        if (next_width < prev_width || next_height < prev_height) {
-            next_level_frame =
-              scale_fun_(data, frame_width, frame_height, method_);
-        } else {
-            next_level_frame = ByteVector(data.begin(), data.end());
-        }
+            const auto& next_dims = writer_configurations_[level]->dimensions;
+            const auto next_width = next_dims->width_dim().array_size_px;
+            const auto next_height = next_dims->height_dim().array_size_px;
+            const auto next_planes =
+              next_dims->at(next_dims->ndims() - 3).array_size_px;
 
-        EXPECT(next_width == frame_width && next_height == frame_height,
-               "Downsampled dimensions do not match expected dimensions: ",
-               next_width,
-               "x",
-               next_height,
-               " vs. ",
-               frame_width,
-               "x",
-               frame_height);
+            // only downsample if this level's XY size is smaller than the last
+            if (next_width < prev_width || next_height < prev_height) {
+                next_level_frame =
+                  scale_fun_(current_frame, frame_width, frame_height, method_);
+            } else {
+                next_level_frame.assign(current_frame.begin(),
+                                        current_frame.end());
+            }
 
-        // only average if this level's Z size is smaller than the last
-        if (next_planes < prev_planes) {
-            auto it = partial_scaled_frames_.find(level);
-            if (it != partial_scaled_frames_.end()) {
-                // average2_fun_ writes to next_level_frame
-                // swap here so that decimate2 can take it->second
-                next_level_frame.swap(it->second);
-                average2_fun_(next_level_frame, it->second, method_);
-                downsampled_frames_.emplace(level, next_level_frame);
+            EXPECT(next_width == frame_width && next_height == frame_height,
+                   "Downsampled dimensions do not match expected dimensions: ",
+                   next_width,
+                   "x",
+                   next_height,
+                   " vs. ",
+                   frame_width,
+                   "x",
+                   frame_height);
 
-                // clean up this LOD
-                partial_scaled_frames_.erase(it);
+            // only average if this level's Z size is smaller than the last
+            if (next_planes < prev_planes) {
+                auto it = partial_scaled_frames_.find(level);
+                if (it != partial_scaled_frames_.end()) {
+                    // average2_fun_ writes to next_level_frame
+                    // swap here so that decimate2 can take it->second
+                    next_level_frame.swap(it->second);
+                    average2_fun_(next_level_frame, it->second, method_);
+                    downsampled_frames_.emplace(level, next_level_frame);
 
-                // set up for next iteration
-                if (level + 1 < writer_configurations_.size()) {
-                    data = next_level_frame;
+                    // clean up this LOD
+                    partial_scaled_frames_.erase(it);
+
+                    // set up for next iteration
+                    if (level + 1 < writer_configurations_.size()) {
+                        current_frame.assign(next_level_frame.begin(),
+                                             next_level_frame.end());
+                    }
+                } else {
+                    partial_scaled_frames_.emplace(level, next_level_frame);
+                    break;
                 }
             } else {
-                partial_scaled_frames_.emplace(level, next_level_frame);
-                break;
-            }
-        } else {
-            // no downsampling in Z, so we can just pass the data to the next
-            // level
-            downsampled_frames_.emplace(level, next_level_frame);
+                // no downsampling in Z, so we can just pass the data to the
+                // next level
+                downsampled_frames_.emplace(level, next_level_frame);
 
-            if (level + 1 < writer_configurations_.size()) {
-                data = next_level_frame;
+                if (level + 1 < writer_configurations_.size()) {
+                    current_frame.assign(next_level_frame.begin(),
+                                         next_level_frame.end());
+                }
             }
         }
-    }
+    });
 }
 
 bool
-zarr::Downsampler::get_downsampled_frame(int level, ByteVector& frame_data)
+zarr::Downsampler::get_downsampled_frame(int level, LockedBuffer& frame_data)
 {
     auto it = downsampled_frames_.find(level);
     if (it != downsampled_frames_.end()) {
-        frame_data = it->second;
+        frame_data.assign(it->second);
         downsampled_frames_.erase(level);
         return true;
     }

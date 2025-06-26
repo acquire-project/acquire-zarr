@@ -27,12 +27,10 @@ class V3Array final : public Array
 
     std::string data_root_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;
-    void make_buffers_() override;
-    BytePtr get_chunk_data_(uint32_t index) override;
     bool compress_and_flush_data_() override;
     void close_sinks_() override;
     bool should_rollover_() const override;
 
-    size_t compute_chunk_offsets_and_defrag_(uint32_t shard_index);
+    ByteVector consolidate_chunks_(uint32_t shard_index);
 };
 } // namespace zarr

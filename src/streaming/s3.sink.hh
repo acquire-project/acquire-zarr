@@ -33,7 +33,7 @@ class S3Sink : public Sink
 
     std::shared_ptr<S3ConnectionPool> connection_pool_;
 
-    std::array<std::byte, max_part_size_> part_buffer_;
+    std::array<uint8_t, max_part_size_> part_buffer_;
     size_t nbytes_buffered_{ 0 };
     size_t nbytes_flushed_{ 0 };
 

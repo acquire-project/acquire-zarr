@@ -19,7 +19,7 @@ main()
             char str[] = "Hello, Acquire!";
             auto sink = std::make_unique<zarr::FileSink>(tmp_path.string());
 
-            std::span data = { reinterpret_cast<std::byte*>(str),
+            std::span data = { reinterpret_cast<uint8_t*>(str),
                                sizeof(str) - 1 };
             CHECK(sink->write(0, data));
             CHECK(zarr::finalize_sink(std::move(sink)));

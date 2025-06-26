@@ -58,7 +58,7 @@ class ZarrNode
      * @param data The data to write.
      * @return The number of bytes successfully written.
      */
-    [[nodiscard]] virtual size_t write_frame(ConstByteSpan data) = 0;
+    [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
 
   protected:
     std::shared_ptr<ZarrNodeConfig> config_;
