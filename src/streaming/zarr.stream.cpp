@@ -440,7 +440,6 @@ average_two_frames(ByteSpan& dst, ConstByteSpan src)
 
 ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
   : error_()
-  , frame_buffer_offset_(0)
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -462,30 +461,34 @@ ZarrStream::append(const void* data_, size_t nbytes)
         return 0;
     }
 
+    auto& output = output_arrays_.at(output_key_);
+    auto& frame_buffer = output.frame_buffer;
+    auto& frame_buffer_offset = output.frame_buffer_offset;
+
     auto* data = static_cast<const uint8_t*>(data_);
 
-    const size_t bytes_of_frame = frame_buffer_.size();
+    const size_t bytes_of_frame = frame_buffer.size();
     size_t bytes_written = 0; // bytes written out of the input data
 
     while (bytes_written < nbytes) {
         const size_t bytes_remaining = nbytes - bytes_written;
 
-        if (frame_buffer_offset_ > 0) { // add to / finish a partial frame
+        if (frame_buffer_offset > 0) { // add to / finish a partial frame
             const size_t bytes_to_copy =
-              std::min(bytes_of_frame - frame_buffer_offset_, bytes_remaining);
+              std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer_.assign_at(frame_buffer_offset_,
-                                    { data + bytes_written, bytes_to_copy });
-            frame_buffer_offset_ += bytes_to_copy;
+            frame_buffer.assign_at(frame_buffer_offset,
+                                   { data + bytes_written, bytes_to_copy });
+            frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
             // ready to enqueue the frame buffer
-            if (frame_buffer_offset_ == bytes_of_frame) {
+            if (frame_buffer_offset == bytes_of_frame) {
                 std::unique_lock lock(frame_queue_mutex_);
-                while (!frame_queue_->push(frame_buffer_) && process_frames_) {
+                while (!frame_queue_->push(frame_buffer) && process_frames_) {
                     frame_queue_not_full_cv_.wait(lock);
                 }
-                frame_buffer_.resize(bytes_of_frame);
+                frame_buffer.resize(bytes_of_frame);
 
                 if (process_frames_) {
                     frame_queue_not_empty_cv_.notify_one();
@@ -494,11 +497,11 @@ ZarrStream::append(const void* data_, size_t nbytes)
                     break;
                 }
                 data += bytes_to_copy;
-                frame_buffer_offset_ = 0;
+                frame_buffer_offset = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
-            frame_buffer_.assign_at(0, { data, bytes_remaining });
-            frame_buffer_offset_ = bytes_remaining;
+            frame_buffer.assign_at(0, { data, bytes_remaining });
+            frame_buffer_offset = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
             zarr::LockedBuffer frame;
@@ -674,6 +677,13 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 bool
 ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
 {
+    std::string key = regularize_key(settings->output_key);
+    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
+        set_error_("Invalid output key: '" + key + "'");
+        return false;
+    }
+    output_key_ = key;
+
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
@@ -683,9 +693,6 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
 
     auto dims = make_array_dimensions(
       settings->dimensions, settings->dimension_count, settings->data_type);
-
-    std::string parent_group_key =
-      output_key_.empty() ? "" : zarr::get_parent_paths({ output_key_ })[0];
 
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     if (settings->multiscale) {
@@ -700,23 +707,26 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
                                                       downsampling_method,
                                                       0);
 
+    ZarrOutputArray output_node{ .output_key = key, .frame_buffer_offset = 0 };
     try {
-        output_node_ =
+        output_node.array =
           zarr::make_array(config, thread_pool_, s3_connection_pool_, version_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
 
-    if (output_node_ == nullptr) {
+    if (output_node.array == nullptr) {
+        set_error_("Failed to create output node: " + error_);
         return false;
     }
 
     // initialize frame buffer
-    frame_size_bytes_ = dims->width_dim().array_size_px *
-                        dims->height_dim().array_size_px *
-                        zarr::bytes_of_type(settings->data_type);
+    const auto frame_size_bytes = dims->width_dim().array_size_px *
+                                  dims->height_dim().array_size_px *
+                                  zarr::bytes_of_type(settings->data_type);
 
-    frame_buffer_.resize(frame_size_bytes_);
+    output_node.frame_buffer.resize_and_fill(frame_size_bytes, 0);
+    output_arrays_.emplace(key, std::move(output_node));
 
     return true;
 }
@@ -724,12 +734,6 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
 bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
-    std::string key = regularize_key(settings->output_key);
-    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
-        return false;
-    }
-    output_key_ = key;
-
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
@@ -903,14 +907,20 @@ ZarrStream_s::init_frame_queue_()
         return false;
     }
 
+    size_t frame_size_bytes = 0;
+    for (auto& [key, output] : output_arrays_) {
+        frame_size_bytes =
+          std::max(frame_size_bytes, output.frame_buffer.size());
+    }
+
     // cap the frame buffer at 1 GiB, or 10 frames, whichever is larger
     const auto buffer_size_bytes = 1ULL << 30;
     const auto frame_count =
-      std::max(10ULL, buffer_size_bytes / frame_size_bytes_);
+      std::max(10ULL, buffer_size_bytes / frame_size_bytes);
 
     try {
         frame_queue_ =
-          std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes_);
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes);
 
         auto job = [this](std::string& err) {
             try {
@@ -969,11 +979,23 @@ ZarrStream_s::process_frame_queue_()
             continue;
         }
 
-        if (output_node_->write_frame(frame) != frame_size_bytes_) {
-            set_error_("Failed to write frame to writer");
+        if (auto it = output_arrays_.find(output_key_);
+            it == output_arrays_.end()) {
+            set_error_("Output node not found for key: " + output_key_);
             std::unique_lock lock(frame_queue_mutex_);
             frame_queue_finished_cv_.notify_all();
             return;
+        } else {
+            const auto& output_key = it->first;
+            auto& output_node = it->second;
+
+            if (output_node.array->write_frame(frame) != frame.size()) {
+                set_error_("Failed to write frame to writer for key: " +
+                           output_key);
+                std::unique_lock lock(frame_queue_mutex_);
+                frame_queue_finished_cv_.notify_all();
+                return;
+            }
         }
 
         {
@@ -1033,9 +1055,14 @@ finalize_stream(struct ZarrStream_s* stream)
 
     stream->finalize_frame_queue_();
 
-    if (!zarr::finalize_node(std::move(stream->output_node_))) {
-        LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
-        return false;
+    for (auto& [key, output] : stream->output_arrays_) {
+        if (!zarr::finalize_node(std::move(output.array))) {
+            LOG_ERROR(
+              "Error finalizing Zarr stream. Failed to finalize array '",
+              key,
+              "'");
+            return false;
+        }
     }
 
     if (!stream->write_intermediate_metadata_()) {

@@ -20,6 +20,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 
 struct ZarrStream_s
 {
@@ -45,18 +46,22 @@ struct ZarrStream_s
                                          bool overwrite);
 
   private:
+    struct ZarrOutputArray
+    {
+        std::string output_key;
+        zarr::LockedBuffer frame_buffer;
+        size_t frame_buffer_offset;
+        std::unique_ptr<zarr::ArrayBase> array;
+    };
+
     std::string error_; // error message. If nonempty, an error occurred.
 
     ZarrVersion version_;
     std::string store_path_;
-    std::string output_key_;
     std::optional<zarr::S3Settings> s3_settings_;
 
-    std::unique_ptr<zarr::ArrayBase> output_node_;
-
-    size_t frame_size_bytes_;
-    zarr::LockedBuffer frame_buffer_;
-    size_t frame_buffer_offset_;
+    std::string output_key_; // TODO (aliddell): remove this
+    std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
 
     std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
