@@ -136,6 +136,7 @@ test_throughput()
 
     // Create large frame for testing
     std::vector<uint8_t> large_frame(frame_size, 42);
+    zarr::LockedBuffer data(std::move(ByteVector(large_frame)));
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -143,13 +144,10 @@ test_throughput()
     const size_t iterations = 100;
     zarr::LockedBuffer received_frame;
     for (size_t i = 0; i < iterations; ++i) {
-        zarr::LockedBuffer data(std::move(ByteVector(large_frame)));
         CHECK(queue.push(data));
-
         CHECK(queue.pop(received_frame));
         CHECK(received_frame.size() == frame_size);
-
-        received_frame.clear();
+        data.assign(ByteVector(frame_size, 42)); // Reuse the buffer
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
