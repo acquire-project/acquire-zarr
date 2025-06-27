@@ -2,7 +2,6 @@
 
 #include "array.hh"
 #include "downsampler.hh"
-#include "node.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
@@ -11,38 +10,12 @@
 #include <optional>
 
 namespace zarr {
-struct GroupConfig : public ZarrNodeConfig
-{
-    GroupConfig() = default;
-    GroupConfig(std::string_view store_root,
-                std::string_view group_key,
-                std::optional<std::string> bucket_name,
-                std::optional<BloscCompressionParams> compression_params,
-                std::shared_ptr<ArrayDimensions> dimensions,
-                ZarrDataType dtype,
-                bool multiscale,
-                ZarrDownsamplingMethod downsampling_method)
-      : ZarrNodeConfig(store_root,
-                       group_key,
-                       bucket_name,
-                       compression_params,
-                       dimensions,
-                       dtype)
-      , multiscale(multiscale)
-      , downsampling_method(downsampling_method)
-    {
-    }
-
-    bool multiscale{ false };
-    ZarrDownsamplingMethod downsampling_method{ ZarrDownsamplingMethod_Mean };
-};
-
-class Group : public ZarrNode
+class MultiscaleArray : public ArrayBase
 {
   public:
-    Group(std::shared_ptr<GroupConfig> config,
-          std::shared_ptr<ThreadPool> thread_pool,
-          std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    MultiscaleArray(std::shared_ptr<ArrayConfig> config,
+                    std::shared_ptr<ThreadPool> thread_pool,
+                    std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
     /**
      * @brief Write a frame to the group.
@@ -52,18 +25,16 @@ class Group : public ZarrNode
      * @param data The frame data to write.
      * @return The number of bytes written of the full-resolution frame.
      */
-    [[nodiscard]] size_t write_frame(ConstByteSpan data) override;
+    [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
 
   protected:
-    std::optional<zarr::Downsampler> downsampler_;
+    std::unique_ptr<zarr::Downsampler> downsampler_;
 
     std::vector<std::unique_ptr<Array>> arrays_;
 
     size_t bytes_per_frame_;
 
     bool close_() override;
-
-    std::shared_ptr<GroupConfig> group_config_() const;
 
     /** @brief Create array writers. */
     [[nodiscard]] virtual bool create_arrays_() = 0;
@@ -92,13 +63,13 @@ class Group : public ZarrNode
      * resolution arrays.
      * @param data The frame data to write.
      */
-    void write_multiscale_frames_(ConstByteSpan data);
+    void write_multiscale_frames_(LockedBuffer& data);
 
   private:
-    friend bool finalize_group(std::unique_ptr<Group>&& group);
+    friend bool finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 };
 
 [[nodiscard]]
 bool
-finalize_group(std::unique_ptr<Group>&& group);
+finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 } // namespace zarr

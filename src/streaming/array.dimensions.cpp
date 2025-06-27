@@ -191,6 +191,25 @@ ArrayDimensions::chunk_indices_for_shard(uint32_t shard_index) const
     return chunk_indices_for_shard_.at(shard_index);
 }
 
+std::vector<uint32_t>
+ArrayDimensions::chunk_indices_for_shard_layer(uint32_t shard_index,
+                                               uint32_t layer) const
+{
+    const auto& chunk_indices = chunk_indices_for_shard(shard_index);
+    const auto chunks_per_layer = number_of_chunks_in_memory_;
+
+    std::vector<uint32_t> indices;
+    indices.reserve(chunks_per_shard_);
+
+    for (const auto& idx : chunk_indices) {
+        if ((idx / chunks_per_layer) == layer) {
+            indices.push_back(idx);
+        }
+    }
+
+    return indices;
+}
+
 uint32_t
 ArrayDimensions::shard_internal_index(uint32_t chunk_index) const
 {

@@ -126,6 +126,7 @@ main()
           std::nullopt,
           std::make_shared<ArrayDimensions>(std::move(dims), dtype),
           dtype,
+          std::nullopt,
           5);
 
         {
@@ -133,7 +134,7 @@ main()
               std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
-            std::vector data(frame_size, std::byte(0));
+            zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
                 CHECK(writer->write_frame(data));
@@ -195,5 +196,6 @@ main()
     if (fs::exists(base_dir)) {
         fs::remove_all(base_dir);
     }
+
     return retval;
 }

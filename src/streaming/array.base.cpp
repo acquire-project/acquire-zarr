@@ -1,13 +1,16 @@
 #include <utility>
 
-#include "array.hh"
-#include "group.hh"
+#include "array.base.hh"
+#include "multiscale.array.hh"
 #include "macros.hh"
-#include "node.hh"
+#include "v2.array.hh"
+#include "v3.array.hh"
+#include "v2.multiscale.array.hh"
+#include "v3.multiscale.array.hh"
 
-zarr::ZarrNode::ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
-                         std::shared_ptr<ThreadPool> thread_pool,
-                         std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
+                           std::shared_ptr<ThreadPool> thread_pool,
+                           std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_(config)
   , thread_pool_(thread_pool)
   , s3_connection_pool_(s3_connection_pool)
@@ -17,7 +20,7 @@ zarr::ZarrNode::ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
 }
 
 std::string
-zarr::ZarrNode::node_path_() const
+zarr::ArrayBase::node_path_() const
 {
     std::string key = config_->store_root;
     if (!config_->node_key.empty()) {
@@ -28,7 +31,7 @@ zarr::ZarrNode::node_path_() const
 }
 
 bool
-zarr::ZarrNode::make_metadata_sinks_()
+zarr::ArrayBase::make_metadata_sinks_()
 {
     metadata_sinks_.clear();
 
@@ -41,6 +44,10 @@ zarr::ZarrNode::make_metadata_sinks_()
                 ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
                 : make_file_sink(path);
 
+            if (sink == nullptr) {
+                LOG_ERROR("Failed to create metadata sink for ", key);
+                return false;
+            }
             metadata_sinks_.emplace(key, std::move(sink));
         }
     } catch (const std::exception& exc) {
@@ -52,7 +59,7 @@ zarr::ZarrNode::make_metadata_sinks_()
 }
 
 bool
-zarr::ZarrNode::write_metadata_()
+zarr::ArrayBase::write_metadata_()
 {
     if (!make_metadata_()) {
         LOG_ERROR("Failed to make metadata.");
@@ -77,7 +84,7 @@ zarr::ZarrNode::write_metadata_()
             return false;
         }
 
-        std::span data{ reinterpret_cast<const std::byte*>(metadata.data()),
+        std::span data{ reinterpret_cast<const uint8_t*>(metadata.data()),
                         metadata.size() };
         if (!sink->write(0, data)) {
             LOG_ERROR("Failed to write metadata for key: ", key);
@@ -88,18 +95,54 @@ zarr::ZarrNode::write_metadata_()
     return true;
 }
 
+std::unique_ptr<zarr::ArrayBase>
+zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
+                 std::shared_ptr<ThreadPool> thread_pool,
+                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+                 ZarrVersion format)
+{
+    // create a multiscale array at the dataset root (node_key is empty) or if
+    // we have a genuine multiscale dataset
+    const auto multiscale =
+      config->node_key.empty() || config->downsampling_method.has_value();
+    EXPECT(format < ZarrVersionCount,
+           "Invalid Zarr format: ",
+           static_cast<int>(format));
+
+    std::unique_ptr<ArrayBase> array;
+    if (multiscale) {
+        if (format == ZarrVersion_2) {
+            array = std::make_unique<V2MultiscaleArray>(
+              config, thread_pool, s3_connection_pool);
+        } else {
+            array = std::make_unique<V3MultiscaleArray>(
+              config, thread_pool, s3_connection_pool);
+        }
+    } else {
+        if (format == ZarrVersion_2) {
+            array = std::make_unique<V2Array>(
+              config, thread_pool, s3_connection_pool);
+        } else {
+            array = std::make_unique<V3Array>(
+              config, thread_pool, s3_connection_pool);
+        }
+    }
+
+    return array;
+}
+
 bool
-zarr::finalize_node(std::unique_ptr<ZarrNode>&& node)
+zarr::finalize_node(std::unique_ptr<ArrayBase>&& node)
 {
     if (!node) {
         LOG_INFO("Node is null, nothing to finalize.");
         return true;
     }
 
-    if (auto group = downcast_node<Group>(std::move(node))) {
-        if (!finalize_group(std::move(group))) {
-            LOG_ERROR("Failed to finalize group.");
-            node.reset(group.release());
+    if (auto ms_array = downcast_node<MultiscaleArray>(std::move(node))) {
+        if (!finalize_group(std::move(ms_array))) {
+            LOG_ERROR("Failed to finalize multiscale array.");
+            node.reset(ms_array.release());
             return false;
         }
     } else if (auto array = downcast_node<Array>(std::move(node))) {

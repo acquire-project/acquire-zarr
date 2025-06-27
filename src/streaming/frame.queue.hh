@@ -1,13 +1,13 @@
 #pragma once
 
 #include "definitions.hh"
+#include "locked.buffer.hh"
 
-#include <vector>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
+#include <mutex>
+#include <queue>
 
 namespace zarr {
 class FrameQueue
@@ -16,18 +16,20 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(ConstByteSpan frame);
-    bool pop(ByteVector& frame);
+    bool push(LockedBuffer& frame, const std::string& key);
+    bool pop(LockedBuffer& frame, std::string& key);
 
     size_t size() const;
     size_t bytes_used() const;
     bool full() const;
     bool empty() const;
+    void clear();
 
   private:
     struct Frame
     {
-        ByteVector data;
+        std::string key;
+        LockedBuffer data;
         std::atomic<bool> ready{ false };
     };
 

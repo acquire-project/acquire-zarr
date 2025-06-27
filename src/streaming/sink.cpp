@@ -55,25 +55,32 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
         std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
 
-        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
-                                       std::string& err) -> bool {
+        auto job =
+          [filename, psink, &latch, &all_successful](std::string& err) -> bool {
             bool success = false;
 
             try {
-                if (all_successful) {
-                    *psink = std::make_unique<zarr::FileSink>(filename);
-                }
+                *psink = std::make_unique<zarr::FileSink>(filename);
                 success = true;
             } catch (const std::exception& exc) {
                 err = "Failed to create file '" + filename + "': " + exc.what();
             }
 
             latch.count_down();
-            all_successful.fetch_and((char)success);
+            all_successful.fetch_and(static_cast<char>(success));
 
             return success;
-        }),
-               "Failed to push sink creation job to thread pool.");
+        };
+
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool->n_threads() == 1 ||
+            !thread_pool->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
+        }
     }
 
     latch.wait();
@@ -205,7 +212,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     for (const auto& path : unique_paths) {
         auto job = [path, &latch, &all_successful](std::string& err) {
             bool success = true;
-            if (fs::is_directory(path)) {
+            if (fs::is_directory(path) || path.empty()) {
                 latch.count_down();
                 return success;
             }
@@ -223,9 +230,14 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             return success;
         };
 
-        if (!thread_pool->push_job(std::move(job))) {
-            LOG_ERROR("Failed to push job to thread pool.");
-            return false;
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool->n_threads() == 1 ||
+            !thread_pool->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
         }
     }
 
