@@ -112,6 +112,7 @@ extern "C"
         }
 
         ZarrStreamSettings_destroy_arrays(settings);
+        memset(arrays, 0, sizeof(ZarrArraySettings) * array_count);
         settings->arrays = arrays;
         settings->array_count = array_count;
 
