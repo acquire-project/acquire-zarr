@@ -83,10 +83,12 @@ jobs:
           name: core-dumps-debug-${{ github.run_id }}
           path: |
             /tmp/core.*
-            ${{github.workspace}}/build/tests/unit-tests
-            ${{github.workspace}}/build/tests/integration
-            ${{github.workspace}}/build/src
-            ${{github.workspace}}/build/minio-cpp
+            ${{github.workspace}}/build/tests/unit-tests/acquire-zarr-*
+            ${{github.workspace}}/build/tests/integration/acquire-zarr-*
+            ${{github.workspace}}/build/src/**/*.a
+            ${{github.workspace}}/build/src/**/*.so
+            ${{github.workspace}}/build/minio-cpp/**/*.a
+            ${{github.workspace}}/build/minio-cpp/**/*.so
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
           retention-days: 14
 
@@ -174,9 +176,11 @@ jobs:
           name: core-dumps-debug-${{ github.run_id }}-s3
           path: |
             /tmp/core.*
-            ${{github.workspace}}/build/tests/unit-tests
-            ${{github.workspace}}/build/tests/integration
-            ${{github.workspace}}/build/src
-            ${{github.workspace}}/build/minio-cpp
+            ${{github.workspace}}/build/tests/unit-tests/acquire-zarr-*
+            ${{github.workspace}}/build/tests/integration/acquire-zarr-*
+            ${{github.workspace}}/build/src/**/*.a
+            ${{github.workspace}}/build/src/**/*.so
+            ${{github.workspace}}/build/minio-cpp/**/*.a
+            ${{github.workspace}}/build/minio-cpp/**/*.so
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
           retention-days: 14

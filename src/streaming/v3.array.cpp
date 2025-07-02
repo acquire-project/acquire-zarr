@@ -296,7 +296,7 @@ zarr::V3Array::compress_and_flush_data_()
     std::atomic<char> all_successful = 1;
 
     auto write_table = is_closing_ || should_rollover_();
-    shard_latch_ = std::make_shared<std::latch>(n_shards);
+    std::latch shard_latch(n_shards);
 
     // get count of chunks per shard to construct chunk latches
     std::vector<uint32_t> chunks_per_shard(n_shards);
@@ -306,10 +306,7 @@ zarr::V3Array::compress_and_flush_data_()
         ++chunks_per_shard[shard_idx];
     }
 
-    chunk_latches_.resize(n_shards);
-    for (auto i = 0; i < n_shards; ++i) {
-        chunk_latches_[i] = std::make_unique<std::latch>(chunks_per_shard[i]);
-    }
+    std::latch chunk_latch(chunks_in_memory);
 
     // queue jobs to compress all chunks
     const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
@@ -320,7 +317,7 @@ zarr::V3Array::compress_and_flush_data_()
         const auto shard_idx = dims->shard_index_for_chunk(chunk_idx);
         const auto internal_idx = dims->shard_internal_index(chunk_idx);
         auto* shard_table = shard_tables_.data() + shard_idx;
-        auto* latch = chunk_latches_.at(shard_idx).get();
+        auto* latch = &chunk_latch;
 
         if (config_->compression_params) {
             const auto compression_params = config_->compression_params.value();
@@ -374,6 +371,8 @@ zarr::V3Array::compress_and_flush_data_()
         }
     }
 
+    chunk_latch.wait();
+
     const auto bucket_name = config_->bucket_name;
     auto connection_pool = s3_connection_pool_;
 
@@ -383,7 +382,6 @@ zarr::V3Array::compress_and_flush_data_()
       MAX_CONCURRENT_FILES);
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const std::string data_path = data_paths_[shard_idx];
-        auto* chunk_latch = chunk_latches_[shard_idx].get();
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
         auto* shard_table = shard_tables_.data() + shard_idx;
 
@@ -395,12 +393,10 @@ zarr::V3Array::compress_and_flush_data_()
                     write_table,
                     bucket_name,
                     connection_pool,
+                    latch = &shard_latch,
                     &semaphore,
-                    chunk_latch,
                     &all_successful,
                     this](std::string& err) {
-            chunk_latch->wait();
-
             bool success = true;
             std::unique_ptr<Sink> sink;
 
@@ -426,7 +422,7 @@ zarr::V3Array::compress_and_flush_data_()
                     err = "Failed to create sink for " + data_path;
 
                     semaphore.release();
-                    shard_latch_->count_down();
+                    latch->count_down();
                     all_successful.fetch_and(0);
                     return false;
                 }
@@ -436,7 +432,7 @@ zarr::V3Array::compress_and_flush_data_()
                     err = "Failed to write shard at path " + data_path;
 
                     semaphore.release();
-                    shard_latch_->count_down();
+                    latch->count_down();
                     all_successful.fetch_and(0);
                     if (is_s3) {
                         data_sinks_.emplace(data_path, std::move(sink));
@@ -463,7 +459,7 @@ zarr::V3Array::compress_and_flush_data_()
                               std::to_string(shard_idx);
 
                         semaphore.release();
-                        shard_latch_->count_down();
+                        latch->count_down();
                         all_successful.fetch_and(0);
                         if (is_s3) {
                             data_sinks_.emplace(data_path, std::move(sink));
@@ -477,7 +473,7 @@ zarr::V3Array::compress_and_flush_data_()
                               std::to_string(shard_idx);
 
                         semaphore.release();
-                        shard_latch_->count_down();
+                        latch->count_down();
                         all_successful.fetch_and(0);
                         if (is_s3) {
                             data_sinks_.emplace(data_path, std::move(sink));
@@ -496,7 +492,7 @@ zarr::V3Array::compress_and_flush_data_()
             }
 
             semaphore.release();
-            shard_latch_->count_down();
+            latch->count_down();
             all_successful.fetch_and(static_cast<char>(success));
             if (is_s3) {
                 data_sinks_.emplace(data_path, std::move(sink));
@@ -516,9 +512,7 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     // wait for all threads to finish
-    shard_latch_->wait();
-    shard_latch_.reset();
-    chunk_latches_.clear();
+    shard_latch.wait();
 
     // reset shard tables and file offsets
     if (write_table) {

@@ -19,9 +19,6 @@ class V3Array final : public Array
 
     std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
-    std::shared_ptr<std::latch> shard_latch_;
-    std::vector<std::unique_ptr<std::latch>> chunk_latches_;
-
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 
