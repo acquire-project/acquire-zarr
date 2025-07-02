@@ -25,9 +25,12 @@ jobs:
       matrix:
         platform:
           - "ubuntu-latest"
+          - "windows-latest"
         include:
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
     permissions:
       actions: write
 
@@ -56,11 +59,20 @@ jobs:
         run: |
           brew install libomp
 
-      - name: Enable core dumps
+      - name: Enable core dumps (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           ulimit -c unlimited
           echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
           mkdir -p /tmp/cores
+
+      - name: Enable crash dumps (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\CrashDumps
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d C:\CrashDumps /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+        shell: powershell
 
       - name: Configure CMake
         run: |
@@ -76,8 +88,8 @@ jobs:
           ulimit -c unlimited
           ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
 
-      - name: Upload core dumps
-        if: failure()
+      - name: Upload core dumps (Ubuntu)
+        if: failure() && matrix.platform == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: core-dumps-debug-${{ github.run_id }}
@@ -91,6 +103,14 @@ jobs:
             ${{github.workspace}}/build/minio-cpp/**/*.so
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
           retention-days: 14
+
+      - name: Upload crash dumps (Windows)
+        if: failure() && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-dumps-windows
+          path: C:\CrashDumps\*.dmp
+          if-no-files-found: ignore
 
   test_s3-debug:
     name: Test S3
