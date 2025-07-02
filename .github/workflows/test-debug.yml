@@ -83,9 +83,10 @@ jobs:
           name: core-dumps-debug-${{ github.run_id }}
           path: |
             /tmp/core.*
-            ${{github.workspace}}/build/**/test*
-            ${{github.workspace}}/build/**/*.so
-            ${{github.workspace}}/build/**/*.a
+            ${{github.workspace}}/build/tests/unit-tests
+            ${{github.workspace}}/build/tests/integration
+            ${{github.workspace}}/build/src
+            ${{github.workspace}}/build/minio-cpp
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
           retention-days: 14
 
@@ -173,8 +174,9 @@ jobs:
           name: core-dumps-debug-${{ github.run_id }}-s3
           path: |
             /tmp/core.*
-            ${{github.workspace}}/build/**/test*
-            ${{github.workspace}}/build/**/*.so
-            ${{github.workspace}}/build/**/*.a
+            ${{github.workspace}}/build/tests/unit-tests
+            ${{github.workspace}}/build/tests/integration
+            ${{github.workspace}}/build/src
+            ${{github.workspace}}/build/minio-cpp
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
           retention-days: 14
