@@ -1,10 +1,19 @@
 project(acquire-zarr-py)
 
-execute_process(COMMAND python3 -m pybind11 --cmakedir
+execute_process(COMMAND python -m pybind11 --cmakedir
         RESULT_VARIABLE pybind11_NOT_FOUND
         OUTPUT_VARIABLE pybind11_DIR
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+
+# try with Python3 if the above fails
+if (pybind11_NOT_FOUND)
+    execute_process(COMMAND python3 -m pybind11 --cmakedir
+            RESULT_VARIABLE pybind11_NOT_FOUND
+            OUTPUT_VARIABLE pybind11_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif ()
 
 if (pybind11_NOT_FOUND)
     message(FATAL_ERROR "pybind11 not found in the current environment. Please install pybind11 via pip.")
