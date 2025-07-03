@@ -133,7 +133,7 @@ jobs:
           retention-days: 14
 
   test_s3-debug:
-    name: Test S3
+    name: Test S3 (debug)
     runs-on: ubuntu-latest
     env:
       MINIO_ROOT_USER: admin
@@ -223,4 +223,112 @@ jobs:
             ${{github.workspace}}/build/minio-cpp/**/*.a
             ${{github.workspace}}/build/minio-cpp/**/*.so
             ${{github.workspace}}/build/Testing/Temporary/LastTest.log
+          retention-days: 14
+
+  test-python-debug:
+    name: Test Python (debug) on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "windows-latest"
+        include:
+          - platform: "ubuntu-latest"
+            vcpkg_triplet: "x64-linux"
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13.3"
+
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install libomp
+
+      - name: Enable core dumps (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ulimit -c unlimited
+          echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
+          mkdir -p /tmp/cores
+
+      - name: Enable crash dumps (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\CrashDumps
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d "C:\CrashDumps" /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpCount /t REG_DWORD /d 10 /f
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpFolder" -Value "C:\CrashDumps"
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpType" -Value 2
+        shell: powershell
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+
+      - name: Build and install Python bindings (Debug)
+        run: |
+          python -m pip install ".[testing]" --config-settings=cmake.define.CMAKE_BUILD_TYPE=Debug --config-settings=cmake.define.VCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -v
+
+      - name: Test Python (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ulimit -c unlimited
+          python -m pytest -v --tb=long
+        continue-on-error: true
+
+      - name: Test Python (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          python -m pytest -v --tb=long
+        continue-on-error: true
+
+      - name: Upload core dumps (Ubuntu)
+        if: failure() && matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-core-dumps-debug-${{ github.run_id }}
+          path: |
+            /tmp/core.*
+            ${{github.workspace}}/build/**/*.so
+            ${{github.workspace}}/build/**/*.a
+          retention-days: 14
+
+      - name: Upload crash dumps (Windows)
+        if: failure() && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-crash-dumps-debug-${{ github.run_id }}
+          path: |
+            C:\CrashDumps\*
+            ${{github.workspace}}/build/**/*.pyd
+            ${{github.workspace}}/build/**/*.dll
+            ${{github.workspace}}/build/**/*.pdb
+          if-no-files-found: ignore
           retention-days: 14
