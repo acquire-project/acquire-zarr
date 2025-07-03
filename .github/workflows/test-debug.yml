@@ -69,9 +69,17 @@ jobs:
       - name: Enable crash dumps (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
+          # Create dump directory
           New-Item -ItemType Directory -Force -Path C:\CrashDumps
-          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d C:\CrashDumps /f
+
+          # Enable application crash dumps via registry
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d "C:\CrashDumps" /f
           reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpCount /t REG_DWORD /d 10 /f
+
+          # Alternative: Enable via PowerShell (more reliable sometimes)
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpFolder" -Value "C:\CrashDumps"
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpType" -Value 2
         shell: powershell
 
       - name: Configure CMake
@@ -82,11 +90,19 @@ jobs:
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-      - name: Test
+      - name: Test (POSIX)
+        if: matrix.platform != 'windows-latest'
         working-directory: ${{github.workspace}}/build
         run: |
           ulimit -c unlimited
           ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
+
+      - name: Test (Windows)
+        if: matrix.platform == 'windows-latest'
+        working-directory: ${{github.workspace}}/build
+        run: |
+          ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
+
 
       - name: Upload core dumps (Ubuntu)
         if: failure() && matrix.platform == 'ubuntu-latest'
@@ -108,9 +124,13 @@ jobs:
         if: failure() && matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: crash-dumps-windows
-          path: C:\CrashDumps\*.dmp
+          name: crash-dumps-windows-${{ github.run_id }}
+          path: |
+            C:\CrashDumps\*
+            ${{github.workspace}}/build/**/*.exe
+            ${{github.workspace}}/build/**/*.pdb
           if-no-files-found: ignore
+          retention-days: 14
 
   test_s3-debug:
     name: Test S3
