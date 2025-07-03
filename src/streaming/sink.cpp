@@ -208,25 +208,24 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     std::unordered_set<std::string> unique_paths(dir_paths.begin(),
                                                  dir_paths.end());
 
-    std::latch latch(unique_paths.size());
+    auto shared_latch = std::make_shared<std::latch>(unique_paths.size());
+
     for (const auto& path : unique_paths) {
-        auto job = [path, &latch, &all_successful](std::string& err) {
+        auto job = [path, shared_latch, &all_successful](std::string& err) {
             bool success = true;
             if (fs::is_directory(path) || path.empty()) {
-                latch.count_down();
+                shared_latch->count_down();
                 return success;
             }
 
             std::error_code ec;
             if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
-                err =
-                  "Failed to create directory '" + path + "': " + ec.message();
+                err = "Failed to create directory '" + path + "': " + ec.message();
                 success = false;
             }
 
-            latch.count_down();
+            shared_latch->count_down();
             all_successful.fetch_and(static_cast<char>(success));
-
             return success;
         };
 
@@ -241,8 +240,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
         }
     }
 
-    latch.wait();
-
+    shared_latch->wait();
     return static_cast<bool>(all_successful);
 }
 

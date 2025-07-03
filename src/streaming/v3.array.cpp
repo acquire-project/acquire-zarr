@@ -305,7 +305,7 @@ zarr::V3Array::compress_and_flush_data_()
         ++chunks_per_shard[shard_idx];
     }
 
-    std::latch chunk_latch(chunks_in_memory);
+    auto chunk_latch = std::make_shared<std::latch>(chunks_in_memory);
 
     // queue jobs to compress all chunks
     const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
@@ -316,7 +316,6 @@ zarr::V3Array::compress_and_flush_data_()
         const auto shard_idx = dims->shard_index_for_chunk(chunk_idx);
         const auto internal_idx = dims->shard_internal_index(chunk_idx);
         auto* shard_table = shard_tables_.data() + shard_idx;
-        auto* latch = &chunk_latch;
 
         if (config_->compression_params) {
             const auto compression_params = config_->compression_params.value();
@@ -328,7 +327,7 @@ zarr::V3Array::compress_and_flush_data_()
                         shard_idx,
                         chunk_idx,
                         internal_idx,
-                        latch,
+                        latch = chunk_latch,
                         &all_successful](std::string& err) {
                 bool success = false;
 
@@ -366,15 +365,15 @@ zarr::V3Array::compress_and_flush_data_()
         } else {
             // no compression, just update shard table with size
             shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
-            latch->count_down();
+            chunk_latch->count_down();
         }
     }
 
-    chunk_latch.wait();
+    chunk_latch->wait();
 
     const auto bucket_name = config_->bucket_name;
     auto connection_pool = s3_connection_pool_;
-    std::latch shard_latch(n_shards);
+    auto shard_latch = std::make_shared<std::latch>(n_shards);
 
     // wait for the chunks in each shard to finish compressing, then defragment
     // and write the shard
@@ -393,7 +392,7 @@ zarr::V3Array::compress_and_flush_data_()
                     write_table,
                     bucket_name,
                     connection_pool,
-                    latch = &shard_latch,
+                    latch = shard_latch,
                     &semaphore,
                     &all_successful,
                     this](std::string& err) {
@@ -491,7 +490,7 @@ zarr::V3Array::compress_and_flush_data_()
     }
 
     // wait for all threads to finish
-    shard_latch.wait();
+    shard_latch->wait();
 
     // reset shard tables and file offsets
     if (write_table) {
