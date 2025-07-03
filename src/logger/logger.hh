@@ -74,11 +74,16 @@ class Logger
     static std::string get_timestamp_();
 };
 
-#define LOG_DEBUG(...)                                                         \
-      Logger::log(LogLevel_Debug, __FILE__, __LINE__, __func__, __VA_ARGS__)
-#define LOG_INFO(...)                                                          \
-    Logger::log(LogLevel_Info, __FILE__, __LINE__, __func__, __VA_ARGS__)
-#define LOG_WARNING(...)                                                       \
-    Logger::log(LogLevel_Warning, __FILE__, __LINE__, __func__, __VA_ARGS__)
-#define LOG_ERROR(...)                                                         \
-    Logger::log(LogLevel_Error, __FILE__, __LINE__, __func__, __VA_ARGS__)
+// #define LOG_DEBUG(...)                                                         \
+//       Logger::log(LogLevel_Debug, __FILE__, __LINE__, __func__, __VA_ARGS__)
+// #define LOG_INFO(...)                                                          \
+//     Logger::log(LogLevel_Info, __FILE__, __LINE__, __func__, __VA_ARGS__)
+// #define LOG_WARNING(...)                                                       \
+//     Logger::log(LogLevel_Warning, __FILE__, __LINE__, __func__, __VA_ARGS__)
+// #define LOG_ERROR(...)                                                         \
+//     Logger::log(LogLevel_Error, __FILE__, __LINE__, __func__, __VA_ARGS__)
+
+#define LOG_DEBUG(...) ""
+#define LOG_INFO(...) ""
+#define LOG_WARNING(...) ""
+#define LOG_ERROR(...) ""
