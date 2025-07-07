@@ -60,12 +60,18 @@ class Timer
 ZarrStream*
 setup_stream(const BenchmarkConfig& config)
 {
+    ZarrArraySettings array = {
+        .output_key = "",
+        .compression_settings = nullptr,
+        .data_type = ZarrDataType_uint16,
+    };
+
     ZarrStreamSettings settings = { .store_path = "benchmark.zarr",
                                     .s3_settings = nullptr,
-                                    .compression_settings = nullptr,
-                                    .data_type = ZarrDataType_uint16,
-                                    .version = static_cast<ZarrVersion>(
-                                      config.zarr_version) };
+                                    .version = static_cast<ZarrVersion>(config.zarr_version),
+        .arrays = &array,
+        .array_count = 1,
+    };
 
     ZarrCompressionSettings comp_settings = {};
     if (config.compression != "none") {
@@ -75,7 +81,7 @@ setup_stream(const BenchmarkConfig& config)
                                 : ZarrCompressionCodec_BloscZstd;
         comp_settings.level = 1;
         comp_settings.shuffle = 1;
-        settings.array.compression_settings = &comp_settings;
+        settings.arrays->compression_settings = &comp_settings;
     }
 
     ZarrS3Settings s3_settings = {};

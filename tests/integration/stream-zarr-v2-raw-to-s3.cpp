@@ -230,7 +230,7 @@ setup()
                0.9);
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_arrays(&settings);
+    ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     return stream;
 }
