@@ -116,21 +116,21 @@ def run_acquire_zarr_test(
         [
             aqz.Dimension(
                 name="t",
-                type=aqz.DimensionType.TIME,
+                kind=aqz.DimensionType.TIME,
                 array_size_px=0,
                 chunk_size_px=tchunk_size,
                 shard_size_chunks=1,
             ),
             aqz.Dimension(
                 name="y",
-                type=aqz.DimensionType.SPACE,
+                kind=aqz.DimensionType.SPACE,
                 array_size_px=2048,
                 chunk_size_px=xy_chunk_size,
                 shard_size_chunks=xy_shard_size,
             ),
             aqz.Dimension(
                 name="x",
-                type=aqz.DimensionType.SPACE,
+                kind=aqz.DimensionType.SPACE,
                 array_size_px=2048,
                 chunk_size_px=xy_chunk_size,
                 shard_size_chunks=xy_shard_size,
