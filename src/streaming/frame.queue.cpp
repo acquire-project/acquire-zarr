@@ -21,6 +21,7 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
 bool
 zarr::FrameQueue::push(LockedBuffer& frame, const std::string& key)
 {
+    std::unique_lock lock(mutex_);
     size_t write_pos = write_pos_.load(std::memory_order_relaxed);
 
     size_t next_pos = (write_pos + 1) % capacity_;
@@ -40,6 +41,7 @@ zarr::FrameQueue::push(LockedBuffer& frame, const std::string& key)
 bool
 zarr::FrameQueue::pop(LockedBuffer& frame, std::string& key)
 {
+    std::unique_lock lock(mutex_);
     size_t read_pos = read_pos_.load(std::memory_order_relaxed);
 
     if (read_pos == write_pos_.load(std::memory_order_acquire)) {
@@ -117,6 +119,7 @@ zarr::FrameQueue::empty() const
 void
 zarr::FrameQueue::clear()
 {
+    std::unique_lock lock(mutex_);
     read_pos_.store(write_pos_.load(std::memory_order_acquire),
                     std::memory_order_release);
 }

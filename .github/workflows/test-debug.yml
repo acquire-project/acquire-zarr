@@ -1,0 +1,334 @@
+name: Tests (debug)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  BUILD_TYPE: Debug
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test-debug:
+    name: Test (debug) on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "windows-latest"
+        include:
+          - platform: "ubuntu-latest"
+            vcpkg_triplet: "x64-linux"
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
+    permissions:
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install libomp
+
+      - name: Enable core dumps (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ulimit -c unlimited
+          echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
+          mkdir -p /tmp/cores
+
+      - name: Enable crash dumps (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          # Create dump directory
+          New-Item -ItemType Directory -Force -Path C:\CrashDumps
+
+          # Enable application crash dumps via registry
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d "C:\CrashDumps" /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpCount /t REG_DWORD /d 10 /f
+
+          # Alternative: Enable via PowerShell (more reliable sometimes)
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpFolder" -Value "C:\CrashDumps"
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpType" -Value 2
+        shell: powershell
+
+      - name: Configure CMake
+        run: |
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test (POSIX)
+        if: matrix.platform != 'windows-latest'
+        working-directory: ${{github.workspace}}/build
+        run: |
+          ulimit -c unlimited
+          ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
+
+      - name: Test (Windows)
+        if: matrix.platform == 'windows-latest'
+        working-directory: ${{github.workspace}}/build
+        run: |
+          ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
+
+
+      - name: Upload core dumps (Ubuntu)
+        if: failure() && matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-debug-${{ github.run_id }}
+          path: |
+            /tmp/core.*
+            ${{github.workspace}}/build/tests/unit-tests/acquire-zarr-*
+            ${{github.workspace}}/build/tests/integration/acquire-zarr-*
+            ${{github.workspace}}/build/src/**/*.a
+            ${{github.workspace}}/build/src/**/*.so
+            ${{github.workspace}}/build/minio-cpp/**/*.a
+            ${{github.workspace}}/build/minio-cpp/**/*.so
+            ${{github.workspace}}/build/Testing/Temporary/LastTest.log
+          retention-days: 14
+
+      - name: Upload crash dumps (Windows)
+        if: failure() && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-dumps-windows-${{ github.run_id }}
+          path: |
+            C:\CrashDumps\*
+            ${{github.workspace}}/build/**/*.exe
+            ${{github.workspace}}/build/**/*.pdb
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test_s3-debug:
+    name: Test S3 (debug)
+    runs-on: ubuntu-latest
+    env:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+      MINIO_URL: http://localhost:9000
+      MINIO_ALIAS: myminio
+      MINIO_BUCKET: acquire-test
+      MINIO_ACCESS_KEY: acquire
+      MINIO_SECRET_KEY: 12345678
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Install minio and mcli
+        run: |
+          apt update && apt install -y tmux wget
+          wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
+          wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mcli
+          chmod +x /usr/local/bin/minio
+          chmod +x /usr/local/bin/mcli
+
+      - name: Start minio in tmux
+        run: |
+          tmux new -d -s minio
+          tmux send-keys -t minio "MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD minio server /tmp/minio --console-address :9001" Enter
+          sleep 5
+          mcli alias set $MINIO_ALIAS $MINIO_URL $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
+          mcli admin user svcacct add --access-key $MINIO_ACCESS_KEY --secret-key $MINIO_SECRET_KEY $MINIO_ALIAS $MINIO_ROOT_USER
+
+      - name: Create a bucket
+        run: |
+          mcli mb $MINIO_ALIAS/$MINIO_BUCKET
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Enable core dumps
+        run: |
+          ulimit -c unlimited
+          echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
+          mkdir -p /tmp/cores
+
+      - name: Configure CMake
+        run: |
+          cmake --preset=default
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test C++
+        working-directory: ${{github.workspace}}/build
+        env:
+          ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
+          ZARR_S3_BUCKET_NAME: ${{ env.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
+        run: |
+          ulimit -c unlimited
+          ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
+
+      - name: Upload core dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-debug-${{ github.run_id }}-s3
+          path: |
+            /tmp/core.*
+            ${{github.workspace}}/build/tests/unit-tests/acquire-zarr-*
+            ${{github.workspace}}/build/tests/integration/acquire-zarr-*
+            ${{github.workspace}}/build/src/**/*.a
+            ${{github.workspace}}/build/src/**/*.so
+            ${{github.workspace}}/build/minio-cpp/**/*.a
+            ${{github.workspace}}/build/minio-cpp/**/*.so
+            ${{github.workspace}}/build/Testing/Temporary/LastTest.log
+          retention-days: 14
+
+  test-python-debug:
+    name: Test Python (debug) on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "windows-latest"
+        include:
+          - platform: "ubuntu-latest"
+            vcpkg_triplet: "x64-linux"
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13.3"
+
+      - name: Install CMake 3.31
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install libomp
+
+      - name: Enable core dumps (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ulimit -c unlimited
+          echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
+          mkdir -p /tmp/cores
+
+      - name: Enable crash dumps (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\CrashDumps
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d "C:\CrashDumps" /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpCount /t REG_DWORD /d 10 /f
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpFolder" -Value "C:\CrashDumps"
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpType" -Value 2
+        shell: powershell
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+
+      - name: Build and install Python bindings (Debug)
+        run: |
+          python -m pip install ".[testing]" --config-settings=cmake.define.CMAKE_BUILD_TYPE=Debug --config-settings=cmake.define.VCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -v
+
+      - name: Test Python (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ulimit -c unlimited
+          python -m pytest -v --tb=long
+        continue-on-error: true
+
+      - name: Test Python (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          python -m pytest -v --tb=long
+        continue-on-error: true
+
+      - name: Upload core dumps (Ubuntu)
+        if: failure() && matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-core-dumps-debug-${{ github.run_id }}
+          path: |
+            /tmp/core.*
+            ${{github.workspace}}/build/**/*.so
+            ${{github.workspace}}/build/**/*.a
+          retention-days: 14
+
+      - name: Upload crash dumps (Windows)
+        if: failure() && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-crash-dumps-debug-${{ github.run_id }}
+          path: |
+            C:\CrashDumps\*
+            ${{github.workspace}}/build/**/*.pyd
+            ${{github.workspace}}/build/**/*.dll
+            ${{github.workspace}}/build/**/*.pdb
+          if-no-files-found: ignore
+          retention-days: 14
