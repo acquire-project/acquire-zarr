@@ -203,6 +203,10 @@ my_frame_data = np.random.randint(0, 2 ** 16, (3, 1080, 1920), dtype=np.uint16)
 
 stream = aqz.ZarrStream(settings)
 stream.append(my_frame_data)
+
+# ... append more data as needed ...
+
+stream.close()
 ```
 
 ### Organizing Data within a Zarr Container

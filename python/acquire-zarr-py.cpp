@@ -325,94 +325,14 @@ class PyZarrStream
   public:
     explicit PyZarrStream(const PyZarrStreamSettings& settings)
     {
-        ZarrS3Settings s3_settings;
-        ZarrCompressionSettings compression_settings;
-
-        ZarrStreamSettings stream_settings{
-            .store_path = nullptr,
-            .s3_settings = nullptr,
-            .compression_settings = nullptr,
-            .dimensions = nullptr,
-            .dimension_count = 0,
-            .multiscale = settings.multiscale(),
-            .data_type = settings.data_type(),
-            .version = settings.version(),
-            .max_threads = settings.max_threads(),
-            .downsampling_method = settings.downsampling_method(),
-            .overwrite = settings.overwrite(),
-        };
-
-        store_path_ = settings.store_path();
-        stream_settings.store_path = store_path_.c_str();
-
-        output_key_ = settings.output_key();
-        stream_settings.output_key = output_key_.c_str();
-
-        if (settings.s3().has_value()) {
-            const auto& s3 = settings.s3().value();
-            s3_endpoint_ = s3.endpoint();
-            s3_settings.endpoint = s3_endpoint_.c_str();
-
-            s3_bucket_name_ = s3.bucket_name();
-            s3_settings.bucket_name = s3_bucket_name_.c_str();
-
-            if (s3.region().has_value()) {
-                s3_region_ = s3.region().value();
-                s3_settings.region = s3_region_.c_str();
-            } else {
-                s3_settings.region = nullptr;
-            }
-
-            stream_settings.s3_settings = &s3_settings;
-        }
-
-        if (settings.compression().has_value()) {
-            compression_settings.compressor =
-              settings.compression()->compressor();
-            compression_settings.codec = settings.compression()->codec();
-            compression_settings.level = settings.compression()->level();
-            compression_settings.shuffle = settings.compression()->shuffle();
-            stream_settings.compression_settings = &compression_settings;
-        }
-
-        const auto& dims = settings.dimensions();
-        dimension_names_.resize(dims.size());
-        dimension_units_.resize(dims.size());
-
-        std::vector<ZarrDimensionProperties> dimension_props;
-        for (auto i = 0; i < dims.size(); ++i) {
-            const auto& dim = dims[i];
-            dimension_names_[i] = dim.name();
-            dimension_units_[i] = dim.unit().has_value() ? *dim.unit() : "";
-
-            ZarrDimensionProperties properties{
-                .name = dimension_names_[i].c_str(),
-                .type = dim.type(),
-                .array_size_px = dim.array_size_px(),
-                .chunk_size_px = dim.chunk_size_px(),
-                .shard_size_chunks = dim.shard_size_chunks(),
-                .unit = dimension_units_[i].c_str(),
-                .scale = dim.scale(),
-            };
-            dimension_props.push_back(properties);
-        }
-
-        stream_settings.dimensions = dimension_props.data();
-        stream_settings.dimension_count = dims.size();
-
-        stream_ =
-          ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
-        if (!stream_) {
-            PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
-            throw py::error_already_set();
-        }
+        open_(settings);
     }
 
     void append(py::array image_data)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
-                            "Cannot append unless streaming.");
+                            "Stream not open for appending.");
             throw py::error_already_set();
         }
 
@@ -543,6 +463,22 @@ class PyZarrStream
 
     bool is_active() const { return static_cast<bool>(stream_); }
 
+    void close()
+    {
+        if (!is_active()) {
+            return;
+        }
+
+        try {
+            stream_.reset(); // calls ZarrStream_destroy
+        } catch (const std::exception& exc) {
+            std::string err =
+              "Failed to close Zarr stream: " + std::string(exc.what());
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+    }
+
   private:
     using ZarrStreamPtr =
       std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
@@ -558,6 +494,97 @@ class PyZarrStream
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
     std::string s3_region_;
+
+    // TODO (aliddell): we can make this public to allow reopening the stream
+    // once we have support for that in the C API
+    void open_(const PyZarrStreamSettings& settings)
+    {
+        if (is_active()) {
+            return;
+        }
+
+        ZarrS3Settings s3_settings;
+        ZarrCompressionSettings compression_settings;
+
+        ZarrStreamSettings stream_settings{
+            .store_path = nullptr,
+            .s3_settings = nullptr,
+            .compression_settings = nullptr,
+            .dimensions = nullptr,
+            .dimension_count = 0,
+            .multiscale = settings.multiscale(),
+            .data_type = settings.data_type(),
+            .version = settings.version(),
+            .max_threads = settings.max_threads(),
+            .downsampling_method = settings.downsampling_method(),
+            .overwrite = settings.overwrite(),
+        };
+
+        store_path_ = settings.store_path();
+        stream_settings.store_path = store_path_.c_str();
+
+        output_key_ = settings.output_key();
+        stream_settings.output_key = output_key_.c_str();
+
+        if (settings.s3().has_value()) {
+            const auto& s3 = settings.s3().value();
+            s3_endpoint_ = s3.endpoint();
+            s3_settings.endpoint = s3_endpoint_.c_str();
+
+            s3_bucket_name_ = s3.bucket_name();
+            s3_settings.bucket_name = s3_bucket_name_.c_str();
+
+            if (s3.region().has_value()) {
+                s3_region_ = s3.region().value();
+                s3_settings.region = s3_region_.c_str();
+            } else {
+                s3_settings.region = nullptr;
+            }
+
+            stream_settings.s3_settings = &s3_settings;
+        }
+
+        if (settings.compression().has_value()) {
+            compression_settings.compressor =
+              settings.compression()->compressor();
+            compression_settings.codec = settings.compression()->codec();
+            compression_settings.level = settings.compression()->level();
+            compression_settings.shuffle = settings.compression()->shuffle();
+            stream_settings.compression_settings = &compression_settings;
+        }
+
+        const auto& dims = settings.dimensions();
+        dimension_names_.resize(dims.size());
+        dimension_units_.resize(dims.size());
+
+        std::vector<ZarrDimensionProperties> dimension_props;
+        for (auto i = 0; i < dims.size(); ++i) {
+            const auto& dim = dims[i];
+            dimension_names_[i] = dim.name();
+            dimension_units_[i] = dim.unit().has_value() ? *dim.unit() : "";
+
+            ZarrDimensionProperties properties{
+                .name = dimension_names_[i].c_str(),
+                .type = dim.type(),
+                .array_size_px = dim.array_size_px(),
+                .chunk_size_px = dim.chunk_size_px(),
+                .shard_size_chunks = dim.shard_size_chunks(),
+                .unit = dimension_units_[i].c_str(),
+                .scale = dim.scale(),
+            };
+            dimension_props.push_back(properties);
+        }
+
+        stream_settings.dimensions = dimension_props.data();
+        stream_settings.dimension_count = dims.size();
+
+        stream_ =
+          ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
+        if (!stream_) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
+            throw py::error_already_set();
+        }
+    }
 };
 
 PYBIND11_MODULE(acquire_zarr, m)
@@ -938,6 +965,7 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
+      .def("close", &PyZarrStream::close)
       .def("append", &PyZarrStream::append)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,

@@ -158,7 +158,7 @@ def test_create_stream(
 
     store_path = Path(settings.store_path)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     # check that the stream created the zarr store
     assert store_path.is_dir()
@@ -240,7 +240,7 @@ def test_stream_data_to_filesystem(
 
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     chunk_size_bytes = data.dtype.itemsize
     for dim in settings.dimensions:
@@ -388,7 +388,7 @@ def test_stream_data_to_s3(
     )
     stream.append(data)
 
-    del stream  # close the stream, flush the data
+    stream.close()  # close the stream, flush the data
 
     store = zarr.storage.FsspecStore.from_url(
         f"s3://{settings.s3.bucket_name}/{settings.store_path}",
@@ -488,7 +488,7 @@ def test_write_custom_metadata(
     )
     assert overwrite_result == overwrite
 
-    del stream
+    stream.close()
 
     assert (Path(settings.store_path) / "acquire.json").is_file()
     with open(Path(settings.store_path) / "acquire.json", "r") as fh:
@@ -567,7 +567,7 @@ def test_write_transposed_array(
 
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
@@ -624,7 +624,7 @@ def test_column_ragged_sharding(
 
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     array = zarr.open(settings.store_path, mode="r")["0"]
 
@@ -684,7 +684,7 @@ def test_custom_dimension_units_and_scales(store_path: Path):
 
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
@@ -776,7 +776,7 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     stream.append(data)
 
-    del stream
+    stream.close()
 
     group = zarr.open(settings.store_path, mode="r")
     metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
@@ -861,7 +861,7 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     stream.append(data)
 
-    del stream
+    stream.close()
 
     group = zarr.open(settings.store_path, mode="r")
     metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
@@ -955,7 +955,7 @@ def test_stream_data_to_named_array(
 
     stream.append(data)
 
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     # Now verify the data is stored in the expected location
     store_path_obj = Path(settings.store_path)
@@ -1026,7 +1026,7 @@ def test_anisotropic_downsampling(settings: StreamSettings,
     )
 
     stream.append(data)
-    del stream  # close the stream, flush the files
+    stream.close()  # close the stream, flush the files
 
     # Open the Zarr group and verify the data
     group = zarr.open(settings.store_path, mode="r")
