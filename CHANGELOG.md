@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `output_key` option to specify the key/path in Zarr storage where data should be saved (#106)
 - Added `overwrite` flag to control whether existing data in the store path should be removed (#106)
 - Added support for IAM and config file options for S3 authentication (#109)
+- A `close()` method has been added to the Python API to ensure all data is flushed and resources are released (#130)
 
 ## Changed
 

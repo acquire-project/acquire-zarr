@@ -335,119 +335,14 @@ class PyZarrStream
   public:
     explicit PyZarrStream(const PyZarrStreamSettings& settings)
     {
-        size_t n_arrays = settings.arrays().size();
-        if (n_arrays == 0) {
-            PyErr_SetString(PyExc_ValueError,
-                            "At least one array must be specified.");
-            throw py::error_already_set();
-        }
-
-        ZarrS3Settings s3_settings;
-
-        ZarrStreamSettings stream_settings{
-            .store_path = nullptr,
-            .s3_settings = nullptr,
-            .version = settings.version(),
-            .max_threads = settings.max_threads(),
-            .overwrite = settings.overwrite(),
-            .arrays = new ZarrArraySettings[n_arrays],
-            .array_count = n_arrays,
-        };
-
-        store_path_ = settings.store_path();
-        stream_settings.store_path = store_path_.c_str();
-
-        if (settings.s3().has_value()) {
-            const auto& s3 = settings.s3().value();
-            s3_endpoint_ = s3.endpoint();
-            s3_settings.endpoint = s3_endpoint_.c_str();
-
-            s3_bucket_name_ = s3.bucket_name();
-            s3_settings.bucket_name = s3_bucket_name_.c_str();
-
-            if (s3.region().has_value()) {
-                s3_region_ = s3.region().value();
-                s3_settings.region = s3_region_.c_str();
-            } else {
-                s3_settings.region = nullptr;
-            }
-
-            stream_settings.s3_settings = &s3_settings;
-        }
-
-        std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
-        for (auto i = 0; i < n_arrays; ++i) {
-            const auto& array_settings = settings.arrays()[i];
-            auto& array_lt_props = array_props_array[i];
-            auto& stream_array = stream_settings.arrays[i];
-
-            array_lt_props.output_key = array_settings.output_key();
-            stream_array.output_key = array_lt_props.output_key.c_str();
-
-            stream_array.compression_settings = nullptr;
-            if (array_settings.compression().has_value()) {
-                const auto compression = *array_settings.compression();
-
-                // construct compression settings to live long enough
-                array_lt_props.compression = {
-                    .compressor = compression.compressor(),
-                    .codec = compression.codec(),
-                    .level = compression.level(),
-                    .shuffle = compression.shuffle(),
-                };
-
-                stream_array.compression_settings = &array_lt_props.compression;
-            }
-
-            const auto& dims = array_settings.dimensions();
-            array_lt_props.dimension_names.resize(dims.size());
-            auto& dim_names = array_lt_props.dimension_names;
-            array_lt_props.dimension_units.resize(dims.size());
-            auto& dim_units = array_lt_props.dimension_units;
-
-            auto& dimension_props = array_lt_props.dimension_props;
-            for (auto j = 0; j < dims.size(); ++j) {
-                const auto& dim = dims[j];
-                dim_names[j] = dim.name();
-                dim_units[j] = dim.unit().has_value() ? *dim.unit() : "";
-
-                ZarrDimensionProperties properties{
-                    .name = dim_names[j].c_str(),
-                    .type = dim.type(),
-                    .array_size_px = dim.array_size_px(),
-                    .chunk_size_px = dim.chunk_size_px(),
-                    .shard_size_chunks = dim.shard_size_chunks(),
-                    .unit = dim_units[j].c_str(),
-                    .scale = dim.scale(),
-                };
-                dimension_props.push_back(properties);
-            }
-
-            stream_array.dimensions = dimension_props.data();
-            stream_array.dimension_count = dims.size();
-
-            stream_array.data_type = array_settings.data_type();
-
-            auto downsampling_method = array_settings.downsampling_method();
-            stream_array.multiscale = downsampling_method.has_value();
-            if (stream_array.multiscale) {
-                stream_array.downsampling_method = *downsampling_method;
-            }
-        }
-
-        stream_ =
-          ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
-        if (!stream_) {
-            PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
-            throw py::error_already_set();
-        }
+        open_(settings);
     }
 
     void append(py::array image_data)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
-                            "Cannot append unless streaming.");
+                            "Stream not open for appending.");
             throw py::error_already_set();
         }
 
@@ -578,6 +473,22 @@ class PyZarrStream
 
     bool is_active() const { return static_cast<bool>(stream_); }
 
+    void close()
+    {
+        if (!is_active()) {
+            return;
+        }
+
+        try {
+            stream_.reset(); // calls ZarrStream_destroy
+        } catch (const std::exception& exc) {
+            std::string err =
+              "Failed to close Zarr stream: " + std::string(exc.what());
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+    }
+
   private:
     using ZarrStreamPtr =
       std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
@@ -596,6 +507,122 @@ class PyZarrStream
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
     std::string s3_region_;
+
+    // TODO (aliddell): we can make this public to allow reopening the stream
+    // once we have support for that in the C API
+    void open_(const PyZarrStreamSettings& settings)
+    {
+        if (is_active()) {
+            return;
+        }
+
+        size_t n_arrays = settings.arrays().size();
+        if (n_arrays == 0) {
+            PyErr_SetString(PyExc_ValueError,
+                            "At least one array must be specified.");
+            throw py::error_already_set();
+        }
+
+        ZarrS3Settings s3_settings;
+
+        ZarrStreamSettings stream_settings{
+            .store_path = nullptr,
+            .s3_settings = nullptr,
+            .version = settings.version(),
+            .max_threads = settings.max_threads(),
+            .overwrite = settings.overwrite(),
+            .arrays = new ZarrArraySettings[n_arrays],
+            .array_count = n_arrays,
+        };
+
+        store_path_ = settings.store_path();
+        stream_settings.store_path = store_path_.c_str();
+
+        if (settings.s3().has_value()) {
+            const auto& s3 = settings.s3().value();
+            s3_endpoint_ = s3.endpoint();
+            s3_settings.endpoint = s3_endpoint_.c_str();
+
+            s3_bucket_name_ = s3.bucket_name();
+            s3_settings.bucket_name = s3_bucket_name_.c_str();
+
+            if (s3.region().has_value()) {
+                s3_region_ = s3.region().value();
+                s3_settings.region = s3_region_.c_str();
+            } else {
+                s3_settings.region = nullptr;
+            }
+
+            stream_settings.s3_settings = &s3_settings;
+        }
+
+        std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
+        for (auto i = 0; i < n_arrays; ++i) {
+            const auto& array_settings = settings.arrays()[i];
+            auto& array_lt_props = array_props_array[i];
+            auto& stream_array = stream_settings.arrays[i];
+
+            array_lt_props.output_key = array_settings.output_key();
+            stream_array.output_key = array_lt_props.output_key.c_str();
+
+            stream_array.compression_settings = nullptr;
+            if (array_settings.compression().has_value()) {
+                const auto compression = *array_settings.compression();
+
+                // construct compression settings to live long enough
+                array_lt_props.compression = {
+                    .compressor = compression.compressor(),
+                    .codec = compression.codec(),
+                    .level = compression.level(),
+                    .shuffle = compression.shuffle(),
+                };
+
+                stream_array.compression_settings = &array_lt_props.compression;
+            }
+
+            const auto& dims = array_settings.dimensions();
+            array_lt_props.dimension_names.resize(dims.size());
+            auto& dim_names = array_lt_props.dimension_names;
+            array_lt_props.dimension_units.resize(dims.size());
+            auto& dim_units = array_lt_props.dimension_units;
+
+            auto& dimension_props = array_lt_props.dimension_props;
+            for (auto j = 0; j < dims.size(); ++j) {
+                const auto& dim = dims[j];
+                dim_names[j] = dim.name();
+                dim_units[j] = dim.unit().has_value() ? *dim.unit() : "";
+
+                ZarrDimensionProperties properties{
+                    .name = dim_names[j].c_str(),
+                    .type = dim.type(),
+                    .array_size_px = dim.array_size_px(),
+                    .chunk_size_px = dim.chunk_size_px(),
+                    .shard_size_chunks = dim.shard_size_chunks(),
+                    .unit = dim_units[j].c_str(),
+                    .scale = dim.scale(),
+                };
+                dimension_props.push_back(properties);
+            }
+
+            stream_array.dimensions = dimension_props.data();
+            stream_array.dimension_count = dims.size();
+
+            stream_array.data_type = array_settings.data_type();
+
+            auto downsampling_method = array_settings.downsampling_method();
+            stream_array.multiscale = downsampling_method.has_value();
+            if (stream_array.multiscale) {
+                stream_array.downsampling_method = *downsampling_method;
+            }
+        }
+
+        stream_ =
+          ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
+        if (!stream_) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
+            throw py::error_already_set();
+        }
+    }
 };
 
 PYBIND11_MODULE(acquire_zarr, m)
@@ -1054,6 +1081,7 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
+      .def("close", &PyZarrStream::close)
       .def("append", &PyZarrStream::append)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
