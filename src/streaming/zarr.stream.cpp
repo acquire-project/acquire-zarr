@@ -828,14 +828,6 @@ ZarrStream_s::create_store_(bool overwrite)
                        std::string(e.what()));
             return false;
         }
-
-        // test the S3 connection
-        auto conn = s3_connection_pool_->get_connection();
-        if (!conn->is_connection_valid()) {
-            set_error_("Failed to connect to S3");
-            return false;
-        }
-        s3_connection_pool_->return_connection(std::move(conn));
     } else {
         if (!overwrite) {
             if (fs::is_directory(store_path_)) {
