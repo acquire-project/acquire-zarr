@@ -17,6 +17,7 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-latest"
+          - "ubuntu-latest-arm"
           - "macos-latest"
           - "macos-13"
         include:
@@ -24,6 +25,8 @@ jobs:
             vcpkg_triplet: "x64-windows-static"
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
+          - platform: "ubuntu-latest-arm"
+            vcpkg_triplet: "arm64-linux"
           - platform: "macos-latest"
             vcpkg_triplet: "arm64-osx"
           - platform: "macos-13"
@@ -89,6 +92,7 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-22.04"
+          - "ubuntu-22.04-arm"
           - "macos-latest" # arm
           - "macos-13" # x86_64
         python:
@@ -132,7 +136,7 @@ jobs:
           brew install libomp
 
       - name: Install system dependencies
-        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        if: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm' }}
         run: |
           sudo apt-get install patchelf
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
@@ -145,7 +149,7 @@ jobs:
         run: python -m build -o dist
 
       - name: Fix wheel for manylinux
-        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        if: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm' }}
         run: |
           auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
           rm dist/*-linux_*.whl

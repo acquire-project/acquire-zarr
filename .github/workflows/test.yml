@@ -25,11 +25,14 @@ jobs:
       matrix:
         platform:
           - "ubuntu-latest"
+          - "ubuntu-latest-arm"
           - "windows-latest"
           - "macos-latest"
         include:
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
+          - platform: "ubuntu-latest-arm"
+            vcpkg_triplet: "arm64-linux"
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
           - platform: "macos-latest"
@@ -161,6 +164,7 @@ jobs:
       matrix:
         platform:
           - "ubuntu-latest"
+          - "ubuntu-latest-arm"
           - "windows-latest"
           - "macos-latest"
 
