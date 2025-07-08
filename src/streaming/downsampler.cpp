@@ -1,6 +1,8 @@
 #include "downsampler.hh"
 #include "macros.hh"
 
+#include <fmt/format.h>
+
 #include <bit>
 #include <regex>
 
@@ -292,8 +294,8 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
             average2_fun_ = average_two_frames<double>;
             break;
         default:
-            throw std::runtime_error("Invalid data type: " +
-                                     std::to_string(config->dtype));
+            throw std::runtime_error(fmt::format(
+              "Invalid data type: {}", static_cast<int>(config->dtype)));
     }
 
     EXPECT(method < ZarrDownsamplingMethodCount,
@@ -417,8 +419,8 @@ zarr::Downsampler::downsampling_method() const
         case ZarrDownsamplingMethod_Max:
             return "local_max";
         default:
-            throw std::runtime_error("Invalid downsampling method: " +
-                                     std::to_string(method_));
+            throw std::runtime_error(fmt::format(
+              "Invalid downsampling method: {}", static_cast<int>(method_)));
     }
 }
 
@@ -462,8 +464,8 @@ zarr::Downsampler::get_metadata() const
             metadata["kwargs"] = { { "func", "np.max" } };
             break;
         default:
-            throw std::runtime_error("Invalid downsampling method: " +
-                                     std::to_string(method_));
+            throw std::runtime_error(fmt::format(
+              "Invalid downsampling method: {}", static_cast<int>(method_)));
     }
 
     return metadata;

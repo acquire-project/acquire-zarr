@@ -62,6 +62,7 @@ target_link_libraries(${tgt} PRIVATE
         miniocpp::miniocpp
         Crc32c::crc32c
         OpenMP::OpenMP_CXX
+        fmt::fmt-header-only
 )
 
 target_compile_definitions(${tgt} PRIVATE
