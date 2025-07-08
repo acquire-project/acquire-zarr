@@ -29,6 +29,7 @@ set(tests
         zarr-stream-partial-append
         frame-queue
         downsampler
+        downsampler-odd-z
 )
 
 foreach (name ${tests})

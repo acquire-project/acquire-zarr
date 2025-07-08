@@ -55,9 +55,11 @@ class Downsampler
       writer_configurations_;
     std::unordered_map<int, ByteVector> downsampled_frames_;
     std::unordered_map<int, ByteVector> partial_scaled_frames_;
+    std::unordered_map<int, uint32_t> level_frame_count_;
 
     size_t n_levels_() const;
 
     void make_writer_configurations_(std::shared_ptr<ArrayConfig> config);
+    void emplace_downsampled_frame_(int level, const ByteVector& frame_data);
 };
 } // namespace zarr

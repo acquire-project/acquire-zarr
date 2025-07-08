@@ -356,15 +356,25 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
                    "x",
                    frame_height);
 
+            // if the Z dimension is spatial, and has an odd number of planes,
+            // and this is the last plane, we don't want to queue it up to be
+            // averaged with the first frame of the next timepoint
+            bool average_this_frame = next_planes < prev_planes;
+            if (prev_planes % 2 != 0 &&
+                level_frame_count_.at(level - 1) % prev_planes == 0) {
+                average_this_frame = false;
+            }
+
             // only average if this level's Z size is smaller than the last
-            if (next_planes < prev_planes) {
+            // and if we are not at the last frame of the previous level
+            if (average_this_frame) {
                 auto it = partial_scaled_frames_.find(level);
                 if (it != partial_scaled_frames_.end()) {
                     // average2_fun_ writes to next_level_frame
                     // swap here so that decimate2 can take it->second
                     next_level_frame.swap(it->second);
                     average2_fun_(next_level_frame, it->second, method_);
-                    downsampled_frames_.emplace(level, next_level_frame);
+                    emplace_downsampled_frame_(level, next_level_frame);
 
                     // clean up this LOD
                     partial_scaled_frames_.erase(it);
@@ -375,13 +385,13 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
                                              next_level_frame.end());
                     }
                 } else {
-                    partial_scaled_frames_.emplace(level, next_level_frame);
+                    emplace_downsampled_frame_(level, next_level_frame);
                     break;
                 }
             } else {
                 // no downsampling in Z, so we can just pass the data to the
                 // next level
-                downsampled_frames_.emplace(level, next_level_frame);
+                emplace_downsampled_frame_(level, next_level_frame);
 
                 if (level + 1 < writer_configurations_.size()) {
                     current_frame.assign(next_level_frame.begin(),
@@ -491,8 +501,12 @@ zarr::Downsampler::make_writer_configurations_(
            "Invalid node key: '",
            config->node_key,
            "'");
+    EXPECT(config->level_of_detail == 0,
+           "Invalid level of detail: ",
+           config->level_of_detail);
 
-    writer_configurations_.insert({ config->level_of_detail, config });
+    writer_configurations_.emplace(0, config);
+    level_frame_count_.emplace(0, 0);
 
     const std::shared_ptr<ArrayDimensions>& base_dims = config->dimensions;
     const auto ndims = config->dimensions->ndims();
@@ -572,5 +586,15 @@ zarr::Downsampler::make_writer_configurations_(
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);
+
+        level_frame_count_.emplace(level, 0);
     }
+}
+
+void
+zarr::Downsampler::emplace_downsampled_frame_(int level,
+                                              const ByteVector& frame_data)
+{
+    downsampled_frames_.emplace(level, frame_data);
+    ++level_frame_count_.at(level);
 }
