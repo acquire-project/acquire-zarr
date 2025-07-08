@@ -1,19 +1,13 @@
 project(acquire-zarr-py)
 
-execute_process(COMMAND python -m pybind11 --cmakedir
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+
+# pybind11 may be in a non-standard location, so we try to find it using the pybind11 module
+execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
         RESULT_VARIABLE pybind11_NOT_FOUND
         OUTPUT_VARIABLE pybind11_DIR
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-
-# try with Python3 if the above fails
-if (pybind11_NOT_FOUND)
-    execute_process(COMMAND python3 -m pybind11 --cmakedir
-            RESULT_VARIABLE pybind11_NOT_FOUND
-            OUTPUT_VARIABLE pybind11_DIR
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif ()
 
 if (pybind11_NOT_FOUND)
     message(FATAL_ERROR "pybind11 not found in the current environment. Please install pybind11 via pip.")
@@ -22,7 +16,6 @@ else ()
     cmake_path(CONVERT CMAKE_MODULE_PATH TO_CMAKE_PATH_LIST CMAKE_MODULE_PATH)
 endif ()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED)
 
 pybind11_add_module(acquire_zarr acquire-zarr-py.cpp)

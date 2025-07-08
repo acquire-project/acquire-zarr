@@ -47,10 +47,6 @@ main()
         auto pool = std::make_shared<zarr::S3ConnectionPool>(1, settings);
 
         auto conn = pool->get_connection();
-        if (!conn->is_connection_valid()) {
-            LOG_ERROR("Failed to connect to S3.");
-            return 1;
-        }
         CHECK(conn->bucket_exists(settings.bucket_name));
         CHECK(conn->delete_object(settings.bucket_name, object_name));
         CHECK(!conn->object_exists(settings.bucket_name, object_name));

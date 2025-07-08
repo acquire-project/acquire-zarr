@@ -45,10 +45,6 @@ main()
     try {
         auto conn = std::make_unique<zarr::S3Connection>(settings);
 
-        if (!conn->is_connection_valid()) {
-            LOG_ERROR("Failed to connect to S3.");
-            return 1;
-        }
         CHECK(conn->bucket_exists(settings.bucket_name));
         CHECK(conn->delete_object(settings.bucket_name, object_name));
         CHECK(!conn->object_exists(settings.bucket_name, object_name));
