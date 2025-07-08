@@ -393,7 +393,7 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
 }
 
 bool
-zarr::Downsampler::get_downsampled_frame(int level, LockedBuffer& frame_data)
+zarr::Downsampler::take_frame(int level, LockedBuffer& frame_data)
 {
     auto it = downsampled_frames_.find(level);
     if (it != downsampled_frames_.end()) {

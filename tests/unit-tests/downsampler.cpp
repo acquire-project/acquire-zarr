@@ -49,7 +49,7 @@ test_basic_downsampling()
     downsampler.add_frame(image);
 
     zarr::LockedBuffer downsampled;
-    bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(has_frame, "Downsampled frame not found");
 
     // Verify size (should be 5x5 for uint8)
@@ -64,7 +64,7 @@ test_basic_downsampling()
     });
 
     // Check frame is removed from cache after retrieval
-    has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(!has_frame, "Downsampled frame was not removed from cache");
 }
 
@@ -95,14 +95,14 @@ test_3d_downsampling()
     downsampler.add_frame(image1);
 
     zarr::LockedBuffer downsampled;
-    bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(!has_frame, "Downsampled frame should not be ready yet in 3D mode");
 
     // Add second frame - should complete the pair and produce a downsampled
     // frame
     downsampler.add_frame(image2);
 
-    has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(has_frame, "Downsampled frame not found after second frame");
 
     // Verify the values (should be average of 100 and 200 = 150)
@@ -114,24 +114,24 @@ test_3d_downsampling()
     });
 
     // second level shouldn't be ready yet
-    has_frame = downsampler.get_downsampled_frame(2, downsampled);
+    has_frame = downsampler.take_frame(2, downsampled);
     EXPECT(!has_frame,
            "Downsampled frame should not be ready yet in 3D mode for level 2");
 
     downsampler.add_frame(image3);
-    has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(!has_frame,
            "Downsampled frame should not be ready yet after third frame");
 
     // second level still shouldn't be ready yet
-    has_frame = downsampler.get_downsampled_frame(2, downsampled);
+    has_frame = downsampler.take_frame(2, downsampled);
     EXPECT(!has_frame,
            "Downsampled frame should not be ready yet in 3D mode for level 2");
 
     downsampler.add_frame(image4);
 
     // now that we've added 4 frames, the second level should be ready
-    has_frame = downsampler.get_downsampled_frame(2, downsampled);
+    has_frame = downsampler.take_frame(2, downsampled);
     EXPECT(has_frame, "Downsampled frame not found after fourth frame");
 
     // Verify the values (should be average of 100, 200, 300, and 400 = 250)
@@ -222,7 +222,7 @@ test_data_types()
             downsampler.add_frame(image);
 
             zarr::LockedBuffer downsampled;
-            bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+            bool has_frame = downsampler.take_frame(1, downsampled);
             EXPECT(has_frame,
                    "Downsampled frame not found for type " +
                      std::to_string(static_cast<int>(type)));
@@ -401,7 +401,7 @@ test_edge_cases()
     downsampler.add_frame(image);
 
     zarr::LockedBuffer downsampled;
-    bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+    bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(has_frame, "Downsampled frame not found for odd dimensions");
 
     // Should be padded to 12x12 then downsampled to 6x6
@@ -444,7 +444,7 @@ test_min_max_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Mean downsampled frame not found");
 
         downsampled.with_lock([](auto& data) {
@@ -461,7 +461,7 @@ test_min_max_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
         downsampled.with_lock([](auto& data) {
@@ -478,7 +478,7 @@ test_min_max_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Max downsampled frame not found");
 
         downsampled.with_lock([](auto& data) {
@@ -517,7 +517,7 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image2);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found after second frame");
 
         downsampled.with_lock([](auto& data) {
@@ -541,7 +541,7 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image2);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Max downsampled frame not found after second frame");
 
         downsampled.with_lock([](auto& data) {
@@ -568,7 +568,7 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image4);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(2, downsampled);
+        bool has_frame = downsampler.take_frame(2, downsampled);
         EXPECT(has_frame, "Level 2 max downsampled frame not found");
 
         downsampled.with_lock([](auto& data) {
@@ -633,7 +633,7 @@ test_pattern_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Mean downsampled frame not found");
 
         downsampled.with_lock([&expected_mean](auto& data) {
@@ -650,7 +650,7 @@ test_pattern_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
         downsampled.with_lock([&expected_min](auto& data) {
@@ -667,7 +667,7 @@ test_pattern_downsampling()
         downsampler.add_frame(image);
 
         zarr::LockedBuffer downsampled;
-        bool has_frame = downsampler.get_downsampled_frame(1, downsampled);
+        bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
         downsampled.with_lock([&expected_max](auto& data) {
