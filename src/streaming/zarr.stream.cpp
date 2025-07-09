@@ -643,13 +643,6 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append(const void* data_, size_t nbytes)
-{
-    const std::string output_key = output_arrays_.begin()->first;
-    return append(output_key, data_, nbytes);
-}
-
-size_t
 ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());

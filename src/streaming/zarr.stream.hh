@@ -28,14 +28,6 @@ struct ZarrStream_s
     ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Append data to the stream.
-     * @param data The data to append.
-     * @param nbytes The number of bytes to append.
-     * @return The number of bytes appended.
-     */
-    size_t append(const void* data, size_t nbytes);
-
-    /**
      * @brief Append data to the stream with a specific key.
      * @param key The key to associate with the data.
      * @param data_ Pointer to the data to append.
