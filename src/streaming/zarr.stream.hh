@@ -62,6 +62,7 @@ struct ZarrStream_s
     std::optional<zarr::S3Settings> s3_settings_;
 
     std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
+    std::vector<std::string> intermediate_group_paths_;
 
     std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
@@ -121,6 +122,10 @@ struct ZarrStream_s
      */
     [[nodiscard]] bool create_store_(bool overwrite);
 
+    /**
+     * @brief Write intermediate group metadata to the store.
+     * @return True if the metadata was written successfully, false otherwise.
+     */
     [[nodiscard]] bool write_intermediate_metadata_();
 
     /** @brief Initialize the frame queue. */

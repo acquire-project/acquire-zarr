@@ -2,8 +2,6 @@
 #include "array.base.hh"
 #include "macros.hh"
 #include "sink.hh"
-#include "v2.multiscale.array.hh"
-#include "v3.multiscale.array.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
@@ -12,13 +10,19 @@
 #include <bit> // bit_ceil
 #include <filesystem>
 #include <regex>
+#include <stack>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
 namespace {
-zarr::S3Settings
+std::optional<zarr::S3Settings>
 make_s3_settings(const ZarrS3Settings* settings)
 {
+    if (!settings) {
+        return std::nullopt;
+    }
+
     zarr::S3Settings s3_settings{ .endpoint = zarr::trim(settings->endpoint),
                                   .bucket_name =
                                     zarr::trim(settings->bucket_name) };
@@ -27,7 +31,7 @@ make_s3_settings(const ZarrS3Settings* settings)
         s3_settings.region = zarr::trim(settings->region);
     }
 
-    return s3_settings;
+    return { s3_settings };
 }
 
 [[nodiscard]] bool
@@ -409,118 +413,186 @@ is_numeric_string(const std::string& str)
 }
 
 [[nodiscard]] bool
-is_reserved_metadata_file(const std::string& name, ZarrVersion version)
+is_reserved_metadata_file(const std::string& name)
 {
-    if (version == ZarrVersion_2) {
-        return name == ".zarray" || name == ".zattrs" || name == ".zgroup";
-    } else if (version == ZarrVersion_3) {
-        return name == "zarr.json";
-    }
-
-    return false;
+    return name == ".zarray" || name == ".zattrs" || name == ".zgroup" ||
+           name == "zarr.json";
 }
 
 [[nodiscard]] bool
-is_reserved_multiscale_child(const std::string& name, ZarrVersion version)
+check_array_structure(const ZarrArraySettings* arrays,
+                      size_t array_count,
+                      std::vector<std::string>& needs_metadata_paths,
+                      std::string& error)
 {
-    // Check for numeric strings (resolution levels)
-    if (is_numeric_string(name)) {
-        return true;
-    }
-
-    // Check for metadata files
-    return is_reserved_metadata_file(name, version);
-}
-
-[[nodiscard]] std::string
-get_filename(const std::string& path)
-{
-    size_t last_slash = path.find_last_of('/');
-    if (last_slash == std::string::npos) {
-        return path; // No slash, entire string is filename
-    }
-
-    return path.substr(last_slash + 1);
-}
-
-[[nodiscard]] bool
-validate_path_hierarchy(
-  const std::string& current_path,
-  const std::unordered_map<std::string, bool>& path_to_multiscale,
-  ZarrVersion version,
-  std::string& error)
-{
-    std::string parent_path = current_path;
-
-    // Walk up the parent chain
-    while (true) {
-        auto last_slash = parent_path.find_last_of('/');
-        if (last_slash == std::string::npos) {
-            break; // Reached root
-        }
-
-        std::string immediate_parent = parent_path.substr(0, last_slash);
-        std::string child_segment = parent_path.substr(last_slash + 1);
-
-        auto parent_it = path_to_multiscale.find(immediate_parent);
-        if (parent_it != path_to_multiscale.end()) {
-            bool parent_is_multiscale = parent_it->second;
-
-            if (!parent_is_multiscale) {
-                // Non-multiscale arrays reserve entire subtree, kick it out
-                error = "Cannot nest array '" + current_path +
-                        "' under non-multiscale array '" + immediate_parent +
-                        "'";
-                return false;
-            } else {
-                // Child segment conflicts with reserved names
-                if (is_reserved_multiscale_child(child_segment, version)) {
-                    error = "Reserved child name '" + child_segment +
-                            "' under multiscale array '" + immediate_parent;
-                    return false;
-                }
-            }
-        }
-
-        parent_path = immediate_parent;
-    }
-
-    return true;
-}
-
-[[nodiscard]] bool
-validate_array_structure(const ZarrArraySettings* settings,
-                         ZarrVersion version,
-                         size_t array_count,
-                         std::string& error)
-{
-    if (settings == nullptr) {
+    if (arrays == nullptr) {
         error = "Null pointer: settings";
         return false;
     }
 
-    // Build map of all array paths and their properties
-    std::unordered_map<std::string, bool> path_to_multiscale;
+    enum class DatasetNodeType
+    {
+        Directory,
+        Array,
+        MultiscaleArray,
+    };
 
-    for (size_t i = 0; i < array_count; ++i) {
-        const char* path = settings[i].output_key ? settings[i].output_key : "";
-        std::string path_str = regularize_key(path);
+    struct DatasetNode
+    {
+        std::string name;
+        DatasetNodeType type;
+        std::unordered_map<std::string, DatasetNode> children;
+        DatasetNode* parent = nullptr;
+    };
 
-        // Check for reserved metadata filenames only
-        std::string filename = get_filename(path_str);
-        if (is_reserved_metadata_file(filename, version)) {
-            error = "Reserved metadata filename not allowed: " + filename;
+    auto tree = DatasetNode{
+        .name = "",
+        .type = DatasetNodeType::Directory,
+        .children = {},
+    };
+
+    std::unordered_set<std::string> seen_keys;
+
+    // check that if the root node is not multiscale, there are no other arrays
+    for (auto i = 0; i < array_count; ++i) {
+        auto* array = arrays + i;
+        if (array == nullptr) {
+            error = "Null pointer: array at index " + std::to_string(i);
             return false;
         }
 
-        path_to_multiscale[path_str] = settings[i].multiscale;
+        // remove leading/trailing slashes and whitespace
+        std::string key = regularize_key(array->output_key);
+
+        // ensure that we don't have a duplicate key
+        if (seen_keys.contains(key)) {
+            error = "Duplicate output key: '" + key + "'";
+            return false;
+        }
+        seen_keys.insert(key);
+
+        if (key.empty()) {
+            tree.type = array->multiscale ? DatasetNodeType::MultiscaleArray
+                                          : DatasetNodeType::Array;
+        } else {
+            // break down the key into segments
+            std::string parent_path = key;
+            std::stack<std::string> segments;
+
+            // walk up the parent chain
+            while (true) {
+                auto last_slash = parent_path.find_last_of('/');
+                if (last_slash == std::string::npos) {
+                    segments.push(parent_path);
+                    break; // reached root
+                }
+
+                std::string segment = parent_path.substr(last_slash + 1);
+                // check if the segment is reserved
+                if (is_reserved_metadata_file(segment)) {
+                    error = "Reserved metadata file name '" + segment +
+                            "' in path '" + key + "'";
+                    return false;
+                }
+
+                segments.push(parent_path.substr(last_slash + 1));
+                parent_path = parent_path.substr(0, last_slash);
+            }
+
+            // now we have all segments in reverse order, build the tree
+            DatasetNode* current_node = &tree;
+            while (!segments.empty()) {
+                std::string segment = segments.top();
+                segments.pop();
+
+                // check if this segment already exists
+                auto it = current_node->children.find(segment);
+                if (it == current_node->children.end()) {
+                    // Create a new node for this segment
+                    DatasetNode new_node{
+                        .name = segment,
+                        .parent = current_node,
+                    };
+
+                    if (segments.empty()) { // Last segment
+                        new_node.type = array->multiscale
+                                          ? DatasetNodeType::MultiscaleArray
+                                          : DatasetNodeType::Array;
+                    } else {
+                        new_node.type = DatasetNodeType::Directory;
+                    }
+                    current_node->children.emplace(segment,
+                                                   std::move(new_node));
+                }
+
+                // Move to the child node
+                current_node = &current_node->children[segment];
+            }
+        }
     }
 
-    // Check hierarchy conflicts
-    for (const auto& [current_path, is_multiscale] : path_to_multiscale) {
-        if (!validate_path_hierarchy(
-              current_path, path_to_multiscale, version, error)) {
+    // now validate the structure
+    // enforce two rules:
+    // 1. if a parent is not multiscale, it cannot have any children
+    // 2. if a parent is multiscale, it cannot have any children with numeric
+    //    names
+    // we also construct the paths where we need to write group-level metadata
+    needs_metadata_paths.clear();
+
+    std::stack<const DatasetNode*> nodes_to_visit;
+    nodes_to_visit.push(&tree);
+
+    while (!nodes_to_visit.empty()) {
+        const DatasetNode* current_node = nodes_to_visit.top();
+        nodes_to_visit.pop();
+
+        bool is_multiscale =
+          (current_node->type == DatasetNodeType::MultiscaleArray);
+        bool is_directory = (current_node->type == DatasetNodeType::Directory);
+
+        // directories and multiscale arrays
+        // can have children
+        bool can_have_children = is_multiscale || is_directory;
+
+        // if the parent is not multiscale, it must not have any children
+        if (!can_have_children && !current_node->children.empty()) {
+            error = "Directory node '" + current_node->name +
+                    "' cannot have children";
             return false;
+        }
+
+        // a pure directory node needs to have a metadata file
+        if (is_directory) {
+            std::stack<std::string> path_segments;
+            const DatasetNode* node = current_node;
+            while (node != nullptr && !node->name.empty()) {
+                path_segments.push(node->name);
+                node = node->parent;
+            }
+
+            std::string path;
+            while (!path_segments.empty()) {
+                path += path_segments.top();
+                path_segments.pop();
+                if (!path_segments.empty()) {
+                    path += "/";
+                }
+            }
+
+            // add the path to the group metadata paths
+            needs_metadata_paths.push_back(path);
+        }
+
+        for (const auto& [child_name, child_node] : current_node->children) {
+            // If the parent is multiscale, it cannot have numeric children
+            if (is_multiscale && is_numeric_string(child_name)) {
+                error = "Multiscale parent '" + child_name +
+                        "' cannot have numeric children";
+                return false;
+            }
+
+            // add the child to the stack for further validation
+            nodes_to_visit.push(&child_node);
         }
     }
 
@@ -753,8 +825,10 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     }
 
     // validate the arrays as a collection
-    if (!validate_array_structure(
-          settings->arrays, version, settings->array_count, error_)) {
+    if (!check_array_structure(settings->arrays,
+                               settings->array_count,
+                               intermediate_group_paths_,
+                               error_)) {
         return false;
     }
 
@@ -917,22 +991,9 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    const std::string output_key =
-      output_arrays_.begin()->first; // TODO (aliddell): remove
-    if (output_key.empty()) {
-        return true; // no need to write metadata
-    }
-
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
-    }
-
-    std::vector<std::string> paths = zarr::get_parent_paths({ output_key });
-    while (!paths.back().empty()) {
-        std::string parent_path = paths.back();
-        paths.push_back(
-          zarr::get_parent_paths({ parent_path })[0]); // get parent path
     }
 
     std::string metadata_key;
@@ -954,9 +1015,11 @@ ZarrStream_s::write_intermediate_metadata_()
       reinterpret_cast<const uint8_t*>(metadata_str.data()),
       metadata_str.size());
 
-    for (const auto& parent_group_key : paths) {
+    for (const auto& parent_group_key : intermediate_group_paths_) {
         const std::string sink_path =
-          store_path_ + "/" + parent_group_key + "/" + metadata_key;
+          store_path_ + "/" +
+          (parent_group_key.empty() ? "" : parent_group_key + "/") +
+          metadata_key;
 
         std::unique_ptr<zarr::Sink> metadata_sink;
         if (is_s3_acquisition_()) {
