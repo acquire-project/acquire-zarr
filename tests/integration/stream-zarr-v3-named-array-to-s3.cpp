@@ -451,7 +451,7 @@ main()
         size_t bytes_out;
         for (auto i = 0; i < frames_to_acquire; ++i) {
             ZarrStatusCode status = ZarrStream_append(
-              stream, frame.data(), bytes_of_frame, &bytes_out);
+              stream, frame.data(), bytes_of_frame, &bytes_out, nullptr);
             EXPECT(status == ZarrStatusCode_Success,
                    "Failed to append frame ",
                    i,

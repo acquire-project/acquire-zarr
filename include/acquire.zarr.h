@@ -131,7 +131,8 @@ extern "C"
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,
                                      size_t bytes_in,
-                                     size_t* bytes_out);
+                                     size_t* bytes_out,
+                                     const char* key);
 
     /**
      * @brief Write custom metadata to the Zarr stream.

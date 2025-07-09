@@ -127,11 +127,11 @@ main()
                          frame_value);
             }
 
-            ZarrStatusCode status = ZarrStream_append(
-                stream,
-                multi_frame_data.data(),
-                multi_frame_size,
-                &bytes_out);
+            ZarrStatusCode status = ZarrStream_append(stream,
+                                                      multi_frame_data.data(),
+                                                      multi_frame_size,
+                                                      &bytes_out,
+                                                      nullptr);
 
             if (status != ZarrStatusCode_Success) {
                 LOG_ERROR("Failed to append frames. Status: ", status);

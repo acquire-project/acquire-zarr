@@ -650,9 +650,11 @@ ZarrStream::append(const void* data_, size_t nbytes)
 }
 
 size_t
-ZarrStream::append(const std::string& key, const void* data_, size_t nbytes)
+ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
+
+    const std::string key = regularize_key(key_);
     auto it = output_arrays_.find(key);
     EXPECT(it != output_arrays_.end(),
            "Cannot append data: key '",

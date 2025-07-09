@@ -99,8 +99,12 @@ main()
             }
         }
 
-        ZarrStatusCode status = ZarrStream_append(
-          stream, frame, width * height * sizeof(uint16_t), &bytes_written);
+        ZarrStatusCode status =
+          ZarrStream_append(stream,
+                            frame,
+                            width * height * sizeof(uint16_t),
+                            &bytes_written,
+                            NULL);
 
         if (status != ZarrStatusCode_Success) {
             fprintf(stderr,

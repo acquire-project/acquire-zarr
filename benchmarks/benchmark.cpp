@@ -141,7 +141,8 @@ run_benchmark(const BenchmarkConfig& config)
     Timer timer;
     size_t bytes_out;
     for (int i = 0; i < num_frames; ++i) {
-        if (ZarrStream_append(stream, frame.data(), frame_size, &bytes_out) !=
+        if (ZarrStream_append(
+              stream, frame.data(), frame_size, &bytes_out, nullptr) !=
             ZarrStatusCode_Success) {
             std::cerr << "Failed to append frame " << i << "\n";
             ZarrStream_destroy(stream);

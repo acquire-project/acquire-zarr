@@ -204,14 +204,18 @@ extern "C"
     ZarrStatusCode ZarrStream_append(struct ZarrStream_s* stream,
                                      const void* data,
                                      size_t bytes_in,
-                                     size_t* bytes_out)
+                                     size_t* bytes_out,
+                                     const char* key)
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(data, "Null pointer: data");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
+        // TODO (aliddell): check key first, return a specialized error code if
+        // it is invalid
+
         try {
-            *bytes_out = stream->append(data, bytes_in);
+            *bytes_out = stream->append(key, data, bytes_in);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
             return ZarrStatusCode_InternalError;

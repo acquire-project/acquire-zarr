@@ -428,7 +428,7 @@ class PyZarrStream
 
         size_t bytes_out, bytes_in = buf.itemsize * buf.size;
         auto status =
-          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out);
+          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, nullptr);
 
         py::gil_scoped_acquire acquire;
 

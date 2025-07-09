@@ -42,7 +42,7 @@ struct ZarrStream_s
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(const std::string& key, const void* data_, size_t nbytes);
+    size_t append(const char* key, const void* data_, size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
