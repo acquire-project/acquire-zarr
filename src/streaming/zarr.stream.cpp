@@ -16,12 +16,6 @@
 namespace fs = std::filesystem;
 
 namespace {
-bool
-is_s3_acquisition(const struct ZarrStreamSettings_s* settings)
-{
-    return nullptr != settings->s3_settings;
-}
-
 zarr::S3Settings
 make_s3_settings(const ZarrS3Settings* settings)
 {
@@ -549,81 +543,6 @@ dimension_type_to_string(ZarrDimensionType type)
             return "(unknown)";
     }
 }
-
-template<typename T>
-[[nodiscard]] ByteVector
-scale_image(ConstByteSpan src, size_t& width, size_t& height)
-{
-    const auto bytes_of_src = src.size();
-    const auto bytes_of_frame = width * height * sizeof(T);
-
-    EXPECT(bytes_of_src >= bytes_of_frame,
-           "Expecting at least ",
-           bytes_of_frame,
-           " bytes, got ",
-           bytes_of_src);
-
-    const int downscale = 2;
-    constexpr auto bytes_of_type = static_cast<double>(sizeof(T));
-    const double factor = 0.25;
-
-    const auto w_pad = static_cast<double>(width + (width % downscale));
-    const auto h_pad = static_cast<double>(height + (height % downscale));
-
-    const auto size_downscaled =
-      static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
-
-    ByteVector dst(size_downscaled, 0);
-    auto* dst_as_T = reinterpret_cast<T*>(dst.data());
-    auto* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    size_t dst_idx = 0;
-    for (auto row = 0; row < height; row += downscale) {
-        const bool pad_height = (row == height - 1 && height != h_pad);
-
-        for (auto col = 0; col < width; col += downscale) {
-            size_t src_idx = row * width + col;
-            const bool pad_width = (col == width - 1 && width != w_pad);
-
-            auto here = static_cast<double>(src_as_T[src_idx]);
-            auto right = static_cast<double>(
-              src_as_T[src_idx + (1 - static_cast<int>(pad_width))]);
-            auto down = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height))]);
-            auto diag = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height)) +
-                       (1 - static_cast<int>(pad_width))]);
-
-            dst_as_T[dst_idx++] =
-              static_cast<T>(factor * (here + right + down + diag));
-        }
-    }
-
-    width = static_cast<size_t>(w_pad) / 2;
-    height = static_cast<size_t>(h_pad) / 2;
-
-    return dst;
-}
-
-template<typename T>
-void
-average_two_frames(ByteSpan& dst, ConstByteSpan src)
-{
-    const auto bytes_of_dst = dst.size();
-    const auto bytes_of_src = src.size();
-    EXPECT(bytes_of_dst == bytes_of_src,
-           "Expecting %zu bytes in destination, got %zu",
-           bytes_of_src,
-           bytes_of_dst);
-
-    T* dst_as_T = reinterpret_cast<T*>(dst.data());
-    const T* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    const auto num_pixels = bytes_of_src / sizeof(T);
-    for (auto i = 0; i < num_pixels; ++i) {
-        dst_as_T[i] = static_cast<T>(0.5 * (dst_as_T[i] + src_as_T[i]));
-    }
-}
 } // namespace
 
 /* ZarrStream_s implementation */
@@ -812,7 +731,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (is_s3_acquisition(settings)) {
+    if (settings->s3_settings != nullptr) {
         if (!validate_s3_settings(settings->s3_settings, error_)) {
             return false;
         }
@@ -905,9 +824,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     store_path_ = zarr::trim(settings->store_path);
 
     std::optional<std::string> bucket_name;
-    if (is_s3_acquisition(settings)) {
-        s3_settings_ = make_s3_settings(settings->s3_settings);
-    }
+    s3_settings_ = make_s3_settings(settings->s3_settings);
 
     // create the data store
     if (!create_store_(settings->overwrite)) {
