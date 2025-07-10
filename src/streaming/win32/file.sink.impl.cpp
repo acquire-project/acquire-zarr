@@ -102,6 +102,10 @@ bool
 flush_file(void** handle)
 {
     CHECK(handle);
+    auto* fd = reinterpret_cast<HANDLE*>(*handle);
+    if (fd && *fd != INVALID_HANDLE_VALUE) {
+        return FlushFileBuffers(*fd);
+    }
     return true;
 }
 
@@ -111,6 +115,7 @@ destroy_handle(void** handle)
     auto* fd = reinterpret_cast<HANDLE*>(*handle);
     if (fd) {
         if (*fd != INVALID_HANDLE_VALUE) {
+            FlushFileBuffers(*fd);  // Ensure all buffers are flushed
             CloseHandle(*fd);
         }
         delete fd;
