@@ -338,7 +338,7 @@ class PyZarrStream
         open_(settings);
     }
 
-    void append(py::array image_data)
+    void append(py::array image_data, std::optional<std::string> key)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
@@ -348,7 +348,7 @@ class PyZarrStream
 
         // if the array is already contiguous, we can just write it out
         if (image_data.flags() & py::array::c_style) {
-            write_contiguous_data(image_data);
+            write_contiguous_data(image_data, key);
             return;
         }
 
@@ -357,29 +357,30 @@ class PyZarrStream
             py::module np = py::module::import("numpy");
             py::array contiguous_data =
               np.attr("ascontiguousarray")(image_data);
-            write_contiguous_data(contiguous_data);
+            write_contiguous_data(contiguous_data, key);
             return;
         }
 
         // iterate through frames
-        iterate_and_append(image_data, 0, std::vector<py::ssize_t>());
+        iterate_and_append(image_data, 0, std::vector<py::ssize_t>(), key);
     }
 
     // iterate over the indices of the array until we get down to 2 dimensions,
     // then write the frame
     void iterate_and_append(const py::array& array,
                             size_t dim,
-                            std::vector<py::ssize_t> indices)
+                            std::vector<py::ssize_t> indices,
+                            std::optional<std::string> key)
     {
         if (dim == array.ndim() - 2) {
             // we are down to a 2D frame - we can write it
             py::array frame = extract_frame(array, indices);
-            write_contiguous_data(frame);
+            write_contiguous_data(frame, key);
         } else {
             // construct indices for this dimension
             for (py::ssize_t i = 0; i < array.shape()[dim]; ++i) {
                 indices.push_back(i);
-                iterate_and_append(array, dim + 1, indices);
+                iterate_and_append(array, dim + 1, indices, key);
                 indices.pop_back();
             }
         }
@@ -410,7 +411,7 @@ class PyZarrStream
         return frame.cast<py::array>();
     }
 
-    void write_contiguous_data(py::array frame)
+    void write_contiguous_data(py::array frame, std::optional<std::string> key)
     {
         // double check the frame is C-contiguous
         py::array contiguous_data;
@@ -426,9 +427,10 @@ class PyZarrStream
 
         py::gil_scoped_release release;
 
+        const char* key_str = key.has_value() ? key->c_str() : nullptr;
         size_t bytes_out, bytes_in = buf.itemsize * buf.size;
         auto status =
-          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, nullptr);
+          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, key_str);
 
         py::gil_scoped_acquire acquire;
 
@@ -1082,7 +1084,9 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
       .def("close", &PyZarrStream::close)
-      .def("append", &PyZarrStream::append)
+      .def("append", &PyZarrStream::append,
+           py::arg("data"),
+           py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
            py::arg("custom_metadata"),

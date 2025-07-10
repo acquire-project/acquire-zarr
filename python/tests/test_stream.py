@@ -1072,3 +1072,211 @@ def test_anisotropic_downsampling(settings: StreamSettings,
     assert array.chunks == (250, 250, 250)
 
     assert "4" not in group  # No further downsampling
+
+
+@pytest.mark.parametrize(
+    ("version",),
+    [
+        (ZarrVersion.V2,),
+        (ZarrVersion.V3,),
+    ],
+)
+def test_multiarray_metadata_structure(
+        settings: StreamSettings,
+        store_path: Path,
+        version: ZarrVersion,
+):
+    settings.store_path = str(store_path / "multiarray_metadata_test.zarr")
+    settings.version = version
+
+    # Configure three arrays matching the JSON examples
+
+    # Array 0: Labels array at /labels (uint16, no compression, no downsampling)
+    # Shape: [6, 3, 4, 48, 64] (t, c, z, y, x)
+    settings.arrays = [
+        ArraySettings(
+            output_key="labels",
+            data_type=DataType.UINT16,
+            dimensions=[
+                Dimension(
+                    name="t",
+                    kind=DimensionType.TIME,
+                    array_size_px=6,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="c",
+                    kind=DimensionType.CHANNEL,
+                    array_size_px=3,
+                    chunk_size_px=1,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=4,
+                    chunk_size_px=2,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        ),
+
+        # Array 1: Multiscale array at /path/to/array1 (uint8, no compression, with downsampling)
+        # Shape: [10, 6, 48, 64] (t, z, y, x)
+        ArraySettings(
+            output_key="path/to/array1",
+            data_type=DataType.UINT8,
+            downsampling_method=DownsamplingMethod.MEAN,
+            dimensions=[
+                Dimension(
+                    name="t",
+                    kind=DimensionType.TIME,
+                    array_size_px=10,
+                    chunk_size_px=5,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=6,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        ),
+
+        # Array 2: Compressed array at /path/to/array2 (uint32, with blosc compression)
+        # Shape: [9, 48, 64] (z, y, x)
+        ArraySettings(
+            output_key="path/to/array2",
+            data_type=DataType.UINT32,
+            compression=CompressionSettings(
+                compressor=Compressor.BLOSC1,
+                codec=CompressionCodec.BLOSC_LZ4,
+                level=2,
+                shuffle=1,
+            ),
+            dimensions=[
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=9,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        )
+    ]
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Create test data for labels array (5D: t,c,z,y,x)
+    labels_data = np.zeros((6, 3, 4, 48, 64), dtype=np.uint16)
+    for t in range(6):
+        for c in range(3):
+            for z in range(4):
+                labels_data[t, c, z, :, :] = t * 100 + c * 10 + z
+
+    # Create test data for array1 (4D: t,z,y,x)
+    array1_data = np.zeros((10, 6, 48, 64), dtype=np.uint8)
+    for t in range(10):
+        for z in range(6):
+            array1_data[t, z, :, :] = (t * 10 + z) % 256
+
+    # Create test data for array2 (3D: z,y,x)
+    array2_data = np.zeros((9, 48, 64), dtype=np.uint32)
+    for z in range(9):
+        array2_data[z, :, :] = z * 1000
+
+    # Stream the data to each array
+    stream.append(labels_data, key="labels")
+    stream.append(array1_data, key="path/to/array1")
+    stream.append(array2_data, key="path/to/array2")
+
+    stream.close()
+
+    # Verify the data structure
+    store_path_obj = Path(settings.store_path)
+    assert store_path_obj.is_dir()
+
+    root_group = zarr.open(settings.store_path, mode="r")
+
+    # Verify labels array
+    labels_array = root_group["labels"]
+    assert labels_array.shape == labels_data.shape
+    assert labels_array.dtype == np.uint16
+    assert np.array_equal(labels_array, labels_data)
+
+    # Verify multiscale array1 structure
+    array1_group = root_group["path"]["to"]["array1"]
+
+    # Check multiscale metadata
+    if version == ZarrVersion.V2:
+        assert "multiscales" in array1_group.attrs
+        assert len(array1_group.attrs["multiscales"]) > 0
+    else:
+        assert "ome" in array1_group.attrs
+        assert "multiscales" in array1_group.attrs["ome"]
+        assert len(array1_group.attrs["ome"]["multiscales"]) > 0
+
+    # Check that all 3 LOD levels exist
+    assert "0" in array1_group  # LOD 0 (full resolution)
+    assert "1" in array1_group  # LOD 1
+    assert "2" in array1_group  # LOD 2
+    assert "3" not in array1_group  # No further LODs
+
+    # Verify LOD 0 data
+    lod0_array = array1_group["0"]
+    assert lod0_array.shape == array1_data.shape
+    assert lod0_array.dtype == np.uint8
+    assert np.array_equal(lod0_array, array1_data)
+
+    # Verify compressed array2
+    array2_group = root_group["path"]["to"]["array2"]
+    assert array2_group.shape == array2_data.shape
+    assert array2_group.dtype == np.uint32
+    assert np.array_equal(array2_group, array2_data)
