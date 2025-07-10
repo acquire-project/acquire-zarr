@@ -638,12 +638,19 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
 
-    const std::string key = regularize_key(key_);
+    // if the key is null and we have only one output array, use that
+    std::string key;
+    if (key_ == nullptr && output_arrays_.size() == 1) {
+        key = output_arrays_.begin()->first;
+    } else {
+        key = regularize_key(key_);
+    }
+
     auto it = output_arrays_.find(key);
     EXPECT(it != output_arrays_.end(),
-           "Cannot append data: key '",
+           "Cannot append data: array at '",
            key,
-           "' not configured");
+           "' not found");
     EXPECT(data_ != nullptr, "Cannot append data: data pointer is null");
 
     if (nbytes == 0) {
