@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - "main"
-  pull_request: # TODO (aliddell): remove this after testing
-    branches:
-      - "main"
 
 jobs:
   build:
