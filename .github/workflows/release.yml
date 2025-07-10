@@ -5,6 +5,9 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
+  pull_request: # TODO (aliddell): remove this after testing
+    branches:
+      - "main"
 
 env:
   BUILD_TYPE: Release
@@ -157,10 +160,16 @@ jobs:
       - name: Build
         run: python -m build -o dist
 
-      - name: Fix wheel for manylinux
-        if: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm' }}
+      - name: Fix wheel for manylinux (x86_64)
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
         run: |
           auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
+          rm dist/*-linux_*.whl
+
+      - name: Fix wheel for manylinux (arm64)
+        if: ${{ matrix.platform == 'ubuntu-22.04-arm' }}
+        run: |
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_aarch64
           rm dist/*-linux_*.whl
 
       - name: Upload wheel
@@ -196,30 +205,30 @@ jobs:
           mv ${{steps.download.outputs.download-path}}/*/*.whl dist
           find ${{steps.download.outputs.download-path}}/ -type f -name *.tar.gz -exec mv {} dist \; -quit
 
-      - name: Tagged release
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ github.token }}
-          prerelease: false
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
-
-      - name: Nightly release
-        if: ${{ github.ref_name == 'nightly' }}
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ secrets.PAT }}
-          automatic_release_tag: "nightly"
-          prerelease: true
-          title: "Nightly Release"
-          files: |
-            ${{steps.download.outputs.download-path}}/*/*.zip
-            dist/*.whl
-
-      - name: Publish wheels and sources
-        if: ${{ github.ref_name != 'nightly' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
+#      - name: Tagged release
+#        if: ${{ github.ref_name != 'nightly' }}
+#        uses: marvinpinto/action-automatic-releases@latest
+#        with:
+#          repo_token: ${{ github.token }}
+#          prerelease: false
+#          files: |
+#            ${{steps.download.outputs.download-path}}/*/*.zip
+#            dist/*.whl
+#
+#      - name: Nightly release
+#        if: ${{ github.ref_name == 'nightly' }}
+#        uses: marvinpinto/action-automatic-releases@latest
+#        with:
+#          repo_token: ${{ secrets.PAT }}
+#          automatic_release_tag: "nightly"
+#          prerelease: true
+#          title: "Nightly Release"
+#          files: |
+#            ${{steps.download.outputs.download-path}}/*/*.zip
+#            dist/*.whl
+#
+#      - name: Publish wheels and sources
+#        if: ${{ github.ref_name != 'nightly' }}
+#        uses: pypa/gh-action-pypi-publish@release/v1
+#        with:
+#          skip-existing: true
