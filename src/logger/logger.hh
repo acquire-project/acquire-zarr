@@ -75,7 +75,7 @@ class Logger
 };
 
 #define LOG_DEBUG(...)                                                         \
-      Logger::log(LogLevel_Debug, __FILE__, __LINE__, __func__, __VA_ARGS__)
+    Logger::log(LogLevel_Debug, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define LOG_INFO(...)                                                          \
     Logger::log(LogLevel_Info, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define LOG_WARNING(...)                                                       \

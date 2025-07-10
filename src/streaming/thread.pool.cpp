@@ -5,8 +5,11 @@
 zarr::ThreadPool::ThreadPool(unsigned int n_threads, ErrorCallback&& err)
   : error_handler_{ std::move(err) }
 {
+    // hardware_concurrency() can return 0 if not computable
     const auto max_threads = std::max(std::thread::hardware_concurrency(), 1u);
-    n_threads = std::clamp(n_threads, 1u, max_threads);
+
+    // On multi-core systems, enforce minimum 2 threads: user requested + frame queue thread
+    n_threads = max_threads == 1 ? 1 : std::clamp(n_threads, 2u, max_threads);
 
     for (auto i = 0; i < n_threads; ++i) {
         threads_.emplace_back([this] { process_tasks_(); });

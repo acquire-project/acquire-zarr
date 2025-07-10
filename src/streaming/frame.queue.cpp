@@ -11,7 +11,6 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
     EXPECT(num_frames > 0, "FrameQueue must have at least one frame.");
 
     for (auto& frame : buffer_) {
-        frame.data.reserve(avg_frame_size);
         frame.ready.store(false, std::memory_order_relaxed);
     }
 
@@ -20,8 +19,9 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
 }
 
 bool
-zarr::FrameQueue::push(ConstByteSpan frame)
+zarr::FrameQueue::push(LockedBuffer& frame)
 {
+    std::unique_lock lock(mutex_);
     size_t write_pos = write_pos_.load(std::memory_order_relaxed);
 
     size_t next_pos = (write_pos + 1) % capacity_;
@@ -29,8 +29,7 @@ zarr::FrameQueue::push(ConstByteSpan frame)
         return false; // Queue is full
     }
 
-    buffer_[write_pos].data.resize(frame.size());
-    memcpy(buffer_[write_pos].data.data(), frame.data(), frame.size());
+    buffer_[write_pos].data.swap(frame);
     buffer_[write_pos].ready.store(true, std::memory_order_release);
 
     write_pos_.store(next_pos, std::memory_order_release);
@@ -39,8 +38,9 @@ zarr::FrameQueue::push(ConstByteSpan frame)
 }
 
 bool
-zarr::FrameQueue::pop(ByteVector& frame)
+zarr::FrameQueue::pop(LockedBuffer& frame)
 {
+    std::unique_lock lock(mutex_);
     size_t read_pos = read_pos_.load(std::memory_order_relaxed);
 
     if (read_pos == write_pos_.load(std::memory_order_acquire)) {
@@ -51,7 +51,7 @@ zarr::FrameQueue::pop(ByteVector& frame)
         return false;
     }
 
-    frame = std::move(buffer_[read_pos].data);
+    frame.swap(buffer_[read_pos].data);
     buffer_[read_pos].ready.store(false, std::memory_order_release);
 
     read_pos_.store((read_pos + 1) % capacity_, std::memory_order_release);
@@ -93,6 +93,17 @@ zarr::FrameQueue::bytes_used() const
 }
 
 bool
+zarr::FrameQueue::full() const
+{
+    // Queue is full when the next write position equals read position
+    size_t write = write_pos_.load(std::memory_order_relaxed);
+    size_t next_write = (write + 1) % capacity_;
+    size_t read = read_pos_.load(std::memory_order_acquire);
+
+    return (next_write == read);
+}
+
+bool
 zarr::FrameQueue::empty() const
 {
     // Queue is empty when read position equals write position
@@ -103,13 +114,10 @@ zarr::FrameQueue::empty() const
     return (read == write);
 }
 
-bool
-zarr::FrameQueue::full() const
+void
+zarr::FrameQueue::clear()
 {
-    // Queue is full when the next write position equals read position
-    size_t write = write_pos_.load(std::memory_order_relaxed);
-    size_t next_write = (write + 1) % capacity_;
-    size_t read = read_pos_.load(std::memory_order_acquire);
-
-    return (next_write == read);
+    std::unique_lock lock(mutex_);
+    read_pos_.store(write_pos_.load(std::memory_order_acquire),
+                    std::memory_order_release);
 }

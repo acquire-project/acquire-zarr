@@ -55,25 +55,32 @@ make_file_sinks(std::vector<std::string>& file_paths,
 
         std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
 
-        EXPECT(thread_pool->push_job([filename, psink, &latch, &all_successful](
-                                       std::string& err) -> bool {
+        auto job =
+          [filename, psink, &latch, &all_successful](std::string& err) -> bool {
             bool success = false;
 
             try {
-                if (all_successful) {
-                    *psink = std::make_unique<zarr::FileSink>(filename);
-                }
+                *psink = std::make_unique<zarr::FileSink>(filename);
                 success = true;
             } catch (const std::exception& exc) {
                 err = "Failed to create file '" + filename + "': " + exc.what();
             }
 
             latch.count_down();
-            all_successful.fetch_and((char)success);
+            all_successful.fetch_and(static_cast<char>(success));
 
             return success;
-        }),
-               "Failed to push sink creation job to thread pool.");
+        };
+
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool->n_threads() == 1 ||
+            !thread_pool->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
+        }
     }
 
     latch.wait();
@@ -201,36 +208,39 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     std::unordered_set<std::string> unique_paths(dir_paths.begin(),
                                                  dir_paths.end());
 
-    std::latch latch(unique_paths.size());
+    auto shared_latch = std::make_shared<std::latch>(unique_paths.size());
+
     for (const auto& path : unique_paths) {
-        auto job = [path, &latch, &all_successful](std::string& err) {
+        auto job = [path, shared_latch, &all_successful](std::string& err) {
             bool success = true;
-            if (fs::is_directory(path)) {
-                latch.count_down();
+            if (fs::is_directory(path) || path.empty()) {
+                shared_latch->count_down();
                 return success;
             }
 
             std::error_code ec;
             if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
-                err =
-                  "Failed to create directory '" + path + "': " + ec.message();
+                err = "Failed to create directory '" + path + "': " + ec.message();
                 success = false;
             }
 
-            latch.count_down();
+            shared_latch->count_down();
             all_successful.fetch_and(static_cast<char>(success));
-
             return success;
         };
 
-        if (!thread_pool->push_job(std::move(job))) {
-            LOG_ERROR("Failed to push job to thread pool.");
-            return false;
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool->n_threads() == 1 ||
+            !thread_pool->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
         }
     }
 
-    latch.wait();
-
+    shared_latch->wait();
     return static_cast<bool>(all_successful);
 }
 

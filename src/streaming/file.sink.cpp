@@ -27,8 +27,7 @@ zarr::FileSink::~FileSink()
 bool
 zarr::FileSink::write(size_t offset, ConstByteSpan data)
 {
-    const auto bytes_of_buf = data.size();
-    if (data.data() == nullptr || bytes_of_buf == 0) {
+    if (data.data() == nullptr || data.size() == 0) {
         return true;
     }
 

@@ -82,7 +82,7 @@ make_chunk_s3_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
     // create the sinks, then let them go out of scope to close the handles
     {
         char data_[] = { 0, 0 };
-        std::span data(reinterpret_cast<std::byte*>(data_), sizeof(data_));
+        std::span data(reinterpret_cast<uint8_t*>(data_), sizeof(data_));
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
         CHECK(make_data_s3_sinks(bucket_name,
                                  test_dir,
@@ -171,7 +171,7 @@ make_shard_s3_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
     // create the sinks, then let them go out of scope to close the handles
     {
         char data_[] = { 0, 0 };
-        std::span data(reinterpret_cast<std::byte*>(data_), sizeof(data_));
+        std::span data(reinterpret_cast<uint8_t*>(data_), sizeof(data_));
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
         CHECK(make_data_s3_sinks(bucket_name,
                                  test_dir,

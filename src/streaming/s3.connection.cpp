@@ -62,18 +62,6 @@ zarr::S3Connection::~S3Connection()
     for (auto& provider : impl_->providers) {
         delete provider;
     }
-};
-
-bool
-zarr::S3Connection::is_connection_valid()
-{
-    const auto response = impl_->client->ListBuckets();
-    if (!static_cast<bool>(response)) {
-        std::string err = response.Error().String();
-        LOG_ERROR("Failed to connect to S3: ", err);
-        return false;
-    }
-    return true;
 }
 
 bool
@@ -230,10 +218,9 @@ zarr::S3Connection::upload_multipart_object_part(std::string_view bucket_name,
 }
 
 bool
-zarr::S3Connection::complete_multipart_object(
-  std::string_view bucket_name,
-  std::string_view object_name,
-  std::string_view upload_id,
+zarr::S3Connection::complete_multipart_object(std::string_view bucket_name,
+                                              std::string_view object_name,
+                                              std::string_view upload_id,
                                               const std::vector<S3Part>& parts)
 {
     EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
@@ -275,11 +262,7 @@ zarr::S3ConnectionPool::S3ConnectionPool(size_t n_connections,
     }
 
     for (auto i = 0; i < n_connections; ++i) {
-        auto connection = std::make_unique<S3Connection>(settings);
-
-        if (connection->is_connection_valid()) {
-            connections_.push_back(std::make_unique<S3Connection>(settings));
-        }
+        connections_.emplace_back(std::make_unique<S3Connection>(settings));
     }
 
     CHECK(!connections_.empty());

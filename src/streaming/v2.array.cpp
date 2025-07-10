@@ -140,33 +140,6 @@ zarr::V2Array::parts_along_dimension_() const
     return chunks_along_dimension;
 }
 
-void
-zarr::V2Array::make_buffers_()
-{
-    LOG_DEBUG("Creating chunk buffers");
-
-    const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
-    data_buffers_.resize(n_chunks); // no-op if already the correct size
-
-    const auto n_bytes = bytes_to_allocate_per_chunk_();
-
-    for (auto& buf : data_buffers_) {
-        buf.resize(n_bytes);
-        std::fill(buf.begin(), buf.end(), std::byte(0));
-    }
-}
-
-BytePtr
-zarr::V2Array::get_chunk_data_(uint32_t index)
-{
-    EXPECT(index < data_buffers_.size(),
-           "Index out of bounds: ",
-           index,
-           " vs. ",
-           data_buffers_.size());
-    return data_buffers_[index].data();
-}
-
 bool
 zarr::V2Array::compress_and_flush_data_()
 {
@@ -174,7 +147,7 @@ zarr::V2Array::compress_and_flush_data_()
     CHECK(data_paths_.empty());
     make_data_paths_();
 
-    const auto n_chunks = data_buffers_.size();
+    const auto n_chunks = chunk_buffers_.size();
     CHECK(data_paths_.size() == n_chunks);
 
     const auto compression_params = config_->compression_params;
@@ -191,83 +164,90 @@ zarr::V2Array::compress_and_flush_data_()
     }
 
     std::atomic<char> all_successful = 1;
-    std::latch latch(n_chunks);
-    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
-      MAX_CONCURRENT_FILES);
+    auto shared_latch = std::make_shared<std::latch>(n_chunks);  // ← Use shared_ptr
+    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(MAX_CONCURRENT_FILES);
 
     for (auto i = 0; i < n_chunks; ++i) {
-        EXPECT(thread_pool_->push_job(
-                 std::move([bytes_per_px,
-                            bytes_of_raw_chunk,
-                            compression_params,
-                            is_s3,
-                            data_path = data_paths_[i],
-                            chunk_ptr = get_chunk_data_(i),
-                            bucket_name,
-                            connection_pool,
-                            &semaphore,
-                            &latch,
-                            &all_successful](std::string& err) {
-                     bool success = true;
-                     if (!all_successful) {
-                         latch.count_down();
-                         return false;
-                     }
+        auto job = [bytes_per_px,
+                    compression_params,
+                    is_s3,
+                    data_path = data_paths_[i],
+                    &chunk_buffer = chunk_buffers_[i],
+                    bucket_name,
+                    connection_pool,
+                    &semaphore,
+                    shared_latch,  // ← Capture by value (shared_ptr copy)
+                    &all_successful](std::string& err) {
+            bool success = false;
+            bool semaphore_acquired = false;
 
-                     auto bytes_of_chunk = bytes_of_raw_chunk;
+            if (!all_successful) {
+                shared_latch->count_down();
+                err = "Other jobs in batch have failed, not proceeding";
+                return false;
+            }
 
-                     try {
-                         // compress the chunk
-                         if (compression_params) {
-                             const int nb = compress_buffer_in_place(
-                               chunk_ptr,
-                               bytes_of_raw_chunk + BLOSC_MAX_OVERHEAD,
-                               bytes_of_chunk,
-                               *compression_params,
-                               bytes_per_px);
+            try {
+                std::unique_ptr<Sink> sink;
+                semaphore.acquire();
+                semaphore_acquired = true;
 
-                             EXPECT(nb > 0, "Failed to compress chunk.");
-                             bytes_of_chunk = nb;
-                         }
+                // compress the chunk
+                if (compression_params &&
+                    !chunk_buffer.compress(*compression_params, bytes_per_px)) {
+                    err = "Failed to compress chunk at path " + data_path;
+                    success = false;
+                } else {
+                    if (is_s3) {
+                        sink = make_s3_sink(*bucket_name, data_path, connection_pool);
+                    } else {
+                        sink = make_file_sink(data_path);
+                    }
 
-                         // create a new sink
-                         std::unique_ptr<Sink> sink;
-                         semaphore.acquire();
+                    if (sink == nullptr) {
+                        err = "Failed to create sink for " + data_path;
+                        success = false;
+                    } else {
+                        // try to write the chunk to the sink
+                        success = chunk_buffer.with_lock(
+                          [&sink](const auto& buf) { return sink->write(0, buf); });
 
-                         if (is_s3) {
-                             sink = make_s3_sink(
-                               *bucket_name, data_path, connection_pool);
-                         } else {
-                             sink = make_file_sink(data_path);
-                         }
+                        if (!success) {
+                            err = "Failed to write chunk to " + data_path;
+                        } else if (!finalize_sink(std::move(sink))) {
+                            err = "Failed to finalize sink at path " + data_path;
+                            success = false;
+                        }
+                    }
+                }
+            } catch (const std::exception& exc) {
+                err = exc.what();
+                success = false;
+            }
 
-                         // write the chunk to the sink
-                         std::span chunk_data(chunk_ptr, bytes_of_chunk);
-                         if (!sink->write(0, chunk_data)) {
-                             err = "Failed to write chunk";
-                             success = false;
-                         }
-                         EXPECT(finalize_sink(std::move(sink)),
-                                "Failed to finalize sink at path ",
-                                data_path);
+            // Cleanup - single exit point
+            if (semaphore_acquired) {
+                semaphore.release();
+            }
 
-                         semaphore.release();
-                         latch.count_down();
-                     } catch (const std::exception& exc) {
-                         semaphore.release();
-                         latch.count_down();
-                         err = exc.what();
+            all_successful.fetch_and(static_cast<char>(success));
+            shared_latch->count_down();  // ← Single count_down call
 
-                         success = false;
-                     }
+            return success;
+        };
 
-                     all_successful.fetch_and(static_cast<char>(success));
-                     return success;
-                 })),
-               "Failed to push job to thread pool");
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool_->n_threads() == 1 ||
+            !thread_pool_->push_job(std::move(job))) {
+            std::string err;
+            if (!job(err)) {
+                LOG_ERROR(err);
+            }
+        }
     }
 
-    latch.wait();
+    shared_latch->wait();
     return static_cast<bool>(all_successful);
 }
 

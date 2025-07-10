@@ -30,13 +30,6 @@ class S3Connection
     explicit S3Connection(const S3Settings& settings);
     ~S3Connection();
 
-    /**
-     * @brief Test a connection by listing all buckets at this connection's
-     * endpoint.
-     * @returns True if the connection is valid, otherwise false.
-     */
-    bool is_connection_valid();
-
     /* Bucket operations */
 
     /**

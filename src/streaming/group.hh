@@ -52,7 +52,7 @@ class Group : public ZarrNode
      * @param data The frame data to write.
      * @return The number of bytes written of the full-resolution frame.
      */
-    [[nodiscard]] size_t write_frame(ConstByteSpan data) override;
+    [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
 
   protected:
     std::optional<zarr::Downsampler> downsampler_;
@@ -92,7 +92,7 @@ class Group : public ZarrNode
      * resolution arrays.
      * @param data The frame data to write.
      */
-    void write_multiscale_frames_(ConstByteSpan data);
+    void write_multiscale_frames_(LockedBuffer& data);
 
   private:
     friend bool finalize_group(std::unique_ptr<Group>&& group);

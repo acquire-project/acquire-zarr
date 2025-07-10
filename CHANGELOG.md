@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Segmentation faults in containerized environments (CI, CoreWeave, Argo) caused by OpenMP threading issues (#111)
 - Race conditions in lambda capture and reference handling in thread pool jobs (#111)
 - Buffer overflow checks in V3 array defragmentation (#111)
--
 
 ### Deprecated
 

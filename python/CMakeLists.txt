@@ -1,6 +1,8 @@
 project(acquire-zarr-py)
 
-execute_process(COMMAND python3 -m pybind11 --cmakedir
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+
+execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
         RESULT_VARIABLE pybind11_NOT_FOUND
         OUTPUT_VARIABLE pybind11_DIR
         OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -13,7 +15,6 @@ else ()
     cmake_path(CONVERT CMAKE_MODULE_PATH TO_CMAKE_PATH_LIST CMAKE_MODULE_PATH)
 endif ()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED)
 
 pybind11_add_module(acquire_zarr acquire-zarr-py.cpp)

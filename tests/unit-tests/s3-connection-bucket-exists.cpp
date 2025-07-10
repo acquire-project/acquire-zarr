@@ -44,11 +44,6 @@ main()
     try {
         auto conn = std::make_unique<zarr::S3Connection>(settings);
 
-        if (!conn->is_connection_valid()) {
-            LOG_ERROR("Failed to connect to S3.");
-            return 1;
-        }
-
         if (conn->bucket_exists("")) {
             LOG_ERROR("False positive response for empty bucket name.");
             return 1;

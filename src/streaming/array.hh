@@ -3,6 +3,7 @@
 #include "blosc.compression.params.hh"
 #include "definitions.hh"
 #include "file.sink.hh"
+#include "locked.buffer.hh"
 #include "node.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
@@ -38,11 +39,11 @@ class Array : public ZarrNode
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
-    [[nodiscard]] size_t write_frame(ConstByteSpan) override;
+    [[nodiscard]] size_t write_frame(LockedBuffer&) override;
 
   protected:
     /// Buffering
-    std::vector<ByteVector> data_buffers_;
+    std::vector<LockedBuffer> chunk_buffers_;
 
     /// Filesystem
     std::vector<std::string> data_paths_;
@@ -55,29 +56,17 @@ class Array : public ZarrNode
 
     [[nodiscard]] bool close_() override;
 
-    std::shared_ptr<ArrayConfig> array_config_() const;
-
-    /**
-     * @brief Compute the number of bytes to allocate for a single chunk.
-     * @note Allocate the usual chunk size, plus the maximum Blosc overhead if
-     * we're compressing.
-     * @return The number of bytes to allocate per chunk.
-     */
-    size_t bytes_to_allocate_per_chunk_() const;
-
     bool is_s3_array_() const;
     virtual std::string data_root_() const = 0;
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
     void make_data_paths_();
-    virtual void make_buffers_() = 0;
-
-    virtual BytePtr get_chunk_data_(uint32_t index) = 0;
+    void fill_buffers_();
 
     bool should_flush_() const;
     virtual bool should_rollover_() const = 0;
 
-    size_t write_frame_to_chunks_(std::span<const std::byte> data);
+    size_t write_frame_to_chunks_(LockedBuffer& data);
 
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
     void rollover_();
@@ -85,8 +74,6 @@ class Array : public ZarrNode
     virtual void close_sinks_() = 0;
 
   private:
-    std::mutex buffers_mutex_;
-
     friend bool finalize_array(std::unique_ptr<Array>&& array);
 };
 

@@ -2,21 +2,10 @@
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
-#include "zarr.stream.hh"
 
-#include <omp.h>
-
-#include <cmath>
+#include <cstring>
 #include <functional>
 #include <stdexcept>
-
-namespace {
-#ifdef __APPLE__
-const int omp_threads = omp_get_max_threads(); // Full parallelization on macOS
-#else
-const int omp_threads = omp_get_max_threads() <= 4 ? 1 : omp_get_max_threads();
-#endif
-} // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
@@ -28,11 +17,21 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
   , is_closing_{ false }
 {
     // check that the config is actually an ArrayConfig
-    CHECK(std::dynamic_pointer_cast<ArrayConfig>(config_));
+    EXPECT(std::dynamic_pointer_cast<ArrayConfig>(config_),
+           "Invalid array config");
+
+    const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
+    EXPECT(n_chunks > 0, "Array has zero chunks in memory");
+    chunk_buffers_ = std::vector<LockedBuffer>(n_chunks);
+    for (auto& chunk : chunk_buffers_) {
+        chunk.resize_and_fill(config_->dimensions->bytes_per_chunk(), 0);
+    }
+
+    fill_buffers_();
 }
 
 size_t
-zarr::Array::write_frame(ConstByteSpan data)
+zarr::Array::write_frame(LockedBuffer& data)
 {
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
@@ -47,9 +46,8 @@ zarr::Array::write_frame(ConstByteSpan data)
         return 0;
     }
 
-    if (data_buffers_.empty()) {
-        std::unique_lock lock(buffers_mutex_);
-        make_buffers_();
+    if (chunk_buffers_.empty()) {
+        fill_buffers_();
     }
 
     // split the incoming frame into tiles and write them to the chunk
@@ -62,7 +60,6 @@ zarr::Array::write_frame(ConstByteSpan data)
     ++frames_written_;
 
     if (should_flush_()) {
-        std::unique_lock lock(buffers_mutex_);
         CHECK(compress_and_flush_data_());
 
         if (should_rollover_()) {
@@ -70,7 +67,7 @@ zarr::Array::write_frame(ConstByteSpan data)
             CHECK(write_metadata_());
         }
 
-        make_buffers_();
+        fill_buffers_();
         bytes_to_flush_ = 0;
     }
 
@@ -84,7 +81,6 @@ zarr::Array::close_()
     is_closing_ = true;
     try {
         if (bytes_to_flush_ > 0) {
-            std::unique_lock lock(buffers_mutex_);
             CHECK(compress_and_flush_data_());
         }
         close_sinks_();
@@ -107,23 +103,6 @@ zarr::Array::close_()
     return retval;
 }
 
-std::shared_ptr<zarr::ArrayConfig>
-zarr::Array::array_config_() const
-{
-    return std::dynamic_pointer_cast<ArrayConfig>(config_);
-}
-
-size_t
-zarr::Array::bytes_to_allocate_per_chunk_() const
-{
-    size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
-    if (config_->compression_params) {
-        bytes_per_chunk += BLOSC_MAX_OVERHEAD;
-    }
-
-    return bytes_per_chunk;
-}
-
 bool
 zarr::Array::is_s3_array_() const
 {
@@ -139,11 +118,21 @@ zarr::Array::make_data_paths_()
     }
 }
 
-size_t
-zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
+void
+zarr::Array::fill_buffers_()
 {
-    std::unique_lock lock(buffers_mutex_);
+    LOG_DEBUG("Filling chunk buffers");
 
+    const auto n_bytes = config_->dimensions->bytes_per_chunk();
+
+    for (auto& buf : chunk_buffers_) {
+        buf.resize_and_fill(n_bytes, 0);
+    }
+}
+
+size_t
+zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
+{
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_->dtype);
 
@@ -177,60 +166,75 @@ zarr::Array::write_frame_to_chunks_(std::span<const std::byte> data)
     const auto chunk_offset =
       static_cast<long long>(dimensions->chunk_internal_offset(frame_id));
 
-    const auto* data_ptr = data.data();
-    const auto data_size = data.size();
-
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    std::vector<BytePtr> chunk_data(n_tiles);
-    for (auto i = 0; i < n_tiles; ++i) {
-        chunk_data[i] = get_chunk_data_(group_offset + i);
-    }
+    auto frame = data.take();
 
-#pragma omp parallel for num_threads(omp_threads) reduction(+ : bytes_written)
+#pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
-        const auto tile_idx_y = tile / n_tiles_x;
-        const auto tile_idx_x = tile % n_tiles_x;
+        auto& chunk_buffer = chunk_buffers_[tile + group_offset];
+        bytes_written += chunk_buffer.with_lock([chunk_offset,
+                                                 frame_rows,
+                                                 frame_cols,
+                                                 tile_rows,
+                                                 tile_cols,
+                                                 tile,
+                                                 n_tiles_x,
+                                                 bytes_per_px,
+                                                 bytes_per_row,
+                                                 bytes_per_chunk,
+                                                 &frame](auto& chunk_data) {
+            const auto* data_ptr = frame.data();
+            const auto data_size = frame.size();
 
-        const auto chunk_start = chunk_data[tile];
+            const auto chunk_start = chunk_data.data();
 
-        auto chunk_pos = chunk_offset;
+            const auto tile_idx_y = tile / n_tiles_x;
+            const auto tile_idx_x = tile % n_tiles_x;
 
-        for (auto k = 0; k < tile_rows; ++k) {
-            const auto frame_row = tile_idx_y * tile_rows + k;
-            if (frame_row < frame_rows) {
-                const auto frame_col = tile_idx_x * tile_cols;
+            auto chunk_pos = chunk_offset;
+            size_t bytes_written = 0;
 
-                const auto region_width =
-                  std::min(frame_col + tile_cols, frame_cols) - frame_col;
+            for (auto k = 0; k < tile_rows; ++k) {
+                const auto frame_row = tile_idx_y * tile_rows + k;
+                if (frame_row < frame_rows) {
+                    const auto frame_col = tile_idx_x * tile_cols;
 
-                const auto region_start =
-                  bytes_per_px * (frame_row * frame_cols + frame_col);
-                const auto nbytes = region_width * bytes_per_px;
+                    const auto region_width =
+                      std::min(frame_col + tile_cols, frame_cols) - frame_col;
 
-                // copy region
-                EXPECT(region_start + nbytes <= data_size,
-                       "Buffer overflow in framme. Region start: ",
-                       region_start,
-                       " nbytes: ",
-                       nbytes,
-                       " data size: ",
-                       data_size);
-                EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
-                       "Buffer overflow in chunk. Chunk pos: ",
-                       chunk_pos,
-                       " nbytes: ",
-                       nbytes,
-                       " bytes per chunk: ",
-                       bytes_per_chunk);
-                memcpy(
-                  chunk_start + chunk_pos, data_ptr + region_start, nbytes);
-                bytes_written += nbytes;
+                    const auto region_start =
+                      bytes_per_px * (frame_row * frame_cols + frame_col);
+                    const auto nbytes = region_width * bytes_per_px;
+
+                    // copy region
+                    EXPECT(region_start + nbytes <= data_size,
+                           "Buffer overflow in framme. Region start: ",
+                           region_start,
+                           " nbytes: ",
+                           nbytes,
+                           " data size: ",
+                           data_size);
+                    EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
+                           "Buffer overflow in chunk. Chunk pos: ",
+                           chunk_pos,
+                           " nbytes: ",
+                           nbytes,
+                           " bytes per chunk: ",
+                           bytes_per_chunk);
+                    memcpy(
+                      chunk_start + chunk_pos, data_ptr + region_start, nbytes);
+                    bytes_written += nbytes;
+                }
+                chunk_pos += bytes_per_row;
             }
-            chunk_pos += bytes_per_row;
-        }
+
+            return bytes_written;
+        });
     }
+
+    data.assign(std::move(frame));
 
     return bytes_written;
 }

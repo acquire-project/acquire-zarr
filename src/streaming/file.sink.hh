@@ -19,8 +19,6 @@ class FileSink : public Sink
 
   private:
     std::mutex mutex_;
-    size_t page_size_;
-    size_t sector_size_;
 
     void* handle_;
 };

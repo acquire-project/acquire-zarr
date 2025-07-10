@@ -13,10 +13,10 @@ namespace {
 const std::string test_path =
   (fs::temp_directory_path() / (TEST ".zarr")).string();
 
-const unsigned int array_width = 2048, array_height = 2048, array_planes = 6,
+const unsigned int array_width = 64, array_height = 48, array_planes = 6,
                    array_channels = 8, array_timepoints = 10;
 
-const unsigned int chunk_width = 64, chunk_height = 64, chunk_planes = 2,
+const unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2,
                    chunk_channels = 4, chunk_timepoints = 5;
 
 const unsigned int shard_width = 2, shard_height = 1, shard_planes = 1,
@@ -316,7 +316,13 @@ verify_file_data()
                         const auto x_file = y_dir / std::to_string(x);
                         CHECK(fs::is_regular_file(x_file));
                         const auto file_size = fs::file_size(x_file);
-                        EXPECT_EQ(size_t, file_size, expected_file_size);
+                        EXPECT(file_size == expected_file_size,
+                               "Expected file size == ",
+                               expected_file_size,
+                               " for file ",
+                               x_file.string(),
+                               ", got ",
+                               file_size);
                     }
 
                     CHECK(!fs::is_regular_file(y_dir /
@@ -400,6 +406,11 @@ main()
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
+    }
+
+    // cleanup
+    if (fs::exists(test_path)) {
+        fs::remove_all(test_path);
     }
 
     return retval;

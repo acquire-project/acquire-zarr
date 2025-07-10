@@ -38,7 +38,7 @@ zarr::Group::Group(std::shared_ptr<GroupConfig> config,
 }
 
 size_t
-zarr::Group::write_frame(ConstByteSpan data)
+zarr::Group::write_frame(LockedBuffer& data)
 {
     if (arrays_.empty()) {
         LOG_WARNING("Attempt to write to group with no arrays");
@@ -210,7 +210,7 @@ zarr::Group::make_base_array_config_() const
 }
 
 void
-zarr::Group::write_multiscale_frames_(ConstByteSpan data)
+zarr::Group::write_multiscale_frames_(LockedBuffer& data)
 {
     if (!group_config_()->multiscale) {
         return;
@@ -220,7 +220,7 @@ zarr::Group::write_multiscale_frames_(ConstByteSpan data)
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
-        ByteVector downsampled_frame;
+        LockedBuffer downsampled_frame;
         if (downsampler_->get_downsampled_frame(i, downsampled_frame)) {
             const auto n_bytes = arrays_[i]->write_frame(downsampled_frame);
             EXPECT(n_bytes == downsampled_frame.size(),
