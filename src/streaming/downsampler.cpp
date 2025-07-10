@@ -385,7 +385,7 @@ zarr::Downsampler::add_frame(LockedBuffer& frame)
                                              next_level_frame.end());
                     }
                 } else {
-                    emplace_downsampled_frame_(level, next_level_frame);
+                    partial_scaled_frames_.emplace(level, next_level_frame);
                     break;
                 }
             } else {
