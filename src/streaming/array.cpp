@@ -10,24 +10,15 @@
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ZarrNode(config, thread_pool, s3_connection_pool)
+  : ArrayBase(config, thread_pool, s3_connection_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
   , is_closing_{ false }
 {
-    // check that the config is actually an ArrayConfig
-    EXPECT(std::dynamic_pointer_cast<ArrayConfig>(config_),
-           "Invalid array config");
-
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
     chunk_buffers_ = std::vector<LockedBuffer>(n_chunks);
-    for (auto& chunk : chunk_buffers_) {
-        chunk.resize_and_fill(config_->dimensions->bytes_per_chunk(), 0);
-    }
-
-    fill_buffers_();
 }
 
 size_t
@@ -46,7 +37,7 @@ zarr::Array::write_frame(LockedBuffer& data)
         return 0;
     }
 
-    if (chunk_buffers_.empty()) {
+    if (bytes_to_flush_ == 0) { // first frame, we need to init the buffers
         fill_buffers_();
     }
 
@@ -55,7 +46,12 @@ zarr::Array::write_frame(LockedBuffer& data)
     const auto bytes_written = write_frame_to_chunks_(data);
     EXPECT(bytes_written == nbytes_data, "Failed to write frame to chunks");
 
-    LOG_DEBUG("Wrote ", bytes_written, " bytes of frame ", frames_written_);
+    LOG_DEBUG("Wrote ",
+              bytes_written,
+              " bytes of frame ",
+              frames_written_,
+              " to LOD ",
+              config_->level_of_detail);
     bytes_to_flush_ += bytes_written;
     ++frames_written_;
 
@@ -66,8 +62,6 @@ zarr::Array::write_frame(LockedBuffer& data)
             rollover_();
             CHECK(write_metadata_());
         }
-
-        fill_buffers_();
         bytes_to_flush_ = 0;
     }
 

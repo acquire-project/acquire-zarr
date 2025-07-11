@@ -55,19 +55,23 @@ const size_t bytes_of_frame = array_width * array_height * nbytes_px;
 ZarrStream*
 setup()
 {
+    ZarrArraySettings array = {
+        .compression_settings = nullptr,
+        .data_type = ZarrDataType_uint16,
+    };
     ZarrStreamSettings settings = {
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
-        .compression_settings = nullptr,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .arrays = &array,
+        .array_count = 1,
     };
 
-    CHECK_OK(ZarrStreamSettings_create_dimension_array(&settings, 5));
+    CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 5));
 
     ZarrDimensionProperties* dim;
-    dim = settings.dimensions;
+    dim = settings.arrays->dimensions;
     *dim = DIM("t",
                ZarrDimensionType_Time,
                array_timepoints,
@@ -76,7 +80,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 1;
+    dim = settings.arrays->dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
@@ -85,7 +89,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 2;
+    dim = settings.arrays->dimensions + 2;
     *dim = DIM("z",
                ZarrDimensionType_Space,
                array_planes,
@@ -94,7 +98,7 @@ setup()
                "millimeter",
                1.4);
 
-    dim = settings.dimensions + 3;
+    dim = settings.arrays->dimensions + 3;
     *dim = DIM("y",
                ZarrDimensionType_Space,
                array_height,
@@ -103,7 +107,7 @@ setup()
                "micrometer",
                0.9);
 
-    dim = settings.dimensions + 4;
+    dim = settings.arrays->dimensions + 4;
     *dim = DIM("x",
                ZarrDimensionType_Space,
                array_width,
@@ -113,7 +117,7 @@ setup()
                0.9);
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     return stream;
 }
@@ -387,7 +391,7 @@ main()
         size_t bytes_out;
         for (auto i = 0; i < frames_to_acquire; ++i) {
             ZarrStatusCode status = ZarrStream_append(
-              stream, frame.data(), bytes_of_frame, &bytes_out);
+              stream, frame.data(), bytes_of_frame, &bytes_out, nullptr);
             EXPECT(status == ZarrStatusCode_Success,
                    "Failed to append frame ",
                    i,

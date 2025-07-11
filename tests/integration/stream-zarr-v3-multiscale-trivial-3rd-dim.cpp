@@ -43,14 +43,18 @@ const size_t bytes_of_frame = array_width * array_height * nbytes_px;
 ZarrStream*
 setup()
 {
+    ZarrArraySettings array = {
+        .data_type = ZarrDataType_uint16,
+        .multiscale = true,
+        .downsampling_method = ZarrDownsamplingMethod_Mean,
+    };
     ZarrStreamSettings settings = {
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
-        .multiscale = true,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
-        .downsampling_method = ZarrDownsamplingMethod_Mean,
+        .arrays = &array,
+        .array_count = 1,
     };
 
     ZarrCompressionSettings compression_settings = {
@@ -59,12 +63,12 @@ setup()
         .level = 2,
         .shuffle = 2,
     };
-    settings.compression_settings = &compression_settings;
+    settings.arrays->compression_settings = &compression_settings;
 
-    CHECK_OK(ZarrStreamSettings_create_dimension_array(&settings, 5));
+    CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 5));
 
     ZarrDimensionProperties* dim;
-    dim = settings.dimensions;
+    dim = settings.arrays->dimensions;
     *dim = DIM("t",
                ZarrDimensionType_Time,
                array_timepoints,
@@ -73,7 +77,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 1;
+    dim = settings.arrays->dimensions + 1;
     *dim = DIM("c",
                ZarrDimensionType_Channel,
                array_channels,
@@ -82,7 +86,7 @@ setup()
                nullptr,
                1.0);
 
-    dim = settings.dimensions + 2;
+    dim = settings.arrays->dimensions + 2;
     *dim = DIM("z",
                ZarrDimensionType_Space,
                array_planes,
@@ -91,7 +95,7 @@ setup()
                "millimeter",
                1.36);
 
-    dim = settings.dimensions + 3;
+    dim = settings.arrays->dimensions + 3;
     *dim = DIM("y",
                ZarrDimensionType_Space,
                array_height,
@@ -100,7 +104,7 @@ setup()
                "micrometer",
                0.85);
 
-    dim = settings.dimensions + 4;
+    dim = settings.arrays->dimensions + 4;
     *dim = DIM("x",
                ZarrDimensionType_Space,
                array_width,
@@ -110,7 +114,7 @@ setup()
                0.85);
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     return stream;
 }
@@ -121,15 +125,15 @@ void verify_multiscale_metadata()
     fs::path group_metadata_path = fs::path(test_path) / "zarr.json";
     EXPECT(fs::is_regular_file(group_metadata_path),
            "Expected file '", group_metadata_path, "' to exist");
-    
+
     std::ifstream f = std::ifstream(group_metadata_path);
     nlohmann::json group_metadata = nlohmann::json::parse(f);
-    
+
     // Verify OME-NGFF multiscale metadata
     const auto ome = group_metadata["attributes"]["ome"];
     const auto multiscales = ome["multiscales"][0];
     const auto datasets = multiscales["datasets"];
-    
+
     // We should have 3 resolution levels (base + 2 downsampled)
     EXPECT_EQ(size_t, datasets.size(), 3);
 
@@ -138,11 +142,11 @@ void verify_multiscale_metadata()
         const auto path = dataset["path"].get<std::string>();
         EXPECT(path == std::to_string(level),
                "Expected path to be '", std::to_string(level), "', but got '", path, "'");
-               
+
         const auto coordinate_transformations = dataset["coordinateTransformations"];
         const auto type = coordinate_transformations[0]["type"].get<std::string>();
         EXPECT(type == "scale", "Expected type to be 'scale', but got '", type, "'");
-        
+
         const auto scale = coordinate_transformations[0]["scale"];
         EXPECT_EQ(size_t, scale.size(), 5);
 
@@ -156,9 +160,9 @@ void verify_multiscale_metadata()
             fs::path array_metadata_path = fs::path(test_path) / std::to_string(level) / "zarr.json";
             std::ifstream af = std::ifstream(array_metadata_path);
             nlohmann::json array_metadata = nlohmann::json::parse(af);
-            
+
             const auto& shape = array_metadata["shape"];
-            
+
             // Calculate and verify the expected scale factors
             // t and c dimensions should still be 1.0
             EXPECT_EQ(double, scale[0].get<double>(), 1.0); // t dimension
@@ -176,7 +180,7 @@ void verify_multiscale_metadata()
             EXPECT(std::abs(scale[3].get<double>() - expected_y_scale) < 0.01,
                    "For level ", level, ", expected y scale to be around ", expected_y_scale,
                    ", but got ", scale[3].get<double>());
-                   
+
             EXPECT(std::abs(scale[4].get<double>() - expected_x_scale) < 0.01,
                    "For level ", level, ", expected x scale to be around ", expected_x_scale,
                    ", but got ", scale[4].get<double>());
@@ -198,7 +202,7 @@ main()
         size_t bytes_out;
         for (auto i = 0; i < frames_to_acquire; ++i) {
             ZarrStatusCode status = ZarrStream_append(
-              stream, frame.data(), bytes_of_frame, &bytes_out);
+              stream, frame.data(), bytes_of_frame, &bytes_out, nullptr);
             EXPECT(status == ZarrStatusCode_Success,
                    "Failed to append frame ", i, ": ",
                    Zarr_get_status_message(status));

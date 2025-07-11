@@ -100,7 +100,12 @@ zarr::S3Connection::put_object(std::string_view bucket_name,
                                     data.size());
     std::basic_istream stream(&buffer);
 
-    LOG_DEBUG("Putting object ", object_name, " in bucket ", bucket_name);
+    LOG_DEBUG("Putting object ",
+              object_name,
+              " with ",
+              data.size(),
+              " bytes into bucket ",
+              bucket_name);
     minio::s3::PutObjectArgs args(stream, static_cast<long>(data.size()), 0);
     args.bucket = bucket_name;
     args.object = object_name;

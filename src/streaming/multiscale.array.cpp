@@ -1,5 +1,5 @@
-#include "group.hh"
 #include "macros.hh"
+#include "multiscale.array.hh"
 #include "zarr.common.hh"
 
 namespace {
@@ -21,24 +21,22 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
-zarr::Group::Group(std::shared_ptr<GroupConfig> config,
-                   std::shared_ptr<ThreadPool> thread_pool,
-                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ZarrNode(config, thread_pool, s3_connection_pool)
+zarr::MultiscaleArray::MultiscaleArray(
+  std::shared_ptr<ArrayConfig> config,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : ArrayBase(config, thread_pool, s3_connection_pool)
 {
-    // check that the config is a GroupConfig
-    CHECK(std::dynamic_pointer_cast<GroupConfig>(config_));
-
     bytes_per_frame_ =
       config_->dimensions == nullptr
         ? 0
         : zarr::bytes_of_frame(*config_->dimensions, config_->dtype);
 
-    CHECK(create_downsampler_());
+    EXPECT(create_downsampler_(), "Failed to create downsampler");
 }
 
 size_t
-zarr::Group::write_frame(LockedBuffer& data)
+zarr::MultiscaleArray::write_frame(LockedBuffer& data)
 {
     if (arrays_.empty()) {
         LOG_WARNING("Attempt to write to group with no arrays");
@@ -62,7 +60,7 @@ zarr::Group::write_frame(LockedBuffer& data)
 }
 
 bool
-zarr::Group::close_()
+zarr::MultiscaleArray::close_()
 {
     for (auto i = 0; i < arrays_.size(); ++i) {
         if (!finalize_array(std::move(arrays_[i]))) {
@@ -88,34 +86,27 @@ zarr::Group::close_()
     return true;
 }
 
-std::shared_ptr<zarr::GroupConfig>
-zarr::Group::group_config_() const
-{
-    return std::dynamic_pointer_cast<GroupConfig>(config_);
-}
-
 bool
-zarr::Group::create_downsampler_()
+zarr::MultiscaleArray::create_downsampler_()
 {
-    if (!group_config_()->multiscale) {
-        return true;
+    if (!config_->downsampling_method) {
+        return true; // no downsampling method specified, nothing to do
     }
 
     const auto config = make_base_array_config_();
 
     try {
         downsampler_ =
-          Downsampler(config, group_config_()->downsampling_method);
+          std::make_unique<Downsampler>(config, *config_->downsampling_method);
     } catch (const std::exception& exc) {
         LOG_ERROR("Error creating downsampler: " + std::string(exc.what()));
-        return false;
     }
 
-    return true;
+    return downsampler_ != nullptr;
 }
 
 nlohmann::json
-zarr::Group::make_multiscales_metadata_() const
+zarr::MultiscaleArray::make_multiscales_metadata_() const
 {
     nlohmann::json multiscales;
     const auto ndims = config_->dimensions->ndims();
@@ -198,7 +189,7 @@ zarr::Group::make_multiscales_metadata_() const
 }
 
 std::shared_ptr<zarr::ArrayConfig>
-zarr::Group::make_base_array_config_() const
+zarr::MultiscaleArray::make_base_array_config_() const
 {
     return std::make_shared<ArrayConfig>(config_->store_root,
                                          config_->node_key + "/0",
@@ -206,17 +197,17 @@ zarr::Group::make_base_array_config_() const
                                          config_->compression_params,
                                          config_->dimensions,
                                          config_->dtype,
+                                         std::nullopt,
                                          0);
 }
 
 void
-zarr::Group::write_multiscale_frames_(LockedBuffer& data)
+zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
 {
-    if (!group_config_()->multiscale) {
-        return;
+    if (!downsampler_) {
+        return; // no downsampler, nothing to do
     }
 
-    CHECK(downsampler_.has_value());
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
@@ -235,22 +226,22 @@ zarr::Group::write_multiscale_frames_(LockedBuffer& data)
 }
 
 bool
-zarr::finalize_group(std::unique_ptr<Group>&& group)
+zarr::finalize_group(std::unique_ptr<MultiscaleArray>&& array)
 {
-    if (group == nullptr) {
-        LOG_INFO("Group is null. Nothing to finalize.");
+    if (array == nullptr) {
+        LOG_INFO("MultiscaleArray is null. Nothing to finalize.");
         return true;
     }
 
     try {
-        if (!group->close_()) {
+        if (!array->close_()) {
             return false;
         }
     } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to close_ group: ", exc.what());
+        LOG_ERROR("Failed to close multiscale array: ", exc.what());
         return false;
     }
 
-    group.reset();
+    array.reset();
     return true;
 }

@@ -122,19 +122,17 @@ The library provides two main interfaces.
 First, `ZarrStream`, representing an output stream to a Zarr dataset.
 Second, `ZarrStreamSettings` to configure a Zarr stream.
 
-A typical use case for a 4-dimensional acquisition might look like this:
+A typical use case for a single-array, 4-dimensional acquisition might look like this:
 
 ```c
-ZarrStreamSettings settings = (ZarrStreamSettings){
-    .store_path = "my_stream.zarr",
+ZarrArraySettings array{
+    .output_key =
+      "my-array", // Optional: path within Zarr where data should be stored
     .data_type = ZarrDataType_uint16,
-    .version = ZarrVersion_3,
-    .output_key = "dataset1",  // Optional: path within Zarr where data should be stored
-    .overwrite = true,         // Optional: remove existing data at store_path if true
 };
 
-ZarrStreamSettings_create_dimension_array(&settings, 4);
-settings.dimensions[0] = (ZarrDimensionProperties){
+ZarrArraySettings_create_dimension_array(&array, 4);
+array.dimensions[0] = (ZarrDimensionProperties){
     .name = "t",
     .type = ZarrDimensionType_Time,
     .array_size_px = 0,      // this is the append dimension
@@ -144,10 +142,25 @@ settings.dimensions[0] = (ZarrDimensionProperties){
 
 // ... rest of dimensions configuration ...
 
+ZarrStreamSettings settings = (ZarrStreamSettings){
+    .store_path = "my_stream.zarr",
+    .version = ZarrVersion_3,
+    .overwrite = true, // Optional: remove existing data at store_path if true
+    .arrays = &array,
+    .array_count = 1, // Number of arrays in the stream
+};
+
 ZarrStream* stream = ZarrStream_create(&settings);
 
+// You can now safely free the dimensions array
+ZarrArraySettings_destroy_dimension_array(&array);
+
 size_t bytes_written;
-ZarrStream_append(stream, my_frame_data, my_frame_size, &bytes_written);
+ZarrStream_append(stream,
+                  my_frame_data,
+                  my_frame_size,
+                  &bytes_written,
+                  "my-array"); // if you have just one array configured, this can be NULL
 assert(bytes_written == my_frame_size);
 ```
 
@@ -161,40 +174,44 @@ import numpy as np
 
 settings = aqz.StreamSettings(
     store_path="my_stream.zarr",
-    data_type=aqz.DataType.UINT16,
     version=aqz.ZarrVersion.V3,
-    output_key="dataset1",  # Optional: path within Zarr where data should be stored
     overwrite=True  # Optional: remove existing data at store_path if true
 )
 
-settings.dimensions = [
-    aqz.Dimension(
-        name="t",
-        type=aqz.DimensionType.TIME,
-        array_size_px=0,
-        chunk_size_px=100,
-        shard_size_chunks=10
-    ),
-    aqz.Dimension(
-        name="c",
-        type=aqz.DimensionType.CHANNEL,
-        array_size_px=3,
-        chunk_size_px=1,
-        shard_size_chunks=1
-    ),
-    aqz.Dimension(
-        name="y",
-        type=aqz.DimensionType.SPACE,
-        array_size_px=1080,
-        chunk_size_px=270,
-        shard_size_chunks=2
-    ),
-    aqz.Dimension(
-        name="x",
-        type=aqz.DimensionType.SPACE,
-        array_size_px=1920,
-        chunk_size_px=480,
-        shard_size_chunks=2
+settings.arrays = [
+    aqz.ArraySettings(
+        output_key="array1",
+        data_type=aqz.DataType.UINT16,
+        dimensions = [
+            aqz.Dimension(
+                name="t",
+                type=aqz.DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=100,
+                shard_size_chunks=10
+            ),
+            aqz.Dimension(
+                name="c",
+                type=aqz.DimensionType.CHANNEL,
+                array_size_px=3,
+                chunk_size_px=1,
+                shard_size_chunks=1
+            ),
+            aqz.Dimension(
+                name="y",
+                type=aqz.DimensionType.SPACE,
+                array_size_px=1080,
+                chunk_size_px=270,
+                shard_size_chunks=2
+            ),
+            aqz.Dimension(
+                name="x",
+                type=aqz.DimensionType.SPACE,
+                array_size_px=1920,
+                chunk_size_px=480,
+                shard_size_chunks=2
+            )
+        ]
     )
 ]
 
@@ -206,55 +223,108 @@ stream.append(my_frame_data)
 
 # ... append more data as needed ...
 
+# When done, close the stream to flush any remaining data
 stream.close()
 ```
 
-### Organizing Data within a Zarr Container
+### Organizing data within a Zarr container
 
-The library allows organizing data within a Zarr container through the `output_key` setting.
-This feature enables you to:
-
-1. Store multiple datasets in a single Zarr container
-2. Create hierarchical data organization
-3. Manage related acquisitions within a structured layout
-
-Example of storing multiple acquisitions in a single Zarr container:
+The library allows you to stream multiple arrays to a single Zarr dataset by configuring multiple arrays.
+For example, a multichannel acquisition with both brightfield and fluorescence channels might look like this:
 
 ```python
 import acquire_zarr as aqz
 import numpy as np
 
-# Create a Zarr container with multiple datasets
-container_path = "experiment.zarr"
-
-# First acquisition - store in "sample1/brightfield"
-settings1 = aqz.StreamSettings(
-    store_path=container_path,
-    data_type=aqz.DataType.UINT16,
+# configure the stream with two arrays
+settings = aqz.StreamSettings(
+    store_path="experiment.zarr",
     version=aqz.ZarrVersion.V3,
-    output_key="sample1/brightfield",
-    overwrite=False  # Don't overwrite existing data
+    overwrite=True,  # Remove existing data at store_path if true
+    arrays=[
+        aqz.ArraySettings(
+            output_key="sample1/brightfield",
+            data_type=aqz.DataType.UINT16,
+            dimensions=[
+                aqz.Dimension(
+                    name="t",
+                    type=aqz.DimensionType.TIME,
+                    array_size_px=0,
+                    chunk_size_px=100,
+                    shard_size_chunks=1
+                ),
+                aqz.Dimension(
+                    name="c",
+                    type=aqz.DimensionType.CHANNEL,
+                    array_size_px=1,
+                    chunk_size_px=1,
+                    shard_size_chunks=1
+                ),
+                aqz.Dimension(
+                    name="y",
+                    type=aqz.DimensionType.SPACE,
+                    array_size_px=1080,
+                    chunk_size_px=270,
+                    shard_size_chunks=2
+                ),
+                aqz.Dimension(
+                    name="x",
+                    type=aqz.DimensionType.SPACE,
+                    array_size_px=1920,
+                    chunk_size_px=480,
+                    shard_size_chunks=2
+                )
+            ]
+        ),
+        aqz.ArraySettings(
+            output_key="sample1/fluorescence",
+            data_type=aqz.DataType.UINT16,
+            dimensions=[
+                aqz.Dimension(
+                    name="t",
+                    type=aqz.DimensionType.TIME,
+                    array_size_px=0,
+                    chunk_size_px=100,
+                    shard_size_chunks=1
+                ),
+                aqz.Dimension(
+                    name="c",
+                    type=aqz.DimensionType.CHANNEL,
+                    array_size_px=2,  # two fluorescence channels
+                    chunk_size_px=1,
+                    shard_size_chunks=1
+                ),
+                aqz.Dimension(
+                    name="y",
+                    type=aqz.DimensionType.SPACE,
+                    array_size_px=1080,
+                    chunk_size_px=270,
+                    shard_size_chunks=2
+                ),
+                aqz.Dimension(
+                    name="x",
+                    type=aqz.DimensionType.SPACE,
+                    array_size_px=1920,
+                    chunk_size_px=480,
+                    shard_size_chunks=2
+                )
+            ]
+        )
+    ]
 )
-# ... configure dimensions ...
-stream1 = aqz.ZarrStream(settings1)
-# ... append data ...
 
-# Second acquisition - store in "sample1/fluorescence"
-settings2 = aqz.StreamSettings(
-    store_path=container_path,
-    data_type=aqz.DataType.UINT16,
-    version=aqz.ZarrVersion.V3,
-    output_key="sample1/fluorescence",
-    overwrite=False  # Don't overwrite existing data
-)
-# ... configure dimensions ...
-stream2 = aqz.ZarrStream(settings2)
+stream = aqz.ZarrStream(settings)
+
 # ... append data ...
+stream.append(brightfield_frame_data, key="sample1/brightfield")
+stream.append(fluorescence_frame_data, key="sample1/fluorescence")
+
+# ... append more data as needed ...
+
+# When done, close the stream to flush any remaining data
+stream.close()
 ```
 
-The `output_key` parameter accepts a path-like string using forward slashes as separators.
-Intermediate groups will be automatically created in the Zarr hierarchy.
-If `output_key` is not specified, data will be written at the root of the Zarr container.
 The `overwrite` parameter controls whether existing data at the `store_path` is removed.
 When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
 When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.

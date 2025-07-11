@@ -1,10 +1,7 @@
 #include "acquire.zarr.h"
+#include "array.base.hh"
 #include "macros.hh"
 #include "sink.hh"
-#include "v2.array.hh"
-#include "v2.group.hh"
-#include "v3.array.hh"
-#include "v3.group.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
@@ -13,25 +10,19 @@
 #include <bit> // bit_ceil
 #include <filesystem>
 #include <regex>
+#include <stack>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
 namespace {
-bool
-is_s3_acquisition(const struct ZarrStreamSettings_s* settings)
-{
-    return nullptr != settings->s3_settings;
-}
-
-bool
-is_compressed_acquisition(const struct ZarrStreamSettings_s* settings)
-{
-    return nullptr != settings->compression_settings;
-}
-
-zarr::S3Settings
+std::optional<zarr::S3Settings>
 make_s3_settings(const ZarrS3Settings* settings)
 {
+    if (!settings) {
+        return std::nullopt;
+    }
+
     zarr::S3Settings s3_settings{ .endpoint = zarr::trim(settings->endpoint),
                                   .bucket_name =
                                     zarr::trim(settings->bucket_name) };
@@ -40,7 +31,7 @@ make_s3_settings(const ZarrS3Settings* settings)
         s3_settings.region = zarr::trim(settings->region);
     }
 
-    return s3_settings;
+    return { s3_settings };
 }
 
 [[nodiscard]] bool
@@ -96,6 +87,10 @@ validate_filesystem_store_path(std::string_view data_root, std::string& error)
 validate_compression_settings(const ZarrCompressionSettings* settings,
                               std::string& error)
 {
+    if (settings == nullptr) { // no compression, OK
+        return true;
+    }
+
     if (settings->compressor >= ZarrCompressorCount) {
         error = "Invalid compressor: " + std::to_string(settings->compressor);
         return false;
@@ -226,27 +221,26 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
             // segment must not be composed only of periods
             if (std::regex_match(segment, std::regex("^\\.+$"))) {
-                error = "Invalid key segment '" + segment + "'";
+                error = "Key segment contains only periods";
                 return false;
             }
 
             // segment must not start with "__"
             if (segment.substr(0, 2) == "__") {
-                error =
-                  "Key segment '" + segment + "' has reserved prefix '__'";
+                error = "Key segment has reserved prefix '__'";
                 return false;
             }
         }
     } else { // simple name, apply node name rules
         // must not be composed only of periods
         if (std::regex_match(key, std::regex("^\\.+$"))) {
-            error = "Invalid key '" + key + "'";
+            error = "Key contains only periods";
             return false;
         }
 
         // must not start with "__"
         if (key.substr(0, 2) == "__") {
-            error = " Key '" + key + "' has reserved prefix '__'";
+            error = " Key has reserved prefix '__'";
             return false;
         }
     }
@@ -261,18 +255,16 @@ is_valid_zarr_key(const std::string& key, std::string& error)
 
         while (std::getline(stream, segment, '/')) {
             if (!segment.empty() && !std::regex_match(segment, valid_chars)) {
-                error = "Key segment '" + segment +
-                        "' contains invalid characters (should use only a-z, "
-                        "A-Z, 0-9, -, _, .)";
+                error = "Key segment contains invalid characters (should use "
+                        "only a-z, A-Z, 0-9, -, _, .)";
                 return false;
             }
         }
     } else {
         // for simple names
         if (!std::regex_match(key, valid_chars)) {
-            error = "Key '" + key +
-                    "' contains invalid characters (should use only a-z, A-Z, "
-                    "0-9, -, _, .)";
+            error = "Key contains invalid characters (should use only a-z, "
+                    "A-Z, 0-9, -, _, .)";
             return false;
         }
     }
@@ -287,19 +279,15 @@ regularize_key(const char* key)
         return "";
     }
 
-    std::string regularized_key = zarr::trim(key);
+    std::string regularized_key{ key };
+
+    // replace leading and trailing whitespace and/or slashes
+    regularized_key = std::regex_replace(
+      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
 
     // replace multiple consecutive slashes with single slashes
     regularized_key =
-      std::regex_replace(regularized_key, std::regex("\\/+"), "/");
-
-    // remove leading slash
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex("^\\/"), "");
-
-    // remove trailing slash
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex("\\/$"), "");
+      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
 
     return regularized_key;
 }
@@ -344,6 +332,273 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     return true;
 }
 
+[[nodiscard]] bool
+validate_array_settings(const ZarrArraySettings* settings,
+                        ZarrVersion version,
+                        std::string& error)
+{
+    if (settings == nullptr) {
+        error = "Null pointer: settings";
+        return false;
+    }
+
+    std::string key = regularize_key(settings->output_key);
+    if (!key.empty() && !is_valid_zarr_key(key, error)) {
+        error = "Invalid output key: '" + key + "': " + error;
+        return false;
+    }
+
+    if (!validate_compression_settings(settings->compression_settings, error)) {
+        return false;
+    }
+
+    if (settings->dimensions == nullptr) {
+        error = "Null pointer: dimensions";
+        return false;
+    }
+
+    // we must have at least 3 dimensions
+    const size_t ndims = settings->dimension_count;
+    if (ndims < 3) {
+        error = "Invalid number of dimensions: " + std::to_string(ndims) +
+                ". Must be at least 3";
+        return false;
+    }
+
+    // check the final dimension (width), must be space
+    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
+        error = "Last dimension must be of type Space";
+        return false;
+    }
+
+    // check the penultimate dimension (height), must be space
+    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
+        error = "Second to last dimension must be of type Space";
+        return false;
+    }
+
+    // validate the dimensions individually
+    for (size_t i = 0; i < ndims; ++i) {
+        if (!validate_dimension(
+              settings->dimensions + i, version, i == 0, error)) {
+            return false;
+        }
+    }
+
+    // we don't care about downsampling method if not multiscale
+    if (settings->multiscale &&
+        settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+        error = "Invalid downsampling method: " +
+                std::to_string(settings->downsampling_method);
+        return false;
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+is_numeric_string(const std::string& str)
+{
+    if (str.empty()) {
+        return false;
+    }
+
+    for (char c : str) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+is_reserved_metadata_file(const std::string& name)
+{
+    return name == ".zarray" || name == ".zattrs" || name == ".zgroup" ||
+           name == "zarr.json";
+}
+
+[[nodiscard]] bool
+check_array_structure(const ZarrArraySettings* arrays,
+                      size_t array_count,
+                      std::vector<std::string>& needs_metadata_paths,
+                      std::string& error)
+{
+    if (arrays == nullptr) {
+        error = "Null pointer: settings";
+        return false;
+    }
+
+    enum class DatasetNodeType
+    {
+        Directory,
+        Array,
+        MultiscaleArray,
+    };
+
+    struct DatasetNode
+    {
+        std::string name;
+        DatasetNodeType type;
+        std::unordered_map<std::string, DatasetNode> children;
+        DatasetNode* parent = nullptr;
+    };
+
+    auto tree = DatasetNode{
+        .name = "",
+        .type = DatasetNodeType::Directory,
+        .children = {},
+    };
+
+    std::unordered_set<std::string> seen_keys;
+
+    // check that if the root node is not multiscale, there are no other arrays
+    for (auto i = 0; i < array_count; ++i) {
+        auto* array = arrays + i;
+        if (array == nullptr) {
+            error = "Null pointer: array at index " + std::to_string(i);
+            return false;
+        }
+
+        // remove leading/trailing slashes and whitespace
+        std::string key = regularize_key(array->output_key);
+
+        // ensure that we don't have a duplicate key
+        if (seen_keys.contains(key)) {
+            error = "Duplicate output key: '" + key + "'";
+            return false;
+        }
+        seen_keys.insert(key);
+
+        if (key.empty()) {
+            tree.type = array->multiscale ? DatasetNodeType::MultiscaleArray
+                                          : DatasetNodeType::Array;
+        } else {
+            // break down the key into segments
+            std::string parent_path = key;
+            std::stack<std::string> segments;
+
+            // walk up the parent chain
+            while (true) {
+                auto last_slash = parent_path.find_last_of('/');
+                if (last_slash == std::string::npos) {
+                    segments.push(parent_path);
+                    break; // reached root
+                }
+
+                std::string segment = parent_path.substr(last_slash + 1);
+                // check if the segment is reserved
+                if (is_reserved_metadata_file(segment)) {
+                    error = "Reserved metadata file name '" + segment +
+                            "' in path '" + key + "'";
+                    return false;
+                }
+
+                segments.push(parent_path.substr(last_slash + 1));
+                parent_path = parent_path.substr(0, last_slash);
+            }
+
+            // now we have all segments in reverse order, build the tree
+            DatasetNode* current_node = &tree;
+            while (!segments.empty()) {
+                std::string segment = segments.top();
+                segments.pop();
+
+                // check if this segment already exists
+                auto it = current_node->children.find(segment);
+                if (it == current_node->children.end()) {
+                    // Create a new node for this segment
+                    DatasetNode new_node{
+                        .name = segment,
+                        .parent = current_node,
+                    };
+
+                    if (segments.empty()) { // Last segment
+                        new_node.type = array->multiscale
+                                          ? DatasetNodeType::MultiscaleArray
+                                          : DatasetNodeType::Array;
+                    } else {
+                        new_node.type = DatasetNodeType::Directory;
+                    }
+                    current_node->children.emplace(segment,
+                                                   std::move(new_node));
+                }
+
+                // Move to the child node
+                current_node = &current_node->children[segment];
+            }
+        }
+    }
+
+    // now validate the structure
+    // enforce two rules:
+    // 1. if a parent is not multiscale, it cannot have any children
+    // 2. if a parent is multiscale, it cannot have any children with numeric
+    //    names
+    // we also construct the paths where we need to write group-level metadata
+    needs_metadata_paths.clear();
+
+    std::stack<const DatasetNode*> nodes_to_visit;
+    nodes_to_visit.push(&tree);
+
+    while (!nodes_to_visit.empty()) {
+        const DatasetNode* current_node = nodes_to_visit.top();
+        nodes_to_visit.pop();
+
+        bool is_multiscale =
+          (current_node->type == DatasetNodeType::MultiscaleArray);
+        bool is_directory = (current_node->type == DatasetNodeType::Directory);
+
+        // directories and multiscale arrays
+        // can have children
+        bool can_have_children = is_multiscale || is_directory;
+
+        // if the parent is not multiscale, it must not have any children
+        if (!can_have_children && !current_node->children.empty()) {
+            error = "Directory node '" + current_node->name +
+                    "' cannot have children";
+            return false;
+        }
+
+        // a pure directory node needs to have a metadata file
+        if (is_directory) {
+            std::stack<std::string> path_segments;
+            const DatasetNode* node = current_node;
+            while (node != nullptr && !node->name.empty()) {
+                path_segments.push(node->name);
+                node = node->parent;
+            }
+
+            std::string path;
+            while (!path_segments.empty()) {
+                path += path_segments.top();
+                path_segments.pop();
+                if (!path_segments.empty()) {
+                    path += "/";
+                }
+            }
+
+            // add the path to the group metadata paths
+            needs_metadata_paths.push_back(path);
+        }
+
+        for (const auto& [child_name, child_node] : current_node->children) {
+            // If the parent is multiscale, it cannot have numeric children
+            if (is_multiscale && is_numeric_string(child_name)) {
+                error = "Multiscale parent '" + child_name +
+                        "' cannot have numeric children";
+                return false;
+            }
+
+            // add the child to the stack for further validation
+            nodes_to_visit.push(&child_node);
+        }
+    }
+
+    return true;
+}
+
 std::string
 dimension_type_to_string(ZarrDimensionType type)
 {
@@ -360,88 +615,12 @@ dimension_type_to_string(ZarrDimensionType type)
             return "(unknown)";
     }
 }
-
-template<typename T>
-[[nodiscard]] ByteVector
-scale_image(ConstByteSpan src, size_t& width, size_t& height)
-{
-    const auto bytes_of_src = src.size();
-    const auto bytes_of_frame = width * height * sizeof(T);
-
-    EXPECT(bytes_of_src >= bytes_of_frame,
-           "Expecting at least ",
-           bytes_of_frame,
-           " bytes, got ",
-           bytes_of_src);
-
-    const int downscale = 2;
-    constexpr auto bytes_of_type = static_cast<double>(sizeof(T));
-    const double factor = 0.25;
-
-    const auto w_pad = static_cast<double>(width + (width % downscale));
-    const auto h_pad = static_cast<double>(height + (height % downscale));
-
-    const auto size_downscaled =
-      static_cast<uint32_t>(w_pad * h_pad * factor * bytes_of_type);
-
-    ByteVector dst(size_downscaled, 0);
-    auto* dst_as_T = reinterpret_cast<T*>(dst.data());
-    auto* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    size_t dst_idx = 0;
-    for (auto row = 0; row < height; row += downscale) {
-        const bool pad_height = (row == height - 1 && height != h_pad);
-
-        for (auto col = 0; col < width; col += downscale) {
-            size_t src_idx = row * width + col;
-            const bool pad_width = (col == width - 1 && width != w_pad);
-
-            auto here = static_cast<double>(src_as_T[src_idx]);
-            auto right = static_cast<double>(
-              src_as_T[src_idx + (1 - static_cast<int>(pad_width))]);
-            auto down = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height))]);
-            auto diag = static_cast<double>(
-              src_as_T[src_idx + width * (1 - static_cast<int>(pad_height)) +
-                       (1 - static_cast<int>(pad_width))]);
-
-            dst_as_T[dst_idx++] =
-              static_cast<T>(factor * (here + right + down + diag));
-        }
-    }
-
-    width = static_cast<size_t>(w_pad) / 2;
-    height = static_cast<size_t>(h_pad) / 2;
-
-    return dst;
-}
-
-template<typename T>
-void
-average_two_frames(ByteSpan& dst, ConstByteSpan src)
-{
-    const auto bytes_of_dst = dst.size();
-    const auto bytes_of_src = src.size();
-    EXPECT(bytes_of_dst == bytes_of_src,
-           "Expecting %zu bytes in destination, got %zu",
-           bytes_of_src,
-           bytes_of_dst);
-
-    T* dst_as_T = reinterpret_cast<T*>(dst.data());
-    const T* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    const auto num_pixels = bytes_of_src / sizeof(T);
-    for (auto i = 0; i < num_pixels; ++i) {
-        dst_as_T[i] = static_cast<T>(0.5 * (dst_as_T[i] + src_as_T[i]));
-    }
-}
 } // namespace
 
 /* ZarrStream_s implementation */
 
 ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
   : error_()
-  , frame_buffer_offset_(0)
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -455,38 +634,58 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 }
 
 size_t
-ZarrStream::append(const void* data_, size_t nbytes)
+ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
 {
     EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
 
-    if (0 == nbytes) {
+    // if the key is null and we have only one output array, use that
+    std::string key;
+    if (key_ == nullptr && output_arrays_.size() == 1) {
+        key = output_arrays_.begin()->first;
+    } else {
+        key = regularize_key(key_);
+    }
+
+    auto it = output_arrays_.find(key);
+    EXPECT(it != output_arrays_.end(),
+           "Cannot append data: array at '",
+           key,
+           "' not found");
+    EXPECT(data_ != nullptr, "Cannot append data: data pointer is null");
+
+    if (nbytes == 0) {
         return 0;
     }
 
+    auto& output = it->second;
+    auto& frame_buffer = output.frame_buffer;
+    auto& frame_buffer_offset = output.frame_buffer_offset;
+
     auto* data = static_cast<const uint8_t*>(data_);
 
-    const size_t bytes_of_frame = frame_buffer_.size();
+    const size_t bytes_of_frame = frame_buffer.size();
     size_t bytes_written = 0; // bytes written out of the input data
 
     while (bytes_written < nbytes) {
         const size_t bytes_remaining = nbytes - bytes_written;
 
-        if (frame_buffer_offset_ > 0) { // add to / finish a partial frame
+        if (frame_buffer_offset > 0) { // add to / finish a partial frame
             const size_t bytes_to_copy =
-              std::min(bytes_of_frame - frame_buffer_offset_, bytes_remaining);
+              std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer_.assign_at(frame_buffer_offset_,
-                                    { data + bytes_written, bytes_to_copy });
-            frame_buffer_offset_ += bytes_to_copy;
+            frame_buffer.assign_at(frame_buffer_offset,
+                                   { data + bytes_written, bytes_to_copy });
+            frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
             // ready to enqueue the frame buffer
-            if (frame_buffer_offset_ == bytes_of_frame) {
+            if (frame_buffer_offset == bytes_of_frame) {
                 std::unique_lock lock(frame_queue_mutex_);
-                while (!frame_queue_->push(frame_buffer_) && process_frames_) {
+                while (!frame_queue_->push(frame_buffer, key) &&
+                       process_frames_) {
                     frame_queue_not_full_cv_.wait(lock);
                 }
-                frame_buffer_.resize(bytes_of_frame);
+                frame_buffer.resize(bytes_of_frame);
 
                 if (process_frames_) {
                     frame_queue_not_empty_cv_.notify_one();
@@ -495,18 +694,18 @@ ZarrStream::append(const void* data_, size_t nbytes)
                     break;
                 }
                 data += bytes_to_copy;
-                frame_buffer_offset_ = 0;
+                frame_buffer_offset = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
-            frame_buffer_.assign_at(0, { data, bytes_remaining });
-            frame_buffer_offset_ = bytes_remaining;
+            frame_buffer.assign_at(0, { data, bytes_remaining });
+            frame_buffer_offset = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
             zarr::LockedBuffer frame;
             frame.assign({ data, bytes_of_frame });
 
             std::unique_lock lock(frame_queue_mutex_);
-            while (!frame_queue_->push(frame) && process_frames_) {
+            while (!frame_queue_->push(frame, key) && process_frames_) {
                 frame_queue_not_full_cv_.wait(lock);
             }
 
@@ -611,7 +810,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (is_s3_acquisition(settings)) {
+    if (settings->s3_settings != nullptr) {
         if (!validate_s3_settings(settings->s3_settings, error_)) {
             return false;
         }
@@ -619,53 +818,24 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (settings->data_type >= ZarrDataTypeCount) {
-        error_ = "Invalid data type: " + std::to_string(settings->data_type);
+    if (settings->array_count == 0) {
+        error_ = "No arrays configured in the settings";
         return false;
     }
 
-    if (is_compressed_acquisition(settings) &&
-        !validate_compression_settings(settings->compression_settings,
-                                       error_)) {
-        return false;
-    }
-
-    if (settings->dimensions == nullptr) {
-        error_ = "Null pointer: dimensions";
-        return false;
-    }
-
-    // we must have at least 3 dimensions
-    const size_t ndims = settings->dimension_count;
-    if (ndims < 3) {
-        error_ = "Invalid number of dimensions: " + std::to_string(ndims) +
-                 ". Must be at least 3";
-        return false;
-    }
-
-    // check the final dimension (width), must be space
-    if (settings->dimensions[ndims - 1].type != ZarrDimensionType_Space) {
-        error_ = "Last dimension must be of type Space";
-        return false;
-    }
-
-    // check the penultimate dimension (height), must be space
-    if (settings->dimensions[ndims - 2].type != ZarrDimensionType_Space) {
-        error_ = "Second to last dimension must be of type Space";
-        return false;
-    }
-
-    // validate the dimensions individually
-    for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              settings->dimensions + i, version, i == 0, error_)) {
+    // validate the arrays individually
+    for (auto i = 0; i < settings->array_count; ++i) {
+        const auto& array_settings = settings->arrays[i];
+        if (!validate_array_settings(&array_settings, version, error_)) {
             return false;
         }
     }
 
-    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
-        error_ = "Invalid downsampling method: " +
-                 std::to_string(settings->downsampling_method);
+    // validate the arrays as a collection
+    if (!check_array_structure(settings->arrays,
+                               settings->array_count,
+                               intermediate_group_paths_,
+                               error_)) {
         return false;
     }
 
@@ -673,8 +843,14 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::configure_array_(const ZarrArraySettings* settings)
 {
+    std::string key = regularize_key(settings->output_key);
+    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
+        set_error_("Invalid output key: '" + key + "'");
+        return false;
+    }
+
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
@@ -685,68 +861,39 @@ ZarrStream_s::configure_group_(const struct ZarrStreamSettings_s* settings)
     auto dims = make_array_dimensions(
       settings->dimensions, settings->dimension_count, settings->data_type);
 
-    auto config =
-      std::make_shared<zarr::GroupConfig>(store_path_,
-                                          output_key_,
-                                          bucket_name,
-                                          compression_settings,
-                                          dims,
-                                          settings->data_type,
-                                          settings->multiscale,
-                                          settings->downsampling_method);
-
-    try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2Group>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3Group>(
-              config, thread_pool_, s3_connection_pool_);
-        }
-    } catch (const std::exception& exc) {
-        set_error_(exc.what());
-        return false;
+    std::optional<ZarrDownsamplingMethod> downsampling_method;
+    if (settings->multiscale) {
+        downsampling_method = settings->downsampling_method;
     }
-
-    return true;
-}
-
-bool
-ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
-{
-    std::optional<std::string> bucket_name;
-    if (s3_settings_) {
-        bucket_name = s3_settings_->bucket_name;
-    }
-    auto compression_settings =
-      make_compression_params(settings->compression_settings);
-
-    auto dims = make_array_dimensions(
-      settings->dimensions, settings->dimension_count, settings->data_type);
-
-    std::string parent_group_key =
-      output_key_.empty() ? "" : zarr::get_parent_paths({ output_key_ })[0];
-
     auto config = std::make_shared<zarr::ArrayConfig>(store_path_,
-                                                      output_key_,
+                                                      key,
                                                       bucket_name,
                                                       compression_settings,
                                                       dims,
                                                       settings->data_type,
+                                                      downsampling_method,
                                                       0);
 
+    ZarrOutputArray output_node{ .output_key = key, .frame_buffer_offset = 0 };
     try {
-        if (version_ == ZarrVersion_2) {
-            output_node_ = std::make_unique<zarr::V2Array>(
-              config, thread_pool_, s3_connection_pool_);
-        } else {
-            output_node_ = std::make_unique<zarr::V3Array>(
-              config, thread_pool_, s3_connection_pool_);
-        }
+        output_node.array =
+          zarr::make_array(config, thread_pool_, s3_connection_pool_, version_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
+    }
+
+    if (output_node.array == nullptr) {
+        set_error_("Failed to create output node: " + error_);
         return false;
     }
+
+    // initialize frame buffer
+    const auto frame_size_bytes = dims->width_dim().array_size_px *
+                                  dims->height_dim().array_size_px *
+                                  zarr::bytes_of_type(settings->data_type);
+
+    output_node.frame_buffer.resize_and_fill(frame_size_bytes, 0);
+    output_arrays_.emplace(key, std::move(output_node));
 
     return true;
 }
@@ -754,27 +901,11 @@ ZarrStream_s::configure_array_(const struct ZarrStreamSettings_s* settings)
 bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
-    std::string key = regularize_key(settings->output_key);
-    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
-        return false;
-    }
-    output_key_ = key;
-
     version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
     std::optional<std::string> bucket_name;
-    if (is_s3_acquisition(settings)) {
-        s3_settings_ = make_s3_settings(settings->s3_settings);
-    }
-
-    // initialize frame buffer
-    frame_size_bytes_ =
-      settings->dimensions[settings->dimension_count - 1].array_size_px *
-      settings->dimensions[settings->dimension_count - 2].array_size_px *
-      zarr::bytes_of_type(settings->data_type);
-
-    frame_buffer_.resize(frame_size_bytes_);
+    s3_settings_ = make_s3_settings(settings->s3_settings);
 
     // create the data store
     if (!create_store_(settings->overwrite)) {
@@ -782,16 +913,11 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (output_key_.empty() || settings->multiscale) {
-        // create a group
-        if (!configure_group_(settings)) {
-            set_error_("Failed to configure group: " + error_);
-            return false;
-        }
-    } else {
-        // create an array
-        if (!configure_array_(settings)) {
-            set_error_("Failed to configure array: " + error_);
+    for (auto i = 0; i < settings->array_count; ++i) {
+        const auto& array_settings = settings->arrays[i];
+        if (!configure_array_(&array_settings)) {
+            set_error_("Failed to configure array '" +
+                       std::string(array_settings.output_key) + "': " + error_);
             return false;
         }
     }
@@ -872,43 +998,46 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    if (output_key_.empty()) {
-        return true; // no need to write metadata
-    }
-
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
     }
 
-    std::vector<std::string> paths = zarr::get_parent_paths({ output_key_ });
-    while (!paths.back().empty()) {
-        std::string parent_path = paths.back();
-        paths.push_back(
-          zarr::get_parent_paths({ parent_path })[0]); // get parent path
+    std::string metadata_key;
+    nlohmann::json group_metadata;
+    if (version_ == ZarrVersion_2) {
+        metadata_key = ".zgroup";
+        group_metadata = { { "zarr_format", 2 } };
+    } else {
+        metadata_key = "zarr.json";
+        group_metadata = {
+            { "zarr_format", 3 },
+            { "consolidated_metadata", nullptr },
+            { "node_type", "group" },
+            { "attributes", nlohmann::json::object() },
+        };
     }
+    const std::string metadata_str = group_metadata.dump(4);
+    ConstByteSpan metadata_span(
+      reinterpret_cast<const uint8_t*>(metadata_str.data()),
+      metadata_str.size());
 
-    for (const auto& parent_group_key : paths) {
-        auto group_config =
-          std::make_shared<zarr::GroupConfig>(store_path_,
-                                              parent_group_key,
-                                              bucket_name,
-                                              std::nullopt,
-                                              nullptr,
-                                              ZarrDataTypeCount,
-                                              false,
-                                              ZarrDownsamplingMethodCount);
+    for (const auto& parent_group_key : intermediate_group_paths_) {
+        const std::string sink_path =
+          store_path_ + "/" +
+          (parent_group_key.empty() ? "" : parent_group_key + "/") +
+          metadata_key;
 
-        std::unique_ptr<zarr::Group> group_node;
-        if (version_ == ZarrVersion_2) {
-            group_node = std::make_unique<zarr::V2Group>(
-              group_config, thread_pool_, s3_connection_pool_);
+        std::unique_ptr<zarr::Sink> metadata_sink;
+        if (is_s3_acquisition_()) {
+            metadata_sink = zarr::make_s3_sink(
+              bucket_name.value(), sink_path, s3_connection_pool_);
         } else {
-            group_node = std::make_unique<zarr::V3Group>(
-              group_config, thread_pool_, s3_connection_pool_);
+            metadata_sink = zarr::make_file_sink(sink_path);
         }
 
-        if (!zarr::finalize_group(std::move(group_node))) {
+        if (!metadata_sink->write(0, metadata_span) ||
+            !zarr::finalize_sink(std::move(metadata_sink))) {
             set_error_("Failed to write intermediate metadata for group '" +
                        parent_group_key + "'");
             return false;
@@ -930,14 +1059,20 @@ ZarrStream_s::init_frame_queue_()
         return false;
     }
 
+    size_t frame_size_bytes = 0;
+    for (auto& [key, output] : output_arrays_) {
+        frame_size_bytes =
+          std::max(frame_size_bytes, output.frame_buffer.size());
+    }
+
     // cap the frame buffer at 1 GiB, or 10 frames, whichever is larger
     const auto buffer_size_bytes = 1ULL << 30;
     const auto frame_count =
-      std::max(10ULL, buffer_size_bytes / frame_size_bytes_);
+      std::max(10ULL, buffer_size_bytes / frame_size_bytes);
 
     try {
         frame_queue_ =
-          std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes_);
+          std::make_unique<zarr::FrameQueue>(frame_count, frame_size_bytes);
 
         auto job = [this](std::string& err) {
             try {
@@ -970,6 +1105,8 @@ ZarrStream_s::process_frame_queue_()
         return;
     }
 
+    std::string output_key;
+
     zarr::LockedBuffer frame;
     while (process_frames_ || !frame_queue_->empty()) {
         {
@@ -992,15 +1129,27 @@ ZarrStream_s::process_frame_queue_()
             }
         }
 
-        if (!frame_queue_->pop(frame)) {
+        if (!frame_queue_->pop(frame, output_key)) {
             continue;
         }
 
-        if (output_node_->write_frame(frame) != frame_size_bytes_) {
-            set_error_("Failed to write frame to writer");
+        if (auto it = output_arrays_.find(output_key);
+            it == output_arrays_.end()) {
+            // If we have gotten here, something has gone seriously wrong
+            set_error_("Output node not found for key: '" + output_key + "'");
             std::unique_lock lock(frame_queue_mutex_);
             frame_queue_finished_cv_.notify_all();
             return;
+        } else {
+            auto& output_node = it->second;
+
+            if (output_node.array->write_frame(frame) != frame.size()) {
+                set_error_("Failed to write frame to writer for key: " +
+                           output_key);
+                std::unique_lock lock(frame_queue_mutex_);
+                frame_queue_finished_cv_.notify_all();
+                return;
+            }
         }
 
         {
@@ -1060,9 +1209,14 @@ finalize_stream(struct ZarrStream_s* stream)
 
     stream->finalize_frame_queue_();
 
-    if (!zarr::finalize_node(std::move(stream->output_node_))) {
-        LOG_ERROR("Error finalizing Zarr stream. Failed to write output node");
-        return false;
+    for (auto& [key, output] : stream->output_arrays_) {
+        if (!zarr::finalize_node(std::move(output.array))) {
+            LOG_ERROR(
+              "Error finalizing Zarr stream. Failed to finalize array '",
+              key,
+              "'");
+            return false;
+        }
     }
 
     if (!stream->write_intermediate_metadata_()) {

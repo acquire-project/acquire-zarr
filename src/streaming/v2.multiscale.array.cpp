@@ -1,13 +1,12 @@
 #include "macros.hh"
-#include "v2.group.hh"
+#include "v2.multiscale.array.hh"
 #include "zarr.common.hh"
 
-zarr::V2Group::V2Group(std::shared_ptr<GroupConfig> config,
-                       std::shared_ptr<ThreadPool> thread_pool,
-                       std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Group(config,
-          thread_pool,
-          s3_connection_pool)
+zarr::V2MultiscaleArray::V2MultiscaleArray(
+  std::shared_ptr<ArrayConfig> config,
+  std::shared_ptr<ThreadPool> thread_pool,
+  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+  : MultiscaleArray(config, thread_pool, s3_connection_pool)
 {
     // dimensions may be null in the case of intermediate groups, e.g., the
     // A in A/1
@@ -17,13 +16,13 @@ zarr::V2Group::V2Group(std::shared_ptr<GroupConfig> config,
 }
 
 std::vector<std::string>
-zarr::V2Group::metadata_keys_() const
+zarr::V2MultiscaleArray::metadata_keys_() const
 {
     return { ".zattrs", ".zgroup" };
 }
 
 bool
-zarr::V2Group::make_metadata_()
+zarr::V2MultiscaleArray::make_metadata_()
 {
     metadata_strings_.clear();
 
@@ -43,7 +42,7 @@ zarr::V2Group::make_metadata_()
 }
 
 bool
-zarr::V2Group::create_arrays_()
+zarr::V2MultiscaleArray::create_arrays_()
 {
     arrays_.clear();
 
@@ -65,7 +64,7 @@ zarr::V2Group::create_arrays_()
 }
 
 nlohmann::json
-zarr::V2Group::get_ome_metadata_() const
+zarr::V2MultiscaleArray::get_ome_metadata_() const
 {
     auto multiscales = make_multiscales_metadata_();
     multiscales[0]["version"] = "0.4";

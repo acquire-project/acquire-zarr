@@ -16,10 +16,10 @@ int main() {
     };
 
     // Set up dimensions (t, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 3);
+    ZarrArraySettings_create_dimension_array(&settings.array, 3);
 
     // Time dimension - unlimited size (0)
-    settings.dimensions[0] = (ZarrDimensionProperties){
+    settings.array.dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0,
@@ -28,7 +28,7 @@ int main() {
     };
 
     // Y dimension - 48 pixels
-    settings.dimensions[1] = (ZarrDimensionProperties){
+    settings.array.dimensions[1] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -37,7 +37,7 @@ int main() {
     };
 
     // X dimension - 64 pixels
-    settings.dimensions[2] = (ZarrDimensionProperties){
+    settings.array.dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -48,7 +48,7 @@ int main() {
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
     // Free Dimension array
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(&settings.array);
 
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");

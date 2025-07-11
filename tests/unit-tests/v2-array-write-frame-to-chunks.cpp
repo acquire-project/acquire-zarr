@@ -47,6 +47,7 @@ main()
           std::nullopt,
           std::make_shared<ArrayDimensions>(std::move(dims), dtype),
           dtype,
+          std::nullopt,
           0);
 
         zarr::V2Array writer(config, thread_pool, nullptr);

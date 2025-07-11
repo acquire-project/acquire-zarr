@@ -16,8 +16,8 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(LockedBuffer& frame);
-    bool pop(LockedBuffer& frame);
+    bool push(LockedBuffer& frame, const std::string& key);
+    bool pop(LockedBuffer& frame, std::string& key);
 
     size_t size() const;
     size_t bytes_used() const;
@@ -28,6 +28,7 @@ class FrameQueue
   private:
     struct Frame
     {
+        std::string key;
         LockedBuffer data;
         std::atomic<bool> ready{ false };
     };

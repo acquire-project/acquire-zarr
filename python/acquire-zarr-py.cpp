@@ -236,6 +236,57 @@ class PyZarrDimensionProperties
 
 PYBIND11_MAKE_OPAQUE(std::vector<PyZarrDimensionProperties>);
 
+class PyZarrArraySettings
+{
+  public:
+    PyZarrArraySettings() = default;
+    ~PyZarrArraySettings() = default;
+
+    const std::string& output_key() const { return output_key_; }
+    void set_output_key(const std::string& key) { output_key_ = key; }
+
+    const std::optional<PyZarrCompressionSettings>& compression() const
+    {
+        return compression_settings_;
+    }
+    void set_compression(
+      const std::optional<PyZarrCompressionSettings>& settings)
+    {
+        compression_settings_ = settings;
+    }
+
+    const std::vector<PyZarrDimensionProperties>& dimensions() const
+    {
+        return dims_;
+    }
+    std::vector<PyZarrDimensionProperties>& dimensions() { return dims_; }
+    void set_dimensions(const std::vector<PyZarrDimensionProperties>& dims)
+    {
+        dims_ = dims;
+    }
+
+    ZarrDataType data_type() const { return data_type_; }
+    void set_data_type(ZarrDataType type) { data_type_ = type; }
+
+    std::optional<ZarrDownsamplingMethod> downsampling_method() const
+    {
+        return downsampling_method_;
+    }
+    void set_downsampling_method(std::optional<ZarrDownsamplingMethod> method)
+    {
+        downsampling_method_ = method;
+    }
+
+  private:
+    std::string output_key_;
+    std::optional<PyZarrCompressionSettings> compression_settings_;
+    std::vector<PyZarrDimensionProperties> dims_;
+    ZarrDataType data_type_{ ZarrDataType_uint8 };
+    std::optional<ZarrDownsamplingMethod> downsampling_method_{ std::nullopt };
+};
+
+PYBIND11_MAKE_OPAQUE(std::vector<PyZarrArraySettings>);
+
 class PyZarrStreamSettings
 {
   public:
@@ -251,22 +302,6 @@ class PyZarrStreamSettings
         s3_settings_ = settings;
     }
 
-    const std::optional<PyZarrCompressionSettings>& compression() const
-    {
-        return compression_settings_;
-    }
-    void set_compression(
-      const std::optional<PyZarrCompressionSettings>& settings)
-    {
-        compression_settings_ = settings;
-    }
-
-    bool multiscale() const { return multiscale_; }
-    void set_multiscale(bool multiscale) { multiscale_ = multiscale; }
-
-    ZarrDataType data_type() const { return data_type_; }
-    void set_data_type(ZarrDataType type) { data_type_ = type; }
-
     ZarrVersion version() const { return version_; }
     void set_version(ZarrVersion version) { version_ = version; }
 
@@ -276,48 +311,23 @@ class PyZarrStreamSettings
         max_threads_ = max_threads;
     }
 
-    ZarrDownsamplingMethod downsampling_method() const
-    {
-        return downsampling_method_;
-    }
-    void set_downsampling_method(ZarrDownsamplingMethod method)
-    {
-        downsampling_method_ = method;
-    }
-
-    const std::vector<PyZarrDimensionProperties>& dimensions() const
-    {
-        return dimensions_;
-    }
-    std::vector<PyZarrDimensionProperties>& dimensions() { return dimensions_; }
-    void set_dimensions(
-      const std::vector<PyZarrDimensionProperties>& dimensions)
-    {
-        dimensions_ = dimensions;
-    }
-
-    const std::string& output_key() const { return output_key_; }
-    void set_output_key(const std::string& key) { output_key_ = key; }
-
     bool overwrite() const { return overwrite_; }
     void set_overwrite(bool overwrite) { overwrite_ = overwrite; }
+
+    const std::vector<PyZarrArraySettings>& arrays() const { return arrays_; }
+    std::vector<PyZarrArraySettings>& arrays() { return arrays_; }
+    void set_arrays(const std::vector<PyZarrArraySettings>& arrays)
+    {
+        arrays_ = arrays;
+    }
 
   private:
     std::string store_path_;
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
-    std::optional<PyZarrCompressionSettings> compression_settings_{
-        std::nullopt
-    };
-    bool multiscale_{ false };
-    ZarrDataType data_type_{ ZarrDataType_uint8 };
     ZarrVersion version_{ ZarrVersion_2 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
-    std::vector<PyZarrDimensionProperties> dimensions_;
-    ZarrDownsamplingMethod downsampling_method_{
-        ZarrDownsamplingMethod_Decimate
-    };
-    std::string output_key_;
     bool overwrite_{ false };
+    std::vector<PyZarrArraySettings> arrays_;
 };
 
 class PyZarrStream
@@ -328,7 +338,7 @@ class PyZarrStream
         open_(settings);
     }
 
-    void append(py::array image_data)
+    void append(py::array image_data, std::optional<std::string> key)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
@@ -338,7 +348,7 @@ class PyZarrStream
 
         // if the array is already contiguous, we can just write it out
         if (image_data.flags() & py::array::c_style) {
-            write_contiguous_data(image_data);
+            write_contiguous_data(image_data, key);
             return;
         }
 
@@ -347,29 +357,30 @@ class PyZarrStream
             py::module np = py::module::import("numpy");
             py::array contiguous_data =
               np.attr("ascontiguousarray")(image_data);
-            write_contiguous_data(contiguous_data);
+            write_contiguous_data(contiguous_data, key);
             return;
         }
 
         // iterate through frames
-        iterate_and_append(image_data, 0, std::vector<py::ssize_t>());
+        iterate_and_append(image_data, 0, std::vector<py::ssize_t>(), key);
     }
 
     // iterate over the indices of the array until we get down to 2 dimensions,
     // then write the frame
     void iterate_and_append(const py::array& array,
                             size_t dim,
-                            std::vector<py::ssize_t> indices)
+                            std::vector<py::ssize_t> indices,
+                            std::optional<std::string> key)
     {
         if (dim == array.ndim() - 2) {
             // we are down to a 2D frame - we can write it
             py::array frame = extract_frame(array, indices);
-            write_contiguous_data(frame);
+            write_contiguous_data(frame, key);
         } else {
             // construct indices for this dimension
             for (py::ssize_t i = 0; i < array.shape()[dim]; ++i) {
                 indices.push_back(i);
-                iterate_and_append(array, dim + 1, indices);
+                iterate_and_append(array, dim + 1, indices, key);
                 indices.pop_back();
             }
         }
@@ -400,7 +411,7 @@ class PyZarrStream
         return frame.cast<py::array>();
     }
 
-    void write_contiguous_data(py::array frame)
+    void write_contiguous_data(py::array frame, std::optional<std::string> key)
     {
         // double check the frame is C-contiguous
         py::array contiguous_data;
@@ -416,9 +427,10 @@ class PyZarrStream
 
         py::gil_scoped_release release;
 
+        const char* key_str = key.has_value() ? key->c_str() : nullptr;
         size_t bytes_out, bytes_in = buf.itemsize * buf.size;
         auto status =
-          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out);
+          ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, key_str);
 
         py::gil_scoped_acquire acquire;
 
@@ -482,15 +494,18 @@ class PyZarrStream
   private:
     using ZarrStreamPtr =
       std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
+    struct ArrayLifetimeProps
+    {
+        std::string output_key;
+        ZarrCompressionSettings compression;
+        std::vector<ZarrDimensionProperties> dimension_props;
+        std::vector<std::string> dimension_names;
+        std::vector<std::string> dimension_units;
+    };
 
     ZarrStreamPtr stream_;
 
     std::string store_path_;
-    std::string output_key_;
-
-    std::vector<std::string> dimension_names_;
-    std::vector<std::string> dimension_units_;
-
     std::string s3_endpoint_;
     std::string s3_bucket_name_;
     std::string s3_region_;
@@ -503,28 +518,27 @@ class PyZarrStream
             return;
         }
 
+        size_t n_arrays = settings.arrays().size();
+        if (n_arrays == 0) {
+            PyErr_SetString(PyExc_ValueError,
+                            "At least one array must be specified.");
+            throw py::error_already_set();
+        }
+
         ZarrS3Settings s3_settings;
-        ZarrCompressionSettings compression_settings;
 
         ZarrStreamSettings stream_settings{
             .store_path = nullptr,
             .s3_settings = nullptr,
-            .compression_settings = nullptr,
-            .dimensions = nullptr,
-            .dimension_count = 0,
-            .multiscale = settings.multiscale(),
-            .data_type = settings.data_type(),
             .version = settings.version(),
             .max_threads = settings.max_threads(),
-            .downsampling_method = settings.downsampling_method(),
             .overwrite = settings.overwrite(),
+            .arrays = new ZarrArraySettings[n_arrays],
+            .array_count = n_arrays,
         };
 
         store_path_ = settings.store_path();
         stream_settings.store_path = store_path_.c_str();
-
-        output_key_ = settings.output_key();
-        stream_settings.output_key = output_key_.c_str();
 
         if (settings.s3().has_value()) {
             const auto& s3 = settings.s3().value();
@@ -544,39 +558,65 @@ class PyZarrStream
             stream_settings.s3_settings = &s3_settings;
         }
 
-        if (settings.compression().has_value()) {
-            compression_settings.compressor =
-              settings.compression()->compressor();
-            compression_settings.codec = settings.compression()->codec();
-            compression_settings.level = settings.compression()->level();
-            compression_settings.shuffle = settings.compression()->shuffle();
-            stream_settings.compression_settings = &compression_settings;
+        std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
+        for (auto i = 0; i < n_arrays; ++i) {
+            const auto& array_settings = settings.arrays()[i];
+            auto& array_lt_props = array_props_array[i];
+            auto& stream_array = stream_settings.arrays[i];
+
+            array_lt_props.output_key = array_settings.output_key();
+            stream_array.output_key = array_lt_props.output_key.c_str();
+
+            stream_array.compression_settings = nullptr;
+            if (array_settings.compression().has_value()) {
+                const auto compression = *array_settings.compression();
+
+                // construct compression settings to live long enough
+                array_lt_props.compression = {
+                    .compressor = compression.compressor(),
+                    .codec = compression.codec(),
+                    .level = compression.level(),
+                    .shuffle = compression.shuffle(),
+                };
+
+                stream_array.compression_settings = &array_lt_props.compression;
+            }
+
+            const auto& dims = array_settings.dimensions();
+            array_lt_props.dimension_names.resize(dims.size());
+            auto& dim_names = array_lt_props.dimension_names;
+            array_lt_props.dimension_units.resize(dims.size());
+            auto& dim_units = array_lt_props.dimension_units;
+
+            auto& dimension_props = array_lt_props.dimension_props;
+            for (auto j = 0; j < dims.size(); ++j) {
+                const auto& dim = dims[j];
+                dim_names[j] = dim.name();
+                dim_units[j] = dim.unit().has_value() ? *dim.unit() : "";
+
+                ZarrDimensionProperties properties{
+                    .name = dim_names[j].c_str(),
+                    .type = dim.type(),
+                    .array_size_px = dim.array_size_px(),
+                    .chunk_size_px = dim.chunk_size_px(),
+                    .shard_size_chunks = dim.shard_size_chunks(),
+                    .unit = dim_units[j].c_str(),
+                    .scale = dim.scale(),
+                };
+                dimension_props.push_back(properties);
+            }
+
+            stream_array.dimensions = dimension_props.data();
+            stream_array.dimension_count = dims.size();
+
+            stream_array.data_type = array_settings.data_type();
+
+            auto downsampling_method = array_settings.downsampling_method();
+            stream_array.multiscale = downsampling_method.has_value();
+            if (stream_array.multiscale) {
+                stream_array.downsampling_method = *downsampling_method;
+            }
         }
-
-        const auto& dims = settings.dimensions();
-        dimension_names_.resize(dims.size());
-        dimension_units_.resize(dims.size());
-
-        std::vector<ZarrDimensionProperties> dimension_props;
-        for (auto i = 0; i < dims.size(); ++i) {
-            const auto& dim = dims[i];
-            dimension_names_[i] = dim.name();
-            dimension_units_[i] = dim.unit().has_value() ? *dim.unit() : "";
-
-            ZarrDimensionProperties properties{
-                .name = dimension_names_[i].c_str(),
-                .type = dim.type(),
-                .array_size_px = dim.array_size_px(),
-                .chunk_size_px = dim.chunk_size_px(),
-                .shard_size_chunks = dim.shard_size_chunks(),
-                .unit = dimension_units_[i].c_str(),
-                .scale = dim.scale(),
-            };
-            dimension_props.push_back(properties);
-        }
-
-        stream_settings.dimensions = dimension_props.data();
-        stream_settings.dimension_count = dims.size();
 
         stream_ =
           ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
@@ -606,6 +646,7 @@ PYBIND11_MODULE(acquire_zarr, m)
 
     py::bind_vector<std::vector<PyZarrDimensionProperties>>(m,
                                                             "VectorDimension");
+    py::bind_vector<std::vector<PyZarrArraySettings>>(m, "VectorArraySettings");
 
     py::enum_<ZarrVersion>(m, "ZarrVersion")
       .value("V2", ZarrVersion_2)
@@ -797,31 +838,24 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("shard_size_chunks",
                     &PyZarrDimensionProperties::shard_size_chunks,
                     &PyZarrDimensionProperties::set_shard_size_chunks);
-    py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
+
+    py::class_<PyZarrArraySettings>(m, "ArraySettings", py::dynamic_attr())
       .def(
-        py::init([](std::optional<std::string> store_path,
-                    std::optional<PyZarrS3Settings> s3,
+        py::init([](std::optional<std::string> output_key,
                     std::optional<PyZarrCompressionSettings> compression,
                     std::optional<py::list> dimensions,
-                    std::optional<bool> multiscale,
                     std::optional<ZarrDataType> data_type,
-                    std::optional<ZarrVersion> version,
-                    std::optional<unsigned> max_threads,
-                    std::optional<ZarrDownsamplingMethod> downsampling_method,
-                    std::optional<std::string> output_key,
-                    std::optional<bool> overwrite) {
-            PyZarrStreamSettings settings;
-            if (store_path) {
-                settings.set_store_path(*store_path);
-            }
-            if (s3) {
-                settings.set_s3(*s3);
+                    std::optional<ZarrDownsamplingMethod> downsampling_method) {
+            PyZarrArraySettings settings;
+
+            if (output_key) {
+                settings.set_output_key(*output_key);
             }
             if (compression) {
                 settings.set_compression(*compression);
             }
             if (dimensions) {
-                auto dims = *dimensions;
+                auto& dims = *dimensions;
                 std::vector<PyZarrDimensionProperties> dims_vec(dims.size());
 
                 for (auto i = 0; i < dims.size(); ++i) {
@@ -829,42 +863,161 @@ PYBIND11_MODULE(acquire_zarr, m)
                 }
                 settings.set_dimensions(dims_vec);
             }
-            if (multiscale) {
-                settings.set_multiscale(*multiscale);
-            }
             if (data_type) {
                 settings.set_data_type(*data_type);
             }
-            if (version) {
-                settings.set_version(*version);
-            }
-            if (max_threads) {
-                settings.set_max_threads(*max_threads);
-            }
             if (downsampling_method) {
                 settings.set_downsampling_method(*downsampling_method);
-            }
-            if (output_key) {
-                settings.set_output_key(*output_key);
-            }
-            if (overwrite) {
-                settings.set_overwrite(*overwrite);
             }
 
             return settings;
         }),
         py::kw_only(),
-        py::arg("store_path") = std::nullopt,
-        py::arg("s3") = std::nullopt,
+        py::arg("output_key") = std::nullopt,
         py::arg("compression") = std::nullopt,
         py::arg("dimensions") = std::nullopt,
-        py::arg("multiscale") = std::nullopt,
         py::arg("data_type") = std::nullopt,
-        py::arg("version") = std::nullopt,
-        py::arg("max_threads") = std::nullopt,
-        py::arg("downsampling_method") = std::nullopt,
-        py::arg("output_key") = std::nullopt,
-        py::arg("overwrite") = std::nullopt)
+        py::arg("downsampling_method") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrArraySettings& self) {
+               std::string repr =
+                 "ArraySettings(output_key='" + self.output_key() + "'";
+
+               if (self.compression().has_value()) {
+                   repr += ", compression=" + self.compression()->repr();
+               }
+               repr += ", dimensions=[";
+               for (const auto& dim : self.dimensions()) {
+                   repr += dim.repr() + ", ";
+               }
+               repr += "], data_type=DataType." +
+                       std::string(data_type_to_str(self.data_type()));
+
+               if (self.downsampling_method()) {
+                   const auto method = *self.downsampling_method();
+                   std::string method_str;
+                   switch (method) {
+                       case ZarrDownsamplingMethod_Decimate:
+                           method_str = "DownsamplingMethod.DECIMATE";
+                           break;
+                       case ZarrDownsamplingMethod_Mean:
+                           method_str = "DownsamplingMethod.MEAN";
+                           break;
+                       case ZarrDownsamplingMethod_Min:
+                           method_str = "DownsamplingMethod.MIN";
+                           break;
+                       case ZarrDownsamplingMethod_Max:
+                           method_str = "DownsamplingMethod.MAX";
+                           break;
+                       default:
+                           method_str = "None";
+                   }
+                   repr += ", downsampling_method=" + method_str;
+               }
+
+               repr += ")";
+               return repr;
+           })
+      .def_property("output_key",
+                    &PyZarrArraySettings::output_key,
+                    &PyZarrArraySettings::set_output_key)
+      .def_property(
+        "compression",
+        [](const PyZarrArraySettings& self) -> py::object {
+            if (self.compression()) {
+                return py::cast(*self.compression());
+            }
+            return py::none();
+        },
+        [](PyZarrArraySettings& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_compression(std::nullopt);
+            } else {
+                self.set_compression(obj.cast<PyZarrCompressionSettings>());
+            }
+        })
+      .def_property(
+        "dimensions",
+        [](PyZarrArraySettings& self) -> py::object {
+            return py::cast(self.dimensions(),
+                            py::return_value_policy::reference);
+        },
+        [](PyZarrArraySettings& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrDimensionProperties> dims;
+                for (auto item : obj.cast<py::list>()) {
+                    dims.push_back(item.cast<PyZarrDimensionProperties>());
+                }
+                self.set_dimensions(dims);
+            } else {
+                // raise a TypeError if not a list
+                PyErr_SetString(PyExc_TypeError,
+                                "Expected a list of DimensionProperties.");
+                throw py::error_already_set();
+            }
+        })
+      .def_property("data_type",
+                    &PyZarrArraySettings::data_type,
+                    &PyZarrArraySettings::set_data_type)
+      .def_property(
+        "downsampling_method",
+        [](const PyZarrArraySettings& self) -> py::object {
+            if (self.downsampling_method()) {
+                return py::cast(*self.downsampling_method());
+            }
+            return py::none();
+        },
+        [](PyZarrArraySettings& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_downsampling_method(std::nullopt);
+            } else {
+                self.set_downsampling_method(
+                  obj.cast<ZarrDownsamplingMethod>());
+            }
+        });
+
+    py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
+      .def(py::init([](std::optional<std::string> store_path,
+                       std::optional<PyZarrS3Settings> s3,
+                       std::optional<ZarrVersion> version,
+                       std::optional<unsigned> max_threads,
+                       std::optional<bool> overwrite,
+                       std::optional<py::list> arrays) {
+               PyZarrStreamSettings settings;
+               if (store_path) {
+                   settings.set_store_path(*store_path);
+               }
+               if (s3) {
+                   settings.set_s3(*s3);
+               }
+               if (version) {
+                   settings.set_version(*version);
+               }
+               if (max_threads) {
+                   settings.set_max_threads(*max_threads);
+               }
+               if (overwrite) {
+                   settings.set_overwrite(*overwrite);
+               }
+               if (arrays) {
+                   auto& arrs = *arrays;
+                   std::vector<PyZarrArraySettings> arrs_vec(arrs.size());
+
+                   for (auto i = 0; i < arrs.size(); ++i) {
+                       arrs_vec[i] = arrs[i].cast<PyZarrArraySettings>();
+                   }
+                   settings.set_arrays(arrs_vec);
+               }
+
+               return settings;
+           }),
+           py::kw_only(),
+           py::arg("store_path") = std::nullopt,
+           py::arg("s3") = std::nullopt,
+           py::arg("version") = std::nullopt,
+           py::arg("max_threads") = std::nullopt,
+           py::arg("overwrite") = std::nullopt,
+           py::arg("arrays") = std::nullopt)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
@@ -873,21 +1026,12 @@ PYBIND11_MODULE(acquire_zarr, m)
                if (self.s3().has_value()) {
                    repr += ", s3=" + self.s3()->repr();
                }
-               if (self.compression().has_value()) {
-                   repr += ", compression=" + self.compression()->repr();
-               }
-               repr += ", dimensions=[";
-               for (const auto& dim : self.dimensions()) {
-                   repr += dim.repr() + ", ";
-               }
-
-               std::string multiscale = self.multiscale() ? "True" : "False";
                repr +=
-                 "], multiscale=" + multiscale + ", data_type=DataType." +
-                 std::string(data_type_to_str(self.data_type())) +
                  ", version=ZarrVersion." +
                  std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
-                 ", max_threads=" + std::to_string(self.max_threads()) + ")";
+                 ", max_threads=" + std::to_string(self.max_threads()) + "," +
+                 (self.overwrite() ? " overwrite=True" : " overwrite=False") +
+                 ")";
                return repr;
            })
       .def_property("store_path",
@@ -901,72 +1045,48 @@ PYBIND11_MODULE(acquire_zarr, m)
             }
             return py::none();
         },
-        [](PyZarrStreamSettings& self, py::object obj) {
+        [](PyZarrStreamSettings& self, py::object& obj) {
             if (obj.is_none()) {
                 self.set_s3(std::nullopt);
             } else {
                 self.set_s3(obj.cast<PyZarrS3Settings>());
             }
         })
-      .def_property(
-        "compression",
-        [](const PyZarrStreamSettings& self) -> py::object {
-            if (self.compression()) {
-                return py::cast(*self.compression());
-            }
-            return py::none();
-        },
-        [](PyZarrStreamSettings& self, py::object obj) {
-            if (obj.is_none()) {
-                self.set_compression(std::nullopt);
-            } else {
-                self.set_compression(obj.cast<PyZarrCompressionSettings>());
-            }
-        })
-      .def_property(
-        "dimensions",
-        [](PyZarrStreamSettings& self) -> py::object {
-            return py::cast(self.dimensions(),
-                            py::return_value_policy::reference);
-        },
-        [](PyZarrStreamSettings& self, py::object obj) {
-            if (py::isinstance<py::list>(obj)) {
-                std::vector<PyZarrDimensionProperties> dims;
-                for (auto item : obj.cast<py::list>()) {
-                    dims.push_back(item.cast<PyZarrDimensionProperties>());
-                }
-                self.set_dimensions(dims);
-            } else {
-                self.set_dimensions(
-                  obj.cast<std::vector<PyZarrDimensionProperties>>());
-            }
-        })
-      .def_property("multiscale",
-                    &PyZarrStreamSettings::multiscale,
-                    &PyZarrStreamSettings::set_multiscale)
-      .def_property("data_type",
-                    &PyZarrStreamSettings::data_type,
-                    &PyZarrStreamSettings::set_data_type)
       .def_property("version",
                     &PyZarrStreamSettings::version,
                     &PyZarrStreamSettings::set_version)
       .def_property("max_threads",
                     &PyZarrStreamSettings::max_threads,
                     &PyZarrStreamSettings::set_max_threads)
-      .def_property("downsampling_method",
-                    &PyZarrStreamSettings::downsampling_method,
-                    &PyZarrStreamSettings::set_downsampling_method)
-      .def_property("output_key",
-                    &PyZarrStreamSettings::output_key,
-                    &PyZarrStreamSettings::set_output_key)
       .def_property("overwrite",
                     &PyZarrStreamSettings::overwrite,
-                    &PyZarrStreamSettings::set_overwrite);
+                    &PyZarrStreamSettings::set_overwrite)
+      .def_property(
+        "arrays",
+        [](PyZarrStreamSettings& self) -> py::object {
+            return py::cast(self.arrays(), py::return_value_policy::reference);
+        },
+        [](PyZarrStreamSettings& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrArraySettings> arrs;
+                for (auto item : obj.cast<py::list>()) {
+                    arrs.push_back(item.cast<PyZarrArraySettings>());
+                }
+                self.set_arrays(arrs);
+            } else {
+                // raise a TypeError if not a list
+                PyErr_SetString(PyExc_TypeError,
+                                "Expected a list of ArraySettings.");
+                throw py::error_already_set();
+            }
+        });
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
       .def("close", &PyZarrStream::close)
-      .def("append", &PyZarrStream::append)
+      .def("append", &PyZarrStream::append,
+           py::arg("data"),
+           py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
            py::arg("custom_metadata"),

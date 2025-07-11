@@ -19,6 +19,7 @@ import skimage
 dotenv.load_dotenv()
 
 from acquire_zarr import (
+    ArraySettings,
     StreamSettings,
     ZarrStream,
     Compressor,
@@ -40,31 +41,33 @@ from acquire_zarr import (
 def settings():
     s = StreamSettings()
     s.custom_metadata = json.dumps({"foo": "bar"})
-    s.dimensions.extend(
-        [
-            Dimension(
-                name="t",
-                kind=DimensionType.TIME,
-                array_size_px=0,
-                chunk_size_px=32,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                array_size_px=48,
-                chunk_size_px=16,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                array_size_px=64,
-                chunk_size_px=32,
-                shard_size_chunks=1,
-            ),
-        ]
-    )
+    s.arrays = [
+        ArraySettings(
+            dimensions=[
+                Dimension(
+                    name="t",
+                    kind=DimensionType.TIME,
+                    array_size_px=0,
+                    chunk_size_px=32,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=32,
+                    shard_size_chunks=1,
+                ),
+            ]
+        )
+    ]
 
     return s
 
@@ -72,10 +75,10 @@ def settings():
 @pytest.fixture(scope="module")
 def s3_settings():
     if (
-        "ZARR_S3_ENDPOINT" not in os.environ
-        or "ZARR_S3_BUCKET_NAME" not in os.environ
-        or "AWS_ACCESS_KEY_ID" not in os.environ
-        or "AWS_SECRET_ACCESS_KEY" not in os.environ
+            "ZARR_S3_ENDPOINT" not in os.environ
+            or "ZARR_S3_BUCKET_NAME" not in os.environ
+            or "AWS_ACCESS_KEY_ID" not in os.environ
+            or "AWS_SECRET_ACCESS_KEY" not in os.environ
     ):
         yield None
     else:
@@ -146,10 +149,10 @@ def validate_v3_metadata(store_path: Path):
     ],
 )
 def test_create_stream(
-    settings: StreamSettings,
-    store_path: Path,
-    request: pytest.FixtureRequest,
-    version: ZarrVersion,
+        settings: StreamSettings,
+        store_path: Path,
+        request: pytest.FixtureRequest,
+        version: ZarrVersion,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -177,61 +180,61 @@ def test_create_stream(
 
 @pytest.mark.parametrize(
     (
-        "version",
-        "compression_codec",
+            "version",
+            "compression_codec",
     ),
     [
         (
-            ZarrVersion.V2,
-            None,
+                ZarrVersion.V2,
+                None,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_LZ4,
+                ZarrVersion.V2,
+                CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_ZSTD,
+                ZarrVersion.V2,
+                CompressionCodec.BLOSC_ZSTD,
         ),
         (
-            ZarrVersion.V3,
-            None,
+                ZarrVersion.V3,
+                None,
         ),
         (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_LZ4,
+                ZarrVersion.V3,
+                CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_ZSTD,
+                ZarrVersion.V3,
+                CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_filesystem(
-    settings: StreamSettings,
-    store_path: Path,
-    version: ZarrVersion,
-    compression_codec: Optional[CompressionCodec],
+        settings: StreamSettings,
+        store_path: Path,
+        version: ZarrVersion,
+        compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
     settings.version = version
     if compression_codec is not None:
-        settings.compression = CompressionSettings(
+        settings.arrays[0].compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
             codec=compression_codec,
             level=1,
             shuffle=1,
         )
-    settings.data_type = DataType.UINT16
+    settings.arrays[0].data_type = DataType.UINT16
 
     stream = ZarrStream(settings)
     assert stream
 
     data = np.zeros(
         (
-            2 * settings.dimensions[0].chunk_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.uint16,
     )
@@ -243,17 +246,17 @@ def test_stream_data_to_filesystem(
     stream.close()  # close the stream, flush the files
 
     chunk_size_bytes = data.dtype.itemsize
-    for dim in settings.dimensions:
+    for dim in settings.arrays[0].dimensions:
         chunk_size_bytes *= dim.chunk_size_px
 
     shard_size_bytes = chunk_size_bytes
     table_size_bytes = 16  # 2 * sizeof(uint64_t)
     if version == ZarrVersion.V3:
-        for dim in settings.dimensions:
+        for dim in settings.arrays[0].dimensions:
             shard_size_bytes *= dim.shard_size_chunks
             table_size_bytes *= dim.shard_size_chunks
     shard_size_bytes = (
-        shard_size_bytes + table_size_bytes + 4
+            shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
 
     group = zarr.open(settings.store_path, mode="r")
@@ -279,8 +282,8 @@ def test_stream_data_to_filesystem(
             # check that the data is compressed
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
             assert (
-                store_path / "test.zarr" / "0" / "0" / "0" / "0"
-            ).stat().st_size <= chunk_size_bytes
+                           store_path / "test.zarr" / "0" / "0" / "0" / "0"
+                   ).stat().st_size <= chunk_size_bytes
         else:
             cname = (
                 zblosc.BloscCname.lz4
@@ -293,68 +296,68 @@ def test_stream_data_to_filesystem(
             assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
             assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                    store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
             ).is_file()
             assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).stat().st_size <= shard_size_bytes
+                           store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                   ).stat().st_size <= shard_size_bytes
     else:
         if version == ZarrVersion.V2:
             assert metadata.compressor is None
 
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
             assert (
-                store_path / "test.zarr" / "0" / "0" / "0" / "0"
-            ).stat().st_size == chunk_size_bytes
+                           store_path / "test.zarr" / "0" / "0" / "0" / "0"
+                   ).stat().st_size == chunk_size_bytes
         else:
             assert len(metadata.codecs[0].codecs) == 1
 
             assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                    store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
             ).is_file()
             assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).stat().st_size == shard_size_bytes
+                           store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                   ).stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
     (
-        "version",
-        "compression_codec",
+            "version",
+            "compression_codec",
     ),
     [
         (
-            ZarrVersion.V2,
-            None,
+                ZarrVersion.V2,
+                None,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_LZ4,
+                ZarrVersion.V2,
+                CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_ZSTD,
+                ZarrVersion.V2,
+                CompressionCodec.BLOSC_ZSTD,
         ),
         (
-            ZarrVersion.V3,
-            None,
+                ZarrVersion.V3,
+                None,
         ),
         (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_LZ4,
+                ZarrVersion.V3,
+                CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_ZSTD,
+                ZarrVersion.V3,
+                CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_s3(
-    settings: StreamSettings,
-    s3_settings: Optional[S3Settings],
-    request: pytest.FixtureRequest,
-    version: ZarrVersion,
-    compression_codec: Optional[CompressionCodec],
+        settings: StreamSettings,
+        s3_settings: Optional[S3Settings],
+        request: pytest.FixtureRequest,
+        version: ZarrVersion,
+        compression_codec: Optional[CompressionCodec],
 ):
     if s3_settings is None:
         pytest.skip("S3 settings not set")
@@ -380,9 +383,9 @@ def test_stream_data_to_s3(
         0,
         65535,
         (
-            2 * settings.dimensions[0].chunk_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.uint16,
     )
@@ -467,11 +470,11 @@ def test_set_log_level(level: LogLevel):
     ],
 )
 def test_write_custom_metadata(
-    settings: StreamSettings,
-    store_path: Path,
-    request: pytest.FixtureRequest,
-    version: ZarrVersion,
-    overwrite: bool,
+        settings: StreamSettings,
+        store_path: Path,
+        request: pytest.FixtureRequest,
+        version: ZarrVersion,
+        overwrite: bool,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -503,60 +506,64 @@ def test_write_custom_metadata(
 
 
 def test_write_transposed_array(
-    store_path: Path,
+        store_path: Path,
 ):
     settings = StreamSettings(
-        dimensions=[
-            Dimension(
-                name="t",
-                kind=DimensionType.TIME,
-                array_size_px=2,
-                chunk_size_px=2,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="c",
-                kind=DimensionType.CHANNEL,
-                array_size_px=1,
-                chunk_size_px=1,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="z",
-                kind=DimensionType.SPACE,
-                array_size_px=40,
-                chunk_size_px=20,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                array_size_px=30,
-                chunk_size_px=15,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                array_size_px=20,
-                chunk_size_px=10,
-                shard_size_chunks=1,
-            ),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=2,
+                        chunk_size_px=2,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="c",
+                        kind=DimensionType.CHANNEL,
+                        array_size_px=1,
+                        chunk_size_px=1,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=40,
+                        chunk_size_px=20,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=30,
+                        chunk_size_px=15,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=20,
+                        chunk_size_px=10,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=DataType.INT32,
+            )
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -(2**16),
-        2**16 - 1,
+        -(2 ** 16),
+        2 ** 16 - 1,
         (
-            settings.dimensions[0].chunk_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
-            settings.dimensions[4].array_size_px,
-            settings.dimensions[3].array_size_px,
+            settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[4].array_size_px,
+            settings.arrays[0].dimensions[3].array_size_px,
         ),
         dtype=np.int32,
     )
@@ -577,44 +584,49 @@ def test_write_transposed_array(
 
 
 def test_column_ragged_sharding(
-    store_path: Path,
+        store_path: Path,
 ):
     settings = StreamSettings(
-        dimensions=[
-            Dimension(
-                name="z",
-                kind=DimensionType.SPACE,
-                array_size_px=2,
-                chunk_size_px=1,
-                shard_size_chunks=2,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                array_size_px=1080,
-                chunk_size_px=64,
-                shard_size_chunks=2,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                array_size_px=1080,
-                chunk_size_px=64,
-                shard_size_chunks=2,
-            ),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=2,
+                        chunk_size_px=1,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=1080,
+                        chunk_size_px=64,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=1080,
+                        chunk_size_px=64,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=DataType.INT32,
+
+            )
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -(2**16),
-        2**16 - 1,
+        -(2 ** 16),
+        2 ** 16 - 1,
         (
-            settings.dimensions[0].array_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.int32,
     )
@@ -634,47 +646,51 @@ def test_column_ragged_sharding(
 
 def test_custom_dimension_units_and_scales(store_path: Path):
     settings = StreamSettings(
-        dimensions=[
-            Dimension(
-                name="z",
-                kind=DimensionType.SPACE,
-                unit="micron",
-                scale=0.1,
-                array_size_px=2,
-                chunk_size_px=1,
-                shard_size_chunks=2,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                unit="micrometer",
-                scale=0.9,
-                array_size_px=1080,
-                chunk_size_px=64,
-                shard_size_chunks=2,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                unit="nanometer",
-                scale=1.1,
-                array_size_px=1080,
-                chunk_size_px=64,
-                shard_size_chunks=2,
-            ),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        unit="micron",
+                        scale=0.1,
+                        array_size_px=2,
+                        chunk_size_px=1,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        unit="micrometer",
+                        scale=0.9,
+                        array_size_px=1080,
+                        chunk_size_px=64,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        unit="nanometer",
+                        scale=1.1,
+                        array_size_px=1080,
+                        chunk_size_px=64,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=DataType.INT32,
+            )
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.INT32
 
     data = np.random.randint(
-        -(2**16),
-        2**16 - 1,
+        -(2 ** 16),
+        2 ** 16 - 1,
         (
-            settings.dimensions[0].array_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.int32,
     )
@@ -730,43 +746,46 @@ def test_custom_dimension_units_and_scales(store_path: Path):
 )
 def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings = StreamSettings(
-        dimensions=[
-            Dimension(
-                name="t",
-                kind=DimensionType.TIME,
-                array_size_px=50,
-                chunk_size_px=50,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                array_size_px=48,
-                chunk_size_px=24,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                array_size_px=64,
-                chunk_size_px=32,
-                shard_size_chunks=1,
-            ),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=50,
+                        chunk_size_px=50,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=24,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    )
+                ],
+                data_type=DataType.INT32,
+                downsampling_method=method,
+            )
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.INT32
-    settings.multiscale = True
-    settings.downsampling_method = method
 
     data = np.random.randint(
-        -(2**16),
-        2**16 - 1,
+        -(2 ** 16),
+        2 ** 16 - 1,
         (
-            settings.dimensions[0].array_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.int32,
     )
@@ -815,43 +834,46 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 )
 def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings = StreamSettings(
-        dimensions=[
-            Dimension(
-                name="z",
-                kind=DimensionType.SPACE,
-                array_size_px=100,
-                chunk_size_px=50,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="y",
-                kind=DimensionType.SPACE,
-                array_size_px=48,
-                chunk_size_px=24,
-                shard_size_chunks=1,
-            ),
-            Dimension(
-                name="x",
-                kind=DimensionType.SPACE,
-                array_size_px=64,
-                chunk_size_px=32,
-                shard_size_chunks=1,
-            ),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=100,
+                        chunk_size_px=50,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=24,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=DataType.UINT16,
+                downsampling_method=method,
+            )
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.UINT16
-    settings.multiscale = True
-    settings.downsampling_method = method
 
     data = np.random.randint(
         0,
-        2**16 - 1,
+        2 ** 16 - 1,
         (
-            settings.dimensions[0].array_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.uint16,
     )
@@ -914,28 +936,27 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
 
 @pytest.mark.parametrize(
-    ("output_key", "multiscale"),
+    ("output_key", "downsampling_method"),
     [
-        ("labels", False),
-        ("path/to/data", False),
-        ("a/nested/multiscale/group", True),
+        ("labels", None),
+        ("path/to/data", None),
+        ("a/nested/multiscale/group", DownsamplingMethod.MEAN),
     ],
 )
 def test_stream_data_to_named_array(
-    settings: StreamSettings,
-    store_path: Path,
-    request: pytest.FixtureRequest,
-    output_key: str,
-    multiscale: bool,
+        settings: StreamSettings,
+        store_path: Path,
+        output_key: str,
+        downsampling_method: DownsamplingMethod,
 ):
     settings.store_path = str(
         store_path
         / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr"
     )
     settings.version = ZarrVersion.V3
-    settings.output_key = output_key
-    settings.multiscale = multiscale
-    settings.data_type = DataType.UINT16
+    settings.arrays[0].output_key = output_key
+    settings.arrays[0].downsampling_method = downsampling_method
+    settings.arrays[0].data_type = DataType.UINT16
 
     stream = ZarrStream(settings)
     assert stream
@@ -943,9 +964,9 @@ def test_stream_data_to_named_array(
     # Create test data
     data = np.zeros(
         (
-            2 * settings.dimensions[0].chunk_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.uint16,
     )
@@ -972,7 +993,7 @@ def test_stream_data_to_named_array(
         assert part in current_group, f"Path part '{part}' not found in group"
         current_group = current_group[part]
 
-    array = current_group["0"] if multiscale else current_group
+    array = current_group["0"] if downsampling_method is not None else current_group
 
     # Verify array shape and contents
     assert array.shape == data.shape
@@ -983,10 +1004,9 @@ def test_anisotropic_downsampling(settings: StreamSettings,
                                   store_path: Path):
     settings.store_path = str(store_path / "anisotropic_downsampling.zarr")
     settings.version = ZarrVersion.V3
-    settings.data_type = DataType.UINT8
-    settings.multiscale = True
-    settings.downsampling_method = DownsamplingMethod.MEAN
-    settings.dimensions = [
+    settings.arrays[0].data_type = DataType.UINT8
+    settings.arrays[0].downsampling_method = DownsamplingMethod.MEAN
+    settings.arrays[0].dimensions = [
         Dimension(
             name="z",
             kind=DimensionType.SPACE,
@@ -1018,9 +1038,9 @@ def test_anisotropic_downsampling(settings: StreamSettings,
         0,
         2 ** 8 - 1,
         (
-            settings.dimensions[0].array_size_px,
-            settings.dimensions[1].array_size_px,
-            settings.dimensions[2].array_size_px,
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
         ),
         dtype=np.uint8,
     )
@@ -1052,3 +1072,211 @@ def test_anisotropic_downsampling(settings: StreamSettings,
     assert array.chunks == (250, 250, 250)
 
     assert "4" not in group  # No further downsampling
+
+
+@pytest.mark.parametrize(
+    ("version",),
+    [
+        (ZarrVersion.V2,),
+        (ZarrVersion.V3,),
+    ],
+)
+def test_multiarray_metadata_structure(
+        settings: StreamSettings,
+        store_path: Path,
+        version: ZarrVersion,
+):
+    settings.store_path = str(store_path / "multiarray_metadata_test.zarr")
+    settings.version = version
+
+    # Configure three arrays matching the JSON examples
+
+    # Array 0: Labels array at /labels (uint16, no compression, no downsampling)
+    # Shape: [6, 3, 4, 48, 64] (t, c, z, y, x)
+    settings.arrays = [
+        ArraySettings(
+            output_key="labels",
+            data_type=DataType.UINT16,
+            dimensions=[
+                Dimension(
+                    name="t",
+                    kind=DimensionType.TIME,
+                    array_size_px=6,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="c",
+                    kind=DimensionType.CHANNEL,
+                    array_size_px=3,
+                    chunk_size_px=1,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=4,
+                    chunk_size_px=2,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        ),
+
+        # Array 1: Multiscale array at /path/to/array1 (uint8, no compression, with downsampling)
+        # Shape: [10, 6, 48, 64] (t, z, y, x)
+        ArraySettings(
+            output_key="path/to/array1",
+            data_type=DataType.UINT8,
+            downsampling_method=DownsamplingMethod.MEAN,
+            dimensions=[
+                Dimension(
+                    name="t",
+                    kind=DimensionType.TIME,
+                    array_size_px=10,
+                    chunk_size_px=5,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=6,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        ),
+
+        # Array 2: Compressed array at /path/to/array2 (uint32, with blosc compression)
+        # Shape: [9, 48, 64] (z, y, x)
+        ArraySettings(
+            output_key="path/to/array2",
+            data_type=DataType.UINT32,
+            compression=CompressionSettings(
+                compressor=Compressor.BLOSC1,
+                codec=CompressionCodec.BLOSC_LZ4,
+                level=2,
+                shuffle=1,
+            ),
+            dimensions=[
+                Dimension(
+                    name="z",
+                    kind=DimensionType.SPACE,
+                    array_size_px=9,
+                    chunk_size_px=3,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="y",
+                    kind=DimensionType.SPACE,
+                    array_size_px=48,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+                Dimension(
+                    name="x",
+                    kind=DimensionType.SPACE,
+                    array_size_px=64,
+                    chunk_size_px=16,
+                    shard_size_chunks=1,
+                ),
+            ]
+        )
+    ]
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Create test data for labels array (5D: t,c,z,y,x)
+    labels_data = np.zeros((6, 3, 4, 48, 64), dtype=np.uint16)
+    for t in range(6):
+        for c in range(3):
+            for z in range(4):
+                labels_data[t, c, z, :, :] = t * 100 + c * 10 + z
+
+    # Create test data for array1 (4D: t,z,y,x)
+    array1_data = np.zeros((10, 6, 48, 64), dtype=np.uint8)
+    for t in range(10):
+        for z in range(6):
+            array1_data[t, z, :, :] = (t * 10 + z) % 256
+
+    # Create test data for array2 (3D: z,y,x)
+    array2_data = np.zeros((9, 48, 64), dtype=np.uint32)
+    for z in range(9):
+        array2_data[z, :, :] = z * 1000
+
+    # Stream the data to each array
+    stream.append(labels_data, key="labels")
+    stream.append(array1_data, key="path/to/array1")
+    stream.append(array2_data, key="path/to/array2")
+
+    stream.close()
+
+    # Verify the data structure
+    store_path_obj = Path(settings.store_path)
+    assert store_path_obj.is_dir()
+
+    root_group = zarr.open(settings.store_path, mode="r")
+
+    # Verify labels array
+    labels_array = root_group["labels"]
+    assert labels_array.shape == labels_data.shape
+    assert labels_array.dtype == np.uint16
+    assert np.array_equal(labels_array, labels_data)
+
+    # Verify multiscale array1 structure
+    array1_group = root_group["path"]["to"]["array1"]
+
+    # Check multiscale metadata
+    if version == ZarrVersion.V2:
+        assert "multiscales" in array1_group.attrs
+        assert len(array1_group.attrs["multiscales"]) > 0
+    else:
+        assert "ome" in array1_group.attrs
+        assert "multiscales" in array1_group.attrs["ome"]
+        assert len(array1_group.attrs["ome"]["multiscales"]) > 0
+
+    # Check that all 3 LOD levels exist
+    assert "0" in array1_group  # LOD 0 (full resolution)
+    assert "1" in array1_group  # LOD 1
+    assert "2" in array1_group  # LOD 2
+    assert "3" not in array1_group  # No further LODs
+
+    # Verify LOD 0 data
+    lod0_array = array1_group["0"]
+    assert lod0_array.shape == array1_data.shape
+    assert lod0_array.dtype == np.uint8
+    assert np.array_equal(lod0_array, array1_data)
+
+    # Verify compressed array2
+    array2_group = root_group["path"]["to"]["array2"]
+    assert array2_group.shape == array2_data.shape
+    assert array2_group.dtype == np.uint32
+    assert np.array_equal(array2_group, array2_data)

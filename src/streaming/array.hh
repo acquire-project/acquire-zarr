@@ -1,38 +1,15 @@
 #pragma once
 
+#include "array.base.hh"
 #include "blosc.compression.params.hh"
 #include "definitions.hh"
 #include "file.sink.hh"
 #include "locked.buffer.hh"
-#include "node.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
 
 namespace zarr {
-struct ArrayConfig : public ZarrNodeConfig
-{
-    ArrayConfig() = default;
-    ArrayConfig(std::string_view store_root,
-                std::string_view array_key,
-                std::optional<std::string> bucket_name,
-                std::optional<BloscCompressionParams> compression_params,
-                std::shared_ptr<ArrayDimensions> dimensions,
-                ZarrDataType dtype,
-                int level_of_detail)
-      : ZarrNodeConfig(store_root,
-                       array_key,
-                       bucket_name,
-                       compression_params,
-                       dimensions,
-                       dtype)
-      , level_of_detail(level_of_detail)
-    {
-    }
-
-    int level_of_detail{ 0 };
-};
-
-class Array : public ZarrNode
+class Array : public ArrayBase
 {
   public:
     Array(std::shared_ptr<ArrayConfig> config,

@@ -109,33 +109,35 @@ def run_acquire_zarr_test(
     """Write data using acquire-zarr and print per-plane and total write times."""
     settings = aqz.StreamSettings(
         store_path=path,
-        data_type=aqz.DataType.UINT16,
         version=aqz.ZarrVersion.V3,
-    )
-    settings.dimensions.extend(
-        [
-            aqz.Dimension(
-                name="t",
-                kind=aqz.DimensionType.TIME,
-                array_size_px=0,
-                chunk_size_px=tchunk_size,
-                shard_size_chunks=1,
-            ),
-            aqz.Dimension(
-                name="y",
-                kind=aqz.DimensionType.SPACE,
-                array_size_px=2048,
-                chunk_size_px=xy_chunk_size,
-                shard_size_chunks=xy_shard_size,
-            ),
-            aqz.Dimension(
-                name="x",
-                kind=aqz.DimensionType.SPACE,
-                array_size_px=2048,
-                chunk_size_px=xy_chunk_size,
-                shard_size_chunks=xy_shard_size,
-            ),
-        ],
+        arrays=[
+            aqz.ArraySettings(
+                dimensions=[
+                    aqz.Dimension(
+                        name="t",
+                        kind=aqz.DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=tchunk_size,
+                        shard_size_chunks=1,
+                    ),
+                    aqz.Dimension(
+                        name="y",
+                        kind=aqz.DimensionType.SPACE,
+                        array_size_px=2048,
+                        chunk_size_px=xy_chunk_size,
+                        shard_size_chunks=xy_shard_size,
+                    ),
+                    aqz.Dimension(
+                        name="x",
+                        kind=aqz.DimensionType.SPACE,
+                        array_size_px=2048,
+                        chunk_size_px=xy_chunk_size,
+                        shard_size_chunks=xy_shard_size,
+                    ),
+                ],
+                data_type=aqz.DataType.UINT16,
+            )
+        ]
     )
 
     # Create a ZarrStream for appending frames.

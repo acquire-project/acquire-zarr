@@ -34,20 +34,20 @@ add_library(${tgt}
         ${PLATFORM_FILE_SINK_CPP}
         s3.sink.hh
         s3.sink.cpp
-        node.hh
-        node.cpp
+        array.base.hh
+        array.base.cpp
         array.hh
         array.cpp
         v2.array.hh
         v2.array.cpp
         v3.array.hh
         v3.array.cpp
-        group.hh
-        group.cpp
-        v2.group.hh
-        v2.group.cpp
-        v3.group.hh
-        v3.group.cpp
+        multiscale.array.hh
+        multiscale.array.cpp
+        v2.multiscale.array.hh
+        v2.multiscale.array.cpp
+        v3.multiscale.array.hh
+        v3.multiscale.array.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 
@@ -67,7 +67,7 @@ target_link_libraries(${tgt} PRIVATE
 )
 
 target_compile_definitions(${tgt} PRIVATE
-        "ACQUIRE_ZARR_API_VERSION=\"0.4.0\""
+        "ACQUIRE_ZARR_API_VERSION=\"0.5.0\""
 )
 
 set_target_properties(${tgt} PROPERTIES

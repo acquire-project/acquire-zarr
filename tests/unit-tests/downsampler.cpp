@@ -32,8 +32,15 @@ test_basic_downsampling()
                                   { "x", ZarrDimensionType_Space, 10, 5, 1 } },
       ZarrDataType_uint8);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint8,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -80,8 +87,15 @@ test_3d_downsampling()
                                   { "x", ZarrDimensionType_Space, 20, 5, 1 } },
       ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -162,8 +176,15 @@ test_data_types()
             { "x", ZarrDimensionType_Space, 10, 5, 1 } },
           type);
 
-        auto config = std::make_shared<zarr::ArrayConfig>(
-          "", "/0", std::nullopt, std::nullopt, dims, type, 0);
+        auto config =
+          std::make_shared<zarr::ArrayConfig>("",
+                                              "/0",
+                                              std::nullopt,
+                                              std::nullopt,
+                                              dims,
+                                              type,
+                                              ZarrDownsamplingMethod_Mean,
+                                              0);
 
         // Just test that constructor doesn't throw
         try {
@@ -256,8 +277,15 @@ test_writer_configurations()
     auto dims = std::make_shared<ArrayDimensions>(std::move(dimensions_to_move),
                                                   ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
     const auto& configs = downsampler.writer_configurations();
@@ -309,8 +337,15 @@ test_anisotropic_writer_configurations()
     auto dims = std::make_shared<ArrayDimensions>(std::move(dimensions_to_move),
                                                   ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
     const auto& configs = downsampler.writer_configurations();
@@ -391,8 +426,15 @@ test_edge_cases()
       },
       ZarrDataType_uint8);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint8,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -418,10 +460,18 @@ test_min_max_downsampling()
                                   { "x", ZarrDimensionType_Space, 10, 5, 1 } },
       ZarrDataType_uint8);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint8,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
-    // Create a test image with a pattern that will show different results for min/max/mean
+    // Create a test image with a pattern that will show different results for
+    // min/max/mean
     zarr::LockedBuffer image(
       std::move(ByteVector(10 * 10 * sizeof(uint8_t), 0)));
     image.with_lock([](auto& data) {
@@ -457,6 +507,7 @@ test_min_max_downsampling()
 
     // Test with min downsampling
     {
+        config->downsampling_method = ZarrDownsamplingMethod_Min;
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Min);
         downsampler.add_frame(image);
 
@@ -474,6 +525,7 @@ test_min_max_downsampling()
 
     // Test with max downsampling
     {
+        config->downsampling_method = ZarrDownsamplingMethod_Max;
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Max);
         downsampler.add_frame(image);
 
@@ -502,8 +554,15 @@ test_3d_min_max_downsampling()
                                   { "x", ZarrDimensionType_Space, 20, 5, 1 } },
       ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Min,
+                                          0);
 
     // Test with min downsampling
     {
@@ -531,6 +590,7 @@ test_3d_min_max_downsampling()
 
     // Test with max downsampling
     {
+        config->downsampling_method = ZarrDownsamplingMethod_Max;
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Max);
 
         // Create test images with different values
@@ -591,8 +651,15 @@ test_pattern_downsampling()
                                   { "x", ZarrDimensionType_Space, 8, 4, 1 } },
       ZarrDataType_uint16);
 
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint16, 0);
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0);
 
     // Create a test image with a gradient pattern
     zarr::LockedBuffer image(
@@ -615,14 +682,20 @@ test_pattern_downsampling()
         // Get expected results for various methods
         for (size_t y = 0; y < 4; ++y) {
             for (size_t x = 0; x < 4; ++x) {
-                uint16_t v1 = typed_data[(y*2) * 8 + (x*2)];         // top-left
-                uint16_t v2 = typed_data[(y*2) * 8 + (x*2 + 1)];     // top-right
-                uint16_t v3 = typed_data[(y*2 + 1) * 8 + (x*2)];     // bottom-left
-                uint16_t v4 = typed_data[(y*2 + 1) * 8 + (x*2 + 1)]; // bottom-right
+                uint16_t v1 = typed_data[(y * 2) * 8 + (x * 2)]; // top-left
+                uint16_t v2 =
+                  typed_data[(y * 2) * 8 + (x * 2 + 1)]; // top-right
+                uint16_t v3 =
+                  typed_data[(y * 2 + 1) * 8 + (x * 2)]; // bottom-left
+                uint16_t v4 =
+                  typed_data[(y * 2 + 1) * 8 + (x * 2 + 1)]; // bottom-right
 
-                expected_mean[y * 4 + x] = static_cast<uint16_t>((v1 + v2 + v3 + v4) / 4);
-                expected_min[y * 4 + x] = std::min(std::min(v1, v2), std::min(v3, v4));
-                expected_max[y * 4 + x] = std::max(std::max(v1, v2), std::max(v3, v4));
+                expected_mean[y * 4 + x] =
+                  static_cast<uint16_t>((v1 + v2 + v3 + v4) / 4);
+                expected_min[y * 4 + x] =
+                  std::min(std::min(v1, v2), std::min(v3, v4));
+                expected_max[y * 4 + x] =
+                  std::max(std::max(v1, v2), std::max(v3, v4));
             }
         }
     });
@@ -646,6 +719,7 @@ test_pattern_downsampling()
 
     // Test with min downsampling
     {
+        config->downsampling_method = ZarrDownsamplingMethod_Min;
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Min);
         downsampler.add_frame(image);
 
@@ -663,6 +737,7 @@ test_pattern_downsampling()
 
     // Test with max downsampling
     {
+        config->downsampling_method = ZarrDownsamplingMethod_Max;
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Max);
         downsampler.add_frame(image);
 

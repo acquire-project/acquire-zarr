@@ -10,19 +10,23 @@ int
 main()
 {
     // Configure stream settings
+    ZarrArraySettings array = {
+        .compression_settings = NULL,
+        .data_type = ZarrDataType_uint16,
+    };
     ZarrStreamSettings settings = {
         .store_path = "output_v3.zarr",
         .s3_settings = NULL,
-        .compression_settings = NULL,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
+        .arrays = &array,
+        .array_count = 1,
     };
 
     // Set up dimensions (t, y, x)
-    ZarrStreamSettings_create_dimension_array(&settings, 3);
+    ZarrArraySettings_create_dimension_array(settings.arrays, 3);
 
-    settings.dimensions[0] = (ZarrDimensionProperties){
+    settings.arrays->dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0,
@@ -30,7 +34,7 @@ main()
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[1] = (ZarrDimensionProperties){
+    settings.arrays->dimensions[1] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -38,7 +42,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.dimensions[2] = (ZarrDimensionProperties){
+    settings.arrays->dimensions[2] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -49,7 +53,7 @@ main()
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
     // Free Dimension array
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");
@@ -95,8 +99,12 @@ main()
             }
         }
 
-        ZarrStatusCode status = ZarrStream_append(
-          stream, frame, width * height * sizeof(uint16_t), &bytes_written);
+        ZarrStatusCode status =
+          ZarrStream_append(stream,
+                            frame,
+                            width * height * sizeof(uint16_t),
+                            &bytes_written,
+                            NULL);
 
         if (status != ZarrStatusCode_Success) {
             fprintf(stderr,

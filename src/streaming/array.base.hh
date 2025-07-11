@@ -3,6 +3,7 @@
 #include "array.dimensions.hh"
 #include "blosc.compression.params.hh"
 #include "definitions.hh"
+#include "locked.buffer.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -11,25 +12,35 @@
 #include <string>
 
 namespace zarr {
-struct ZarrNodeConfig
+struct ArrayConfig
 {
-    ZarrNodeConfig() = default;
-    ZarrNodeConfig(std::string_view store_root,
-                   std::string_view group_key,
-                   std::optional<std::string> bucket_name,
-                   std::optional<BloscCompressionParams> compression_params,
-                   std::shared_ptr<ArrayDimensions> dimensions,
-                   ZarrDataType dtype)
+    ArrayConfig() = default;
+    ArrayConfig(std::string_view store_root,
+                std::string_view group_key,
+                std::optional<std::string> bucket_name,
+                std::optional<BloscCompressionParams> compression_params,
+                std::shared_ptr<ArrayDimensions> dimensions,
+                ZarrDataType dtype,
+                std::optional<ZarrDownsamplingMethod> downsampling_method,
+                uint16_t level_of_detail)
       : store_root(store_root)
       , node_key(group_key)
       , bucket_name(bucket_name)
       , compression_params(compression_params)
       , dimensions(std::move(dimensions))
       , dtype(dtype)
+      , downsampling_method(downsampling_method)
+      , level_of_detail(level_of_detail)
     {
+        if (downsampling_method.has_value() &&
+            *downsampling_method >= ZarrDownsamplingMethodCount) {
+            throw std::runtime_error(
+              "Invalid downsampling method: " +
+              std::to_string(static_cast<int>(*downsampling_method)));
+        }
     }
 
-    virtual ~ZarrNodeConfig() = default;
+    virtual ~ArrayConfig() = default;
 
     std::string store_root;
     std::string node_key;
@@ -37,15 +48,17 @@ struct ZarrNodeConfig
     std::optional<BloscCompressionParams> compression_params;
     std::shared_ptr<ArrayDimensions> dimensions;
     ZarrDataType dtype;
+    std::optional<ZarrDownsamplingMethod> downsampling_method;
+    uint16_t level_of_detail;
 };
 
-class ZarrNode
+class ArrayBase
 {
   public:
-    ZarrNode(std::shared_ptr<ZarrNodeConfig> config,
-             std::shared_ptr<ThreadPool> thread_pool,
-             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
-    virtual ~ZarrNode() = default;
+    ArrayBase(std::shared_ptr<ArrayConfig> config,
+              std::shared_ptr<ThreadPool> thread_pool,
+              std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+    virtual ~ArrayBase() = default;
 
     /**
      * @brief Close the node and flush any remaining data.
@@ -61,7 +74,7 @@ class ZarrNode
     [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
 
   protected:
-    std::shared_ptr<ZarrNodeConfig> config_;
+    std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
 
@@ -74,14 +87,20 @@ class ZarrNode
     [[nodiscard]] bool make_metadata_sinks_();
     [[nodiscard]] bool write_metadata_();
 
-    friend bool finalize_node(std::unique_ptr<ZarrNode>&& node);
+    friend bool finalize_node(std::unique_ptr<ArrayBase>&& node);
 };
+
+std::unique_ptr<ArrayBase>
+make_array(std::shared_ptr<zarr::ArrayConfig> config,
+           std::shared_ptr<ThreadPool> thread_pool,
+           std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+           ZarrVersion format);
 
 template<class T>
 std::unique_ptr<T>
-downcast_node(std::unique_ptr<ZarrNode>&& node)
+downcast_node(std::unique_ptr<ArrayBase>&& node)
 {
-    ZarrNode* raw_ptr = node.release();
+    ArrayBase* raw_ptr = node.release();
     T* derived_ptr = dynamic_cast<T*>(raw_ptr);
 
     if (!derived_ptr) {
@@ -93,5 +112,5 @@ downcast_node(std::unique_ptr<ZarrNode>&& node)
 }
 
 [[nodiscard]] bool
-finalize_node(std::unique_ptr<ZarrNode>&& node);
+finalize_node(std::unique_ptr<ArrayBase>&& node);
 } // namespace zarr

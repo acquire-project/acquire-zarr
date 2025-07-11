@@ -5,8 +5,8 @@
 #include "definitions.hh"
 #include "downsampler.hh"
 #include "frame.queue.hh"
-#include "group.hh"
 #include "locked.buffer.hh"
+#include "multiscale.array.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -20,6 +20,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 
 struct ZarrStream_s
 {
@@ -27,12 +28,13 @@ struct ZarrStream_s
     ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
-     * @brief Append data to the stream.
-     * @param data The data to append.
+     * @brief Append data to the stream with a specific key.
+     * @param key The key to associate with the data.
+     * @param data_ Pointer to the data to append.
      * @param nbytes The number of bytes to append.
      * @return The number of bytes appended.
      */
-    size_t append(const void* data, size_t nbytes);
+    size_t append(const char* key, const void* data_, size_t nbytes);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -45,18 +47,22 @@ struct ZarrStream_s
                                          bool overwrite);
 
   private:
+    struct ZarrOutputArray
+    {
+        std::string output_key;
+        zarr::LockedBuffer frame_buffer;
+        size_t frame_buffer_offset;
+        std::unique_ptr<zarr::ArrayBase> array;
+    };
+
     std::string error_; // error message. If nonempty, an error occurred.
 
     ZarrVersion version_;
     std::string store_path_;
-    std::string output_key_;
     std::optional<zarr::S3Settings> s3_settings_;
 
-    std::unique_ptr<zarr::ZarrNode> output_node_;
-
-    size_t frame_size_bytes_;
-    zarr::LockedBuffer frame_buffer_;
-    size_t frame_buffer_offset_;
+    std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
+    std::vector<std::string> intermediate_group_paths_;
 
     std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
@@ -79,26 +85,23 @@ struct ZarrStream_s
      * @param settings Struct containing settings to validate.
      * @return true if settings are valid, false otherwise.
      */
-    [[nodiscard]] bool validate_settings_(const struct ZarrStreamSettings_s* settings);
-
-    /**
-     * @brief Configure the stream for a group.
-     * @param settings Struct containing settings to configure.
-     */
-    [[nodiscard]] bool configure_group_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool validate_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      */
-    [[nodiscard]] bool configure_array_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.
      * @param settings Struct containing settings to copy.
-     * @return True if the output node was created successfully, false otherwise.
+     * @return True if the output node was created successfully, false
+     * otherwise.
      */
-    [[nodiscard]] bool commit_settings_(const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool commit_settings_(
+      const struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Spin up the thread pool.
@@ -119,6 +122,10 @@ struct ZarrStream_s
      */
     [[nodiscard]] bool create_store_(bool overwrite);
 
+    /**
+     * @brief Write intermediate group metadata to the store.
+     * @return True if the metadata was written successfully, false otherwise.
+     */
     [[nodiscard]] bool write_intermediate_metadata_();
 
     /** @brief Initialize the frame queue. */

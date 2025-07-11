@@ -14,6 +14,7 @@ import numpy
 from typing import Any, ClassVar, List, Optional
 
 __all__ = [
+    "ArraySettings",
     "CompressionCodec",
     "CompressionSettings",
     "Compressor",
@@ -29,6 +30,29 @@ __all__ = [
     "get_log_level",
     "set_log_level",
 ]
+
+
+class ArraySettings:
+    """Settings for a single array in the Zarr stream.
+
+    Attributes:
+      output_key: Key within the Zarr dataset where this array will be stored.
+      dimensions: List of dimension properties defining the dataset structure. Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
+      data_type: The pixel data type for the dataset.
+      compression: Optional compression settings for chunks. If None, no compression is applied.
+      downsampling_method: Method used for generating optional multiscale levels (image pyramid).
+    """
+
+    output_key: str
+    dimensions: List[Dimension]
+    data_type: DataType
+    compression: Optional[CompressionSettings]
+    downsampling_method: Optional[DownsamplingMethod]
+
+    def __init__(self, **kwargs) -> None: ...
+
+    def __repr__(self) -> str: ...
+
 
 class CompressionCodec:
     """Codec to use for compression, if any.
@@ -51,19 +75,31 @@ class CompressionCodec:
     ]  # value = {'NONE': <CompressionCodec.NONE: 0>, 'BLOSC_LZ4': <CompressionCodec.BLOSC_LZ4: 1>, 'BLOSC_ZSTD': <CompressionCodec.BLOSC_ZSTD: 2>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
+
 
 class CompressionSettings:
     """Settings for compressing during acquisition."""
@@ -74,7 +110,9 @@ class CompressionSettings:
     shuffle: int
 
     def __init__(self, **kwargs) -> None: ...
+
     def __repr__(self) -> str: ...
+
 
 class Compressor:
     """
@@ -92,19 +130,31 @@ class Compressor:
     ]  # value = {'NONE': <Compressor.NONE: 0>, 'BLOSC1': <Compressor.BLOSC1: 1>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
+
 
 class DataType:
     """
@@ -138,19 +188,31 @@ class DataType:
     ]  # value = {'UINT8': <DataType.UINT8: 0>, 'UINT16': <DataType.UINT16: 1>, 'UINT32': <DataType.UINT32: 2>, 'UINT64': <DataType.UINT64: 3>, 'INT8': <DataType.INT8: 4>, 'INT16': <DataType.INT16: 5>, 'INT32': <DataType.INT32: 6>, 'INT64': <DataType.INT64: 7>, 'FLOAT32': <DataType.FLOAT32: 8>, 'FLOAT64': <DataType.FLOAT64: 9>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
+
 
 class Dimension:
     """Properties of a dimension of the output array."""
@@ -164,7 +226,9 @@ class Dimension:
     unit: Optional[str]
 
     def __init__(self, **kwargs) -> None: ...
+
     def __repr__(self) -> str: ...
+
 
 class DimensionType:
     """
@@ -186,17 +250,28 @@ class DimensionType:
     ]  # value = {'SPACE': <DimensionType.SPACE: 0>, 'CHANNEL': <DimensionType.CHANNEL: 1>, 'TIME': <DimensionType.TIME: 2>, 'OTHER': <DimensionType.OTHER: 3>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
 
@@ -221,19 +296,31 @@ class DownsamplingMethod:
     ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
+
 
 class LogLevel:
     """
@@ -257,19 +344,31 @@ class LogLevel:
     ]  # value = {'DEBUG': <LogLevel.DEBUG: 0>, 'INFO': <LogLevel.INFO: 1>, 'WARNING': <LogLevel.WARNING: 2>, 'ERROR': <LogLevel.ERROR: 3>, 'NONE': <LogLevel.NONE: 4>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
+
 
 class S3Settings:
     """Settings for connecting to and storing data in S3."""
@@ -279,28 +378,24 @@ class S3Settings:
     region: Optional[str]
 
     def __init__(self, **kwargs) -> None: ...
+
     def __repr__(self) -> str: ...
+
 
 class StreamSettings:
     """Settings for configuring a Zarr stream.
 
     This class encapsulates all the configuration options needed to create a Zarr stream,
-    including storage location, compression settings, dimension properties, and format options.
+    including storage location, array configuration, and format options.
 
     Attributes:
+        arrays: List of ArraySettings defining the structure and properties of each array in the dataset.
         store_path: Path to the store. Can be a filesystem path or S3 key prefix.
             For S3, this becomes the key prefix within the specified bucket.
         s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
-        compression: Optional compression settings for chunks. If None, no compression is applied.
-        dimensions: List of dimension properties defining the dataset structure.
-            Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
-        multiscale: Whether to generate multiple levels of detail (image pyramid).
-        data_type: The pixel data type for the dataset.
         version: Zarr format version to use (V2 or V3).
         max_threads: Maximum number of threads for parallel processing.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
-        downsampling_method: Method used for generating multiscale levels when multiscale=True.
-        output_key: Key within the Zarr dataset where streamed data should be stored.
         overwrite: If True, removes any existing data at store_path before writing.
 
     Note:
@@ -309,30 +404,31 @@ class StreamSettings:
         "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
     """
 
-    compression: Optional[CompressionSettings]
+    arrays: List[ArraySettings]
     custom_metadata: Optional[str]
-    data_type: DataType
-    dimensions: List[Dimension]
-    multiscale: bool
     s3: Optional[S3Settings]
     store_path: str
     version: ZarrVersion
     max_threads: int
-    downsampling_method: DownsamplingMethod
-    output_key: str
     overwrite: bool
 
     def __init__(self, **kwargs) -> None: ...
+
     def __repr__(self) -> str: ...
+
 
 class ZarrStream:
     def __init__(self, arg0: StreamSettings) -> None: ...
-    def append(self, arg0: numpy.ndarray) -> None: ...
+
+    def append(self, data: numpy.ndarray, key: Optional[str]=None) -> None: ...
+
     def write_custom_metadata(
-        self, metadata: str, overwrite: bool = False
+            self, metadata: str, overwrite: bool = False
     ) -> bool: ...
+
     def is_active(self) -> bool: ...
     def close(self) -> None: ...
+
 
 class ZarrVersion:
     """
@@ -350,22 +446,35 @@ class ZarrVersion:
     ]  # value = {'V2': <ZarrVersion.V2: 2>, 'V3': <ZarrVersion.V3: 3>}
 
     def __eq__(self, other: Any) -> bool: ...
+
     def __getstate__(self) -> int: ...
+
     def __hash__(self) -> int: ...
+
     def __index__(self) -> int: ...
+
     def __init__(self, value: int) -> None: ...
+
     def __int__(self) -> int: ...
+
     def __ne__(self, other: Any) -> bool: ...
+
     def __repr__(self) -> str: ...
+
     def __setstate__(self, state: int) -> None: ...
+
     def __str__(self) -> str: ...
+
     @property
     def name(self) -> str: ...
+
     @property
     def value(self) -> int: ...
 
+
 def get_log_level() -> LogLevel:
     """Get the current log level for the Zarr API"""
+
 
 def set_log_level(level: LogLevel) -> None:
     """Set the log level for the Zarr API"""

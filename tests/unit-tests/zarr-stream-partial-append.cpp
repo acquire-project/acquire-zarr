@@ -8,10 +8,10 @@
 namespace fs = std::filesystem;
 
 void
-configure_stream_dimensions(ZarrStreamSettings* settings)
+configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-          ZarrStreamSettings_create_dimension_array(settings, 3));
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -42,8 +42,8 @@ void
 verify_file_data(const ZarrStreamSettings& settings)
 {
     std::vector<uint8_t> buffer;
-    const size_t row_size = settings.dimensions[2].array_size_px,
-                 num_rows = settings.dimensions[1].array_size_px;
+    const size_t row_size = settings.arrays->dimensions[2].array_size_px,
+                 num_rows = settings.arrays->dimensions[1].array_size_px;
 
     fs::path chunk_path = fs::path(settings.store_path) / "0" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(chunk_path));
@@ -175,11 +175,13 @@ main()
     settings.version = ZarrVersion_2;
     settings.store_path = static_cast<const char*>(TEST ".zarr");
     settings.max_threads = 0;
-    settings.data_type = ZarrDataType_uint8;
+
+    ZarrStreamSettings_create_arrays(&settings, 1);
+    settings.arrays->data_type = ZarrDataType_uint8;
 
     try {
         // allocate dimensions
-        configure_stream_dimensions(&settings);
+        configure_stream_dimensions(settings.arrays);
         stream = ZarrStream_create(&settings);
 
         CHECK(nullptr != stream);
@@ -191,7 +193,7 @@ main()
             std::fill(data.begin(), data.end(), row);
             for (auto col_group = 0; col_group < 4; ++col_group) {
                 const auto bytes_written =
-                  stream->append(data.data(), data.size());
+                  stream->append(nullptr, data.data(), data.size());
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
@@ -201,11 +203,12 @@ main()
 
         // append more than one frame, then fill in the rest
         const auto bytes_to_write = 48 * 64 + 7;
-        auto bytes_written = stream->append(data.data(), bytes_to_write);
+        auto bytes_written =
+          stream->append(nullptr, data.data(), bytes_to_write);
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
-        bytes_written = stream->append(data.data() + bytes_to_write,
-                                       data.size() - bytes_to_write);
+        bytes_written = stream->append(
+          nullptr, data.data() + bytes_to_write, data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
         // cleanup
@@ -213,8 +216,6 @@ main()
         stream = nullptr;
 
         verify_file_data(settings);
-        ZarrStreamSettings_destroy_dimension_array(&settings);
-
         retval = 0;
     } catch (const std::exception& exception) {
         LOG_ERROR(exception.what());
@@ -225,8 +226,8 @@ main()
         ZarrStream_destroy(stream);
     }
 
-    if (settings.dimensions) {
-        ZarrStreamSettings_destroy_dimension_array(&settings);
+    if (settings.arrays) {
+        ZarrStreamSettings_destroy_arrays(&settings);
     }
 
     std::error_code ec;

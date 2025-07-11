@@ -60,12 +60,18 @@ class Timer
 ZarrStream*
 setup_stream(const BenchmarkConfig& config)
 {
+    ZarrArraySettings array = {
+        .output_key = "",
+        .compression_settings = nullptr,
+        .data_type = ZarrDataType_uint16,
+    };
+
     ZarrStreamSettings settings = { .store_path = "benchmark.zarr",
                                     .s3_settings = nullptr,
-                                    .compression_settings = nullptr,
-                                    .data_type = ZarrDataType_uint16,
-                                    .version = static_cast<ZarrVersion>(
-                                      config.zarr_version) };
+                                    .version = static_cast<ZarrVersion>(config.zarr_version),
+        .arrays = &array,
+        .array_count = 1,
+    };
 
     ZarrCompressionSettings comp_settings = {};
     if (config.compression != "none") {
@@ -75,7 +81,7 @@ setup_stream(const BenchmarkConfig& config)
                                 : ZarrCompressionCodec_BloscZstd;
         comp_settings.level = 1;
         comp_settings.shuffle = 1;
-        settings.compression_settings = &comp_settings;
+        settings.arrays->compression_settings = &comp_settings;
     }
 
     ZarrS3Settings s3_settings = {};
@@ -87,8 +93,8 @@ setup_stream(const BenchmarkConfig& config)
         settings.s3_settings = &s3_settings;
     }
 
-    ZarrStreamSettings_create_dimension_array(&settings, 5);
-    auto* dims = settings.dimensions;
+    ZarrArraySettings_create_dimension_array(settings.arrays, 5);
+    auto* dims = settings.arrays->dimensions;
 
     dims[0] = { .name = "t",
                 .type = ZarrDimensionType_Time,
@@ -135,7 +141,8 @@ run_benchmark(const BenchmarkConfig& config)
     Timer timer;
     size_t bytes_out;
     for (int i = 0; i < num_frames; ++i) {
-        if (ZarrStream_append(stream, frame.data(), frame_size, &bytes_out) !=
+        if (ZarrStream_append(
+              stream, frame.data(), frame_size, &bytes_out, nullptr) !=
             ZarrStatusCode_Success) {
             std::cerr << "Failed to append frame " << i << "\n";
             ZarrStream_destroy(stream);

@@ -25,17 +25,21 @@ setup() {
     }
     LOG_DEBUG("Creating Zarr store at: ", test_path_str);
 
+    ZarrArraySettings array = {
+        .data_type = ZarrDataType_uint16
+    };
     ZarrStreamSettings settings = {  
         .store_path = test_path_cstr,
-        .data_type = ZarrDataType_uint16,
         .version = ZarrVersion_3,
+        .arrays = &array,
+        .array_count = 1,
     };
 
-    CHECK(ZarrStatusCode_Success == 
-          ZarrStreamSettings_create_dimension_array(&settings, 3));
+    CHECK(ZarrStatusCode_Success ==
+          ZarrArraySettings_create_dimension_array(settings.arrays, 3));
 
     // Configure dimensions [t, y, x]
-    settings.dimensions[0] = {
+    settings.arrays->dimensions[0] = {
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0, // Append dimension
@@ -43,7 +47,7 @@ setup() {
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[1] = {
+    settings.arrays->dimensions[1] = {
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = array_height,
@@ -51,7 +55,7 @@ setup() {
         .shard_size_chunks = 2,
     };
 
-    settings.dimensions[2] = {
+    settings.arrays->dimensions[2] = {
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = array_width,
@@ -60,7 +64,7 @@ setup() {
     };
 
     auto* stream = ZarrStream_create(&settings);
-    ZarrStreamSettings_destroy_dimension_array(&settings);
+    ZarrArraySettings_destroy_dimension_array(settings.arrays);
     CHECK(stream != nullptr);
     return stream;
 }
@@ -123,11 +127,11 @@ main()
                          frame_value);
             }
 
-            ZarrStatusCode status = ZarrStream_append(
-                stream,
-                multi_frame_data.data(),
-                multi_frame_size,
-                &bytes_out);
+            ZarrStatusCode status = ZarrStream_append(stream,
+                                                      multi_frame_data.data(),
+                                                      multi_frame_size,
+                                                      &bytes_out,
+                                                      nullptr);
 
             if (status != ZarrStatusCode_Success) {
                 LOG_ERROR("Failed to append frames. Status: ", status);

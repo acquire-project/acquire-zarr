@@ -25,6 +25,11 @@ class Sink
     [[nodiscard]] virtual bool write(size_t offset, ConstByteSpan data) = 0;
 
   protected:
+    /**
+     * @brief Flush any buffered data to the sink.
+     * @note This should ONLY be called when finalizing the sink.
+     * @return True if the flush was successful, false otherwise.
+     */
     [[nodiscard]] virtual bool flush_() = 0;
 
     friend bool finalize_sink(std::unique_ptr<Sink>&& sink);

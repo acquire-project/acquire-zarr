@@ -17,6 +17,7 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-latest"
+          - "ubuntu-24.04-arm"
           - "macos-latest"
           - "macos-13"
         include:
@@ -24,6 +25,8 @@ jobs:
             vcpkg_triplet: "x64-windows-static"
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
+          - platform: "ubuntu-24.04-arm"
+            vcpkg_triplet: "arm64-linux"
           - platform: "macos-latest"
             vcpkg_triplet: "arm64-osx"
           - platform: "macos-13"
@@ -44,9 +47,18 @@ jobs:
           submodules: true
 
       - name: Install CMake 3.31
+        if: matrix.platform != 'ubuntu-24.04-arm'
         uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: "3.31.x"
+
+      - name: Install CMake 3.31 for ARM
+        if: matrix.platform == 'ubuntu-24.04-arm'
+        run: |
+          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
+          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
+          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
+          echo "/opt/cmake/bin" >> $GITHUB_PATH
 
       - name: Install vcpkg
         run: |
@@ -89,6 +101,7 @@ jobs:
         platform:
           - "windows-latest"
           - "ubuntu-22.04"
+          - "ubuntu-22.04-arm"
           - "macos-latest" # arm
           - "macos-13" # x86_64
         python:
@@ -132,7 +145,7 @@ jobs:
           brew install libomp
 
       - name: Install system dependencies
-        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        if: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm' }}
         run: |
           sudo apt-get install patchelf
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
@@ -144,10 +157,16 @@ jobs:
       - name: Build
         run: python -m build -o dist
 
-      - name: Fix wheel for manylinux
+      - name: Fix wheel for manylinux (x86_64)
         if: ${{ matrix.platform == 'ubuntu-22.04' }}
         run: |
           auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
+          rm dist/*-linux_*.whl
+
+      - name: Fix wheel for manylinux (arm64)
+        if: ${{ matrix.platform == 'ubuntu-22.04-arm' }}
+        run: |
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_aarch64
           rm dist/*-linux_*.whl
 
       - name: Upload wheel

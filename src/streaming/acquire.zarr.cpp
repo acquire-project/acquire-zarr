@@ -96,14 +96,56 @@ extern "C"
         }
     }
 
-    ZarrStatusCode ZarrStreamSettings_create_dimension_array(
-      struct ZarrStreamSettings_s* settings,
+    ZarrStatusCode ZarrStreamSettings_create_arrays(
+      ZarrStreamSettings* settings,
+      size_t array_count)
+    {
+        EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
+
+        ZarrArraySettings* arrays = nullptr;
+
+        try {
+            arrays = new ZarrArraySettings[array_count];
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for arrays");
+            return ZarrStatusCode_OutOfMemory;
+        }
+
+        ZarrStreamSettings_destroy_arrays(settings);
+        memset(arrays, 0, sizeof(ZarrArraySettings) * array_count);
+        settings->arrays = arrays;
+        settings->array_count = array_count;
+
+        return ZarrStatusCode_Success;
+    }
+
+    void ZarrStreamSettings_destroy_arrays(ZarrStreamSettings* settings)
+    {
+        if (settings == nullptr) {
+            return;
+        }
+
+        if (settings->arrays == nullptr) {
+            settings->array_count = 0;
+            return;
+        }
+
+        // destroy dimension arrays for each ZarrArraySettings
+        for (auto i = 0; i < settings->array_count; ++i) {
+            ZarrArraySettings_destroy_dimension_array(&settings->arrays[i]);
+        }
+        delete[] settings->arrays;
+        settings->arrays = nullptr;
+        settings->array_count = 0;
+    }
+
+    ZarrStatusCode ZarrArraySettings_create_dimension_array(
+      ZarrArraySettings* settings,
       size_t dimension_count)
     {
         EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
-        EXPECT_VALID_ARGUMENT(dimension_count >= 3,
-                              "Invalid dimension count: ",
-                              dimension_count);
+        EXPECT_VALID_ARGUMENT(
+          dimension_count >= 3, "Invalid dimension count: ", dimension_count);
 
         ZarrDimensionProperties* dimensions = nullptr;
 
@@ -114,15 +156,14 @@ extern "C"
             return ZarrStatusCode_OutOfMemory;
         }
 
-        ZarrStreamSettings_destroy_dimension_array(settings);
+        ZarrArraySettings_destroy_dimension_array(settings);
         settings->dimensions = dimensions;
         settings->dimension_count = dimension_count;
 
         return ZarrStatusCode_Success;
     }
 
-    void ZarrStreamSettings_destroy_dimension_array(
-      struct ZarrStreamSettings_s* settings)
+    void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings)
     {
         if (settings == nullptr) {
             return;
@@ -163,14 +204,18 @@ extern "C"
     ZarrStatusCode ZarrStream_append(struct ZarrStream_s* stream,
                                      const void* data,
                                      size_t bytes_in,
-                                     size_t* bytes_out)
+                                     size_t* bytes_out,
+                                     const char* key)
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(data, "Null pointer: data");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
+        // TODO (aliddell): check key first, return a specialized error code if
+        // it is invalid
+
         try {
-            *bytes_out = stream->append(data, bytes_in);
+            *bytes_out = stream->append(key, data, bytes_in);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
             return ZarrStatusCode_InternalError;

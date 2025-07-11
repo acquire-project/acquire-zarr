@@ -7,10 +7,10 @@
 namespace fs = std::filesystem;
 
 void
-configure_stream_dimensions(ZarrStreamSettings* settings)
+configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-          ZarrStreamSettings_create_dimension_array(settings, 3));
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -51,10 +51,14 @@ create_stream_with_metadata(ZarrVersion version)
 
     std::string custom_metadata = R"({"foo":"bar"})";
 
-    configure_stream_dimensions(&settings);
+    CHECK(ZarrStatusCode_Success ==
+          ZarrStreamSettings_create_arrays(&settings, 1));
+    configure_stream_dimensions(settings.arrays);
 
     auto* stream = ZarrStream_create(&settings);
     CHECK(stream);
+
+    ZarrStreamSettings_destroy_arrays(&settings);
 
     // Write custom metadata to the stream
     CHECK(ZarrStatusCode_Success == ZarrStream_write_custom_metadata(
@@ -72,9 +76,14 @@ create_stream_no_metadata(ZarrVersion version)
     settings.max_threads = 0;
     settings.store_path = TEST ".zarr";
 
-    configure_stream_dimensions(&settings);
+    CHECK(ZarrStatusCode_Success ==
+          ZarrStreamSettings_create_arrays(&settings, 1));
+    configure_stream_dimensions(settings.arrays);
 
-    return ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings);
+    ZarrStreamSettings_destroy_arrays(&settings);
+
+    return stream;
 }
 
 void
