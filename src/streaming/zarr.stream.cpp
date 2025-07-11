@@ -441,15 +441,14 @@ check_array_structure(const ZarrArraySettings* arrays,
     {
         std::string name;
         DatasetNodeType type;
-        std::unordered_map<std::string, DatasetNode> children;
-        DatasetNode* parent = nullptr;
+        std::unordered_map<std::string, std::shared_ptr<DatasetNode>> children;
+        std::shared_ptr<DatasetNode> parent = nullptr;
     };
 
-    auto tree = DatasetNode{
-        .name = "",
-        .type = DatasetNodeType::Directory,
-        .children = {},
-    };
+    auto tree = std::make_shared<DatasetNode>();
+    tree->name = "";
+    tree->type = DatasetNodeType::Directory;
+    tree->children = {};
 
     std::unordered_set<std::string> seen_keys;
 
@@ -472,8 +471,8 @@ check_array_structure(const ZarrArraySettings* arrays,
         seen_keys.insert(key);
 
         if (key.empty()) {
-            tree.type = array->multiscale ? DatasetNodeType::MultiscaleArray
-                                          : DatasetNodeType::Array;
+            tree->type = array->multiscale ? DatasetNodeType::MultiscaleArray
+                                           : DatasetNodeType::Array;
         } else {
             // break down the key into segments
             std::string parent_path = key;
@@ -500,7 +499,7 @@ check_array_structure(const ZarrArraySettings* arrays,
             }
 
             // now we have all segments in reverse order, build the tree
-            DatasetNode* current_node = &tree;
+            auto current_node = tree;
             while (!segments.empty()) {
                 std::string segment = segments.top();
                 segments.pop();
@@ -509,24 +508,22 @@ check_array_structure(const ZarrArraySettings* arrays,
                 auto it = current_node->children.find(segment);
                 if (it == current_node->children.end()) {
                     // Create a new node for this segment
-                    DatasetNode new_node{
-                        .name = segment,
-                        .parent = current_node,
-                    };
+                    auto new_node = std::make_shared<DatasetNode>();
+                    new_node->name = segment;
+                    new_node->parent = current_node;
 
                     if (segments.empty()) { // Last segment
-                        new_node.type = array->multiscale
-                                          ? DatasetNodeType::MultiscaleArray
-                                          : DatasetNodeType::Array;
+                        new_node->type = array->multiscale
+                                           ? DatasetNodeType::MultiscaleArray
+                                           : DatasetNodeType::Array;
                     } else {
-                        new_node.type = DatasetNodeType::Directory;
+                        new_node->type = DatasetNodeType::Directory;
                     }
-                    current_node->children.emplace(segment,
-                                                   std::move(new_node));
+                    current_node->children.emplace(segment, new_node);
                 }
 
                 // Move to the child node
-                current_node = &current_node->children[segment];
+                current_node = current_node->children[segment];
             }
         }
     }
@@ -539,11 +536,11 @@ check_array_structure(const ZarrArraySettings* arrays,
     // we also construct the paths where we need to write group-level metadata
     needs_metadata_paths.clear();
 
-    std::stack<const DatasetNode*> nodes_to_visit;
-    nodes_to_visit.push(&tree);
+    std::stack<const std::shared_ptr<DatasetNode>> nodes_to_visit;
+    nodes_to_visit.push(tree);
 
     while (!nodes_to_visit.empty()) {
-        const DatasetNode* current_node = nodes_to_visit.top();
+        const auto current_node = nodes_to_visit.top();
         nodes_to_visit.pop();
 
         bool is_multiscale =
@@ -564,7 +561,7 @@ check_array_structure(const ZarrArraySettings* arrays,
         // a pure directory node needs to have a metadata file
         if (is_directory) {
             std::stack<std::string> path_segments;
-            const DatasetNode* node = current_node;
+            std::shared_ptr<DatasetNode> node = current_node;
             while (node != nullptr && !node->name.empty()) {
                 path_segments.push(node->name);
                 node = node->parent;
@@ -592,7 +589,7 @@ check_array_structure(const ZarrArraySettings* arrays,
             }
 
             // add the child to the stack for further validation
-            nodes_to_visit.push(&child_node);
+            nodes_to_visit.push(child_node);
         }
     }
 
