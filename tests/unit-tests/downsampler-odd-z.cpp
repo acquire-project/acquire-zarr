@@ -80,8 +80,14 @@ main()
         { "x", ZarrDimensionType_Space, 64, 16, 1 },
       },
       ZarrDataType_uint8);
-    auto config = std::make_shared<zarr::ArrayConfig>(
-      "", "/0", std::nullopt, std::nullopt, dims, ZarrDataType_uint8, 0);
+    auto config = std::make_shared<zarr::ArrayConfig>("",
+                                                      "/0",
+                                                      std::nullopt,
+                                                      std::nullopt,
+                                                      dims,
+                                                      ZarrDataType_uint8,
+                                                      ZarrDownsamplingMethod_Mean,
+                                                      0);
 
     try {
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
