@@ -536,7 +536,7 @@ check_array_structure(const ZarrArraySettings* arrays,
     // we also construct the paths where we need to write group-level metadata
     needs_metadata_paths.clear();
 
-    std::stack<const std::shared_ptr<DatasetNode>> nodes_to_visit;
+    std::stack<std::shared_ptr<DatasetNode>> nodes_to_visit;
     nodes_to_visit.push(tree);
 
     while (!nodes_to_visit.empty()) {
