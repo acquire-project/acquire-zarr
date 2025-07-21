@@ -5,6 +5,9 @@ on:
     branches:
       - "main"
       - "prep-for-*"
+  pull_request: # TODO (aliddell): disable once build is shown to work
+    branches:
+      - "main"
 
 jobs:
   build:
@@ -15,22 +18,22 @@ jobs:
           - "Debug"
           - "Release"
         platform:
-          - "windows-latest"
+#          - "windows-latest"
           - "ubuntu-latest"
           - "ubuntu-24.04-arm"
-          - "macos-latest" # arm
-          - "macos-13" # x86_64
+#          - "macos-latest" # arm
+#          - "macos-13" # x86_64
         include:
-          - platform: "windows-latest"
-            vcpkg_triplet: "x64-windows-static"
+#          - platform: "windows-latest"
+#            vcpkg_triplet: "x64-windows-static"
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
           - platform: "ubuntu-24.04-arm"
             vcpkg_triplet: "arm64-linux"
-          - platform: "macos-latest"
-            vcpkg_triplet: "arm64-osx"
-          - platform: "macos-13"
-            vcpkg_triplet: "x64-osx"
+#          - platform: "macos-latest"
+#            vcpkg_triplet: "arm64-osx"
+#          - platform: "macos-13"
+#            vcpkg_triplet: "x64-osx"
 
     runs-on: ${{ matrix.platform }}
 
