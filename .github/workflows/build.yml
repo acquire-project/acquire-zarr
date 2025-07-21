@@ -94,7 +94,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform_name }} binaries
+          name: ${{ matrix.platform_name }} ${{ matrix.build_type}} binaries
           path: ${{github.workspace}}/*.zip
 
   build-wheel:
