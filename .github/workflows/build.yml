@@ -179,10 +179,15 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_BEFORE_BUILD: >-
+            yum install -y ninja-build gcc-toolset-10-gcc gcc-toolset-10-gcc-c++ cmake-3.26.5 &&
+            source /opt/rh/gcc-toolset-10/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
             cd vcpkg && ./bootstrap-vcpkg.sh &&
-            export VCPKG_ROOT=$(pwd) &&
             ./vcpkg integrate install
-          CIBW_ENVIRONMENT: VCPKG_ROOT=/project/vcpkg
+          CIBW_ENVIRONMENT: >-
+            VCPKG_ROOT=/project/vcpkg
+            PATH=/opt/rh/gcc-toolset-10/root/usr/bin:$PATH
+            CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
+            CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
         with:
           output-dir: dist
