@@ -5,6 +5,9 @@ on:
     branches:
       - "main"
       - "prep-for-*"
+  pull_request: # TODO (aliddell) remove
+    branches:
+      - "main"
 
 jobs:
   build:
