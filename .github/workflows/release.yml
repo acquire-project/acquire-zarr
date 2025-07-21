@@ -42,7 +42,7 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -70,7 +70,7 @@ jobs:
         shell: bash
 
       - name: Install OpenMP
-        if: matrix.platform == 'macos-latest' || matrix.platform == 'macos-13'
+        if: startsWith(matrix.platform, 'macos')
         run: |
           brew install libomp
 
@@ -110,6 +110,11 @@ jobs:
           - "3.11"
           - "3.12"
           - "3.13.3"
+        include:
+          - platform: "ubuntu-22.04"
+            arch: "x86_64"
+          - platform: "ubuntu-22.04-arm"
+            arch: "aarch64"
 
     runs-on: ${{ matrix.platform }}
 
@@ -121,12 +126,12 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
 
@@ -140,12 +145,12 @@ jobs:
         shell: bash
 
       - name: Install OpenMP
-        if: matrix.platform == 'macos-latest' || matrix.platform == 'macos-13'
+        if: startsWith(matrix.platform, 'macos')
         run: |
           brew install libomp
 
       - name: Install system dependencies
-        if: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'ubuntu-22.04-arm' }}
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get install patchelf
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 90
@@ -157,16 +162,10 @@ jobs:
       - name: Build
         run: python -m build -o dist
 
-      - name: Fix wheel for manylinux (x86_64)
-        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+      - name: Fix wheel for manylinux
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
-          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_x86_64
-          rm dist/*-linux_*.whl
-
-      - name: Fix wheel for manylinux (arm64)
-        if: ${{ matrix.platform == 'ubuntu-22.04-arm' }}
-        run: |
-          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_aarch64
+          auditwheel repair dist/*.whl -w dist --plat manylinux_2_35_${{ matrix.arch }}
           rm dist/*-linux_*.whl
 
       - name: Upload wheel
@@ -189,7 +188,7 @@ jobs:
     permissions: write-all
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         id: download
@@ -203,7 +202,7 @@ jobs:
           find ${{steps.download.outputs.download-path}}/ -type f -name *.tar.gz -exec mv {} dist \; -quit
 
       - name: Tagged release
-        if: ${{ github.ref_name != 'nightly' }}
+        if: github.ref_name != 'nightly'
         uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: ${{ github.token }}
@@ -213,7 +212,7 @@ jobs:
             dist/*.whl
 
       - name: Nightly release
-        if: ${{ github.ref_name == 'nightly' }}
+        if: github.ref_name == 'nightly'
         uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: ${{ secrets.PAT }}
@@ -225,7 +224,7 @@ jobs:
             dist/*.whl
 
       - name: Publish wheels and sources
-        if: ${{ github.ref_name != 'nightly' }}
+        if: github.ref_name != 'nightly'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
