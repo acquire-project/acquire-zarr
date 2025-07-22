@@ -94,8 +94,8 @@ def s3_settings():
 
 @pytest.fixture(scope="function")
 def store_path(tmp_path):
-    yield tmp_path
-    shutil.rmtree(tmp_path)
+    yield Path(".")  # Use current directory for easier inspection
+    # shutil.rmtree(tmp_path)
 
 
 def validate_v2_metadata(store_path: Path):
