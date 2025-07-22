@@ -1083,9 +1083,10 @@ def test_anisotropic_downsampling(settings: StreamSettings,
 )
 def test_multiarray_metadata_structure(
         settings: StreamSettings,
+        store_path: Path,
         version: ZarrVersion,
 ):
-    settings.store_path = f"multiarray_metadata_test-{2 if version == ZarrVersion.V2 else 3}.zarr"
+    settings.store_path = str(store_path / "multiarray_metadata_test.zarr")
     settings.version = version
 
     # Configure three arrays matching the JSON examples
@@ -1279,7 +1280,3 @@ def test_multiarray_metadata_structure(
     assert array2_group.shape == array2_data.shape
     assert array2_group.dtype == np.uint32
     assert np.array_equal(array2_group, array2_data)
-
-    # cleanup
-    if store_path_obj.is_dir():
-        shutil.rmtree(store_path_obj)
