@@ -35,8 +35,8 @@ check_json()
     std::ifstream f(zarray_path);
     nlohmann::json zarray = nlohmann::json::parse(f);
 
-    EXPECT(zarray["dtype"].get<std::string>() == "<u1",
-           "Expected dtype to be <u1, but got ",
+    EXPECT(zarray["dtype"].get<std::string>() == "|u1",
+           "Expected dtype to be |u1, but got ",
            zarray["dtype"].get<std::string>().c_str());
 
     EXPECT_EQ(int, zarray["zarr_format"].get<int>(), 2);

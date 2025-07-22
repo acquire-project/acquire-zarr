@@ -24,7 +24,7 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 
     switch (t) {
         case ZarrDataType_uint8:
-            t_str = dtype_prefix + "u1";
+            t_str = "|u1"; // byte order does not matter for 1-byte types
             break;
         case ZarrDataType_uint16:
             t_str = dtype_prefix + "u2";
@@ -36,7 +36,7 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
             t_str = dtype_prefix + "u8";
             break;
         case ZarrDataType_int8:
-            t_str = dtype_prefix + "i1";
+            t_str = "|i1"; // byte order does not matter for 1-byte types
             break;
         case ZarrDataType_int16:
             t_str = dtype_prefix + "i2";
