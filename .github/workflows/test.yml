@@ -221,4 +221,5 @@ jobs:
             /tmp/pytest-of-*/pytest-*/test_*/
           retention-days: 7
           if-no-files-found: warn
+          include-hidden-files: true
 
