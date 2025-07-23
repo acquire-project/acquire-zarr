@@ -200,5 +200,5 @@ jobs:
             PATH=/opt/rh/gcc-toolset-10/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
-          with:
-            output-dir: dist
+        with:
+          output-dir: dist
