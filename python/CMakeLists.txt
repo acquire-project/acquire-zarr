@@ -1,6 +1,6 @@
 project(acquire-zarr-py)
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 
 # pybind11 may be in a non-standard location, so we try to find it using the pybind11 module
 execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
