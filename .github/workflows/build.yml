@@ -190,7 +190,7 @@ jobs:
             yum install -y ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd &&
             source /opt/rh/gcc-toolset-11/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
-            cd vcpkg && 
+            cd vcpkg &&
             CMAKE_POLICY_VERSION_MINIMUM=3.5 ./bootstrap-vcpkg.sh &&
             ./vcpkg integrate install
           CIBW_ENVIRONMENT: >-

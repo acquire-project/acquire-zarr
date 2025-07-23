@@ -216,7 +216,7 @@ jobs:
       - name: Build
         uses: pypa/cibuildwheel@v3.0.1
         env:
-          CIBW_BUILD: ${{ matrix.py_short}}-*
+          CIBW_BUILD: ${{ matrix.py_short }}-*
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
@@ -232,9 +232,9 @@ jobs:
             PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-11/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-11/root/usr/bin/g++
-            Python3_EXECUTABLE=/opt/python/${{ matrix.py_short}}-${{ matrix.py_short}}/bin/python
-            Python3_INCLUDE_DIR=/opt/python/${{ matrix.py_short}}-${{ matrix.py_short}}/include/python${{ matrix.py_version }}
-            Python3_LIBRARY=/opt/python/${{ matrix.py_short}}-${{ matrix.py_short}}/lib/libpython${{ matrix.py_version }}.a
+            Python3_EXECUTABLE=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/bin/python
+            Python3_INCLUDE_DIR=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/include/python${{ matrix.py_version }}
+            Python3_LIBRARY=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/lib/libpython${{ matrix.py_version }}.a
         with:
           output-dir: dist
 
