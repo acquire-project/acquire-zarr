@@ -10,148 +10,148 @@ on:
       - "main"
 
 jobs:
-  build:
-    name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
-    strategy:
-      matrix:
-        build_type:
-          - "Debug"
-          - "Release"
-        platform:
-          - "windows-latest"
-          - "ubuntu-latest"
-          - "ubuntu-24.04-arm"
-          - "macos-latest" # arm
-          - "macos-13" # x86_64
-        include:
-          - platform: "windows-latest"
-            vcpkg_triplet: "x64-windows-static"
-            platform_name: "windows-x86_64"
-          - platform: "ubuntu-latest"
-            vcpkg_triplet: "x64-linux"
-            platform_name: "linux-x86_64"
-          - platform: "ubuntu-24.04-arm"
-            vcpkg_triplet: "arm64-linux"
-            platform_name: "linux-aarch64"
-          - platform: "macos-latest"
-            vcpkg_triplet: "arm64-osx"
-            platform_name: "macos-arm64"
-          - platform: "macos-13"
-            vcpkg_triplet: "x64-osx"
-            platform_name: "macos-x86_64"
-
-    runs-on: ${{ matrix.platform }}
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.build_type }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install CMake 3.31
-        if: matrix.platform != 'ubuntu-24.04-arm'
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: "3.31.x"
-
-      - name: Install CMake 3.31 for ARM
-        if: matrix.platform == 'ubuntu-24.04-arm'
-        run: |
-          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
-          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
-          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
-          echo "/opt/cmake/bin" >> $GITHUB_PATH
-
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
-
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
-      - name: CMake
-        run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
-
-      - name: Build
-        run: |
-          cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
-          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform_name }} ${{ matrix.build_type}} binaries
-          path: ${{github.workspace}}/*.zip
-
-  build-wheel:
-    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
-    strategy:
-      matrix:
-        platform:
-          - "windows-latest"
-          - "macos-latest" # arm
-          - "macos-13" # x86_64
-        python:
-          - "3.13.3"
-
-    runs-on: ${{ matrix.platform }}
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
-
-      - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build auditwheel
-
-      - name: Install OpenMP (macOS)
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
-      - name: Build
-        run: python -m build -o dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.platform}} wheel
-          path: ${{github.workspace}}/dist/*.whl
+#  build:
+#    name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
+#    strategy:
+#      matrix:
+#        build_type:
+#          - "Debug"
+#          - "Release"
+#        platform:
+#          - "windows-latest"
+#          - "ubuntu-latest"
+#          - "ubuntu-24.04-arm"
+#          - "macos-latest" # arm
+#          - "macos-13" # x86_64
+#        include:
+#          - platform: "windows-latest"
+#            vcpkg_triplet: "x64-windows-static"
+#            platform_name: "windows-x86_64"
+#          - platform: "ubuntu-latest"
+#            vcpkg_triplet: "x64-linux"
+#            platform_name: "linux-x86_64"
+#          - platform: "ubuntu-24.04-arm"
+#            vcpkg_triplet: "arm64-linux"
+#            platform_name: "linux-aarch64"
+#          - platform: "macos-latest"
+#            vcpkg_triplet: "arm64-osx"
+#            platform_name: "macos-arm64"
+#          - platform: "macos-13"
+#            vcpkg_triplet: "x64-osx"
+#            platform_name: "macos-x86_64"
+#
+#    runs-on: ${{ matrix.platform }}
+#
+#    permissions:
+#      actions: write
+#
+#    concurrency:
+#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.build_type }}
+#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+#
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: true
+#
+#      - name: Install CMake 3.31
+#        if: matrix.platform != 'ubuntu-24.04-arm'
+#        uses: jwlawson/actions-setup-cmake@v2
+#        with:
+#          cmake-version: "3.31.x"
+#
+#      - name: Install CMake 3.31 for ARM
+#        if: matrix.platform == 'ubuntu-24.04-arm'
+#        run: |
+#          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
+#          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
+#          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
+#          echo "/opt/cmake/bin" >> $GITHUB_PATH
+#
+#      - name: Install vcpkg
+#        run: |
+#          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+#          cd vcpkg && ./bootstrap-vcpkg.sh
+#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+#          ./vcpkg integrate install
+#        shell: bash
+#
+#      - name: Install OpenMP
+#        if: startsWith(matrix.platform, 'macos')
+#        run: |
+#          brew install libomp
+#
+#      - name: CMake
+#        run: |
+#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
+#          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+#
+#      - name: Build
+#        run: |
+#          cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
+#          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C ${{matrix.build_type}} -G ZIP
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: ${{ matrix.platform_name }} ${{ matrix.build_type}} binaries
+#          path: ${{github.workspace}}/*.zip
+#
+#  build-wheel:
+#    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
+#    strategy:
+#      matrix:
+#        platform:
+#          - "windows-latest"
+#          - "macos-latest" # arm
+#          - "macos-13" # x86_64
+#        python:
+#          - "3.13.3"
+#
+#    runs-on: ${{ matrix.platform }}
+#
+#    permissions:
+#      actions: write
+#
+#    concurrency:
+#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
+#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+#
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: true
+#
+#      - name: Set up Python
+#        uses: actions/setup-python@v5
+#        with:
+#          python-version: ${{ matrix.python }}
+#
+#      - name: Install vcpkg
+#        run: |
+#          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+#          cd vcpkg && ./bootstrap-vcpkg.sh
+#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+#          ./vcpkg integrate install
+#        shell: bash
+#
+#      - name: Install dependencies
+#        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build auditwheel
+#
+#      - name: Install OpenMP (macOS)
+#        if: startsWith(matrix.platform, 'macos')
+#        run: |
+#          brew install libomp
+#
+#      - name: Build
+#        run: python -m build -o dist
+#
+#      - name: Upload wheel
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: ${{matrix.platform}} wheel
+#          path: ${{github.workspace}}/dist/*.whl
 
   build-wheel-ubuntu:
     name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
@@ -189,15 +189,16 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_BEFORE_BUILD: >-
-            yum install -y ninja-build gcc-toolset-10-gcc gcc-toolset-10-gcc-c++ cmake-3.26.5 &&
+            yum install -y ninja-build gcc-toolset-10-gcc gcc-toolset-10-gcc-c++ &&
             source /opt/rh/gcc-toolset-10/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
-            cd vcpkg && ./bootstrap-vcpkg.sh &&
+            cd vcpkg && 
+            CMAKE_POLICY_VERSION_MINIMUM=3.5 ./bootstrap-vcpkg.sh &&
             ./vcpkg integrate install
           CIBW_ENVIRONMENT: >-
             VCPKG_ROOT=/project/vcpkg
             PATH=/opt/rh/gcc-toolset-10/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
-        with:
-          output-dir: dist
+          with:
+            output-dir: dist
