@@ -1,5 +1,6 @@
 project(acquire-zarr-py)
 
+# Development.Module doesn't require a .so which is missing in manylinux containers
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 
 # pybind11 may be in a non-standard location, so we try to find it using the pybind11 module
