@@ -138,8 +138,8 @@ numpy_dtype_to_zarr_datatype(const py::dtype& dtype)
     } else if (dtype.is(py::dtype::of<double>())) {
         return ZarrDataType_float64;
     } else {
-        std::string err =
-          "Unsupported NumPy dtype: " + py::str(dtype).cast<std::string>();
+        std::string err = "Unsupported NumPy dtype: " +
+                          py::str(py::handle(dtype)).cast<std::string>();
         PyErr_SetString(PyExc_ValueError, err.c_str());
         throw py::error_already_set();
     }
@@ -1001,8 +1001,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                 throw py::error_already_set();
             }
         })
-      .def_property("data_type",
-                    &PyZarrArraySettings::data_type,
+      .def_property(
+        "data_type",
+        &PyZarrArraySettings::data_type,
         [](PyZarrArraySettings& self, py::object& obj) {
             if (py::isinstance<py::dtype>(obj)) {
                 auto dtype = obj.cast<py::dtype>();
@@ -1144,7 +1145,8 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
       .def("close", &PyZarrStream::close)
-      .def("append", &PyZarrStream::append,
+      .def("append",
+           &PyZarrStream::append,
            py::arg("data"),
            py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
