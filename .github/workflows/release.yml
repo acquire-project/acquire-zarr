@@ -5,151 +5,148 @@ on:
     tags:
       - "v*.*.*"
       - "nightly"
-  pull_request:
-    branches:
-      - "main"
 
 env:
   BUILD_TYPE: Release
 
 jobs:
-#  build:
-#    name: Build on ${{ matrix.platform }}
-#    strategy:
-#      matrix:
-#        platform:
-#          - "windows-latest"
-#          - "ubuntu-latest"
-#          - "ubuntu-24.04-arm"
-#          - "macos-latest"
-#          - "macos-13"
-#        include:
-#          - platform: "windows-latest"
-#            vcpkg_triplet: "x64-windows-static"
-#          - platform: "ubuntu-latest"
-#            vcpkg_triplet: "x64-linux"
-#          - platform: "ubuntu-24.04-arm"
-#            vcpkg_triplet: "arm64-linux"
-#          - platform: "macos-latest"
-#            vcpkg_triplet: "arm64-osx"
-#          - platform: "macos-13"
-#            vcpkg_triplet: "x64-osx"
-#
-#    runs-on: ${{ matrix.platform }}
-#
-#    permissions:
-#      actions: write
-#
-#    concurrency:
-#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
-#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-#
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          submodules: true
-#
-#      - name: Install CMake 3.31
-#        if: matrix.platform != 'ubuntu-24.04-arm'
-#        uses: jwlawson/actions-setup-cmake@v2
-#        with:
-#          cmake-version: "3.31.x"
-#
-#      - name: Install CMake 3.31 for ARM
-#        if: matrix.platform == 'ubuntu-24.04-arm'
-#        run: |
-#          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
-#          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
-#          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
-#          echo "/opt/cmake/bin" >> $GITHUB_PATH
-#
-#      - name: Install vcpkg
-#        run: |
-#          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-#          cd vcpkg && ./bootstrap-vcpkg.sh
-#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-#          ./vcpkg integrate install
-#        shell: bash
-#
-#      - name: Install OpenMP
-#        if: startsWith(matrix.platform, 'macos')
-#        run: |
-#          brew install libomp
-#
-#      - name: Build
-#        run: |
-#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
-#          cmake --build ${{github.workspace}}/build --config Release
-#
-#      - name: Test  # don't release if tests are failing
-#        working-directory: ${{github.workspace}}/build
-#        run: ctest -C Release -L anyplatform --output-on-failure
-#
-#      - name: Package
-#        run: |
-#          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-#          cmake --build ${{github.workspace}}/pack --config Release
-#          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
-#
-#      - uses: actions/upload-artifact@v4
-#        with:
-#          name: ${{matrix.platform}} binaries
-#          path: ${{github.workspace}}/*.zip
-#
-#  build-wheel:
-#    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
-#    strategy:
-#      matrix:
-#        platform:
-#          - "windows-latest"
-#          - "macos-latest" # arm
-#          - "macos-13" # x86_64
-#
-#    runs-on: ${{ matrix.platform }}
-#
-#    permissions:
-#      actions: write
-#
-#    concurrency:
-#      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
-#      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-#
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          submodules: true
-#
-#      - name: Set up Python
-#        uses: actions/setup-python@v5
-#        with:
-#          python-version: ${{ matrix.python }}
-#
-#      - name: Install vcpkg
-#        run: |
-#          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-#          cd vcpkg && ./bootstrap-vcpkg.sh
-#          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-#          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-#          ./vcpkg integrate install
-#        shell: bash
-#
-#      - name: Install OpenMP
-#        if: startsWith(matrix.platform, 'macos')
-#        run: |
-#          brew install libomp
-#
-#      - name: Install Python dependencies
-#        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest auditwheel
-#
-#      - name: Build
-#        run: python -m build -o dist
-#
-#      - name: Upload wheel
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: ${{ matrix.platform }} ${{ matrix.python }} wheel
-#          path: ${{ github.workspace }}/dist
+  build:
+    name: Build on ${{ matrix.platform }}
+    strategy:
+      matrix:
+        platform:
+          - "windows-latest"
+          - "ubuntu-latest"
+          - "ubuntu-24.04-arm"
+          - "macos-latest"
+          - "macos-13"
+        include:
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
+          - platform: "ubuntu-latest"
+            vcpkg_triplet: "x64-linux"
+          - platform: "ubuntu-24.04-arm"
+            vcpkg_triplet: "arm64-linux"
+          - platform: "macos-latest"
+            vcpkg_triplet: "arm64-osx"
+          - platform: "macos-13"
+            vcpkg_triplet: "x64-osx"
+
+    runs-on: ${{ matrix.platform }}
+
+    permissions:
+      actions: write
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install CMake 3.31
+        if: matrix.platform != 'ubuntu-24.04-arm'
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Install CMake 3.31 for ARM
+        if: matrix.platform == 'ubuntu-24.04-arm'
+        run: |
+          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
+          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
+          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
+          echo "/opt/cmake/bin" >> $GITHUB_PATH
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          brew install libomp
+
+      - name: Build
+        run: |
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build ${{github.workspace}}/build --config Release
+
+      - name: Test  # don't release if tests are failing
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C Release -L anyplatform --output-on-failure
+
+      - name: Package
+        run: |
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+          cmake --build ${{github.workspace}}/pack --config Release
+          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.platform}} binaries
+          path: ${{github.workspace}}/*.zip
+
+  build-wheel:
+    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
+    strategy:
+      matrix:
+        platform:
+          - "windows-latest"
+          - "macos-latest" # arm
+          - "macos-13" # x86_64
+
+    runs-on: ${{ matrix.platform }}
+
+    permissions:
+      actions: write
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          brew install libomp
+
+      - name: Install Python dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest auditwheel
+
+      - name: Build
+        run: python -m build -o dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }} ${{ matrix.python }} wheel
+          path: ${{ github.workspace }}/dist
 
   build-wheel-ubuntu:
     name: Build Python ${{ matrix.py_version }} wheel on ${{ matrix.platform }}
@@ -232,8 +229,8 @@ jobs:
 
   release:
     needs:
-#      - build
-#      - build-wheel
+      - build
+      - build-wheel
       - build-wheel-ubuntu
     name: "Release"
     runs-on: "ubuntu-latest"
@@ -258,30 +255,30 @@ jobs:
           mv ${{steps.download.outputs.download-path}}/*/*.whl dist
           find ${{steps.download.outputs.download-path}}/ -type f -name *.tar.gz -exec mv {} dist \; -quit
 
-#      - name: Tagged release
-#        if: github.ref_name != 'nightly'
-#        uses: marvinpinto/action-automatic-releases@latest
-#        with:
-#          repo_token: ${{ github.token }}
-#          prerelease: false
-#          files: |
-#            ${{steps.download.outputs.download-path}}/*/*.zip
-#            dist/*.whl
-#
-#      - name: Nightly release
-#        if: github.ref_name == 'nightly'
-#        uses: marvinpinto/action-automatic-releases@latest
-#        with:
-#          repo_token: ${{ secrets.PAT }}
-#          automatic_release_tag: "nightly"
-#          prerelease: true
-#          title: "Nightly Release"
-#          files: |
-#            ${{steps.download.outputs.download-path}}/*/*.zip
-#            dist/*.whl
-#
-#      - name: Publish wheels and sources
-#        if: github.ref_name != 'nightly'
-#        uses: pypa/gh-action-pypi-publish@release/v1
-#        with:
-#          skip-existing: true
+      - name: Tagged release
+        if: github.ref_name != 'nightly'
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ github.token }}
+          prerelease: false
+          files: |
+            ${{steps.download.outputs.download-path}}/*/*.zip
+            dist/*.whl
+
+      - name: Nightly release
+        if: github.ref_name == 'nightly'
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.PAT }}
+          automatic_release_tag: "nightly"
+          prerelease: true
+          title: "Nightly Release"
+          files: |
+            ${{steps.download.outputs.download-path}}/*/*.zip
+            dist/*.whl
+
+      - name: Publish wheels and sources
+        if: github.ref_name != 'nightly'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
