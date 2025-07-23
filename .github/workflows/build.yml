@@ -186,6 +186,7 @@ jobs:
         uses: pypa/cibuildwheel@v3.0.1
         env:
           CIBW_BUILD: cp313-*
+          CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_BEFORE_BUILD: >-
