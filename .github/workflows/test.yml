@@ -73,7 +73,7 @@ jobs:
         shell: bash
 
       - name: Install OpenMP
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos')
         run: |
           brew install libomp
 
