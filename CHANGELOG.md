@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Users may specify NumPy datatypes when configuring streams (#140)
+
 ### Fixed
 
 - Endianness indicator for 1-byte dtypes has been corrected to `|` (not relevant) in Zarr V2 metadata (#138)
