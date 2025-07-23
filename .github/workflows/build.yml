@@ -189,17 +189,17 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_BEFORE_BUILD: >-
-            yum install -y ninja-build gcc-toolset-10-gcc gcc-toolset-10-gcc-c++ perl-IPC-Cmd &&
-            source /opt/rh/gcc-toolset-10/enable &&
+            yum install -y ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd &&
+            source /opt/rh/gcc-toolset-11/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
             cd vcpkg && 
             CMAKE_POLICY_VERSION_MINIMUM=3.5 ./bootstrap-vcpkg.sh &&
             ./vcpkg integrate install
           CIBW_ENVIRONMENT: >-
             VCPKG_ROOT=/project/vcpkg
-            PATH=/opt/rh/gcc-toolset-10/root/usr/bin:$PATH
-            CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
-            CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
+            PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
+            CC=/opt/rh/gcc-toolset-11/root/usr/bin/gcc
+            CXX=/opt/rh/gcc-toolset-11/root/usr/bin/g++
             Python3_EXECUTABLE=/opt/python/cp313-cp313/bin/python
             Python3_INCLUDE_DIR=/opt/python/cp313-cp313/include/python3.13
             Python3_LIBRARY=/opt/python/cp313-cp313/lib/libpython3.13.a
