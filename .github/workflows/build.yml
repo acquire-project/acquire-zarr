@@ -206,3 +206,9 @@ jobs:
             Python3_LIBRARY=/opt/python/cp313-cp313/lib/libpython3.13.a
         with:
           output-dir: dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux ${{ matrix.arch }} wheel
+          path: ${{github.workspace}}/dist/*.whl
