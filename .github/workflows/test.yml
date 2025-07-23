@@ -27,7 +27,8 @@
 #          - "ubuntu-latest"
 #          - "ubuntu-24.04-arm"
 #          - "windows-latest"
-#          - "macos-latest"
+#          - "macos-latest" # arm
+#          - "macos-13" # x86_64
 #        include:
 #          - platform: "ubuntu-latest"
 #            vcpkg_triplet: "x64-linux"
