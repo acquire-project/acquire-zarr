@@ -210,15 +210,3 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -v
-
-      - name: Upload test artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zarr-test-artifacts-python-${{ matrix.platform }}
-          path: |
-            **/*.zarr/
-            /tmp/pytest-of-*/pytest-*/test_*/
-          retention-days: 7
-          if-no-files-found: warn
-          include-hidden-files: true

@@ -552,7 +552,7 @@ def test_write_transposed_array(
             )
         ]
     )
-    settings.store_path = "transposed-array-test.zarr"
+    settings.store_path = str(store_path / "test.zarr")
     settings.version = ZarrVersion.V3
 
     data = np.random.randint(
