@@ -181,7 +181,7 @@ settings = aqz.StreamSettings(
 settings.arrays = [
     aqz.ArraySettings(
         output_key="array1",
-        data_type=aqz.DataType.UINT16,
+        data_type=np.uint16,
         dimensions = [
             aqz.Dimension(
                 name="t",
@@ -244,7 +244,7 @@ settings = aqz.StreamSettings(
     arrays=[
         aqz.ArraySettings(
             output_key="sample1/brightfield",
-            data_type=aqz.DataType.UINT16,
+            data_type=np.uint16,
             dimensions=[
                 aqz.Dimension(
                     name="t",
@@ -278,7 +278,7 @@ settings = aqz.StreamSettings(
         ),
         aqz.ArraySettings(
             output_key="sample1/fluorescence",
-            data_type=aqz.DataType.UINT16,
+            data_type=np.uint16,
             dimensions=[
                 aqz.Dimension(
                     name="t",
