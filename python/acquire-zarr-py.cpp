@@ -113,6 +113,37 @@ log_level_to_str(ZarrLogLevel level)
             return "UNKNOWN";
     }
 }
+
+ZarrDataType
+numpy_dtype_to_zarr_datatype(const py::dtype& dtype)
+{
+    if (dtype.is(py::dtype::of<uint8_t>())) {
+        return ZarrDataType_uint8;
+    } else if (dtype.is(py::dtype::of<uint16_t>())) {
+        return ZarrDataType_uint16;
+    } else if (dtype.is(py::dtype::of<uint32_t>())) {
+        return ZarrDataType_uint32;
+    } else if (dtype.is(py::dtype::of<uint64_t>())) {
+        return ZarrDataType_uint64;
+    } else if (dtype.is(py::dtype::of<int8_t>())) {
+        return ZarrDataType_int8;
+    } else if (dtype.is(py::dtype::of<int16_t>())) {
+        return ZarrDataType_int16;
+    } else if (dtype.is(py::dtype::of<int32_t>())) {
+        return ZarrDataType_int32;
+    } else if (dtype.is(py::dtype::of<int64_t>())) {
+        return ZarrDataType_int64;
+    } else if (dtype.is(py::dtype::of<float>())) {
+        return ZarrDataType_float32;
+    } else if (dtype.is(py::dtype::of<double>())) {
+        return ZarrDataType_float64;
+    } else {
+        std::string err = "Unsupported NumPy dtype: " +
+                          py::str(py::handle(dtype)).cast<std::string>();
+        PyErr_SetString(PyExc_ValueError, err.c_str());
+        throw py::error_already_set();
+    }
+}
 } // namespace
 
 class PyZarrS3Settings
@@ -844,7 +875,7 @@ PYBIND11_MODULE(acquire_zarr, m)
         py::init([](std::optional<std::string> output_key,
                     std::optional<PyZarrCompressionSettings> compression,
                     std::optional<py::list> dimensions,
-                    std::optional<ZarrDataType> data_type,
+                    std::optional<py::object> data_type,
                     std::optional<ZarrDownsamplingMethod> downsampling_method) {
             PyZarrArraySettings settings;
 
@@ -864,7 +895,21 @@ PYBIND11_MODULE(acquire_zarr, m)
                 settings.set_dimensions(dims_vec);
             }
             if (data_type) {
-                settings.set_data_type(*data_type);
+                if (py::isinstance<py::dtype>(*data_type)) {
+                    auto dtype = data_type->cast<py::dtype>();
+                    settings.set_data_type(numpy_dtype_to_zarr_datatype(dtype));
+                } else {
+                    // try to convert to dtype first
+                    try {
+                        py::module np = py::module::import("numpy");
+                        py::dtype dtype = np.attr("dtype")((*data_type));
+                        settings.set_data_type(
+                          numpy_dtype_to_zarr_datatype(dtype));
+                    } catch (const std::exception& exc) {
+                        // fall back to assuming it's a ZarrDataType
+                        settings.set_data_type(data_type->cast<ZarrDataType>());
+                    }
+                }
             }
             if (downsampling_method) {
                 settings.set_downsampling_method(*downsampling_method);
@@ -956,9 +1001,25 @@ PYBIND11_MODULE(acquire_zarr, m)
                 throw py::error_already_set();
             }
         })
-      .def_property("data_type",
-                    &PyZarrArraySettings::data_type,
-                    &PyZarrArraySettings::set_data_type)
+      .def_property(
+        "data_type",
+        &PyZarrArraySettings::data_type,
+        [](PyZarrArraySettings& self, py::object& obj) {
+            if (py::isinstance<py::dtype>(obj)) {
+                auto dtype = obj.cast<py::dtype>();
+                self.set_data_type(numpy_dtype_to_zarr_datatype(dtype));
+            } else {
+                // try to create a dtype from the NumPy type class
+                try {
+                    py::module np = py::module::import("numpy");
+                    py::dtype dtype = np.attr("dtype")(obj);
+                    self.set_data_type(numpy_dtype_to_zarr_datatype(dtype));
+                } catch (...) {
+                    // cast to ZarrDataType
+                    self.set_data_type(obj.cast<ZarrDataType>());
+                }
+            }
+        })
       .def_property(
         "downsampling_method",
         [](const PyZarrArraySettings& self) -> py::object {
@@ -1084,7 +1145,8 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
       .def("close", &PyZarrStream::close)
-      .def("append", &PyZarrStream::append,
+      .def("append",
+           &PyZarrStream::append,
            py::arg("data"),
            py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
