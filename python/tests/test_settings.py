@@ -224,11 +224,10 @@ def test_set_dimensions_in_constructor():
 
 
 def test_set_version(settings):
-    assert settings.version == aqz.ZarrVersion.V2
-
-    settings.version = aqz.ZarrVersion.V3
-
     assert settings.version == aqz.ZarrVersion.V3
+
+    settings.version = aqz.ZarrVersion.V2
+    assert settings.version == aqz.ZarrVersion.V2
 
 
 def test_set_max_threads(settings):

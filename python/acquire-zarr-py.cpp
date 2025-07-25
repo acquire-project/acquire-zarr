@@ -355,7 +355,7 @@ class PyZarrStreamSettings
   private:
     std::string store_path_;
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
-    ZarrVersion version_{ ZarrVersion_2 };
+    ZarrVersion version_{ ZarrVersion_3 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
     std::vector<PyZarrArraySettings> arrays_;
