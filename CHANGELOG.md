@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Examples are now packaged with the library (#143)
+
 ### Changed
 
 - Default to streaming Zarr V3 in Python API (#142)

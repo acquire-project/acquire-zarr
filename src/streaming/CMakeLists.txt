@@ -54,6 +54,7 @@ add_library(${tgt}
 target_include_directories(${tgt}
         PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
         PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/logger>
@@ -76,6 +77,7 @@ set_target_properties(${tgt} PROPERTIES
 )
 
 install(TARGETS ${tgt}
+        EXPORT acquire-zarrTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
 )
