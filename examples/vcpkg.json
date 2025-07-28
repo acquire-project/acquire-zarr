@@ -1,0 +1,43 @@
+{
+  "dependencies": [
+    {
+      "name": "blosc"
+    },
+    {
+      "name": "nlohmann-json"
+    },
+    {
+      "name": "crc32c"
+    },
+    {
+      "name": "curlpp"
+    },
+    {
+      "name": "inih",
+      "features": [
+        "cpp"
+      ]
+    },
+    {
+      "name": "nlohmann-json"
+    },
+    {
+      "name": "openssl"
+    },
+    {
+      "name": "pugixml"
+    },
+    {
+      "name": "zlib",
+      "platform": "windows"
+    },
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

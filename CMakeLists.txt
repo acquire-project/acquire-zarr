@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(acquire-zarr)
+project(acquire-zarr VERSION 0.5.1)
 cmake_policy(SET CMP0057 NEW) # allows IN_LIST operator (for pybind11)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()
@@ -24,7 +24,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_PYTHON "Build Python bindings" OFF)
-option(BUILD_EXAMPLES "Build examples" OFF)
 option(BUILD_BENCHMARK "Build benchmarks" OFF)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -38,7 +37,7 @@ if(MSVC)
     # Set to static runtime library
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
-add_subdirectory(minio-cpp)
+add_subdirectory(minio-cpp EXCLUDE_FROM_ALL)
 if(MSVC AND DEFINED ORIG_MSVC_RUNTIME_LIBRARY)
     set(CMAKE_MSVC_RUNTIME_LIBRARY ${ORIG_MSVC_RUNTIME_LIBRARY})
 endif()
@@ -48,12 +47,6 @@ if (BUILD_TESTING)
     add_subdirectory(tests)
 else ()
     message(STATUS "Skipping test targets")
-endif ()
-
-if (${BUILD_EXAMPLES})
-    add_subdirectory(examples)
-else ()
-    message(STATUS "Skipping examples")
 endif ()
 
 if (BUILD_BENCHMARK)
@@ -67,5 +60,51 @@ if (BUILD_PYTHON)
 else ()
     message(STATUS "Skipping Python bindings")
 endif ()
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/acquire-zarrConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/acquire-zarrConfig.cmake"
+        INSTALL_DESTINATION lib/cmake/acquire-zarr
+)
+
+write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/acquire-zarrConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/acquire-zarrConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/acquire-zarrConfigVersion.cmake"
+        DESTINATION lib/cmake/acquire-zarr
+)
+
+install(EXPORT acquire-zarrTargets
+        FILE acquire-zarrTargets.cmake
+        NAMESPACE acquire-zarr::
+        DESTINATION lib/cmake/acquire-zarr
+)
+
+install(TARGETS miniocpp
+        EXPORT acquire-zarrTargets
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+
+install(DIRECTORY examples/
+        DESTINATION examples
+        FILES_MATCHING
+        PATTERN "*.c"
+        PATTERN "*.cpp"
+        PATTERN "*.h"
+        PATTERN "CMakeLists.txt"
+        PATTERN "vcpkg.json"
+        PATTERN "CMakePresets.json"
+        PATTERN "deprecated" EXCLUDE
+        PATTERN "python" EXCLUDE
+        PATTERN "build" EXCLUDE
+)
 
 include(CPack)
