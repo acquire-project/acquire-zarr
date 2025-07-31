@@ -201,7 +201,11 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     if (dir_paths.empty()) {
         return true;
     }
-    EXPECT(thread_pool, "Thread pool not provided.");
+
+    if (!thread_pool || thread_pool.use_count() == 0) {
+        LOG_ERROR("Thread pool not provided or has zero references.");
+        return false;
+    }
 
     std::atomic<char> all_successful = 1;
 
@@ -220,7 +224,8 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
             std::error_code ec;
             if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
-                err = "Failed to create directory '" + path + "': " + ec.message();
+                err =
+                  "Failed to create directory '" + path + "': " + ec.message();
                 success = false;
             }
 

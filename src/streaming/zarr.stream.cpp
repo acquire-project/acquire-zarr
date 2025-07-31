@@ -1193,10 +1193,12 @@ ZarrStream_s::finalize_frame_queue_()
 bool
 finalize_stream(struct ZarrStream_s* stream)
 {
-    if (stream == nullptr) {
-        LOG_INFO("Stream is null. Nothing to finalize.");
+    if (stream == nullptr || stream->is_closing_) {
+        LOG_INFO("Stream is closed or closing. Nothing to finalize.");
         return true;
     }
+
+    stream->is_closing_ = true;
 
     if (stream->custom_metadata_sink_ &&
         !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
@@ -1207,7 +1209,7 @@ finalize_stream(struct ZarrStream_s* stream)
     stream->finalize_frame_queue_();
 
     for (auto& [key, output] : stream->output_arrays_) {
-        if (!zarr::finalize_node(std::move(output.array))) {
+        if (!zarr::finalize_array(std::move(output.array))) {
             LOG_ERROR(
               "Error finalizing Zarr stream. Failed to finalize array '",
               key,
@@ -1222,6 +1224,8 @@ finalize_stream(struct ZarrStream_s* stream)
     }
 
     stream->thread_pool_->await_stop();
+
+    stream->is_closing_ = false;
 
     return true;
 }
