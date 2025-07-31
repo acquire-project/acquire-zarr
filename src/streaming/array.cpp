@@ -254,24 +254,3 @@ zarr::Array::rollover_()
     close_sinks_();
     ++append_chunk_index_;
 }
-
-bool
-zarr::finalize_array(std::unique_ptr<Array>&& array)
-{
-    if (array == nullptr) {
-        LOG_INFO("Array writer is null. Nothing to finalize.");
-        return true;
-    }
-
-    try {
-        if (!array->close_()) {
-            return false;
-        }
-    } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to close_ array: ", exc.what());
-        return false;
-    }
-
-    array.reset();
-    return true;
-}

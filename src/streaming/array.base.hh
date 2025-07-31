@@ -87,7 +87,7 @@ class ArrayBase
     [[nodiscard]] bool make_metadata_sinks_();
     [[nodiscard]] bool write_metadata_();
 
-    friend bool finalize_node(std::unique_ptr<ArrayBase>&& node);
+    friend bool finalize_array(std::unique_ptr<ArrayBase>&& array);
 };
 
 std::unique_ptr<ArrayBase>
@@ -96,21 +96,6 @@ make_array(std::shared_ptr<zarr::ArrayConfig> config,
            std::shared_ptr<S3ConnectionPool> s3_connection_pool,
            ZarrVersion format);
 
-template<class T>
-std::unique_ptr<T>
-downcast_node(std::unique_ptr<ArrayBase>&& node)
-{
-    ArrayBase* raw_ptr = node.release();
-    T* derived_ptr = dynamic_cast<T*>(raw_ptr);
-
-    if (!derived_ptr) {
-        node.reset(raw_ptr);
-        return nullptr;
-    }
-
-    return std::unique_ptr<T>(derived_ptr);
-}
-
 [[nodiscard]] bool
-finalize_node(std::unique_ptr<ArrayBase>&& node);
+finalize_array(std::unique_ptr<ArrayBase>&& array);
 } // namespace zarr

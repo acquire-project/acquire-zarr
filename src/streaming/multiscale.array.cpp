@@ -225,23 +225,3 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
     }
 }
 
-bool
-zarr::finalize_group(std::unique_ptr<MultiscaleArray>&& array)
-{
-    if (array == nullptr) {
-        LOG_INFO("MultiscaleArray is null. Nothing to finalize.");
-        return true;
-    }
-
-    try {
-        if (!array->close_()) {
-            return false;
-        }
-    } catch (const std::exception& exc) {
-        LOG_ERROR("Failed to close multiscale array: ", exc.what());
-        return false;
-    }
-
-    array.reset();
-    return true;
-}

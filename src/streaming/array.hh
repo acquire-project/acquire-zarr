@@ -50,8 +50,7 @@ class Array : public ArrayBase
 
     virtual void close_sinks_() = 0;
 
-  private:
-    friend bool finalize_array(std::unique_ptr<Array>&& array);
+    friend class MultiscaleArray;
 };
 
 bool

@@ -132,30 +132,18 @@ zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
 }
 
 bool
-zarr::finalize_node(std::unique_ptr<ArrayBase>&& node)
+zarr::finalize_array(std::unique_ptr<ArrayBase>&& array)
 {
-    if (!node) {
-        LOG_INFO("Node is null, nothing to finalize.");
+    if (array == nullptr) {
+        LOG_INFO("Array is null. Nothing to finalize.");
         return true;
     }
 
-    if (auto ms_array = downcast_node<MultiscaleArray>(std::move(node))) {
-        if (!finalize_group(std::move(ms_array))) {
-            LOG_ERROR("Failed to finalize multiscale array.");
-            node.reset(ms_array.release());
-            return false;
-        }
-    } else if (auto array = downcast_node<Array>(std::move(node))) {
-        if (!finalize_array(std::move(array))) {
-            LOG_ERROR("Failed to finalize array.");
-            node.reset(array.release());
-            return false;
-        }
-    } else {
-        LOG_ERROR("Unknown node type.");
+    try {
+        bool result = array->close_();
+        return result;
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to close array: ", exc.what());
         return false;
     }
-
-    node.reset();
-    return true;
 }

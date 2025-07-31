@@ -64,12 +64,5 @@ class MultiscaleArray : public ArrayBase
      * @param data The frame data to write.
      */
     void write_multiscale_frames_(LockedBuffer& data);
-
-  private:
-    friend bool finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 };
-
-[[nodiscard]]
-bool
-finalize_group(std::unique_ptr<MultiscaleArray>&& array);
 } // namespace zarr
