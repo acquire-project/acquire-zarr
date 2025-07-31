@@ -9,6 +9,8 @@
 #include "thread.pool.hh"
 
 namespace zarr {
+class MultiscaleArray;
+
 class Array : public ArrayBase
 {
   public:
@@ -52,7 +54,4 @@ class Array : public ArrayBase
 
     friend class MultiscaleArray;
 };
-
-bool
-finalize_array(std::unique_ptr<Array>&& array);
 } // namespace zarr
