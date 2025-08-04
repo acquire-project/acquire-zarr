@@ -1207,7 +1207,7 @@ finalize_stream(struct ZarrStream_s* stream)
     stream->finalize_frame_queue_();
 
     for (auto& [key, output] : stream->output_arrays_) {
-        if (!zarr::finalize_node(std::move(output.array))) {
+        if (!zarr::finalize_array(std::move(output.array))) {
             LOG_ERROR(
               "Error finalizing Zarr stream. Failed to finalize array '",
               key,
