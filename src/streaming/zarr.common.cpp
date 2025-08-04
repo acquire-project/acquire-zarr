@@ -1,6 +1,8 @@
 #include "macros.hh"
 #include "zarr.common.hh"
 
+#include <blosc.h>
+
 #include <latch>
 #include <stdexcept>
 
@@ -92,4 +94,37 @@ zarr::shards_along_dimension(const ZarrDimension& dimension)
     const auto shard_size = dimension.shard_size_chunks;
     const auto n_chunks = chunks_along_dimension(dimension);
     return (n_chunks + shard_size - 1) / shard_size;
+}
+
+bool
+zarr::compress_in_place(ByteVector& data,
+                        const zarr::BloscCompressionParams& params,
+                        size_t type_size)
+{
+    if (data.empty()) {
+        LOG_WARNING("Buffer is empty, not compressing.");
+        return false;
+    }
+
+    std::vector<uint8_t> compressed_data(data.size() + BLOSC_MAX_OVERHEAD);
+    const auto n_bytes_compressed = blosc_compress_ctx(params.clevel,
+                                                       params.shuffle,
+                                                       type_size,
+                                                       data.size(),
+                                                       data.data(),
+                                                       compressed_data.data(),
+                                                       compressed_data.size(),
+                                                       params.codec_id.c_str(),
+                                                       0,
+                                                       1);
+
+    if (n_bytes_compressed <= 0) {
+        LOG_ERROR("blosc_compress_ctx failed with code ", n_bytes_compressed);
+        return false;
+    }
+
+    compressed_data.resize(n_bytes_compressed);
+    data.swap(compressed_data);
+
+    return true;
 }

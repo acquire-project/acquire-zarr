@@ -63,4 +63,16 @@ chunks_along_dimension(const ZarrDimension& dimension);
  */
 uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
+
+/**
+ * @brief Compress @p data in place using Blosc with the given parameters.
+ * @param data The buffer to compress.
+ * @param params Compression parameters.
+ * @param type_size Size of the data type being compressed (e.g., 1 for uint8, 2 for uint16).
+ * @return true if compression was successful, false otherwise.
+ */
+bool
+compress_in_place(ByteVector& data,
+                  const BloscCompressionParams& params,
+                  size_t type_size);
 } // namespace zarr

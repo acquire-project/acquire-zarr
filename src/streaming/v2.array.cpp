@@ -168,17 +168,19 @@ zarr::V2Array::compress_and_flush_data_()
     std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(MAX_CONCURRENT_FILES);
 
     for (auto i = 0; i < n_chunks; ++i) {
-        auto job = [bytes_per_px,
-                    compression_params,
-                    is_s3,
-                    data_path = data_paths_[i],
-                    &chunk_buffer = chunk_buffers_[i],
-                    bucket_name,
-                    connection_pool,
-                    &semaphore,
-                    shared_latch,  // ← Capture by value (shared_ptr copy)
-                    &all_successful](std::string& err) {
-            bool success = false;
+        auto job =
+          [bytes_per_px,
+           compression_params,
+           is_s3,
+           data_path = data_paths_[i],
+           chunk_buffer = std::move(chunk_buffers_[i].take()),
+           bucket_name,
+           connection_pool,
+           &semaphore,
+           shared_latch,
+           &all_successful](std::string& err) mutable // chunk_buffer is mutable
+        {
+            bool success = true;
             bool semaphore_acquired = false;
 
             if (!all_successful) {
@@ -193,31 +195,33 @@ zarr::V2Array::compress_and_flush_data_()
                 semaphore_acquired = true;
 
                 // compress the chunk
-                if (compression_params &&
-                    !chunk_buffer.compress(*compression_params, bytes_per_px)) {
-                    err = "Failed to compress chunk at path " + data_path;
-                    success = false;
-                } else {
+                if (compression_params) {
+                    if (!(success = compress_in_place(
+                            chunk_buffer, *compression_params, bytes_per_px))) {
+                        err = "Failed to compress chunk at path " + data_path;
+                    }
+                }
+
+                if (success) {
                     if (is_s3) {
-                        sink = make_s3_sink(*bucket_name, data_path, connection_pool);
+                        sink = make_s3_sink(
+                          *bucket_name, data_path, connection_pool);
                     } else {
                         sink = make_file_sink(data_path);
                     }
+                }
 
-                    if (sink == nullptr) {
-                        err = "Failed to create sink for " + data_path;
+                if (success && sink == nullptr) {
+                    err = "Failed to create sink for " + data_path;
+                    success = false;
+                } else if (success) {
+                    // try to write the chunk to the sink
+                    if (!sink->write(0, chunk_buffer)) {
+                        err = "Failed to write chunk to " + data_path;
                         success = false;
-                    } else {
-                        // try to write the chunk to the sink
-                        success = chunk_buffer.with_lock(
-                          [&sink](const auto& buf) { return sink->write(0, buf); });
-
-                        if (!success) {
-                            err = "Failed to write chunk to " + data_path;
-                        } else if (!finalize_sink(std::move(sink))) {
-                            err = "Failed to finalize sink at path " + data_path;
-                            success = false;
-                        }
+                    } else if (!finalize_sink(std::move(sink))) {
+                        err = "Failed to finalize sink at path " + data_path;
+                        success = false;
                     }
                 }
             } catch (const std::exception& exc) {
@@ -231,11 +235,10 @@ zarr::V2Array::compress_and_flush_data_()
             }
 
             all_successful.fetch_and(static_cast<char>(success));
-            shared_latch->count_down();  // ← Single count_down call
+            shared_latch->count_down();
 
             return success;
         };
-
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
         if (thread_pool_->n_threads() == 1 ||
