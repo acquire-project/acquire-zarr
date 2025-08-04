@@ -13,7 +13,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <atomic>
 #include <condition_variable>
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
@@ -77,8 +76,6 @@ struct ZarrStream_s
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
 
     std::unique_ptr<zarr::Sink> custom_metadata_sink_;
-
-    std::atomic<bool> is_closing_{ false };
 
     bool is_s3_acquisition_() const;
 
