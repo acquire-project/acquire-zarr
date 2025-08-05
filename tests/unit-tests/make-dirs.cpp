@@ -10,6 +10,9 @@ main()
 {
     int retval = 1;
     auto temp_dir = fs::temp_directory_path() / TEST;
+    if (!fs::exists(temp_dir)) {
+        fs::create_directories(temp_dir);
+    }
 
     auto thread_pool = std::make_shared<zarr::ThreadPool>(
       std::thread::hardware_concurrency(),
@@ -21,8 +24,9 @@ main()
 
     try {
         for (const auto& dir_path : dir_paths) {
-            EXPECT(
-              !fs::exists(dir_path), "Directory ", dir_path, " already exists");
+            if (fs::exists(dir_path)) {
+                fs::remove_all(dir_path);
+            }
         }
 
         EXPECT(zarr::make_dirs(dir_paths, thread_pool),

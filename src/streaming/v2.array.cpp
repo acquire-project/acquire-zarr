@@ -180,7 +180,7 @@ zarr::V2Array::compress_and_flush_data_()
            bucket_name,
            connection_pool,
            &semaphore,
-           promise = std::move(promise),
+           promise,
            &all_successful](std::string& err) mutable // chunk_buffer is mutable
         {
             bool success = true;

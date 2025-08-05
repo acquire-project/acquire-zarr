@@ -57,9 +57,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
         futures.emplace_back(promise->get_future());
 
         auto job = [filename,
-                    psink,
-                    promise = std::move(promise),
-                    &all_successful](std::string& err) -> bool {
+                    psink, promise, &all_successful](std::string& err) -> bool {
             bool success = false;
 
             try {
@@ -216,9 +214,9 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
 
     for (const auto& path : unique_paths) {
         auto promise = std::make_shared<std::promise<void>>();
+        futures.emplace_back(promise->get_future());
 
-        auto job = [path, promise = std::move(promise), &all_successful](
-                     std::string& err) {
+        auto job = [path, promise, &all_successful](std::string& err) {
             bool success = true;
             if (fs::is_directory(path) || path.empty()) {
                 promise->set_value();
@@ -271,7 +269,8 @@ zarr::make_file_sink(std::string_view file_path)
 
     if (!fs::is_directory(parent_path)) {
         std::error_code ec;
-        if (!fs::create_directories(parent_path, ec)) {
+        if (!fs::create_directories(parent_path, ec) &&
+            !fs::is_directory(parent_path)) {
             LOG_ERROR(
               "Failed to create directory '", parent_path, "': ", ec.message());
             return nullptr;

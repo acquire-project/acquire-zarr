@@ -323,7 +323,7 @@ zarr::V3Array::compress_and_flush_data_()
                         shard_idx,
                         chunk_idx,
                         internal_idx,
-                        promise = std::move(promise),
+                        promise,
                         &all_successful](std::string& err) {
                 bool success = false;
 
@@ -393,7 +393,7 @@ zarr::V3Array::compress_and_flush_data_()
                     write_table,
                     bucket_name,
                     connection_pool,
-                    promise = std::move(promise),
+                    promise,
                     &semaphore,
                     &all_successful,
                     this](std::string& err) {
