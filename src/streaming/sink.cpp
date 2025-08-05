@@ -2,11 +2,10 @@
 #include "file.sink.hh"
 #include "s3.sink.hh"
 #include "macros.hh"
-#include "zarr.common.hh"
 
 #include <algorithm>
 #include <filesystem>
-#include <latch>
+#include <future>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -48,15 +47,19 @@ make_file_sinks(std::vector<std::string>& file_paths,
     const auto n_files = file_paths.size();
     sinks.resize(n_files);
     std::fill(sinks.begin(), sinks.end(), nullptr);
-    std::latch latch(n_files);
+    std::vector<std::future<void>> futures;
 
     for (auto i = 0; i < n_files; ++i) {
         const auto filename = file_paths[i];
-
         std::unique_ptr<zarr::Sink>* psink = sinks.data() + i;
 
-        auto job =
-          [filename, psink, &latch, &all_successful](std::string& err) -> bool {
+        auto promise = std::make_shared<std::promise<void>>();
+        futures.emplace_back(promise->get_future());
+
+        auto job = [filename,
+                    psink,
+                    promise = std::move(promise),
+                    &all_successful](std::string& err) -> bool {
             bool success = false;
 
             try {
@@ -66,7 +69,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
                 err = "Failed to create file '" + filename + "': " + exc.what();
             }
 
-            latch.count_down();
+            promise->set_value();
             all_successful.fetch_and(static_cast<char>(success));
 
             return success;
@@ -83,7 +86,9 @@ make_file_sinks(std::vector<std::string>& file_paths,
         }
     }
 
-    latch.wait();
+    for (auto& future : futures) {
+        future.wait();
+    }
 
     return (bool)all_successful;
 }
@@ -204,17 +209,19 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     EXPECT(thread_pool, "Thread pool not provided.");
 
     std::atomic<char> all_successful = 1;
-
     std::unordered_set<std::string> unique_paths(dir_paths.begin(),
                                                  dir_paths.end());
 
-    auto shared_latch = std::make_shared<std::latch>(unique_paths.size());
+    std::vector<std::future<void>> futures;
 
     for (const auto& path : unique_paths) {
-        auto job = [path, shared_latch, &all_successful](std::string& err) {
+        auto promise = std::make_shared<std::promise<void>>();
+
+        auto job = [path, promise = std::move(promise), &all_successful](
+                     std::string& err) {
             bool success = true;
             if (fs::is_directory(path) || path.empty()) {
-                shared_latch->count_down();
+                promise->set_value();
                 return success;
             }
 
@@ -224,7 +231,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
                 success = false;
             }
 
-            shared_latch->count_down();
+            promise->set_value();
             all_successful.fetch_and(static_cast<char>(success));
             return success;
         };
@@ -240,7 +247,11 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
         }
     }
 
-    shared_latch->wait();
+    // wait for all jobs to finish
+    for (auto& future : futures) {
+        future.wait();
+    }
+
     return static_cast<bool>(all_successful);
 }
 

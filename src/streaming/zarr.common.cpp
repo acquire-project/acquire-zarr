@@ -3,7 +3,6 @@
 
 #include <blosc.h>
 
-#include <latch>
 #include <stdexcept>
 
 namespace fs = std::filesystem;

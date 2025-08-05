@@ -7,7 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include <latch>
+#include <future>
 #include <semaphore>
 #include <stdexcept>
 
@@ -164,10 +164,13 @@ zarr::V2Array::compress_and_flush_data_()
     }
 
     std::atomic<char> all_successful = 1;
-    auto shared_latch = std::make_shared<std::latch>(n_chunks);  // ← Use shared_ptr
+    std::vector<std::future<void>> futures;
     std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(MAX_CONCURRENT_FILES);
 
     for (auto i = 0; i < n_chunks; ++i) {
+        auto promise = std::make_shared<std::promise<void>>();
+        futures.emplace_back(promise->get_future());
+
         auto job =
           [bytes_per_px,
            compression_params,
@@ -177,14 +180,14 @@ zarr::V2Array::compress_and_flush_data_()
            bucket_name,
            connection_pool,
            &semaphore,
-           shared_latch,
+           promise = std::move(promise),
            &all_successful](std::string& err) mutable // chunk_buffer is mutable
         {
             bool success = true;
             bool semaphore_acquired = false;
 
             if (!all_successful) {
-                shared_latch->count_down();
+                promise->set_value();
                 err = "Other jobs in batch have failed, not proceeding";
                 return false;
             }
@@ -235,7 +238,7 @@ zarr::V2Array::compress_and_flush_data_()
             }
 
             all_successful.fetch_and(static_cast<char>(success));
-            shared_latch->count_down();
+            promise->set_value();
 
             return success;
         };
@@ -250,7 +253,11 @@ zarr::V2Array::compress_and_flush_data_()
         }
     }
 
-    shared_latch->wait();
+    // wait for all jobs to finish
+    for (auto& future : futures) {
+        future.wait();
+    }
+
     return static_cast<bool>(all_successful);
 }
 

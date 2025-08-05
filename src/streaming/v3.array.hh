@@ -2,8 +2,6 @@
 
 #include "array.hh"
 
-#include <latch>
-
 namespace zarr {
 class V3Array final : public Array
 {
