@@ -352,7 +352,7 @@ zarr::V3Array::compress_and_flush_data_()
             // one thread is reserved for processing the frame queue and runs
             // the entire lifetime of the stream
             if (thread_pool_->n_threads() == 1 ||
-                !thread_pool_->push_job(std::move(job))) {
+                !thread_pool_->push_job(job)) {
                 std::string err;
                 if (!job(err)) {
                     LOG_ERROR(err);
@@ -414,7 +414,8 @@ zarr::V3Array::compress_and_flush_data_()
                 }
 
                 if (!sink && is_s3) { // S3 sink, not yet constructed
-                    sink = make_s3_sink(*bucket_name, data_path, connection_pool);
+                    sink =
+                      make_s3_sink(*bucket_name, data_path, connection_pool);
                 } else if (!is_s3) { // file sink
                     sink = make_file_sink(data_path);
                 }
@@ -437,24 +438,29 @@ zarr::V3Array::compress_and_flush_data_()
 
                             // compute crc32 checksum of the table
                             const uint32_t checksum = crc32c::Crc32c(
-                              reinterpret_cast<const uint8_t*>(table_ptr), table_size);
+                              reinterpret_cast<const uint8_t*>(table_ptr),
+                              table_size);
                             const auto* checksum_bytes =
                               reinterpret_cast<const uint8_t*>(&checksum);
 
-                            if (!sink->write(*file_offset, { table_ptr, table_size })) {
+                            if (!sink->write(*file_offset,
+                                             { table_ptr, table_size })) {
                                 err = "Failed to write table to shard " +
                                       std::to_string(shard_idx);
                                 success = false;
                             } else if (!sink->write(*file_offset + table_size,
-                                                    { checksum_bytes, sizeof(checksum) })) {
-                                err = "Failed to write table checksum to shard " +
-                                      std::to_string(shard_idx);
+                                                    { checksum_bytes,
+                                                      sizeof(checksum) })) {
+                                err =
+                                  "Failed to write table checksum to shard " +
+                                  std::to_string(shard_idx);
                                 success = false;
                             }
                         }
 
                         if (!is_s3 && !finalize_sink(std::move(sink))) {
-                            err = "Failed to finalize sink at path " + data_path;
+                            err =
+                              "Failed to finalize sink at path " + data_path;
                             success = false;
                         }
                     }
@@ -481,8 +487,7 @@ zarr::V3Array::compress_and_flush_data_()
 
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 ||
-            !thread_pool_->push_job(std::move(job))) {
+        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
             std::string err;
             if (!job(err)) {
                 LOG_ERROR(err);

@@ -1084,7 +1084,7 @@ ZarrStream_s::init_frame_queue_()
             return true;
         };
 
-        EXPECT(thread_pool_->push_job(std::move(job)),
+        EXPECT(thread_pool_->push_job(job),
                "Failed to push frame processing job to thread pool.");
     } catch (const std::exception& e) {
         set_error_("Error creating frame queue: " + std::string(e.what()));
@@ -1198,13 +1198,18 @@ finalize_stream(struct ZarrStream_s* stream)
         return true;
     }
 
+    // clear out the frame queue first
+    stream->finalize_frame_queue_();
+
+    // shut down the thread pool, let everything after this run in the main
+    // thread
+    stream->thread_pool_->await_stop();
+
     if (stream->custom_metadata_sink_ &&
         !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
         LOG_ERROR(
           "Error finalizing Zarr stream. Failed to write custom metadata");
     }
-
-    stream->finalize_frame_queue_();
 
     for (auto& [key, output] : stream->output_arrays_) {
         if (!zarr::finalize_array(std::move(output.array))) {
@@ -1220,8 +1225,6 @@ finalize_stream(struct ZarrStream_s* stream)
         LOG_ERROR(stream->error_);
         return false;
     }
-
-    stream->thread_pool_->await_stop();
 
     return true;
 }

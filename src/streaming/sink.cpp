@@ -76,7 +76,7 @@ make_file_sinks(std::vector<std::string>& file_paths,
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
         if (thread_pool->n_threads() == 1 ||
-            !thread_pool->push_job(std::move(job))) {
+            !thread_pool->push_job(job)) {
             std::string err;
             if (!job(err)) {
                 LOG_ERROR(err);
@@ -216,16 +216,24 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
         auto promise = std::make_shared<std::promise<void>>();
         futures.emplace_back(promise->get_future());
 
-        auto job = [path, promise, &all_successful](std::string& err) {
+        auto job_impl = [path, promise, &all_successful](std::string& err) {
             bool success = true;
-            if (fs::is_directory(path) || path.empty()) {
-                promise->set_value();
-                return success;
-            }
+            try {
+                if (fs::is_directory(path) || path.empty()) {
+                    promise->set_value();
+                    return success;
+                }
 
-            std::error_code ec;
-            if (!fs::create_directories(path, ec) && !fs::is_directory(path)) {
-                err = "Failed to create directory '" + path + "': " + ec.message();
+                std::error_code ec;
+                if (!fs::create_directories(path, ec) &&
+                    !fs::is_directory(path)) {
+                    err = "Failed to create directory '" + path +
+                          "': " + ec.message();
+                    success = false;
+                }
+            } catch (const std::exception& exc) {
+                err = "Failed to create directory '" + path +
+                      "': " + exc.what();
                 success = false;
             }
 
@@ -234,12 +242,10 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
             return success;
         };
 
-        // one thread is reserved for processing the frame queue and runs the
-        // entire lifetime of the stream
         if (thread_pool->n_threads() == 1 ||
-            !thread_pool->push_job(std::move(job))) {
+            !thread_pool->push_job(job_impl)) {  // Copy, don't move
             std::string err;
-            if (!job(err)) {
+            if (!job_impl(err)) {  // Use the original, not moved-from version
                 LOG_ERROR(err);
             }
         }

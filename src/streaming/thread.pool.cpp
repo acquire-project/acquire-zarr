@@ -36,7 +36,7 @@ zarr::ThreadPool::push_job(Task&& job)
         return false;
     }
 
-    jobs_.push(std::move(job));
+    jobs_.push(job);
     jobs_cv_.notify_one();
 
     return true;

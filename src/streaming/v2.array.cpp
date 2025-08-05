@@ -245,7 +245,7 @@ zarr::V2Array::compress_and_flush_data_()
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
         if (thread_pool_->n_threads() == 1 ||
-            !thread_pool_->push_job(std::move(job))) {
+            !thread_pool_->push_job(job)) {
             std::string err;
             if (!job(err)) {
                 LOG_ERROR(err);
