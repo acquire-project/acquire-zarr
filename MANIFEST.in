@@ -2,7 +2,7 @@ include CMakeLists.txt
 include CMakePresets.json
 include vcpkg.json
 include vcpkg-configuration.json
-include cmake/*.cmake
+include cmake/*
 recursive-include src *
 recursive-include include *
 recursive-include python *
