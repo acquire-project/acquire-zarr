@@ -5,15 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.5.2] - [2025-08-07](https://github.com/acquire-project/acquire-zarr/compare/v0.5.1...v0.5.2)
 
 ### Added
 
 - Examples are now packaged with the library (#143)
+- Support for `find_package(acquire-zarr)` in CMake (#143)
 
 ### Changed
 
 - Default to streaming Zarr V3 in Python API (#142)
+
+### Fixed
+
+- Race condition and use-after-free bugs during teardown on macOS and Ubuntu (#144)
 
 ## [0.5.1] - [2025-07-24](https://github.com/acquire-project/acquire-zarr/compare/v0.5.0...v0.5.1)
 
