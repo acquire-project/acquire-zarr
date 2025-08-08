@@ -1,29 +1,22 @@
-/// @file zarr-v3-compressed-filesystem.c
-/// @brief Zarr V3 with LZ4 compression to filesystem
+/// @file stream-raw-multiscale-to-filesystem.c
+/// @brief Uncompressed streaming to a Zarr V3 store on the filesystem, with
+/// multiple levels of detail.
 #include "acquire.zarr.h"
-
-#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 int
 main()
 {
-    // Configure compression
-    ZarrCompressionSettings compression = {
-        .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscLZ4,
-        .level = 1,
-        .shuffle = 1,
-    };
-
     // Configure stream settings
     ZarrArraySettings array = {
-        .compression_settings = &compression,
+        .compression_settings = NULL,
         .data_type = ZarrDataType_uint16,
+        .multiscale = true,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed.zarr",
+        .store_path = "output_v3_multiscale.zarr",
         .s3_settings = NULL,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
@@ -31,18 +24,34 @@ main()
         .array_count = 1,
     };
 
-    // Set up dimensions (t, y, x)
-    ZarrArraySettings_create_dimension_array(settings.arrays, 3);
+    // Set up 5D array (t, c, z, y, x)
+    ZarrArraySettings_create_dimension_array(settings.arrays, 5);
 
     settings.arrays->dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 0,
+        .array_size_px = 10,
         .chunk_size_px = 5,
         .shard_size_chunks = 2,
     };
 
     settings.arrays->dimensions[1] = (ZarrDimensionProperties){
+        .name = "c",
+        .type = ZarrDimensionType_Channel,
+        .array_size_px = 8,
+        .chunk_size_px = 4,
+        .shard_size_chunks = 2,
+    };
+
+    settings.arrays->dimensions[2] = (ZarrDimensionProperties){
+        .name = "z",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 6,
+        .chunk_size_px = 2,
+        .shard_size_chunks = 1,
+    };
+
+    settings.arrays->dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
@@ -50,7 +59,7 @@ main()
         .shard_size_chunks = 1,
     };
 
-    settings.arrays->dimensions[2] = (ZarrDimensionProperties){
+    settings.arrays->dimensions[4] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
@@ -71,41 +80,14 @@ main()
     // Create sample data
     const size_t width = 64;
     const size_t height = 48;
-    int centerX = width / 2;
-    int centerY = height / 2;
-
     uint16_t* frame = (uint16_t*)malloc(width * height * sizeof(uint16_t));
 
     // Write frames
     size_t bytes_written;
-    for (int t = 0; t < 50; t++) {
-        // Fill frame with a moving diagonal pattern
-        for (size_t y = 0; y < height; y++) {
-            int dy = y - centerY;
-            for (size_t x = 0; x < width; x++) {
-                // Create a diagonal pattern that moves with time
-                // and varies intensity based on position
-                int diagonal = (x + y + t * 8) % 32;
-
-                // Create intensity variation
-                uint16_t intensity;
-                if (diagonal < 16) {
-                    intensity = (uint16_t)((diagonal * 4096)); // Ramp up
-                } else {
-                    intensity = (uint16_t)((31 - diagonal) * 4096); // Ramp down
-                }
-
-                // Add some circular features
-                int dx = x - centerX;
-                int radius = (int)sqrt(dx*dx + dy*dy);
-
-                // Modulate the pattern with concentric circles
-                if (radius % 16 < 8) {
-                    intensity = (uint16_t)(intensity * 0.7);
-                }
-
-                frame[y * width + x] = intensity;
-            }
+    for (int i = 0; i < 10; i++) {
+        // Fill frame with sample data
+        for (size_t j = 0; j < width * height; j++) {
+            frame[j] = i * 1000 + j;
         }
 
         ZarrStatusCode status =

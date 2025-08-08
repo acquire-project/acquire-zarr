@@ -1,7 +1,7 @@
-# Zarr V3 with LZ4 compression to filesystem
+# Stream to filesystem with LZ4 compression
 import numpy as np
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType, ZarrVersion,
+    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
     DataType, Compressor, CompressionCodec, CompressionSettings
 )
 
@@ -67,8 +67,7 @@ def main():
         )
     ]
 
-    settings.store_path = "output_v3_compressed.zarr"
-    settings.version = ZarrVersion.V3
+    settings.store_path = "output_compressed.zarr"
 
     # Create stream
     stream = ZarrStream(settings)

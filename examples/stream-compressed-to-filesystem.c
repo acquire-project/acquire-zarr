@@ -1,5 +1,5 @@
-/// @file zarrv3-compressed-s3.c
-/// @brief Stream data to a Zarr V3 store with Zstd compression data on S3
+/// @file stream-compressed-to-filesystem.c
+/// @brief Zarr V3 with LZ4 compression to filesystem
 #include "acquire.zarr.h"
 
 #include <math.h>
@@ -12,17 +12,9 @@ main()
     // Configure compression
     ZarrCompressionSettings compression = {
         .compressor = ZarrCompressor_Blosc1,
-        .codec = ZarrCompressionCodec_BloscZstd,
+        .codec = ZarrCompressionCodec_BloscLZ4,
         .level = 1,
         .shuffle = 1,
-    };
-
-    // Configure S3
-    // Ensure that you have set your S3 credentials in the environment variables
-    // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
-    ZarrS3Settings s3 = {
-        .endpoint = "http://localhost:9000",
-        .bucket_name = "mybucket",
     };
 
     // Configure stream settings
@@ -31,8 +23,8 @@ main()
         .data_type = ZarrDataType_uint16,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed_s3.zarr",
-        .s3_settings = &s3,
+        .store_path = "output_v3_compressed.zarr",
+        .s3_settings = NULL,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
@@ -45,7 +37,7 @@ main()
     settings.arrays->dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 0, // Unlimited
+        .array_size_px = 0,
         .chunk_size_px = 5,
         .shard_size_chunks = 2,
     };
@@ -79,6 +71,9 @@ main()
     // Create sample data
     const size_t width = 64;
     const size_t height = 48;
+    int centerX = width / 2;
+    int centerY = height / 2;
+
     uint16_t* frame = (uint16_t*)malloc(width * height * sizeof(uint16_t));
 
     // Write frames
@@ -86,6 +81,7 @@ main()
     for (int t = 0; t < 50; t++) {
         // Fill frame with a moving diagonal pattern
         for (size_t y = 0; y < height; y++) {
+            int dy = y - centerY;
             for (size_t x = 0; x < width; x++) {
                 // Create a diagonal pattern that moves with time
                 // and varies intensity based on position
@@ -100,10 +96,7 @@ main()
                 }
 
                 // Add some circular features
-                int centerX = width / 2;
-                int centerY = height / 2;
                 int dx = x - centerX;
-                int dy = y - centerY;
                 int radius = (int)sqrt(dx*dx + dy*dy);
 
                 // Modulate the pattern with concentric circles

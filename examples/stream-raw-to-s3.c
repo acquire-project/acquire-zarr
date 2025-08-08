@@ -1,70 +1,65 @@
-/// @file zarrv3-raw-multiscale-filesystem.c
-/// @brief Uncompressed streaming to a Zarr V3 store on the filesystem, with
-/// multiple levels of detail.
+/// @file stream-raw-to-s3.c
+/// @brief Zarr V3 with uncompressed data to S3
 #include "acquire.zarr.h"
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-int
-main()
-{
+int main() {
+    // Configure S3
+    // Ensure that you have set your S3 credentials in the environment variables
+    // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
+    ZarrS3Settings s3 = {
+        .endpoint = "http://localhost:9000",
+        .bucket_name = "my-bucket",
+    };
+
     // Configure stream settings
     ZarrArraySettings array = {
-        .compression_settings = NULL,
+        .compression_settings = NULL, // No compression
         .data_type = ZarrDataType_uint16,
-        .multiscale = true,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_multiscale.zarr",
-        .s3_settings = NULL,
+        .store_path = "output_v3_s3.zarr",
+        .s3_settings = &s3,
         .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,
     };
 
-    // Set up 5D array (t, c, z, y, x)
-    ZarrArraySettings_create_dimension_array(settings.arrays, 5);
+    // Set up dimensions (t, z, y, x)
+    ZarrArraySettings_create_dimension_array(settings.arrays, 4);
 
     settings.arrays->dimensions[0] = (ZarrDimensionProperties){
         .name = "t",
         .type = ZarrDimensionType_Time,
-        .array_size_px = 10,
+        .array_size_px = 0,  // Unlimited
         .chunk_size_px = 5,
-        .shard_size_chunks = 2,
+        .shard_size_chunks = 2
     };
 
     settings.arrays->dimensions[1] = (ZarrDimensionProperties){
-        .name = "c",
-        .type = ZarrDimensionType_Channel,
-        .array_size_px = 8,
-        .chunk_size_px = 4,
-        .shard_size_chunks = 2,
+        .name = "z",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 10,
+        .chunk_size_px = 2,
+        .shard_size_chunks = 1
     };
 
     settings.arrays->dimensions[2] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 6,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1,
-    };
-
-    settings.arrays->dimensions[3] = (ZarrDimensionProperties){
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 48,
         .chunk_size_px = 16,
-        .shard_size_chunks = 1,
+        .shard_size_chunks = 1
     };
 
-    settings.arrays->dimensions[4] = (ZarrDimensionProperties){
+    settings.arrays->dimensions[3] = (ZarrDimensionProperties){
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 64,
         .chunk_size_px = 16,
-        .shard_size_chunks = 2,
+        .shard_size_chunks = 2
     };
 
     // Create stream
@@ -98,8 +93,7 @@ main()
                             NULL);
 
         if (status != ZarrStatusCode_Success) {
-            fprintf(stderr,
-                    "Failed to append frame: %s\n",
+            fprintf(stderr, "Failed to append frame: %s\n",
                     Zarr_get_status_message(status));
             break;
         }

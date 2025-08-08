@@ -10,20 +10,23 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-add_executable(zarrv3-compressed-filesystem zarrv3-compressed-filesystem.c)
-target_link_libraries(zarrv3-compressed-filesystem acquire-zarr::acquire-zarr)
+add_executable(stream-raw-to-filesystem stream-raw-to-filesystem.c)
+target_link_libraries(stream-raw-to-filesystem acquire-zarr::acquire-zarr)
 
-add_executable(zarrv3-compressed-multiscale-s3 zarrv3-compressed-multiscale-s3.c)
-target_link_libraries(zarrv3-compressed-multiscale-s3 acquire-zarr::acquire-zarr)
+add_executable(stream-raw-multiscale-to-filesystem stream-raw-multiscale-to-filesystem.c)
+target_link_libraries(stream-raw-multiscale-to-filesystem acquire-zarr::acquire-zarr)
 
-add_executable(zarrv3-compressed-s3 zarrv3-compressed-s3.c)
-target_link_libraries(zarrv3-compressed-s3 acquire-zarr::acquire-zarr)
+add_executable(stream-compressed-to-filesystem stream-compressed-to-filesystem.c)
+target_link_libraries(stream-compressed-to-filesystem acquire-zarr::acquire-zarr)
 
-add_executable(zarrv3-raw-filesystem zarrv3-raw-filesystem.c)
-target_link_libraries(zarrv3-raw-filesystem acquire-zarr::acquire-zarr)
+add_executable(stream-raw-to-s3 stream-raw-to-s3.c)
+target_link_libraries(stream-raw-to-s3 acquire-zarr::acquire-zarr)
 
-add_executable(zarrv3-raw-multiscale-filesystem zarrv3-raw-multiscale-filesystem.c)
-target_link_libraries(zarrv3-raw-multiscale-filesystem acquire-zarr::acquire-zarr)
+add_executable(stream-compressed-to-s3 stream-compressed-to-s3.c)
+target_link_libraries(stream-compressed-to-s3 acquire-zarr::acquire-zarr)
 
-add_executable(zarrv3-raw-s3 zarrv3-raw-s3.c)
-target_link_libraries(zarrv3-raw-s3 acquire-zarr::acquire-zarr)
+add_executable(stream-compressed-multiscale-to-s3 stream-compressed-multiscale-to-s3.c)
+target_link_libraries(stream-compressed-multiscale-to-s3 acquire-zarr::acquire-zarr)
+
+add_executable(stream-multiarray-to-filesystem stream-multiarray-to-filesystem.cpp)
+target_link_libraries(stream-multiarray-to-filesystem acquire-zarr::acquire-zarr)

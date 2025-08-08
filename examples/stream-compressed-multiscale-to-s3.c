@@ -1,4 +1,4 @@
-/// @file zarrv3-compressed-multiscale-s3.c
+/// @file stream-compressed-multiscale-to-s3.c
 /// @brief Multiscale Zarr V3 with compressed data to S3
 #include "acquire.zarr.h"
 
@@ -22,8 +22,8 @@ main()
     // Ensure that you have set your S3 credentials in the environment variables
     // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
     ZarrS3Settings s3 = {
-        .endpoint = "http://192.168.1.57:9000",
-        .bucket_name = "acquire-test",
+        .endpoint = "http://127.0.0.1:9000",
+        .bucket_name = "my-bucket",
     };
 
     // Configure stream settings

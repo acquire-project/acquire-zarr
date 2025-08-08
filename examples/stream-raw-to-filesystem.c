@@ -1,4 +1,4 @@
-/// @file zarr-v3-raw-filesystem.c
+/// @file stream-raw-to-filesystem.c
 /// @brief Basic Zarr V3 streaming to filesystem
 #include "acquire.zarr.h"
 
