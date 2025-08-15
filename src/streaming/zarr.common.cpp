@@ -75,12 +75,18 @@ zarr::bytes_of_frame(const ArrayDimensions& dims, ZarrDataType type)
 }
 
 uint32_t
+zarr::parts_along_dimension(uint32_t array_size, uint32_t part_size)
+{
+    EXPECT(part_size > 0, "Invalid part size.");
+
+    return (array_size + part_size - 1) / part_size;
+}
+
+uint32_t
 zarr::chunks_along_dimension(const ZarrDimension& dimension)
 {
-    EXPECT(dimension.chunk_size_px > 0, "Invalid chunk size.");
-
-    return (dimension.array_size_px + dimension.chunk_size_px - 1) /
-           dimension.chunk_size_px;
+    return parts_along_dimension(dimension.array_size_px,
+                                  dimension.chunk_size_px);
 }
 
 uint32_t

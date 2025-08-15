@@ -268,3 +268,30 @@ def test_set_dtype(
 
     array_settings.data_type = data_type
     assert array_settings.data_type == expected_data_type
+
+
+def test_estimate_max_memory_usage():
+    array = aqz.ArraySettings()
+    array.dimensions = [
+        aqz.Dimension(name="t", kind=aqz.DimensionType.TIME, array_size_px=0, chunk_size_px=5),
+        aqz.Dimension(name="c", kind=aqz.DimensionType.CHANNEL, array_size_px=3, chunk_size_px=1),
+        aqz.Dimension(name="z", kind=aqz.DimensionType.SPACE, array_size_px=6, chunk_size_px=2),
+        aqz.Dimension(name="y", kind=aqz.DimensionType.SPACE, array_size_px=48, chunk_size_px=16),
+        aqz.Dimension(name="x", kind=aqz.DimensionType.SPACE, array_size_px=64, chunk_size_px=16),
+    ]
+    array.data_type = np.uint16
+
+    chunks_size = np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
+    for dim in array.dimensions[1:]:
+        chunks_size *= dim.array_size_px
+    frame_queue_size = 1 << 30
+    frame_buffer_size = array.dimensions[-2].array_size_px * array.dimensions[-1].array_size_px * np.dtype(
+        np.uint16).itemsize
+    expected_memory = chunks_size + frame_buffer_size + frame_queue_size
+
+    stream = aqz.StreamSettings(
+        arrays=[array]
+    )
+    max_memory = stream.get_maximum_memory_usage()
+
+    assert max_memory == expected_memory

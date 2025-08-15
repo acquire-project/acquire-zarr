@@ -352,6 +352,40 @@ class PyZarrStreamSettings
         arrays_ = arrays;
     }
 
+    size_t get_maximum_memory_usage() const
+    {
+        ZarrStreamSettings settings;
+        ZarrStreamSettings_create_arrays(&settings, arrays_.size());
+
+        for (auto i = 0; i < arrays_.size(); ++i) {
+            auto& array_settings = settings.arrays[i];
+            const auto& dims = arrays_[i].dimensions();
+            ZarrArraySettings_create_dimension_array(&array_settings,
+                                                     dims.size());
+            for (auto j = 0; j < dims.size(); ++j) {
+                const auto& dim = dims[j];
+                auto& array_dim = array_settings.dimensions[j];
+
+                // dimension sizes are really all that matters for memory usage
+                array_dim.array_size_px = dim.array_size_px();
+                array_dim.chunk_size_px = dim.chunk_size_px();
+                array_dim.shard_size_chunks = dim.shard_size_chunks();
+            }
+        }
+
+        size_t usage;
+        if (ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) !=
+            ZarrStatusCode_Success) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "Failed to estimate maximum memory usage.");
+            throw py::error_already_set();
+        }
+
+        ZarrStreamSettings_destroy_arrays(&settings);
+
+        return usage;
+    }
+
   private:
     std::string store_path_;
     std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
@@ -520,6 +554,28 @@ class PyZarrStream
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }
+    }
+
+    size_t get_current_memory_usage() const
+    {
+        if (!is_active()) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "Stream not open for memory usage query.");
+            throw py::error_already_set();
+        }
+
+        size_t usage = 0;
+        auto status =
+          ZarrStream_get_current_memory_usage(stream_.get(), &usage);
+
+        if (status != ZarrStatusCode_Success) {
+            std::string err = "Failed to get current memory usage: " +
+                              std::string(Zarr_get_status_message(status));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+
+        return usage;
     }
 
   private:
@@ -1095,6 +1151,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                  ")";
                return repr;
            })
+      .def("get_maximum_memory_usage",
+           &PyZarrStreamSettings::get_maximum_memory_usage,
+           "Estimate the maximum memory usage for the stream settings.")
       .def_property("store_path",
                     &PyZarrStreamSettings::store_path,
                     &PyZarrStreamSettings::set_store_path)
@@ -1153,7 +1212,10 @@ PYBIND11_MODULE(acquire_zarr, m)
            &PyZarrStream::write_custom_metadata,
            py::arg("custom_metadata"),
            py::arg("overwrite"))
-      .def("is_active", &PyZarrStream::is_active);
+      .def("is_active", &PyZarrStream::is_active)
+      .def("get_current_memory_usage",
+           &PyZarrStream::get_current_memory_usage,
+           "Get the current memory usage of the stream in bytes.");
 
     m.def(
       "set_log_level",

@@ -81,6 +81,16 @@ extern "C"
     void ZarrStreamSettings_destroy_arrays(ZarrStreamSettings* settings);
 
     /**
+     * @brief Estimate the maximum memory usage of the Zarr stream.
+     * @param[in] settings The Zarr stream settings struct.
+     * @param[out] usage The estimated maximum memory usage in bytes.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_estimate_max_memory_usage(
+      const ZarrStreamSettings* settings,
+      size_t* usage);
+
+    /**
      * @brief Allocate memory for the dimension array in the Zarr array settings
      * struct.
      * @param[in, out] settings The Zarr array settings struct.
@@ -147,6 +157,15 @@ extern "C"
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
                                                     const char* custom_metadata,
                                                     bool overwrite);
+
+    /**
+     * @brief Get the current memory usage of the Zarr stream.
+     * @param[in] stream The Zarr stream struct.
+     * @param[out] usage The current memory usage in bytes.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_get_current_memory_usage(const ZarrStream* stream,
+      size_t* usage);
 
 #ifdef __cplusplus
 }

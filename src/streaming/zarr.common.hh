@@ -47,6 +47,15 @@ bytes_of_frame(const ArrayDimensions& dims, ZarrDataType type);
 
 /**
  * @brief Get the number of chunks along a dimension.
+ * @param array_size Size of the array along the dimension, in pixels.
+ * @param part_size Size of the chunks along the dimension, in pixels.
+ * @return The number of, possibly ragged, chunks along the dimension.
+ */
+uint32_t
+parts_along_dimension(uint32_t array_size, uint32_t part_size);
+
+/**
+ * @brief Get the number of chunks along a dimension.
  * @param dimension A dimension.
  * @return The number of, possibly ragged, chunks along the dimension, given
  * the dimension's array and chunk sizes.

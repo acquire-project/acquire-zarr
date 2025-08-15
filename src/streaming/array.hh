@@ -18,6 +18,8 @@ class Array : public ArrayBase
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
+    size_t memory_usage() const noexcept override;
+
     [[nodiscard]] size_t write_frame(LockedBuffer&) override;
 
   protected:

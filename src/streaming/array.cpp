@@ -22,6 +22,17 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
 }
 
 size_t
+zarr::Array::memory_usage() const noexcept
+{
+    size_t total = 0;
+    for (const auto& buf : chunk_buffers_) {
+        total += buf.size();
+    }
+
+    return total;
+}
+
+size_t
 zarr::Array::write_frame(LockedBuffer& data)
 {
     const auto nbytes_data = data.size();

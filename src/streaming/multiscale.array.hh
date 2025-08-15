@@ -17,6 +17,8 @@ class MultiscaleArray : public ArrayBase
                     std::shared_ptr<ThreadPool> thread_pool,
                     std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
+    size_t memory_usage() const noexcept override;
+
     /**
      * @brief Write a frame to the group.
      * @note This function splits the incoming frame into tiles and writes them

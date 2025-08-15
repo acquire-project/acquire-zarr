@@ -772,6 +772,19 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
     return ZarrStatusCode_Success;
 }
 
+size_t
+ZarrStream_s::get_memory_usage() const noexcept
+{
+    size_t usage = frame_queue_->bytes_used();
+    for (const auto& [key, output] : output_arrays_) {
+        const auto frame_buffer_size = output.frame_buffer.size();
+        const auto array_memory_usage = output.array->memory_usage();
+        usage += (frame_buffer_size + array_memory_usage);
+    }
+
+    return usage;
+}
+
 bool
 ZarrStream_s::is_s3_acquisition_() const
 {
