@@ -46,6 +46,12 @@ struct ZarrStream_s
     ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
                                          bool overwrite);
 
+    /**
+     * @brief Get the current memory usage of the stream.
+     * @return The current memory usage in bytes.
+     */
+    size_t get_memory_usage() const noexcept;
+
   private:
     struct ZarrOutputArray
     {

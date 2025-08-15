@@ -61,6 +61,12 @@ class ArrayBase
     virtual ~ArrayBase() = default;
 
     /**
+     * @brief Get the amount of memory currently used by this Array, in bytes.
+     * @return Memory used by this object, in bytes.
+     */
+    virtual size_t memory_usage() const noexcept = 0;
+
+    /**
      * @brief Close the node and flush any remaining data.
      * @return True if the node was closed successfully, false otherwise.
      */

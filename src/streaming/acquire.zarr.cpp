@@ -1,6 +1,7 @@
 #include "acquire.zarr.h"
-#include "zarr.stream.hh"
 #include "macros.hh"
+#include "zarr.common.hh"
+#include "zarr.stream.hh"
 
 #include <cstdint> // uint32_t
 
@@ -139,6 +140,75 @@ extern "C"
         settings->array_count = 0;
     }
 
+    ZarrStatusCode ZarrStreamSettings_estimate_max_memory_usage(
+      const ZarrStreamSettings* settings,
+      size_t* usage)
+    {
+        EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
+        EXPECT_VALID_ARGUMENT(settings->arrays,
+                              "Null pointer: settings->arrays");
+
+        for (auto i = 1; i < settings->array_count; ++i) {
+            EXPECT_VALID_ARGUMENT(
+              settings->arrays + i, "Null pointer: settings for array ", i);
+            for (auto j = 0; j < settings->arrays[i].dimension_count; ++j) {
+                EXPECT_VALID_ARGUMENT(settings->arrays[i].dimensions + j,
+                                      "Null pointer: dimension ",
+                                      j,
+                                      " for array ",
+                                      i);
+            }
+        }
+
+        EXPECT_VALID_ARGUMENT(usage, "Null pointer: usage");
+
+        *usage = (1 << 30); // start with 1 GiB for the frame queue
+
+        for (size_t i = 0; i < settings->array_count; ++i) {
+            const auto& array = settings->arrays[i];
+            const auto& dims = array.dimensions;
+            const auto& ndims = array.dimension_count;
+
+            const size_t bytes_of_type = zarr::bytes_of_type(array.data_type);
+            const size_t frame_size_bytes = bytes_of_type *
+                                            dims[ndims - 2].array_size_px *
+                                            dims[ndims - 1].array_size_px;
+
+            *usage += frame_size_bytes; // each array has a frame buffer
+
+            size_t array_usage = bytes_of_type * dims[0].chunk_size_px;
+            for (auto j = 1; j < ndims; ++j) {
+                const auto& dim = dims[j];
+
+                // arrays may be ragged, so we need to account for fill values
+                const auto nchunks = zarr::parts_along_dimension(
+                  dim.array_size_px, dim.chunk_size_px);
+                size_t padded_array_size_px = nchunks * dim.chunk_size_px;
+
+                array_usage *= padded_array_size_px;
+            }
+
+            // compression can instantaneously double memory usage in the worst
+            // case, so we account for that here
+            if (array.compression_settings) {
+                array_usage *= 2;
+            }
+
+            if (array.multiscale) {
+                // we can bound the memory usage of multiscale arrays by
+                // observing that each downsampled level is at most half the
+                // size of the previous level, so the total memory usage is at
+                // most twice the size of the full-resolution, i.e.,
+                // sum(1/2^n)_{n=0}^{inf} = 2
+                array_usage *= 2;
+            }
+
+            *usage += array_usage;
+        }
+
+        return ZarrStatusCode_Success;
+    }
+
     ZarrStatusCode ZarrArraySettings_create_dimension_array(
       ZarrArraySettings* settings,
       size_t dimension_count)
@@ -239,5 +309,21 @@ extern "C"
         }
 
         return status;
+    }
+
+    ZarrStatusCode ZarrStream_get_current_memory_usage(const ZarrStream* stream,
+                                                       size_t* usage)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(usage, "Null pointer: usage");
+
+        try {
+            *usage += stream->get_memory_usage();
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error getting memory usage: ", e.what());
+            return ZarrStatusCode_InternalError;
+        }
+
+        return ZarrStatusCode_Success;
     }
 }

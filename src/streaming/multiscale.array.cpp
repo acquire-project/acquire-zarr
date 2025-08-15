@@ -36,6 +36,17 @@ zarr::MultiscaleArray::MultiscaleArray(
 }
 
 size_t
+zarr::MultiscaleArray::memory_usage() const noexcept
+{
+    size_t total = 0;
+    for (const auto& array : arrays_) {
+        total += array->memory_usage();
+    }
+
+    return total;
+}
+
+size_t
 zarr::MultiscaleArray::write_frame(LockedBuffer& data)
 {
     if (arrays_.empty()) {
