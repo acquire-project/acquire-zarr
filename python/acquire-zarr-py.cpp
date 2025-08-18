@@ -354,8 +354,13 @@ class PyZarrStreamSettings
 
     size_t get_maximum_memory_usage() const
     {
-        ZarrStreamSettings settings;
-        ZarrStreamSettings_create_arrays(&settings, arrays_.size());
+        ZarrStreamSettings settings{ 0 };
+        if (ZarrStreamSettings_create_arrays(&settings, arrays_.size()) !=
+            ZarrStatusCode_Success) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "Failed to create Zarr stream settings.");
+            throw py::error_already_set();
+        }
 
         for (auto i = 0; i < arrays_.size(); ++i) {
             auto& array_settings = settings.arrays[i];
