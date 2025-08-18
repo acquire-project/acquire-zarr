@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <thread>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -571,8 +572,8 @@ main()
     int retval = 1;
 
     try {
-        //        test_max_memory_usage();
-        //        test_current_memory_usage();
+        test_max_memory_usage();
+        test_current_memory_usage();
         check_one_thing();
 
         retval = 0;
