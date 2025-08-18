@@ -1,6 +1,7 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
 
+#include <cstring>
 #include <filesystem>
 #include <thread>
 #include <vector>
