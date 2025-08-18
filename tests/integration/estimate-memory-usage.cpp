@@ -2,6 +2,7 @@
 #include "test.macros.hh"
 
 #include <filesystem>
+#include <thread>
 
 namespace fs = std::filesystem;
 
