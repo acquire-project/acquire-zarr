@@ -376,6 +376,8 @@ class PyZarrStreamSettings
                 array_dim.chunk_size_px = dim.chunk_size_px();
                 array_dim.shard_size_chunks = dim.shard_size_chunks();
             }
+
+            array_settings.data_type = arrays_[i].data_type();
         }
 
         size_t usage;

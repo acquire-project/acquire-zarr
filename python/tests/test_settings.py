@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 from pathlib import Path
 
 import pytest
@@ -281,13 +280,13 @@ def test_estimate_max_memory_usage():
     ]
     array.data_type = np.uint16
 
-    chunks_size = np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
+    array_usage = np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
     for dim in array.dimensions[1:]:
-        chunks_size *= dim.array_size_px
-    frame_queue_size = 1 << 30
-    frame_buffer_size = array.dimensions[-2].array_size_px * array.dimensions[-1].array_size_px * np.dtype(
+        array_usage *= dim.array_size_px
+    frame_queue_usage = 1 << 30
+    frame_buffer_usage = array.dimensions[-2].array_size_px * array.dimensions[-1].array_size_px * np.dtype(
         np.uint16).itemsize
-    expected_memory = chunks_size + frame_buffer_size + frame_queue_size
+    expected_memory = array_usage + frame_buffer_usage + frame_queue_usage
 
     stream = aqz.StreamSettings(
         arrays=[array]

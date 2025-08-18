@@ -30,8 +30,11 @@ initialize_array(ZarrArraySettings& settings,
     settings.data_type = ZarrDataType_uint16;
 
     if (compress) {
-        settings.compression_settings = new ZarrCompressionSettings(
-          ZarrCompressor_Blosc1, ZarrCompressionCodec_BloscLZ4, 1, 0);
+        settings.compression_settings = new ZarrCompressionSettings;
+        settings.compression_settings->compressor = ZarrCompressor_Blosc1;
+        settings.compression_settings->codec = ZarrCompressionCodec_BloscLZ4;
+        settings.compression_settings->level = 1;
+        settings.compression_settings->shuffle = 1; // enable shuffling
     }
 
     if (multiscale) {
