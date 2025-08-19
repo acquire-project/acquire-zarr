@@ -318,7 +318,7 @@ extern "C"
         EXPECT_VALID_ARGUMENT(usage, "Null pointer: usage");
 
         try {
-            *usage += stream->get_memory_usage();
+            *usage = stream->get_memory_usage();
         } catch (const std::exception& e) {
             LOG_ERROR("Error getting memory usage: ", e.what());
             return ZarrStatusCode_InternalError;
