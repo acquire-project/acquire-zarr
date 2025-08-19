@@ -1359,7 +1359,7 @@ def test_get_current_memory_usage(
     data = np.random.randint(0, 2 ** 16 - 1, (32, 3, 48, 64))
     stream.append(data[:31, :, :, :])  # fill the buffer, but don't flush
 
-    time.sleep(0.1)  # allow some time for the stream to process
+    time.sleep(0.5)  # allow some time for the stream to process
 
     usage = stream.get_current_memory_usage()
     assert usage == frame_buffer_size + array1_usage
@@ -1388,7 +1388,7 @@ def test_get_current_memory_usage(
     stream.append(data[:31, :, :, :], key="array1")  # fill the buffer, but don't flush
     stream.append(data[:31, :, :, :], key="array2")  # fill the buffer, but don't flush
 
-    time.sleep(0.2)  # allow some time for the stream to process
+    time.sleep(0.5)  # allow some time for the stream to process
 
     usage = stream.get_current_memory_usage()
     assert usage == 2 * frame_buffer_size + array1_usage + array2_usage
@@ -1425,7 +1425,7 @@ def test_get_current_memory_usage(
     stream.append(data[:31, :, :, :], key="array2")  # fill the buffer, but don't flush
     stream.append(data[:31, :, :, :], key="array3")  # fill the buffer, but don't flush
 
-    time.sleep(0.3)  # allow some time for the stream to process
+    time.sleep(0.5)  # allow some time for the stream to process
 
     usage = stream.get_current_memory_usage()
     assert usage == 3 * frame_buffer_size + array1_usage + array2_usage + array3_usage
