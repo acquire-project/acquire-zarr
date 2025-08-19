@@ -1367,7 +1367,7 @@ def test_get_current_memory_usage(
     # add the last frame to induce a flush
     stream.append(data[31:, :, :, :])  # this should flush the data
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == frame_buffer_size  # the array data should be cleared out
@@ -1396,14 +1396,14 @@ def test_get_current_memory_usage(
     # add the last frame to induce a flush
     stream.append(data[31:, :, :, :], key="array1")  # this should flush the data in array1
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == 2 * frame_buffer_size + array2_usage  # the first array should be cleared out, but the second one is still in memory
 
     stream.append(data[31:, :, :, :], key="array2")  # this should flush the data in array2
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == 2 * frame_buffer_size  # both arrays should be cleared out
@@ -1433,21 +1433,21 @@ def test_get_current_memory_usage(
     # add the last frame to induce a flush
     stream.append(data[31:, :, :, :], key="array1")  # this should flush the data in array1
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == 3 * frame_buffer_size + array2_usage + array3_usage # the first array should be cleared out, but the second and third are still in memory
 
     stream.append(data[31:, :, :, :], key="array2")  # this should flush the data in array2
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == 3 * frame_buffer_size + array3_usage  # array3 is still in memory
 
     stream.append(data[31:, :, :, :], key="array3")  # this should flush some of the data in array3
 
-    time.sleep(0.5)  # wait for data to flush
+    time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
     assert usage == 3 * frame_buffer_size # everything should be cleared out

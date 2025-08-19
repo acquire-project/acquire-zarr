@@ -270,7 +270,7 @@ test_current_memory_usage()
                                  output_key1.c_str()) == ZarrStatusCode_Success,
                "Failed to append final frame");
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         // After flush, should be back to just frame buffer
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
@@ -355,7 +355,7 @@ test_current_memory_usage()
                                  output_key1.c_str()) == ZarrStatusCode_Success,
                "Failed to flush array1");
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         // Should have 2 frame buffers + array2 usage (array1 cleared)
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
@@ -375,7 +375,7 @@ test_current_memory_usage()
                                  output_key2.c_str()) == ZarrStatusCode_Success,
                "Failed to flush array2");
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         // Should be back to just 2 frame buffers
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
@@ -473,7 +473,7 @@ test_current_memory_usage()
                                  &bytes_written,
                                  output_key1.c_str()) == ZarrStatusCode_Success,
                "Failed to flush array1");
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
                  ZarrStatusCode_Success,
@@ -491,7 +491,7 @@ test_current_memory_usage()
                                  &bytes_written,
                                  output_key2.c_str()) == ZarrStatusCode_Success,
                "Failed to flush array2");
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
                  ZarrStatusCode_Success,
@@ -509,7 +509,7 @@ test_current_memory_usage()
                                  &bytes_written,
                                  output_key3.c_str()) == ZarrStatusCode_Success,
                "Failed to flush array3");
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
         EXPECT(ZarrStream_get_current_memory_usage(stream, &usage) ==
                  ZarrStatusCode_Success,
