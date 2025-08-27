@@ -30,6 +30,7 @@ set(tests
         frame-queue
         downsampler
         downsampler-odd-z
+        plate
 )
 
 foreach (name ${tests})
