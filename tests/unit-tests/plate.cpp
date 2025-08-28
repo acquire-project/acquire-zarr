@@ -9,14 +9,12 @@ check_dense_plate()
 
     std::vector<zarr::Well> wells;
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "A",
       .column_name = "1",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" },
                   zarr::FieldOfView{ .acquisition_id = 1, .path = "fov2" } } });
 
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "A",
       .column_name = "2",
       .images = {
@@ -26,25 +24,21 @@ check_dense_plate()
         zarr::FieldOfView{ .acquisition_id = 2, .path = "fov2-2" } } });
 
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "A",
       .column_name = "3",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" } } });
 
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "B",
       .column_name = "1",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" } } });
 
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "B",
       .column_name = "2",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" } } });
 
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "B",
       .column_name = "3",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" },
@@ -279,12 +273,10 @@ check_sparse_plate()
     std::string name = "sparse test";
     std::vector<zarr::Well> wells;
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "C",
       .column_name = "5",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" } } });
     wells.emplace_back(zarr::Well{
-      .base_path = path,
       .row_name = "D",
       .column_name = "7",
       .images = { zarr::FieldOfView{ .acquisition_id = 1, .path = "fov1" } } });

@@ -17,7 +17,6 @@ struct FieldOfView
 
 struct Well
 {
-    std::string base_path;
     std::string row_name;
     std::string column_name; // metadata: base_path/row_name/col_name/zarr.json
     std::vector<FieldOfView> images;
