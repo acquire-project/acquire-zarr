@@ -1027,17 +1027,46 @@ ZarrStream_s::write_intermediate_metadata_()
             { "attributes", nlohmann::json::object() },
         };
     }
-    const std::string metadata_str = group_metadata.dump(4);
-    ConstByteSpan metadata_span(
-      reinterpret_cast<const uint8_t*>(metadata_str.data()),
-      metadata_str.size());
+    std::string metadata_str = group_metadata.dump(4);
 
     for (const auto& parent_group_key : intermediate_group_paths_) {
-        const std::string sink_path =
-          store_path_ + "/" +
-          (parent_group_key.empty() ? "" : parent_group_key + "/") +
-          metadata_key;
+        const std::string relative_path =
+          (parent_group_key.empty() ? "" : parent_group_key);
 
+        if (auto pit = plates_.find(relative_path); // is it a plate?
+            pit != plates_.end()) {
+            const auto& plate = pit->second;
+            nlohmann::json plate_metadata =
+              group_metadata; // make a copy to modify
+
+            // not supported for Zarr V2 / NGFF 0.4
+            plate_metadata["attributes"]["ome"] = {
+                { "version", "0.5" },
+                { "plate", plate.to_json() },
+            };
+
+            metadata_str = plate_metadata.dump(4);
+        } else if (auto wit = wells_.find(relative_path); // is it a well?
+                   wit != wells_.end()) {
+            const auto& well = wit->second;
+            nlohmann::json well_metadata =
+              group_metadata; // make a copy to modify
+
+            // not supported for Zarr V2 / NGFF 0.4
+            well_metadata["attributes"]["ome"] = {
+                { "version", "0.5" },
+                { "well", well.to_json() },
+            };
+
+            metadata_str = well_metadata.dump(4);
+        }
+
+        ConstByteSpan metadata_span(
+          reinterpret_cast<const uint8_t*>(metadata_str.data()),
+          metadata_str.size());
+
+        const std::string sink_path =
+          store_path_ + "/" + relative_path + "/" + metadata_key;
         std::unique_ptr<zarr::Sink> metadata_sink;
         if (is_s3_acquisition_()) {
             metadata_sink = zarr::make_s3_sink(

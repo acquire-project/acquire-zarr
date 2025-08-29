@@ -152,12 +152,12 @@ zarr::Plate::compute_field_counts_()
         std::unordered_map<uint32_t, uint32_t> well_field_counts;
 
         for (const auto& image : well.images) {
-            if (well_field_counts.find(image.acquisition_id) ==
+            if (well_field_counts.find(*image.acquisition_id) ==
                 well_field_counts.end()) {
-                well_field_counts[image.acquisition_id] = 0;
+                well_field_counts[*image.acquisition_id] = 0;
             }
 
-            ++well_field_counts[image.acquisition_id];
+            ++well_field_counts[*image.acquisition_id];
         }
 
         for (const auto& [acq_id, count] : well_field_counts) {

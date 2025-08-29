@@ -7,6 +7,7 @@
 #include "frame.queue.hh"
 #include "locked.buffer.hh"
 #include "multiscale.array.hh"
+#include "plate.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -66,6 +67,10 @@ struct ZarrStream_s
     ZarrVersion version_;
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
+
+    // maps of plates and wells, key by their paths relative to the store root
+    std::unordered_map<std::string, zarr::Plate> plates_;
+    std::unordered_map<std::string, const zarr::Well&> wells_;
 
     std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
     std::vector<std::string> intermediate_group_paths_;
@@ -129,7 +134,8 @@ struct ZarrStream_s
     [[nodiscard]] bool create_store_(bool overwrite);
 
     /**
-     * @brief Write intermediate group metadata to the store.
+     * @brief Write intermediate group metadata to the store, including HCS
+     * metadata (if applicable).
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();
