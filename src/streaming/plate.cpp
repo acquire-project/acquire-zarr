@@ -6,6 +6,40 @@
 #include <unordered_set>
 
 nlohmann::json
+zarr::Well::to_json() const
+{
+    nlohmann::json j;
+
+    // The well dictionary MUST contain an images key whose value MUST be a list
+    // of JSON objects specifying all fields of views for a given well.
+    j["images"] = nlohmann::json::array();
+
+    for (const auto& image : images) {
+        nlohmann::json img;
+        // Each image object MUST contain a path key whose value MUST be a
+        // string specifying the path to the field of view. The path MUST
+        // contain only alphanumeric characters, MUST be case-sensitive, and
+        // MUST NOT be a duplicate of any other path in the images list. If
+        // multiple acquisitions were performed in the plate, it MUST contain an
+        // acquisition key whose value MUST be an integer identifying the
+        // acquisition which MUST match one of the acquisition JSON objects
+        // defined in the plate metadata (see #plate-md).
+        img["path"] = image.path;
+        if (image.acquisition_id.has_value()) {
+            img["acquisition"] = *image.acquisition_id;
+        }
+
+        j["images"].push_back(img);
+    }
+
+    // The well dictionary SHOULD contain a version key whose value MUST be a
+    // string specifying the version of the well specification.
+    j["version"] = "0.5";
+
+    return j;
+}
+
+nlohmann::json
 zarr::Acquisition::to_json() const
 {
     // Each acquisition object MUST contain an id key whose value MUST be an

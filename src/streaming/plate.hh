@@ -11,7 +11,7 @@
 namespace zarr {
 struct FieldOfView
 {
-    uint32_t acquisition_id;
+    std::optional<uint32_t> acquisition_id;
     std::string path; // relative to the well: base_path/row/col/fov_path
 };
 
@@ -20,11 +20,13 @@ struct Well
     std::string row_name;
     std::string column_name; // metadata: base_path/row_name/col_name/zarr.json
     std::vector<FieldOfView> images;
+
+    nlohmann::json to_json() const;
 };
 
 struct Acquisition
 {
-    uint32_t id; /// unique identifier (mandatory)
+    uint32_t id; // unique identifier (mandatory)
     std::optional<std::string> name;
     std::optional<std::string> description;
     std::optional<uint64_t> start_time;
@@ -56,7 +58,7 @@ struct Plate
     nlohmann::json to_json() const;
 
   private:
-    std::string path_;
+    std::string path_; // relative to the root: root/path_
     std::string name_;
     std::vector<std::string> row_names_;
     std::vector<std::string> column_names_;
