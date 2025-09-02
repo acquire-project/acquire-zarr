@@ -31,6 +31,9 @@ extern "C"
         bool overwrite; /**< Remove everything in store_path if true. */
         ZarrArraySettings* arrays; /**< The settings for the Zarr arrays being streamed. */
         size_t array_count; /**< The number of arrays in the Zarr stream. */
+        ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
+                                               non-NULL, the stream will be
+                                               configured for HCS data. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -109,6 +112,76 @@ extern "C"
      * dimension array to free.
      */
     void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings);
+
+    /**
+     * @brief Allocate memory for the images array in the ZarrHCSWell struct.
+     * @param[in,out] well The ZarrHCSWell struct.
+     * @param image_count The number of images in the well to allocate memory
+     * for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSWell_create_image_array(ZarrHCSWell* well,
+                                                  size_t image_count);
+
+    /**
+     * @brief Free memory for the images array in the ZarrHCSWell struct.
+     * @param well The ZarrHCSWell struct containing the images array to free.
+     */
+    void ZarrHCSWell_destroy_image_array(ZarrHCSWell* well);
+
+    /**
+     * @brief Allocate memory for the wells array in the ZarrHCSPlate struct.
+     * @param[in,out] plate The ZarrHCSPlate struct.
+     * @param well_count The number of wells in the plate to allocate memory
+     * for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSPlate_create_well_array(ZarrHCSPlate* plate,
+                                                  size_t well_count);
+
+    /**
+     * @brief Free memory for the wells array in the ZarrHCSPlate struct.
+     * @param plate The ZarrHCSPlate struct containing the wells array to free.
+     */
+    void ZarrHCSPlate_destroy_well_array(ZarrHCSPlate* plate);
+
+    /**
+     * @brief Allocate memory for the acquisitions array in the ZarrHCSPlate
+     * struct.
+     * @param[in,out] plate The ZarrHCSPlate struct.
+     * @param acquisition_count The number of acquisitions in the plate to
+     * allocate memory for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSPlate_create_acquisition_array(
+      ZarrHCSPlate* plate,
+      size_t acquisition_count);
+
+    /**
+     * @brief Free memory for the acquisitions array in the ZarrHCSPlate struct.
+     * @param plate The ZarrHCSPlate struct containing the acquisitions array to
+     */
+    void ZarrHCSPlate_destroy_acquisition_array(ZarrHCSPlate* plate);
+
+    /**
+     * @brief Allocate memory for the ZarrHCSSettings struct in the Zarr stream
+     * settings.
+     * @details This function allocates memory for the plates array in the
+     * ZarrHCSSettings struct. You must call ZarrHCSSettings_destroy_plate_array
+     * to free the memory allocated by this function.
+     * @param[in, out] settings The Zarr stream settings struct.
+     * @param[in] plate_count The number of plates in the dataset to allocate
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSSettings_create_plate_array(ZarrHCSSettings* settings,
+                                                      size_t plate_count);
+
+    /**
+     * @brief Free memory for the plates array in the ZarrHCSSettings struct.
+     * @param settings The ZarrHCSSettings struct containing the plates array to
+     * free.
+     */
+    void ZarrHCSSettings_destroy_plate_array(ZarrHCSSettings* settings);
 
     /**
      * @brief Create a Zarr stream.

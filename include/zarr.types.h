@@ -150,6 +150,73 @@ extern "C"
         ZarrDownsamplingMethod downsampling_method;
     } ZarrArraySettings;
 
+    /**
+     * @brief Settings for a field of view in a high-content screening (HCS)
+     * well.
+     */
+    typedef struct
+    {
+        const char* path; /**< Path to the FOV, relative to its parent Well */
+        uint32_t acquisition_id; /**< Acquisition ID, if applicable */
+        bool has_acquisition_id; /**< Whether acquisition_id is valid */
+        ZarrArraySettings* array_settings; /**< Settings for the array */
+    } ZarrHCSFieldOfView;
+
+    /**
+     * @brief Settings for a well in a high-content screening (HCS) plate.
+     */
+    typedef struct
+    {
+        const char* row_name;    /**< Name of the row containing this Well */
+        const char* column_name; /**< Name of the column containing this Well */
+        ZarrHCSFieldOfView* images; /**< Array of FieldOfView structs */
+        size_t image_count;         /**< Number of FieldOfView structs */
+    } ZarrHCSWell;
+
+    /**
+     * @brief Settings for an acquisition in a high-content screening (HCS)
+     * plate.
+     */
+    typedef struct
+    {
+        uint32_t id;      /**< Unique identifier for the acquisition */
+        const char* name; /**< Name of the acquisition. Can be NULL */
+        const char*
+          description;       /**< Description of the acquisition. Can be NULL */
+        uint64_t start_time; /**< Start time as an epoch timestamp */
+        bool has_start_time; /**< Whether start_time is valid */
+        uint64_t end_time;   /**< End time as an epoch timestamp */
+        bool has_end_time;   /**< Whether end_time is valid */
+    } ZarrHCSAcquisition;
+
+    /**
+     * @brief Settings for a high-content screening (HCS) plate.
+     */
+    typedef struct
+    {
+        const char* path;       /**< Path to the plate, relative to the root */
+        const char* name;       /**< Name of the plate */
+        const char** row_names; /**< Array of row names */
+        size_t row_count;       /**< Number of row names */
+        const char** column_names;        /**< Array of column names */
+        size_t column_count;              /**< Number of column names */
+        ZarrHCSWell* wells;               /**< Array of Well structs */
+        size_t well_count;                /**< Number of Well structs */
+        ZarrHCSAcquisition* acquisitions; /**< Array of Acquisition structs */
+        size_t acquisition_count;         /**< Number of Acquisition structs */
+    } ZarrHCSPlate;
+
+    /**
+     * @brief Settings for high-content screening (HCS) datasets.
+     * @note The plates array may be allocated with ZarrHCSSettings_create_plate_array
+     * and freed with ZarrHCSSettings_destroy_plate_array.
+     */
+    typedef struct
+    {
+        ZarrHCSPlate* plates; /**< Array of Plate structs */
+        size_t plate_count;           /**< Number of Plate structs */
+    } ZarrHCSSettings;
+
 #ifdef __cplusplus
 }
 #endif
