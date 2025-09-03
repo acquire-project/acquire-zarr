@@ -1210,17 +1210,20 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     return true;
 }
 
-void
+bool
 ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
 {
     if (hcs_settings == nullptr) {
-        return; // nothing to do
+        return true; // nothing to do
+    }
+
+    if (version_ == ZarrVersion_2) {
+        set_error_("HCS settings are not supported in Zarr version 2");
+        return false;
     }
 
     plates_.clear();
     wells_.clear();
-
-    std::vector<zarr::Plate> plates;
 
     for (auto i = 0; i < hcs_settings->plate_count; ++i) {
         const auto& plate_in = hcs_settings->plates[i];
@@ -1305,6 +1308,8 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
             wells_.emplace(well_key, well);
         }
     }
+
+    return true;
 }
 
 bool
@@ -1333,7 +1338,10 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     }
 
     // configure HCS settings
-    commit_hcs_settings_(settings->hcs_settings);
+    if (!commit_hcs_settings_(settings->hcs_settings)) {
+        set_error_("Failed to configure HCS: " + error_);
+        return false;
+    }
 
     return true;
 }

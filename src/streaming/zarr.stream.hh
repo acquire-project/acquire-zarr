@@ -111,8 +111,11 @@ struct ZarrStream_s
     /**
      * @brief Commit HCS settings to the stream.
      * @param hcs_settings Struct containing HCS settings to commit.
+     * @return True if the HCS settings were committed successfully, false
+     * otherwise.
      */
-    void commit_hcs_settings_(const ZarrHCSSettings* hcs_settings);
+    [[nodiscard]] bool commit_hcs_settings_(
+      const ZarrHCSSettings* hcs_settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.
