@@ -102,8 +102,17 @@ struct ZarrStream_s
     /**
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
+     * @param parent_path Path to the parent group of the array.
+     * @return True if the array was configured successfully, false otherwise.
      */
-    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings);
+    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings,
+                                        const std::string& parent_path);
+
+    /**
+     * @brief Commit HCS settings to the stream.
+     * @param hcs_settings Struct containing HCS settings to commit.
+     */
+    void commit_hcs_settings_(const ZarrHCSSettings* hcs_settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.

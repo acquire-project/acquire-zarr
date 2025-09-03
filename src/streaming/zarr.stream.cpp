@@ -292,6 +292,44 @@ regularize_key(const char* key)
     return regularized_key;
 }
 
+std::shared_ptr<zarr::ArrayConfig>
+make_array_config(const ZarrArraySettings* settings,
+                  const std::string& store_root,
+                  const std::string& parent_path,
+                  const std::optional<std::string>& bucket_name,
+                  std::string& error)
+{
+    // remove leading/trailing slashes and whitespace
+    std::string key = regularize_key(settings->output_key);
+    key = parent_path + "/" + key;
+    key = regularize_key(key.c_str());
+
+    if (!key.empty() && !is_valid_zarr_key(key, error)) {
+        error = "Invalid output key: '" + key + "': " + error;
+        return nullptr;
+    }
+
+    std::optional<zarr::BloscCompressionParams> compression_params =
+      make_compression_params(settings->compression_settings);
+
+    std::shared_ptr<ArrayDimensions> dimensions = make_array_dimensions(
+      settings->dimensions, settings->dimension_count, settings->data_type);
+
+    std::optional<ZarrDownsamplingMethod> downsampling_method = std::nullopt;
+    if (settings->multiscale) {
+        downsampling_method = settings->downsampling_method;
+    }
+
+    return std::make_shared<zarr::ArrayConfig>(store_root,
+                                               key,
+                                               bucket_name,
+                                               compression_params,
+                                               dimensions,
+                                               settings->data_type,
+                                               downsampling_method,
+                                               0);
+}
+
 [[nodiscard]] bool
 validate_dimension(const ZarrDimensionProperties* dimension,
                    ZarrVersion version,
@@ -334,6 +372,7 @@ validate_dimension(const ZarrDimensionProperties* dimension,
 
 [[nodiscard]] bool
 validate_array_settings(const ZarrArraySettings* settings,
+                        const std::string& parent_path,
                         ZarrVersion version,
                         std::string& error)
 {
@@ -343,6 +382,9 @@ validate_array_settings(const ZarrArraySettings* settings,
     }
 
     std::string key = regularize_key(settings->output_key);
+    key = parent_path + "/" + key;
+    key = regularize_key(key.c_str());
+
     if (!key.empty() && !is_valid_zarr_key(key, error)) {
         error = "Invalid output key: '" + key + "': " + error;
         return false;
@@ -420,13 +462,200 @@ is_reserved_metadata_file(const std::string& name)
 }
 
 [[nodiscard]] bool
-check_array_structure(const ZarrArraySettings* arrays,
-                      size_t array_count,
+validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
+{
+    if (settings == nullptr) {
+        return true; // HCS settings are optional
+    }
+
+    for (auto i = 0; i < settings->plate_count; ++i) {
+        if (settings->plates + i == nullptr) {
+            error = "Null pointer: plate " + std::to_string(i);
+            return false;
+        }
+
+        const auto& plate = settings->plates[i];
+        if (plate.path == nullptr) {
+            error = "Null pointer: path for plate " + std::to_string(i);
+            return false;
+        }
+
+        if (plate.name == nullptr) {
+            error = "Null pointer: name for plate " + std::to_string(i);
+            return false;
+        }
+
+        std::unordered_set<uint32_t> acquisition_ids;
+        std::unordered_set<std::string> row_names;
+        std::unordered_set<std::string> column_names;
+
+        // check acquisitions
+        for (auto j = 0; j < plate.acquisition_count; ++j) {
+            if (plate.acquisitions + j == nullptr) {
+                error = "Null pointer: acquisition " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
+            const auto& acquisition = plate.acquisitions[j];
+
+            if (acquisition_ids.contains(acquisition.id)) {
+                error = "Duplicate acquisition ID: " +
+                        std::to_string(acquisition.id) + " in plate " +
+                        std::to_string(i);
+                return false;
+            }
+            acquisition_ids.insert(acquisition.id);
+        }
+
+        // check row names
+        if (plate.row_names == nullptr) {
+            error = "Null pointer: row names for plate " + std::to_string(i);
+            return false;
+        }
+
+        if (plate.row_count == 0) {
+            error = "No rows specified for plate " + std::to_string(i);
+            return false;
+        }
+
+        for (auto j = 0; j < plate.row_count; ++j) {
+            if (plate.row_names[j] == nullptr) {
+                error = "Null pointer: row name " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
+
+            const std::string row_name = regularize_key(plate.row_names[j]);
+            if (!is_valid_zarr_key(row_name, error)) {
+                error = "Invalid row name in plate " + std::to_string(i) +
+                        ": " + error;
+                return false;
+            }
+
+            if (row_names.contains(row_name)) {
+                error = "Duplicate row name: '" + row_name + "' in plate " +
+                        std::to_string(i);
+            }
+            row_names.insert(row_name);
+        }
+
+        // check column names
+        if (plate.column_names == nullptr) {
+            error = "Null pointer: column names for plate " + std::to_string(i);
+            return false;
+        }
+
+        if (plate.column_count == 0) {
+            error = "No columns specified for plate " + std::to_string(i);
+            return false;
+        }
+
+        for (auto j = 0; j < plate.column_count; ++j) {
+            if (plate.column_names[j] == nullptr) {
+                error = "Null pointer: column name " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
+
+            const std::string column_name =
+              regularize_key(plate.column_names[j]);
+            if (!is_valid_zarr_key(column_name, error)) {
+                error = "Invalid column name in plate " + std::to_string(i) +
+                        ": " + error;
+                return false;
+            }
+
+            if (column_names.contains(column_name)) {
+                error = "Duplicate column name: '" + column_name +
+                        "' in plate " + std::to_string(i);
+            }
+            column_names.insert(column_name);
+        }
+
+        // check wells
+        for (auto j = 0; j < plate.well_count; ++j) {
+            if (plate.wells + j == nullptr) {
+                error = "Null pointer: well " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
+            const auto& well = plate.wells[j];
+
+            if (well.row_name == nullptr) {
+                error = "Null pointer: row name for well " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
+            if (const std::string row_name(well.row_name);
+                !row_names.contains(row_name)) {
+                error = "Row name '" + row_name + "' for well " +
+                        std::to_string(j) + " in plate " + std::to_string(i) +
+                        " not found in plate row names";
+                return false;
+            }
+
+            if (well.column_name == nullptr) {
+                error = "Null pointer: column name for well " +
+                        std::to_string(j) + " in plate " + std::to_string(i);
+                return false;
+            }
+            if (const std::string column_name(well.column_name);
+                !column_names.contains(column_name)) {
+                error = "Column name '" + column_name + "' for well " +
+                        std::to_string(j) + " in plate " + std::to_string(i) +
+                        " not found in plate column names";
+                return false;
+            }
+
+            // check fields of view
+            std::unordered_set<std::string> fields_of_view;
+            for (auto k = 0; k < well.image_count; ++k) {
+                if (well.images + k == nullptr) {
+                    error = "Image " + std::to_string(k) + " in well " +
+                            std::to_string(j) + " in plate " +
+                            std::to_string(i) + " is a null pointer";
+                    return false;
+                }
+                const auto& fov = well.images[k];
+
+                if (fov.path == nullptr) {
+                    error = "Null pointer: path for image " +
+                            std::to_string(k) + " in well " +
+                            std::to_string(j) + " in plate " +
+                            std::to_string(i);
+                    return false;
+                }
+                const std::string fov_path = regularize_key(fov.path);
+
+                if (!is_valid_zarr_key(fov_path, error)) {
+                    error = "Invalid path for image " + std::to_string(k) +
+                            " in well " + std::to_string(j) + " in plate " +
+                            std::to_string(i) + ": " + error;
+                    return false;
+                }
+
+                if (fields_of_view.contains(fov_path)) {
+                    error = "Duplicate path '" + fov_path + "' for image " +
+                            std::to_string(k) + " in well " +
+                            std::to_string(j) + " in plate " +
+                            std::to_string(i);
+                    return false;
+                }
+                fields_of_view.insert(fov_path);
+            }
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
                       std::vector<std::string>& needs_metadata_paths,
                       std::string& error)
 {
-    if (arrays == nullptr) {
-        error = "Null pointer: settings";
+    if (arrays.empty()) {
+        error = "No arrays provided";
         return false;
     }
 
@@ -453,15 +682,11 @@ check_array_structure(const ZarrArraySettings* arrays,
     std::unordered_set<std::string> seen_keys;
 
     // check that if the root node is not multiscale, there are no other arrays
-    for (auto i = 0; i < array_count; ++i) {
-        auto* array = arrays + i;
-        if (array == nullptr) {
-            error = "Null pointer: array at index " + std::to_string(i);
-            return false;
-        }
+    for (auto i = 0; i < arrays.size(); ++i) {
+        const auto& array = arrays[i];
+        const bool is_multiscale_array = array->downsampling_method.has_value();
 
-        // remove leading/trailing slashes and whitespace
-        std::string key = regularize_key(array->output_key);
+        const std::string& key = array->node_key;
 
         // ensure that we don't have a duplicate key
         if (seen_keys.contains(key)) {
@@ -471,8 +696,8 @@ check_array_structure(const ZarrArraySettings* arrays,
         seen_keys.insert(key);
 
         if (key.empty()) {
-            tree->type = array->multiscale ? DatasetNodeType::MultiscaleArray
-                                           : DatasetNodeType::Array;
+            tree->type = is_multiscale_array ? DatasetNodeType::MultiscaleArray
+                                             : DatasetNodeType::Array;
         } else {
             // break down the key into segments
             std::string parent_path = key;
@@ -505,15 +730,15 @@ check_array_structure(const ZarrArraySettings* arrays,
                 segments.pop();
 
                 // check if this segment already exists
-                auto it = current_node->children.find(segment);
-                if (it == current_node->children.end()) {
+                if (auto it = current_node->children.find(segment);
+                    it == current_node->children.end()) {
                     // Create a new node for this segment
                     auto new_node = std::make_shared<DatasetNode>();
                     new_node->name = segment;
                     new_node->parent = current_node;
 
                     if (segments.empty()) { // Last segment
-                        new_node->type = array->multiscale
+                        new_node->type = is_multiscale_array
                                            ? DatasetNodeType::MultiscaleArray
                                            : DatasetNodeType::Array;
                     } else {
@@ -812,7 +1037,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         error_ = "Null pointer: store_path";
         return false;
     }
-    std::string_view store_path(settings->store_path);
+    const std::string store_path(settings->store_path);
 
     // we require the store path (root of the dataset) to be nonempty
     if (store_path.empty()) {
@@ -836,16 +1061,108 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     // validate the arrays individually
     for (auto i = 0; i < settings->array_count; ++i) {
         const auto& array_settings = settings->arrays[i];
-        if (!validate_array_settings(&array_settings, version, error_)) {
+        if (!validate_array_settings(&array_settings, "", version, error_)) {
             return false;
         }
     }
 
+    // validate the HCS settings if present
+    if (!validate_hcs_settings(settings->hcs_settings, error_)) {
+        return false;
+    }
+
+    std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays(
+      settings->array_count);
+    for (auto i = 0; i < settings->array_count; ++i) {
+        auto config = make_array_config(
+          settings->arrays + i, store_path, "", std::nullopt, error_);
+        if (!config) {
+            return false;
+        }
+
+        arrays[i] = config;
+    }
+
+    // add HCS settings arrays if present
+    std::vector<std::string> hcs_array_keys;
+    if (settings->hcs_settings) {
+        const auto& hcs = settings->hcs_settings;
+        for (auto i = 0; i < hcs->plate_count; ++i) {
+            EXPECT(
+              hcs->plates + i != nullptr, "Null pointer: plate at index ", i);
+            const auto& plate = hcs->plates[i];
+
+            const std::string plate_name(plate.name);
+            if (!is_valid_zarr_key(plate_name, error_)) {
+                error_ = "Invalid plate name: '" + plate_name + "': " + error_;
+                return false;
+            }
+
+            for (auto j = 0; j < plate.well_count; ++j) {
+                if (plate.wells + j == nullptr) {
+                    error_ = "Null pointer: well at index " +
+                             std::to_string(j) + " of plate " + plate_name;
+                    return false;
+                }
+                const auto& well = plate.wells[j];
+
+                const std::string row_name(well.row_name);
+                if (!is_valid_zarr_key(row_name, error_)) {
+                    error_ = "Invalid well row name: '" + row_name +
+                             "' at index " + std::to_string(j) + " of plate " +
+                             plate_name + ": " + error_;
+                    return false;
+                }
+
+                const std::string col_name(well.column_name);
+                if (!is_valid_zarr_key(col_name, error_)) {
+                    error_ = "Invalid well column name: '" + col_name +
+                             "' at index " + std::to_string(j) + " of plate " +
+                             plate_name + ": " + error_;
+                    return false;
+                }
+
+                for (auto k = 0; k < well.image_count; ++k) {
+                    if (well.images + k == nullptr) {
+                        error_ = "Null pointer: image at index " +
+                                 std::to_string(k) + " of well " +
+                                 std::to_string(j) + " of plate " + plate_name;
+                        return false;
+                    }
+                    const auto& field = well.images[k];
+
+                    if (field.array_settings == nullptr) {
+                        error_ = "Null pointer: array_settings for field " +
+                                 std::to_string(k) + " of well " +
+                                 std::to_string(j) + " of plate " + plate_name;
+                        return false;
+                    }
+
+                    // array key here is relative to the plate/well/field,
+                    // so we need to account for that here
+                    std::string parent_path = plate_name;
+                    parent_path += "/" + row_name + "/" + col_name;
+                    if (!validate_array_settings(
+                          field.array_settings, parent_path, version, error_)) {
+                        return false;
+                    }
+
+                    auto config = make_array_config(field.array_settings,
+                                                    store_path,
+                                                    parent_path,
+                                                    std::nullopt,
+                                                    error_);
+                    if (config == nullptr) {
+                        return false;
+                    }
+                    arrays.push_back(config);
+                }
+            }
+        }
+    }
+
     // validate the arrays as a collection
-    if (!check_array_structure(settings->arrays,
-                               settings->array_count,
-                               intermediate_group_paths_,
-                               error_)) {
+    if (!check_array_structure(arrays, intermediate_group_paths_, error_)) {
         return false;
     }
 
@@ -853,38 +1170,22 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::configure_array_(const ZarrArraySettings* settings)
+ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
+                               const std::string& parent_path)
 {
-    std::string key = regularize_key(settings->output_key);
-    if (!key.empty() && !is_valid_zarr_key(key, error_)) {
-        set_error_("Invalid output key: '" + key + "'");
-        return false;
-    }
-
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
     }
-    auto compression_settings =
-      make_compression_params(settings->compression_settings);
 
-    auto dims = make_array_dimensions(
-      settings->dimensions, settings->dimension_count, settings->data_type);
-
-    std::optional<ZarrDownsamplingMethod> downsampling_method;
-    if (settings->multiscale) {
-        downsampling_method = settings->downsampling_method;
+    auto config = make_array_config(
+      settings, store_path_, parent_path, bucket_name, error_);
+    if (config == nullptr) {
+        return false;
     }
-    auto config = std::make_shared<zarr::ArrayConfig>(store_path_,
-                                                      key,
-                                                      bucket_name,
-                                                      compression_settings,
-                                                      dims,
-                                                      settings->data_type,
-                                                      downsampling_method,
-                                                      0);
 
-    ZarrOutputArray output_node{ .output_key = key, .frame_buffer_offset = 0 };
+    ZarrOutputArray output_node{ .output_key = config->node_key,
+                                 .frame_buffer_offset = 0 };
     try {
         output_node.array =
           zarr::make_array(config, thread_pool_, s3_connection_pool_, version_);
@@ -898,14 +1199,112 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings)
     }
 
     // initialize frame buffer
+    const auto& dims = config->dimensions;
     const auto frame_size_bytes = dims->width_dim().array_size_px *
                                   dims->height_dim().array_size_px *
                                   zarr::bytes_of_type(settings->data_type);
 
     output_node.frame_buffer.resize_and_fill(frame_size_bytes, 0);
-    output_arrays_.emplace(key, std::move(output_node));
+    output_arrays_.emplace(output_node.output_key, std::move(output_node));
 
     return true;
+}
+
+void
+ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
+{
+    if (hcs_settings == nullptr) {
+        return; // nothing to do
+    }
+
+    plates_.clear();
+    wells_.clear();
+
+    std::vector<zarr::Plate> plates;
+
+    for (auto i = 0; i < hcs_settings->plate_count; ++i) {
+        const auto& plate_in = hcs_settings->plates[i];
+        const std::string plate_name(hcs_settings->plates[i].name);
+        const std::string plate_path = regularize_key(plate_in.path);
+
+        std::vector<std::string> row_names(plate_in.row_count);
+        for (auto j = 0; j < plate_in.row_count; ++j) {
+            row_names[j] = regularize_key(plate_in.row_names[j]);
+        }
+
+        std::vector<std::string> column_names(plate_in.column_count);
+        for (auto j = 0; j < plate_in.column_count; ++j) {
+            column_names[j] = regularize_key(plate_in.column_names[j]);
+        }
+
+        // collect acquisitions
+        std::vector<zarr::Acquisition> acqs_out(plate_in.acquisition_count);
+        for (auto j = 0; j < plate_in.acquisition_count; ++j) {
+            const auto& acq_in = plate_in.acquisitions[j];
+            auto& acq_out = acqs_out[j];
+
+            std::optional<std::string> name, description;
+            if (acq_in.name) {
+                name = acq_in.name;
+            }
+
+            if (acq_in.description) {
+                description = acq_in.description;
+            }
+
+            std::optional<uint64_t> start_time, end_time;
+            if (acq_in.has_start_time) {
+                start_time = acq_in.start_time;
+            }
+
+            if (acq_in.has_end_time) {
+                end_time = acq_in.end_time;
+            }
+
+            acq_out.id = acq_in.id;
+            acq_out.name = name;
+            acq_out.description = description;
+            acq_out.start_time = start_time;
+            acq_out.end_time = end_time;
+        }
+
+        // collect wells
+        std::vector<zarr::Well> wells_out(plate_in.well_count);
+        for (auto j = 0; j < plate_in.well_count; ++j) {
+            const auto& well_in = plate_in.wells[j];
+            auto& well_out = wells_out[j];
+
+            well_out.row_name = regularize_key(well_in.row_name);
+            well_out.column_name = regularize_key(well_in.column_name);
+            well_out.images.resize(well_in.image_count);
+
+            for (auto k = 0; k < well_in.image_count; ++k) {
+                const auto& image_in = well_in.images[k];
+                auto& image_out = well_out.images[k];
+
+                if (image_in.has_acquisition_id) {
+                    image_out.acquisition_id = image_in.acquisition_id;
+                }
+                image_out.path = regularize_key(image_in.path);
+            }
+        }
+
+        zarr::Plate plate_out(
+          plate_path, plate_name, row_names, column_names, wells_out, acqs_out);
+
+        plates_.emplace(plate_path, plate_out);
+    }
+
+    // collect references to wells
+    for (const auto& [_, plate] : plates_) {
+        for (const auto& well : plate.wells()) {
+            auto well_key =
+              plate.path() + "/" + well.row_name + "/" + well.column_name;
+            well_key = regularize_key(well_key.c_str());
+
+            wells_.emplace(well_key, well);
+        }
+    }
 }
 
 bool
@@ -923,14 +1322,18 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
+    // configure flat arrays
     for (auto i = 0; i < settings->array_count; ++i) {
         const auto& array_settings = settings->arrays[i];
-        if (!configure_array_(&array_settings)) {
+        if (!configure_array_(&array_settings, "")) {
             set_error_("Failed to configure array '" +
                        std::string(array_settings.output_key) + "': " + error_);
             return false;
         }
     }
+
+    // configure HCS settings
+    commit_hcs_settings_(settings->hcs_settings);
 
     return true;
 }
