@@ -468,6 +468,11 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         return true; // HCS settings are optional
     }
 
+    if (settings->plate_count == 0) {
+        error = "HCS settings given, but no plates specified";
+        return false;
+    }
+
     for (auto i = 0; i < settings->plate_count; ++i) {
         if (settings->plates + i == nullptr) {
             error = "Null pointer: plate " + std::to_string(i);
@@ -1053,11 +1058,6 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    if (settings->array_count == 0) {
-        error_ = "No arrays configured in the settings";
-        return false;
-    }
-
     // validate the arrays individually
     for (auto i = 0; i < settings->array_count; ++i) {
         const auto& array_settings = settings->arrays[i];
@@ -1091,12 +1091,13 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
             EXPECT(
               hcs->plates + i != nullptr, "Null pointer: plate at index ", i);
             const auto& plate = hcs->plates[i];
-
-            const std::string plate_name(plate.name);
-            if (!is_valid_zarr_key(plate_name, error_)) {
-                error_ = "Invalid plate name: '" + plate_name + "': " + error_;
+            const std::string plate_path = regularize_key(plate.path);
+            if (!plate_path.empty() && !is_valid_zarr_key(plate_path, error_)) {
+                error_ = "Invalid plate path: '" + plate_path + "': " + error_;
                 return false;
             }
+
+            const std::string plate_name(plate.name);
 
             for (auto j = 0; j < plate.well_count; ++j) {
                 if (plate.wells + j == nullptr) {
