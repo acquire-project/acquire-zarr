@@ -29,7 +29,8 @@ extern "C"
                                      the stream. Set to 0 to use the supported
                                      number of concurrent threads. */
         bool overwrite; /**< Remove everything in store_path if true. */
-        ZarrArraySettings* arrays; /**< The settings for the Zarr arrays being streamed. */
+        ZarrArraySettings*
+          arrays; /**< The settings for the Zarr arrays being streamed. */
         size_t array_count; /**< The number of arrays in the Zarr stream. */
         ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
                                                non-NULL, the stream will be
@@ -164,6 +165,50 @@ extern "C"
     void ZarrHCSPlate_destroy_acquisition_array(ZarrHCSPlate* plate);
 
     /**
+     * @brief Allocate memory for the row names array in the ZarrHCSPlate
+     * struct.
+     * @note You must call ZarrHCSPlate_destroy_row_name_array to free the
+     * memory allocated by this function.
+     * @note The strings in the row names array are not allocated by this
+     * function. You must allocate and assign them separately.
+     * @param plate The ZarrHCSPlate struct.
+     * @param row_count The number of row names in the plate to allocate
+     * memory for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSPlate_create_row_name_array(ZarrHCSPlate* plate,
+                                                      size_t row_count);
+
+    /**
+     * @brief Free memory for the row names array in the ZarrHCSPlate struct.
+     * @param plate The ZarrHCSPlate struct containing the row names array to
+     * free.
+     */
+    void ZarrHCSPlate_destroy_row_name_array(ZarrHCSPlate* plate);
+
+    /**
+     * @brief Allocate memory for the column names array in the ZarrHCSPlate
+     * struct.
+     * @note You must call ZarrHCSPlate_destroy_column_name_array to free the
+     * memory allocated by this function.
+     * @note The strings in the column names array are not allocated by this
+     * function. You must allocate and assign them separately.
+     * @param plate The ZarrHCSPlate struct.
+     * @param column_count The number of column names in the plate to allocate
+     * memory for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrHCSPlate_create_column_name_array(ZarrHCSPlate* plate,
+                                                         size_t column_count);
+
+    /**
+     * @brief Free memory for the column names array in the ZarrHCSPlate struct.
+     * @param plate The ZarrHCSPlate struct containing the column names array to
+     * free.
+     */
+    void ZarrHCSPlate_destroy_column_name_array(ZarrHCSPlate* plate);
+
+    /**
      * @brief Allocate memory for the ZarrHCSSettings struct in the Zarr stream
      * settings.
      * @details This function allocates memory for the plates array in the
@@ -238,7 +283,7 @@ extern "C"
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_get_current_memory_usage(const ZarrStream* stream,
-      size_t* usage);
+                                                       size_t* usage);
 
 #ifdef __cplusplus
 }

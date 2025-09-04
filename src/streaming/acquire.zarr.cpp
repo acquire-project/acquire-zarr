@@ -370,6 +370,78 @@ extern "C"
         plate->acquisition_count = 0;
     }
 
+    ZarrStatusCode ZarrHCSPlate_create_row_name_array(ZarrHCSPlate* plate,
+                                                      size_t row_count)
+    {
+        EXPECT_VALID_ARGUMENT(plate, "Null pointer: plate");
+        EXPECT_VALID_ARGUMENT(row_count > 0, "Invalid row count: ", row_count);
+
+        const char** row_names = nullptr;
+
+        try {
+            row_names = new const char*[row_count];
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for row names");
+            return ZarrStatusCode_OutOfMemory;
+        }
+
+        ZarrHCSPlate_destroy_row_name_array(plate);
+        memset(row_names, 0, sizeof(char*) * row_count);
+        plate->row_names = row_names;
+        plate->row_count = row_count;
+
+        return ZarrStatusCode_Success;
+    }
+
+    void ZarrHCSPlate_destroy_row_name_array(ZarrHCSPlate* plate)
+    {
+        if (plate == nullptr) {
+            return;
+        }
+
+        if (plate->row_names != nullptr) {
+            delete[] plate->row_names;
+            plate->row_names = nullptr;
+        }
+        plate->row_count = 0;
+    }
+
+    ZarrStatusCode ZarrHCSPlate_create_column_name_array(ZarrHCSPlate* plate,
+                                                      size_t column_count)
+    {
+        EXPECT_VALID_ARGUMENT(plate, "Null pointer: plate");
+        EXPECT_VALID_ARGUMENT(column_count > 0, "Invalid column count: ", column_count);
+
+        const char** column_names = nullptr;
+
+        try {
+            column_names = new const char*[column_count];
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for column names");
+            return ZarrStatusCode_OutOfMemory;
+        }
+
+        ZarrHCSPlate_destroy_column_name_array(plate);
+        memset(column_names, 0, sizeof(char*) * column_count);
+        plate->column_names = column_names;
+        plate->column_count = column_count;
+
+        return ZarrStatusCode_Success;
+    }
+
+    void ZarrHCSPlate_destroy_column_name_array(ZarrHCSPlate* plate)
+    {
+        if (plate == nullptr) {
+            return;
+        }
+
+        if (plate->column_names != nullptr) {
+            delete[] plate->column_names;
+            plate->column_names = nullptr;
+        }
+        plate->column_count = 0;
+    }
+
     ZarrStatusCode ZarrHCSSettings_create_plate_array(ZarrHCSSettings* settings,
                                                       size_t plate_count)
     {
