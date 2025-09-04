@@ -1141,7 +1141,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 
                     // array key here is relative to the plate/well/field,
                     // so we need to account for that here
-                    std::string parent_path = plate_name;
+                    std::string parent_path = plate_path;
                     parent_path += "/" + row_name + "/" + col_name;
                     if (!validate_array_settings(
                           field.array_settings, parent_path, version, error_)) {
@@ -1282,6 +1282,10 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
             well_out.column_name = regularize_key(well_in.column_name);
             well_out.images.resize(well_in.image_count);
 
+            std::string well_key =
+              plate_path + "/" + well_out.row_name + "/" + well_out.column_name;
+            well_key = regularize_key(well_key.c_str());
+
             for (auto k = 0; k < well_in.image_count; ++k) {
                 const auto& image_in = well_in.images[k];
                 auto& image_out = well_out.images[k];
@@ -1290,6 +1294,14 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                     image_out.acquisition_id = image_in.acquisition_id;
                 }
                 image_out.path = regularize_key(image_in.path);
+
+                if (!configure_array_(image_in.array_settings, well_key)) {
+                    set_error_("Failed to configure array for field of view " +
+                               std::to_string(k) + " in well " +
+                               std::to_string(j) + " in plate " +
+                               std::to_string(i) + ": " + error_);
+                    return false;
+                }
             }
         }
 
@@ -1425,21 +1437,17 @@ ZarrStream_s::write_intermediate_metadata_()
         bucket_name = s3_settings_->bucket_name;
     }
 
-    std::string metadata_key;
-    nlohmann::json group_metadata;
-    if (version_ == ZarrVersion_2) {
-        metadata_key = ".zgroup";
-        group_metadata = { { "zarr_format", 2 } };
-    } else {
-        metadata_key = "zarr.json";
-        group_metadata = {
-            { "zarr_format", 3 },
-            { "consolidated_metadata", nullptr },
-            { "node_type", "group" },
-            { "attributes", nlohmann::json::object() },
-        };
-    }
-    std::string metadata_str = group_metadata.dump(4);
+    const nlohmann::json group_metadata =
+      version_ == ZarrVersion_2 ? nlohmann::json({ { "zarr_format", 2 } })
+                                : nlohmann::json({
+                                    { "zarr_format", 3 },
+                                    { "consolidated_metadata", nullptr },
+                                    { "node_type", "group" },
+                                    { "attributes", nlohmann::json::object() },
+                                  });
+    const std::string metadata_key =
+      version_ == ZarrVersion_2 ? ".zgroup" : "zarr.json";
+    std::string metadata_str;
 
     for (const auto& parent_group_key : intermediate_group_paths_) {
         const std::string relative_path =
@@ -1448,8 +1456,8 @@ ZarrStream_s::write_intermediate_metadata_()
         if (auto pit = plates_.find(relative_path); // is it a plate?
             pit != plates_.end()) {
             const auto& plate = pit->second;
-            nlohmann::json plate_metadata =
-              group_metadata; // make a copy to modify
+            nlohmann::json plate_metadata(
+              group_metadata); // make a copy to modify
 
             // not supported for Zarr V2 / NGFF 0.4
             plate_metadata["attributes"]["ome"] = {
@@ -1461,8 +1469,8 @@ ZarrStream_s::write_intermediate_metadata_()
         } else if (auto wit = wells_.find(relative_path); // is it a well?
                    wit != wells_.end()) {
             const auto& well = wit->second;
-            nlohmann::json well_metadata =
-              group_metadata; // make a copy to modify
+            nlohmann::json well_metadata(
+              group_metadata); // make a copy to modify
 
             // not supported for Zarr V2 / NGFF 0.4
             well_metadata["attributes"]["ome"] = {
@@ -1471,6 +1479,8 @@ ZarrStream_s::write_intermediate_metadata_()
             };
 
             metadata_str = well_metadata.dump(4);
+        } else { // generic group
+            metadata_str = group_metadata.dump(4);
         }
 
         ConstByteSpan metadata_span(

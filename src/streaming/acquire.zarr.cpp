@@ -281,7 +281,6 @@ extern "C"
             for (auto i = 0; i < well->image_count; ++i) {
                 ZarrArraySettings_destroy_dimension_array(
                   well->images[i].array_settings);
-                delete well->images[i].array_settings;
                 well->images[i].array_settings = nullptr;
             }
             delete[] well->images;
@@ -477,6 +476,8 @@ extern "C"
             for (auto i = 0; i < settings->plate_count; ++i) {
                 ZarrHCSPlate_destroy_well_array(settings->plates + i);
                 ZarrHCSPlate_destroy_acquisition_array(settings->plates + i);
+                ZarrHCSPlate_destroy_row_name_array(settings->plates + i);
+                ZarrHCSPlate_destroy_column_name_array(settings->plates + i);
             }
             delete[] settings->plates;
             settings->plates = nullptr;
