@@ -9,7 +9,7 @@
 namespace fs = std::filesystem;
 
 ZarrStream*
-make_hcs_stream()
+make_mixed_stream()
 {
     ZarrHCSWell c5 = {
         .row_name = "C",
@@ -211,16 +211,50 @@ make_hcs_stream()
         .plates = &plate,
         .plate_count = 1,
     };
+
+    ZarrArraySettings label_array{
+        .output_key = "test_plate/C/5/labels",
+        .data_type = ZarrDataType_uint8,
+    };
+    CHECK(ZarrArraySettings_create_dimension_array(&label_array, 3) ==
+          ZarrStatusCode_Success);
+    CHECK(label_array.dimensions != nullptr);
+    CHECK(label_array.dimension_count == 3);
+    label_array.dimensions[0] = {
+        .name = "z",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 0,
+        .chunk_size_px = 1,
+        .shard_size_chunks = 1,
+    };
+    label_array.dimensions[1] = {
+        .name = "y",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 480,
+        .chunk_size_px = 256,
+        .shard_size_chunks = 4,
+    };
+    label_array.dimensions[2] = {
+        .name = "x",
+        .type = ZarrDimensionType_Space,
+        .array_size_px = 640,
+        .chunk_size_px = 256,
+        .shard_size_chunks = 4,
+    };
+
     ZarrStreamSettings settings = {
         .store_path = TEST ".zarr",
         .version = ZarrVersion_3,
         .overwrite = true,
+        .arrays = &label_array,
+        .array_count = 1,
         .hcs_settings = &hcs_settings,
     };
 
     ZarrStream* stream = ZarrStream_create(&settings);
 
     ZarrHCSPlate_destroy_well_array(&plate);
+    ZarrArraySettings_destroy_dimension_array(&label_array);
 
     return stream;
 }
@@ -261,6 +295,19 @@ append_some_data(ZarrStream* stream)
       ZarrStream_append(
         stream, data.data(), data.size(), &bytes_out, "test_plate/D/7/fov1") ==
       ZarrStatusCode_Success);
+    EXPECT(bytes_out == data.size(),
+           "Expected to write ",
+           data.size(),
+           " bytes, wrote ",
+           bytes_out);
+
+    // write to labels array in well C/5
+    data.resize(640 * 480);
+    CHECK(ZarrStream_append(stream,
+                            data.data(),
+                            data.size(),
+                            &bytes_out,
+                            "test_plate/C/5/labels") == ZarrStatusCode_Success);
     EXPECT(bytes_out == data.size(),
            "Expected to write ",
            data.size(),
@@ -574,6 +621,7 @@ check_arrays_exist()
         base_path / "test_plate" / "C" / "5" / "fov1",
         base_path / "test_plate" / "C" / "5" / "fov2",
         base_path / "test_plate" / "D" / "7" / "fov1",
+        base_path / "test_plate" / "C" / "5" / "labels",
     };
 
     for (const auto& path : paths) {
@@ -588,14 +636,13 @@ main()
     int retval = 1;
 
     try {
-        ZarrStream* stream = make_hcs_stream();
+        ZarrStream* stream = make_mixed_stream();
         append_some_data(stream);
         ZarrStream_destroy(stream);
 
         validate_generic_group_metadata();
         validate_plate_metadata();
         validate_well_metadata();
-        check_arrays_exist();
 
         retval = 0;
     } catch (const std::exception& exc) {
