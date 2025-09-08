@@ -70,24 +70,97 @@ struct ArrayLifetimeProps
 struct FieldOfViewLifetimeProps
 {
     std::string path;
+    std::optional<uint32_t> acquisition_id;
     ArrayLifetimeProps array;
-    ZarrHCSFieldOfView fov;
+
+    ZarrHCSFieldOfView* field_of_view()
+    {
+        field_of_view_.path = path.c_str();
+
+        if (acquisition_id.has_value()) {
+            field_of_view_.acquisition_id = *acquisition_id;
+            field_of_view_.has_acquisition_id = true;
+        } else {
+            field_of_view_.has_acquisition_id = false;
+        }
+
+        field_of_view_.array_settings = array.array_settings();
+
+        return &field_of_view_;
+    }
+
+  private:
+    ZarrHCSFieldOfView field_of_view_{};
 };
 
 struct WellLifetimeProps
 {
     std::string row_name;
     std::string column_name;
-    std::vector<FieldOfViewLifetimeProps> images_lt;
-    std::vector<ZarrHCSFieldOfView> images;
-    ZarrHCSWell well;
+    std::vector<FieldOfViewLifetimeProps> images;
+
+    ZarrHCSWell* well()
+    {
+        well_.row_name = row_name.c_str();
+        well_.column_name = column_name.c_str();
+
+        if (const auto code =
+              ZarrHCSWell_create_image_array(&well_, images.size());
+            code != ZarrStatusCode_Success) {
+            const std::string err =
+              "Failed to allocate memory for images array: " +
+              std::string(Zarr_get_status_message(code));
+            PyErr_SetString(PyExc_ValueError, err.c_str());
+            throw py::error_already_set();
+        }
+
+        for (size_t i = 0; i < images.size(); ++i) {
+            well_.images[i] = *images[i].field_of_view();
+        }
+
+        return &well_;
+    }
+
+  private:
+    ZarrHCSWell well_{};
 };
 
 struct AcquisitionLifetimeProps
 {
+    uint32_t id;
     std::string name;
+    bool has_name;
     std::string description;
-    ZarrHCSAcquisition acquisition;
+    bool has_description;
+    std::optional<uint64_t> start_time;
+    std::optional<uint64_t> end_time;
+
+    ZarrHCSAcquisition* acquisition()
+    {
+        acquisition_.id = id;
+        acquisition_.name = has_name ? name.c_str() : nullptr;
+        acquisition_.description =
+          has_description ? description.c_str() : nullptr;
+
+        if (start_time.has_value()) {
+            acquisition_.start_time = *start_time;
+            acquisition_.has_start_time = true;
+        } else {
+            acquisition_.has_start_time = false;
+        }
+
+        if (end_time.has_value()) {
+            acquisition_.end_time = *end_time;
+            acquisition_.has_end_time = true;
+        } else {
+            acquisition_.has_end_time = false;
+        }
+
+        return &acquisition_;
+    }
+
+  private:
+    ZarrHCSAcquisition acquisition_{};
 };
 
 struct PlateLifetimeProps
@@ -95,19 +168,77 @@ struct PlateLifetimeProps
     std::string path;
     std::string name;
 
-    std::vector<std::string> row_names_lt;
-    std::vector<const char*> row_names;
+    std::vector<std::string> row_names;
+    std::vector<std::string> column_names;
 
-    std::vector<std::string> column_names_lt;
-    std::vector<const char*> column_names;
+    std::vector<WellLifetimeProps> wells;
+    std::vector<AcquisitionLifetimeProps> acquisitions;
 
-    std::vector<WellLifetimeProps> wells_lt;
-    std::vector<ZarrHCSWell> wells;
+    ZarrHCSPlate* plate()
+    {
+        plate_.path = path.c_str();
+        plate_.name = name.c_str();
 
-    std::vector<AcquisitionLifetimeProps> acquisitions_lt;
-    std::vector<ZarrHCSAcquisition> acquisitions;
+        const size_t n_rows = row_names.size();
+        if (const auto code =
+              ZarrHCSPlate_create_row_name_array(&plate_, n_rows);
+            code != ZarrStatusCode_Success) {
+            const std::string err = "Failed to create row names array: " +
+                                    std::string(Zarr_get_status_message(code));
+            py::set_error(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+        for (size_t i = 0; i < n_rows; ++i) {
+            plate_.row_names[i] = row_names[i].c_str();
+        }
 
-    ZarrHCSPlate plate;
+        const size_t n_columns = column_names.size();
+        if (const auto code =
+              ZarrHCSPlate_create_column_name_array(&plate_, n_columns);
+            code != ZarrStatusCode_Success) {
+            const std::string err = "Failed to create column names array: " +
+                                    std::string(Zarr_get_status_message(code));
+            py::set_error(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+        for (size_t i = 0; i < n_columns; ++i) {
+            plate_.column_names[i] = column_names[i].c_str();
+        }
+
+        const size_t n_wells = wells.size();
+        if (const auto code = ZarrHCSPlate_create_well_array(&plate_, n_wells);
+            code != ZarrStatusCode_Success) {
+            const std::string err = "Failed to create wells array: " +
+                                    std::string(Zarr_get_status_message(code));
+            py::set_error(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+        for (size_t i = 0; i < n_wells; ++i) {
+            plate_.wells[i] = *wells[i].well();
+        }
+
+        const size_t n_acqs = acquisitions.size(); // optional
+        if (n_acqs > 0) {
+            if (const auto code =
+                  ZarrHCSPlate_create_acquisition_array(&plate_, n_acqs);
+                code != ZarrStatusCode_Success) {
+                const std::string err =
+                  "Failed to create acquisitions array: " +
+                  std::string(Zarr_get_status_message(code));
+                py::set_error(PyExc_RuntimeError, err.c_str());
+                throw py::error_already_set();
+            }
+
+            for (size_t i = 0; i < n_acqs; ++i) {
+                plate_.acquisitions[i] = *acquisitions[i].acquisition();
+            }
+        }
+
+        return &plate_;
+    }
+
+  private:
+    ZarrHCSPlate plate_{};
 };
 
 const char*
@@ -478,21 +609,10 @@ class PyZarrFieldOfView
 
     FieldOfViewLifetimeProps to_lifetime_props() const
     {
-        FieldOfViewLifetimeProps lt_props{
-            .path = path_,
-        };
-
-        if (acquisition_id_.has_value()) {
-            lt_props.fov.acquisition_id = *acquisition_id_;
-            lt_props.fov.has_acquisition_id = true;
-        } else {
-            lt_props.fov.acquisition_id = 0;
-            lt_props.fov.has_acquisition_id = false;
-        }
-
+        FieldOfViewLifetimeProps lt_props{};
+        lt_props.path = path_;
+        lt_props.acquisition_id = acquisition_id_;
         lt_props.array = array_settings_.to_lifetime_props();
-        lt_props.fov.path = lt_props.path.c_str();
-        lt_props.fov.array_settings = lt_props.array.array_settings();
 
         return lt_props;
     }
@@ -524,24 +644,17 @@ class PyZarrWell
 
     WellLifetimeProps to_lifetime_props() const
     {
-        WellLifetimeProps lt_props{
-            .row_name = row_name_,
-            .column_name = column_name_,
-        };
+        WellLifetimeProps lt_props{};
+
+        lt_props.row_name = row_name_;
+        lt_props.column_name = column_name_;
 
         const size_t n_images = images_.size();
-        lt_props.images_lt.resize(n_images);
         lt_props.images.resize(n_images);
 
         for (auto i = 0; i < n_images; ++i) {
-            lt_props.images_lt[i] = images_[i].to_lifetime_props();
-            lt_props.images[i] = lt_props.images_lt[i].fov;
+            lt_props.images[i] = images_[i].to_lifetime_props();
         }
-
-        lt_props.well.row_name = lt_props.row_name.c_str();
-        lt_props.well.column_name = lt_props.column_name.c_str();
-        lt_props.well.images = lt_props.images.data();
-        lt_props.well.image_count = n_images;
 
         return lt_props;
     }
@@ -581,39 +694,22 @@ class PyZarrAcquisition
 
     AcquisitionLifetimeProps to_lifetime_props() const
     {
-        AcquisitionLifetimeProps lt_props{ .name = "", .description = "" };
+        AcquisitionLifetimeProps lt_props{};
 
-        lt_props.acquisition.id = id_;
+        lt_props.id = id_;
 
         if (name_.has_value()) {
             lt_props.name = *name_;
-            lt_props.acquisition.name = lt_props.name.c_str();
-        } else {
-            lt_props.acquisition.name = nullptr;
         }
+        lt_props.has_name = name_.has_value();
 
         if (description_.has_value()) {
             lt_props.description = *description_;
-            lt_props.acquisition.description = lt_props.description.c_str();
-        } else {
-            lt_props.acquisition.description = nullptr;
         }
+        lt_props.has_description = description_.has_value();
 
-        if (start_time_.has_value()) {
-            lt_props.acquisition.start_time = *start_time_;
-            lt_props.acquisition.has_start_time = true;
-        } else {
-            lt_props.acquisition.start_time = 0;
-            lt_props.acquisition.has_start_time = false;
-        }
-
-        if (end_time_.has_value()) {
-            lt_props.acquisition.end_time = *end_time_;
-            lt_props.acquisition.has_end_time = true;
-        } else {
-            lt_props.acquisition.end_time = 0;
-            lt_props.acquisition.has_end_time = false;
-        }
+        lt_props.start_time = start_time_;
+        lt_props.end_time = end_time_;
 
         return lt_props;
     }
@@ -671,52 +767,32 @@ class PyZarrPlate
 
     PlateLifetimeProps to_lifetime_props() const
     {
-        PlateLifetimeProps lt_props{ .path = path_, .name = name_ };
+        PlateLifetimeProps lt_props{};
         const size_t n_rows = row_names_.size();
         const size_t n_columns = column_names_.size();
         const size_t n_wells = wells_.size();
-        const size_t n_acquisitions = acquisitions_.size();
+        const size_t n_acqs = acquisitions_.size();
 
-        lt_props.row_names_lt.resize(n_rows);
         lt_props.row_names.resize(n_rows);
-        for (auto i = 0; i < n_rows; ++i) {
-            lt_props.row_names_lt[i] = row_names_[i];
-            lt_props.row_names[i] = lt_props.row_names_lt[i].c_str();
+        lt_props.row_names.resize(n_rows);
+        for (size_t i = 0; i < n_rows; ++i) {
+            lt_props.row_names[i] = row_names_[i];
         }
 
-        lt_props.column_names_lt.resize(n_columns);
         lt_props.column_names.resize(n_columns);
-        for (auto i = 0; i < n_columns; ++i) {
-            lt_props.column_names_lt[i] = column_names_[i];
-            lt_props.column_names[i] = lt_props.column_names_lt[i].c_str();
+        for (size_t i = 0; i < n_columns; ++i) {
+            lt_props.column_names[i] = lt_props.column_names[i];
         }
 
-        lt_props.wells_lt.resize(n_wells);
         lt_props.wells.resize(n_wells);
-        for (auto i = 0; i < n_wells; ++i) {
-            lt_props.wells_lt[i] = wells_[i].to_lifetime_props();
-            lt_props.wells[i] = lt_props.wells_lt[i].well;
+        for (size_t i = 0; i < n_wells; ++i) {
+            lt_props.wells[i] = wells_[i].to_lifetime_props();
         }
 
-        lt_props.acquisitions_lt.resize(n_acquisitions);
-        lt_props.acquisitions.resize(n_acquisitions);
-        for (auto i = 0; i < n_acquisitions; ++i) {
-            lt_props.acquisitions_lt[i] = acquisitions_[i].to_lifetime_props();
-            lt_props.acquisitions[i] = lt_props.acquisitions_lt[i].acquisition;
+        lt_props.acquisitions.resize(n_acqs);
+        for (size_t i = 0; i < n_acqs; ++i) {
+            lt_props.acquisitions[i] = acquisitions_[i].to_lifetime_props();
         }
-
-        lt_props.plate = {
-            .path = lt_props.path.c_str(),
-            .name = lt_props.name.c_str(),
-            .row_names = lt_props.row_names.data(),
-            .row_count = n_rows,
-            .column_names = lt_props.column_names.data(),
-            .column_count = n_columns,
-            .wells = lt_props.wells.data(),
-            .well_count = n_wells,
-            .acquisitions = lt_props.acquisitions.data(),
-            .acquisition_count = n_acquisitions,
-        };
 
         return lt_props;
     }
@@ -1072,33 +1148,32 @@ class PyZarrStream
 
         // set up arrays
         std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
-        for (auto i = 0; i < n_arrays; ++i) {
+        for (size_t i = 0; i < n_arrays; ++i) {
             const auto& array_settings = settings.arrays()[i];
             array_props_array[i] = array_settings.to_lifetime_props();
             stream_settings.arrays[i] = *array_props_array[i].array_settings();
         }
 
         // set up HCS settings
-        // if (n_plates > 0) {
-        //     if (auto code =
-        //           ZarrHCSSettings_create_plate_array(&hcs_settings,
-        //           n_plates);
-        //         code != ZarrStatusCode_Success) {
-        //         const std::string error =
-        //           "Failed to allocate memory for plates :" +
-        //           std::string(Zarr_get_status_message(code));
-        //         PyErr_SetString(PyExc_RuntimeError, error.c_str());
-        //         throw py::error_already_set();
-        //         }
-        // }
-        //
-        // const auto& plates = settings.plates();
-        // std::vector<PlateLifetimeProps> plate_props_array(n_plates);
-        // for (auto i = 0; i < n_plates; ++i) {
-        //     const auto& plate_in = plates[i];
-        //     plate_props_array[i] = plate_in.to_lifetime_props();
-        //     hcs_settings.plates[i] = plate_props_array[i].plate;
-        // }
+        if (n_plates > 0) {
+            if (auto code =
+                  ZarrHCSSettings_create_plate_array(&hcs_settings, n_plates);
+                code != ZarrStatusCode_Success) {
+                const std::string error =
+                  "Failed to allocate memory for plates :" +
+                  std::string(Zarr_get_status_message(code));
+                PyErr_SetString(PyExc_RuntimeError, error.c_str());
+                throw py::error_already_set();
+            }
+        }
+
+        const auto& plates = settings.plates();
+        std::vector<PlateLifetimeProps> plate_props_array(n_plates);
+        for (size_t i = 0; i < n_plates; ++i) {
+            const auto& plate_in = plates[i];
+            plate_props_array[i] = plate_in.to_lifetime_props();
+            hcs_settings.plates[i] = *plate_props_array[i].plate();
+        }
 
         stream_ =
           ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
