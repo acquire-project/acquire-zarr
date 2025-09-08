@@ -21,6 +21,95 @@ auto ZarrStreamDeleter = [](ZarrStream_s* stream) {
     }
 };
 
+struct ArrayLifetimeProps
+{
+    std::string output_key;
+    std::vector<std::string> dimension_names;
+    std::vector<std::string> dimension_units;
+    ZarrCompressionSettings compression;
+    bool has_compression{ false };
+    std::vector<ZarrDimensionProperties> dimension_props;
+    ZarrDataType data_type;
+    std::optional<ZarrDownsamplingMethod> downsampling_method;
+
+    ZarrArraySettings* array_settings()
+    {
+        if (output_key.empty()) {
+            array_settings_.output_key = nullptr;
+        } else {
+            array_settings_.output_key = output_key.c_str();
+        }
+
+        if (has_compression) {
+            array_settings_.compression_settings = &compression;
+        } else {
+            array_settings_.compression_settings = nullptr;
+        }
+
+        const size_t n_dims = dimension_props.size();
+        for (auto i = 0; i < n_dims; ++i) {
+            dimension_props[i].name = dimension_names[i].c_str();
+            dimension_props[i].unit = dimension_units[i].c_str();
+        }
+
+        array_settings_.dimensions = dimension_props.data();
+        array_settings_.dimension_count = n_dims;
+
+        array_settings_.data_type = data_type;
+        array_settings_.multiscale = downsampling_method.has_value();
+        array_settings_.downsampling_method =
+          downsampling_method.value_or(ZarrDownsamplingMethod_Mean);
+
+        return &array_settings_;
+    }
+
+  private:
+    ZarrArraySettings array_settings_{};
+};
+
+struct FieldOfViewLifetimeProps
+{
+    std::string path;
+    ArrayLifetimeProps array;
+    ZarrHCSFieldOfView fov;
+};
+
+struct WellLifetimeProps
+{
+    std::string row_name;
+    std::string column_name;
+    std::vector<FieldOfViewLifetimeProps> images_lt;
+    std::vector<ZarrHCSFieldOfView> images;
+    ZarrHCSWell well;
+};
+
+struct AcquisitionLifetimeProps
+{
+    std::string name;
+    std::string description;
+    ZarrHCSAcquisition acquisition;
+};
+
+struct PlateLifetimeProps
+{
+    std::string path;
+    std::string name;
+
+    std::vector<std::string> row_names_lt;
+    std::vector<const char*> row_names;
+
+    std::vector<std::string> column_names_lt;
+    std::vector<const char*> column_names;
+
+    std::vector<WellLifetimeProps> wells_lt;
+    std::vector<ZarrHCSWell> wells;
+
+    std::vector<AcquisitionLifetimeProps> acquisitions_lt;
+    std::vector<ZarrHCSAcquisition> acquisitions;
+
+    ZarrHCSPlate plate;
+};
+
 const char*
 data_type_to_str(ZarrDataType t)
 {
@@ -308,12 +397,337 @@ class PyZarrArraySettings
         downsampling_method_ = method;
     }
 
+    ArrayLifetimeProps to_lifetime_props() const
+    {
+        ArrayLifetimeProps lt_props{};
+        lt_props.output_key = output_key_;
+        lt_props.data_type = data_type_;
+        lt_props.downsampling_method = downsampling_method_;
+
+        // compression settings
+        if (compression_settings_.has_value()) {
+            lt_props.compression = {
+                .compressor = compression_settings_->compressor(),
+                .codec = compression_settings_->codec(),
+                .level = compression_settings_->level(),
+                .shuffle = compression_settings_->shuffle(),
+            };
+            lt_props.has_compression = true;
+        } else {
+            lt_props.compression = {};
+            lt_props.has_compression = false;
+        }
+
+        const size_t n_dims = dims_.size();
+        lt_props.dimension_names.resize(n_dims);
+        lt_props.dimension_units.resize(n_dims);
+        lt_props.dimension_props.resize(n_dims);
+
+        for (auto i = 0; i < n_dims; ++i) {
+            const auto& dim = dims_[i];
+            lt_props.dimension_names[i] = dim.name();
+            lt_props.dimension_units[i] =
+              dim.unit().has_value() ? *dim.unit() : "";
+
+            ZarrDimensionProperties properties{
+                .name = nullptr,
+                .type = dim.type(),
+                .array_size_px = dim.array_size_px(),
+                .chunk_size_px = dim.chunk_size_px(),
+                .shard_size_chunks = dim.shard_size_chunks(),
+                .unit = nullptr,
+                .scale = dim.scale(),
+            };
+            lt_props.dimension_props[i] = properties;
+        }
+
+        return lt_props;
+    }
+
   private:
     std::string output_key_;
     std::optional<PyZarrCompressionSettings> compression_settings_;
     std::vector<PyZarrDimensionProperties> dims_;
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     std::optional<ZarrDownsamplingMethod> downsampling_method_{ std::nullopt };
+};
+
+class PyZarrFieldOfView
+{
+  public:
+    PyZarrFieldOfView() = default;
+    ~PyZarrFieldOfView() = default;
+
+    const std::string& path() const { return path_; }
+    void set_path(const std::string& path) { path_ = path; }
+
+    std::optional<uint32_t> acquisition_id() const { return acquisition_id_; }
+    void set_acquisition_id(const std::optional<uint32_t>& id)
+    {
+        acquisition_id_ = id;
+    }
+
+    const PyZarrArraySettings& array_settings() const
+    {
+        return array_settings_;
+    }
+    void set_array_settings(const PyZarrArraySettings& settings)
+    {
+        array_settings_ = settings;
+    }
+
+    FieldOfViewLifetimeProps to_lifetime_props() const
+    {
+        FieldOfViewLifetimeProps lt_props{
+            .path = path_,
+        };
+
+        if (acquisition_id_.has_value()) {
+            lt_props.fov.acquisition_id = *acquisition_id_;
+            lt_props.fov.has_acquisition_id = true;
+        } else {
+            lt_props.fov.acquisition_id = 0;
+            lt_props.fov.has_acquisition_id = false;
+        }
+
+        lt_props.array = array_settings_.to_lifetime_props();
+        lt_props.fov.path = lt_props.path.c_str();
+        lt_props.fov.array_settings = lt_props.array.array_settings();
+
+        return lt_props;
+    }
+
+  private:
+    std::string path_;
+    std::optional<uint32_t> acquisition_id_;
+    PyZarrArraySettings array_settings_;
+};
+
+class PyZarrWell
+{
+  public:
+    PyZarrWell() = default;
+    ~PyZarrWell() = default;
+
+    const std::string& row_name() const { return row_name_; }
+    void set_row_name(const std::string& name) { row_name_ = name; }
+
+    const std::string& column_name() const { return column_name_; }
+    void set_column_name(const std::string& name) { column_name_ = name; }
+
+    const std::vector<PyZarrFieldOfView>& images() const { return images_; }
+    std::vector<PyZarrFieldOfView>& images() { return images_; }
+    void set_images(const std::vector<PyZarrFieldOfView>& dims)
+    {
+        images_ = dims;
+    }
+
+    WellLifetimeProps to_lifetime_props() const
+    {
+        WellLifetimeProps lt_props{
+            .row_name = row_name_,
+            .column_name = column_name_,
+        };
+
+        const size_t n_images = images_.size();
+        lt_props.images_lt.resize(n_images);
+        lt_props.images.resize(n_images);
+
+        for (auto i = 0; i < n_images; ++i) {
+            lt_props.images_lt[i] = images_[i].to_lifetime_props();
+            lt_props.images[i] = lt_props.images_lt[i].fov;
+        }
+
+        lt_props.well.row_name = lt_props.row_name.c_str();
+        lt_props.well.column_name = lt_props.column_name.c_str();
+        lt_props.well.images = lt_props.images.data();
+        lt_props.well.image_count = n_images;
+
+        return lt_props;
+    }
+
+  private:
+    std::string row_name_;
+    std::string column_name_;
+    std::vector<PyZarrFieldOfView> images_;
+};
+
+class PyZarrAcquisition
+{
+  public:
+    PyZarrAcquisition() = default;
+    ~PyZarrAcquisition() = default;
+
+    uint32_t id() const { return id_; }
+    void set_id(uint32_t id) { id_ = id; }
+
+    std::optional<std::string> name() const { return name_; }
+    void set_name(const std::optional<std::string>& name) { name_ = name; }
+
+    std::optional<std::string> description() const { return description_; }
+    void set_description(const std::optional<std::string>& description)
+    {
+        description_ = description;
+    }
+
+    std::optional<uint32_t> start_time() const { return start_time_; }
+    void set_start_time(const std::optional<uint32_t>& time)
+    {
+        start_time_ = time;
+    }
+
+    std::optional<uint32_t> end_time() const { return end_time_; }
+    void set_end_time(const std::optional<uint32_t>& time) { end_time_ = time; }
+
+    AcquisitionLifetimeProps to_lifetime_props() const
+    {
+        AcquisitionLifetimeProps lt_props{ .name = "", .description = "" };
+
+        lt_props.acquisition.id = id_;
+
+        if (name_.has_value()) {
+            lt_props.name = *name_;
+            lt_props.acquisition.name = lt_props.name.c_str();
+        } else {
+            lt_props.acquisition.name = nullptr;
+        }
+
+        if (description_.has_value()) {
+            lt_props.description = *description_;
+            lt_props.acquisition.description = lt_props.description.c_str();
+        } else {
+            lt_props.acquisition.description = nullptr;
+        }
+
+        if (start_time_.has_value()) {
+            lt_props.acquisition.start_time = *start_time_;
+            lt_props.acquisition.has_start_time = true;
+        } else {
+            lt_props.acquisition.start_time = 0;
+            lt_props.acquisition.has_start_time = false;
+        }
+
+        if (end_time_.has_value()) {
+            lt_props.acquisition.end_time = *end_time_;
+            lt_props.acquisition.has_end_time = true;
+        } else {
+            lt_props.acquisition.end_time = 0;
+            lt_props.acquisition.has_end_time = false;
+        }
+
+        return lt_props;
+    }
+
+  private:
+    uint32_t id_;
+    std::optional<std::string> name_;
+    std::optional<std::string> description_;
+    std::optional<uint32_t> start_time_;
+    std::optional<uint32_t> end_time_;
+};
+
+class PyZarrPlate
+{
+  public:
+    PyZarrPlate() = default;
+    ~PyZarrPlate() = default;
+
+    const std::string& path() const { return path_; }
+    void set_path(const std::string& path) { path_ = path; }
+
+    const std::string& name() const { return name_; }
+    void set_name(const std::string& name) { name_ = name; }
+
+    const std::vector<std::string>& row_names() const { return row_names_; }
+    std::vector<std::string>& row_names() { return row_names_; }
+    void set_row_names(const std::vector<std::string>& names)
+    {
+        row_names_ = names;
+    }
+
+    const std::vector<std::string>& column_names() const
+    {
+        return column_names_;
+    }
+    std::vector<std::string>& column_names() { return column_names_; }
+    void set_column_names(const std::vector<std::string>& names)
+    {
+        column_names_ = names;
+    }
+
+    const std::vector<PyZarrWell>& wells() const { return wells_; }
+    std::vector<PyZarrWell>& wells() { return wells_; }
+    void set_wells(const std::vector<PyZarrWell>& wells) { wells_ = wells; }
+
+    const std::vector<PyZarrAcquisition>& acquisitions() const
+    {
+        return acquisitions_;
+    }
+    std::vector<PyZarrAcquisition>& acquisitions() { return acquisitions_; }
+    void set_acquisitions(const std::vector<PyZarrAcquisition>& acqs)
+    {
+        acquisitions_ = acqs;
+    }
+
+    PlateLifetimeProps to_lifetime_props() const
+    {
+        PlateLifetimeProps lt_props{ .path = path_, .name = name_ };
+        const size_t n_rows = row_names_.size();
+        const size_t n_columns = column_names_.size();
+        const size_t n_wells = wells_.size();
+        const size_t n_acquisitions = acquisitions_.size();
+
+        lt_props.row_names_lt.resize(n_rows);
+        lt_props.row_names.resize(n_rows);
+        for (auto i = 0; i < n_rows; ++i) {
+            lt_props.row_names_lt[i] = row_names_[i];
+            lt_props.row_names[i] = lt_props.row_names_lt[i].c_str();
+        }
+
+        lt_props.column_names_lt.resize(n_columns);
+        lt_props.column_names.resize(n_columns);
+        for (auto i = 0; i < n_columns; ++i) {
+            lt_props.column_names_lt[i] = column_names_[i];
+            lt_props.column_names[i] = lt_props.column_names_lt[i].c_str();
+        }
+
+        lt_props.wells_lt.resize(n_wells);
+        lt_props.wells.resize(n_wells);
+        for (auto i = 0; i < n_wells; ++i) {
+            lt_props.wells_lt[i] = wells_[i].to_lifetime_props();
+            lt_props.wells[i] = lt_props.wells_lt[i].well;
+        }
+
+        lt_props.acquisitions_lt.resize(n_acquisitions);
+        lt_props.acquisitions.resize(n_acquisitions);
+        for (auto i = 0; i < n_acquisitions; ++i) {
+            lt_props.acquisitions_lt[i] = acquisitions_[i].to_lifetime_props();
+            lt_props.acquisitions[i] = lt_props.acquisitions_lt[i].acquisition;
+        }
+
+        lt_props.plate = {
+            .path = lt_props.path.c_str(),
+            .name = lt_props.name.c_str(),
+            .row_names = lt_props.row_names.data(),
+            .row_count = n_rows,
+            .column_names = lt_props.column_names.data(),
+            .column_count = n_columns,
+            .wells = lt_props.wells.data(),
+            .well_count = n_wells,
+            .acquisitions = lt_props.acquisitions.data(),
+            .acquisition_count = n_acquisitions,
+        };
+
+        return lt_props;
+    }
+
+  private:
+    std::string path_;
+    std::string name_;
+    std::vector<std::string> row_names_;
+    std::vector<std::string> column_names_;
+    std::vector<PyZarrWell> wells_;
+    std::vector<PyZarrAcquisition> acquisitions_;
 };
 
 PYBIND11_MAKE_OPAQUE(std::vector<PyZarrArraySettings>);
@@ -350,6 +764,13 @@ class PyZarrStreamSettings
     void set_arrays(const std::vector<PyZarrArraySettings>& arrays)
     {
         arrays_ = arrays;
+    }
+
+    const std::vector<PyZarrPlate>& plates() const { return plates_; }
+    std::vector<PyZarrPlate>& plates() { return plates_; }
+    void set_plates(const std::vector<PyZarrPlate>& plates)
+    {
+        plates_ = plates;
     }
 
     size_t get_maximum_memory_usage() const
@@ -400,6 +821,7 @@ class PyZarrStreamSettings
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
     std::vector<PyZarrArraySettings> arrays_;
+    std::vector<PyZarrPlate> plates_;
 };
 
 class PyZarrStream
@@ -588,14 +1010,6 @@ class PyZarrStream
   private:
     using ZarrStreamPtr =
       std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
-    struct ArrayLifetimeProps
-    {
-        std::string output_key;
-        ZarrCompressionSettings compression;
-        std::vector<ZarrDimensionProperties> dimension_props;
-        std::vector<std::string> dimension_names;
-        std::vector<std::string> dimension_units;
-    };
 
     ZarrStreamPtr stream_;
 
@@ -612,14 +1026,11 @@ class PyZarrStream
             return;
         }
 
-        size_t n_arrays = settings.arrays().size();
-        if (n_arrays == 0) {
-            PyErr_SetString(PyExc_ValueError,
-                            "At least one array must be specified.");
-            throw py::error_already_set();
-        }
+        const size_t n_arrays = settings.arrays().size();
+        const size_t n_plates = settings.plates().size();
 
-        ZarrS3Settings s3_settings;
+        ZarrS3Settings s3_settings{ 0 };
+        ZarrHCSSettings hcs_settings{ 0 };
 
         ZarrStreamSettings stream_settings{
             .store_path = nullptr,
@@ -627,9 +1038,16 @@ class PyZarrStream
             .version = settings.version(),
             .max_threads = settings.max_threads(),
             .overwrite = settings.overwrite(),
-            .arrays = new ZarrArraySettings[n_arrays],
-            .array_count = n_arrays,
+            .arrays = nullptr,
+            .array_count = 0,
+            // .hcs_settings = n_plates > 0 ? &hcs_settings : nullptr,
         };
+
+        std::vector<ZarrArraySettings> array_settings(n_arrays);
+        if (n_arrays > 0) {
+            stream_settings.arrays = array_settings.data();
+            stream_settings.array_count = n_arrays;
+        }
 
         store_path_ = settings.store_path();
         stream_settings.store_path = store_path_.c_str();
@@ -652,65 +1070,35 @@ class PyZarrStream
             stream_settings.s3_settings = &s3_settings;
         }
 
+        // set up arrays
         std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
         for (auto i = 0; i < n_arrays; ++i) {
             const auto& array_settings = settings.arrays()[i];
-            auto& array_lt_props = array_props_array[i];
-            auto& stream_array = stream_settings.arrays[i];
-
-            array_lt_props.output_key = array_settings.output_key();
-            stream_array.output_key = array_lt_props.output_key.c_str();
-
-            stream_array.compression_settings = nullptr;
-            if (array_settings.compression().has_value()) {
-                const auto compression = *array_settings.compression();
-
-                // construct compression settings to live long enough
-                array_lt_props.compression = {
-                    .compressor = compression.compressor(),
-                    .codec = compression.codec(),
-                    .level = compression.level(),
-                    .shuffle = compression.shuffle(),
-                };
-
-                stream_array.compression_settings = &array_lt_props.compression;
-            }
-
-            const auto& dims = array_settings.dimensions();
-            array_lt_props.dimension_names.resize(dims.size());
-            auto& dim_names = array_lt_props.dimension_names;
-            array_lt_props.dimension_units.resize(dims.size());
-            auto& dim_units = array_lt_props.dimension_units;
-
-            auto& dimension_props = array_lt_props.dimension_props;
-            for (auto j = 0; j < dims.size(); ++j) {
-                const auto& dim = dims[j];
-                dim_names[j] = dim.name();
-                dim_units[j] = dim.unit().has_value() ? *dim.unit() : "";
-
-                ZarrDimensionProperties properties{
-                    .name = dim_names[j].c_str(),
-                    .type = dim.type(),
-                    .array_size_px = dim.array_size_px(),
-                    .chunk_size_px = dim.chunk_size_px(),
-                    .shard_size_chunks = dim.shard_size_chunks(),
-                    .unit = dim_units[j].c_str(),
-                    .scale = dim.scale(),
-                };
-                dimension_props.push_back(properties);
-            }
-
-            stream_array.dimensions = dimension_props.data();
-            stream_array.dimension_count = dims.size();
-
-            stream_array.data_type = array_settings.data_type();
-
-            auto downsampling_method = array_settings.downsampling_method();
-            stream_array.multiscale = downsampling_method.has_value();
-            if (stream_array.multiscale) {
-                stream_array.downsampling_method = *downsampling_method;
-            }
+            array_props_array[i] = array_settings.to_lifetime_props();
+            stream_settings.arrays[i] = *array_props_array[i].array_settings();
         }
+
+        // set up HCS settings
+        // if (n_plates > 0) {
+        //     if (auto code =
+        //           ZarrHCSSettings_create_plate_array(&hcs_settings,
+        //           n_plates);
+        //         code != ZarrStatusCode_Success) {
+        //         const std::string error =
+        //           "Failed to allocate memory for plates :" +
+        //           std::string(Zarr_get_status_message(code));
+        //         PyErr_SetString(PyExc_RuntimeError, error.c_str());
+        //         throw py::error_already_set();
+        //         }
+        // }
+        //
+        // const auto& plates = settings.plates();
+        // std::vector<PlateLifetimeProps> plate_props_array(n_plates);
+        // for (auto i = 0; i < n_plates; ++i) {
+        //     const auto& plate_in = plates[i];
+        //     plate_props_array[i] = plate_in.to_lifetime_props();
+        //     hcs_settings.plates[i] = plate_props_array[i].plate;
+        // }
 
         stream_ =
           ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
@@ -718,6 +1106,8 @@ class PyZarrStream
             PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
             throw py::error_already_set();
         }
+
+        ZarrHCSSettings_destroy_plate_array(&hcs_settings);
     }
 };
 
