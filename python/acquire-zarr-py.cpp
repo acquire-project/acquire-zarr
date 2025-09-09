@@ -1116,7 +1116,7 @@ class PyZarrStream
             .overwrite = settings.overwrite(),
             .arrays = nullptr,
             .array_count = 0,
-            // .hcs_settings = n_plates > 0 ? &hcs_settings : nullptr,
+            .hcs_settings = n_plates > 0 ? &hcs_settings : nullptr,
         };
 
         std::vector<ZarrArraySettings> array_settings(n_arrays);
@@ -1565,13 +1565,370 @@ PYBIND11_MODULE(acquire_zarr, m)
             }
         });
 
+    py::class_<PyZarrFieldOfView>(m, "FieldOfView", py::dynamic_attr())
+      .def(py::init([](std::optional<std::string> path,
+                       std::optional<uint32_t> acquisition_id,
+                       std::optional<PyZarrArraySettings> array_settings) {
+               PyZarrFieldOfView fov;
+
+               if (path) {
+                   fov.set_path(*path);
+               }
+               if (acquisition_id) {
+                   fov.set_acquisition_id(*acquisition_id);
+               }
+               if (array_settings) {
+                   fov.set_array_settings(*array_settings);
+               }
+
+               return fov;
+           }),
+           py::kw_only(),
+           py::arg("path") = std::nullopt,
+           py::arg("acquisition_id") = std::nullopt,
+           py::arg("array_settings") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrFieldOfView& self) {
+               std::string repr = "FieldOfView(path='" + self.path() + "'";
+
+               if (self.acquisition_id()) {
+                   repr += ", acquisition_id=" +
+                           std::to_string(*self.acquisition_id());
+               }
+
+               repr += ")";
+               return repr;
+           })
+      .def_property(
+        "path", &PyZarrFieldOfView::path, &PyZarrFieldOfView::set_path)
+      .def_property(
+        "acquisition_id",
+        [](const PyZarrFieldOfView& self) -> py::object {
+            if (self.acquisition_id()) {
+                return py::cast(*self.acquisition_id());
+            }
+            return py::none();
+        },
+        [](PyZarrFieldOfView& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_acquisition_id(std::nullopt);
+            } else {
+                self.set_acquisition_id(obj.cast<uint32_t>());
+            }
+        })
+      .def_property("array_settings",
+                    &PyZarrFieldOfView::array_settings,
+                    &PyZarrFieldOfView::set_array_settings);
+
+    py::class_<PyZarrWell>(m, "Well", py::dynamic_attr())
+      .def(py::init([](std::optional<std::string> row_name,
+                       std::optional<std::string> column_name,
+                       std::optional<py::list> images) {
+               PyZarrWell well;
+
+               if (row_name) {
+                   well.set_row_name(*row_name);
+               }
+               if (column_name) {
+                   well.set_column_name(*column_name);
+               }
+               if (images) {
+                   auto& imgs = *images;
+                   std::vector<PyZarrFieldOfView> imgs_vec(imgs.size());
+
+                   for (auto i = 0; i < imgs.size(); ++i) {
+                       imgs_vec[i] = imgs[i].cast<PyZarrFieldOfView>();
+                   }
+                   well.set_images(imgs_vec);
+               }
+
+               return well;
+           }),
+           py::kw_only(),
+           py::arg("row_name") = std::nullopt,
+           py::arg("column_name") = std::nullopt,
+           py::arg("images") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrWell& self) {
+               return "Well(row_name='" + self.row_name() + "', column_name='" +
+                      self.column_name() +
+                      "', images=" + std::to_string(self.images().size()) + ")";
+           })
+      .def_property(
+        "row_name", &PyZarrWell::row_name, &PyZarrWell::set_row_name)
+      .def_property(
+        "column_name", &PyZarrWell::column_name, &PyZarrWell::set_column_name)
+      .def_property(
+        "images",
+        [](PyZarrWell& self) -> py::object {
+            return py::cast(self.images(), py::return_value_policy::reference);
+        },
+        [](PyZarrWell& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrFieldOfView> imgs;
+                for (auto item : obj.cast<py::list>()) {
+                    imgs.push_back(item.cast<PyZarrFieldOfView>());
+                }
+                self.set_images(imgs);
+            } else {
+                PyErr_SetString(PyExc_TypeError,
+                                "Expected a list of FieldOfView objects.");
+                throw py::error_already_set();
+            }
+        });
+
+    py::class_<PyZarrAcquisition>(m, "Acquisition", py::dynamic_attr())
+      .def(py::init([](std::optional<uint32_t> id,
+                       std::optional<std::string> name,
+                       std::optional<std::string> description,
+                       std::optional<uint32_t> start_time,
+                       std::optional<uint32_t> end_time) {
+               PyZarrAcquisition acq;
+
+               if (id) {
+                   acq.set_id(*id);
+               }
+               if (name) {
+                   acq.set_name(*name);
+               }
+               if (description) {
+                   acq.set_description(*description);
+               }
+               if (start_time) {
+                   acq.set_start_time(*start_time);
+               }
+               if (end_time) {
+                   acq.set_end_time(*end_time);
+               }
+
+               return acq;
+           }),
+           py::kw_only(),
+           py::arg("id") = std::nullopt,
+           py::arg("name") = std::nullopt,
+           py::arg("description") = std::nullopt,
+           py::arg("start_time") = std::nullopt,
+           py::arg("end_time") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrAcquisition& self) {
+               std::string repr = "Acquisition(id=" + std::to_string(self.id());
+
+               if (self.name()) {
+                   repr += ", name='" + *self.name() + "'";
+               }
+               if (self.description()) {
+                   repr += ", description='" + *self.description() + "'";
+               }
+
+               repr += ")";
+               return repr;
+           })
+      .def_property("id", &PyZarrAcquisition::id, &PyZarrAcquisition::set_id)
+      .def_property(
+        "name",
+        [](const PyZarrAcquisition& self) -> py::object {
+            if (self.name()) {
+                return py::cast(*self.name());
+            }
+            return py::none();
+        },
+        [](PyZarrAcquisition& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_name(std::nullopt);
+            } else {
+                self.set_name(obj.cast<std::string>());
+            }
+        })
+      .def_property(
+        "description",
+        [](const PyZarrAcquisition& self) -> py::object {
+            if (self.description()) {
+                return py::cast(*self.description());
+            }
+            return py::none();
+        },
+        [](PyZarrAcquisition& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_description(std::nullopt);
+            } else {
+                self.set_description(obj.cast<std::string>());
+            }
+        })
+      .def_property(
+        "start_time",
+        [](const PyZarrAcquisition& self) -> py::object {
+            if (self.start_time()) {
+                return py::cast(*self.start_time());
+            }
+            return py::none();
+        },
+        [](PyZarrAcquisition& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_start_time(std::nullopt);
+            } else {
+                self.set_start_time(obj.cast<uint32_t>());
+            }
+        })
+      .def_property(
+        "end_time",
+        [](const PyZarrAcquisition& self) -> py::object {
+            if (self.end_time()) {
+                return py::cast(*self.end_time());
+            }
+            return py::none();
+        },
+        [](PyZarrAcquisition& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_end_time(std::nullopt);
+            } else {
+                self.set_end_time(obj.cast<uint32_t>());
+            }
+        });
+
+    py::class_<PyZarrPlate>(m, "Plate", py::dynamic_attr())
+      .def(py::init([](std::optional<std::string> path,
+                       std::optional<std::string> name,
+                       std::optional<py::list> row_names,
+                       std::optional<py::list> column_names,
+                       std::optional<py::list> wells,
+                       std::optional<py::list> acquisitions) {
+               PyZarrPlate plate;
+
+               if (path) {
+                   plate.set_path(*path);
+               }
+               if (name) {
+                   plate.set_name(*name);
+               }
+               if (row_names) {
+                   std::vector<std::string> rows;
+                   for (auto item : row_names->cast<py::list>()) {
+                       rows.push_back(item.cast<std::string>());
+                   }
+                   plate.set_row_names(rows);
+               }
+               if (column_names) {
+                   std::vector<std::string> cols;
+                   for (auto item : column_names->cast<py::list>()) {
+                       cols.push_back(item.cast<std::string>());
+                   }
+                   plate.set_column_names(cols);
+               }
+               if (wells) {
+                   std::vector<PyZarrWell> wells_vec;
+                   for (auto item : wells->cast<py::list>()) {
+                       wells_vec.push_back(item.cast<PyZarrWell>());
+                   }
+                   plate.set_wells(wells_vec);
+               }
+               if (acquisitions) {
+                   std::vector<PyZarrAcquisition> acqs_vec;
+                   for (auto item : acquisitions->cast<py::list>()) {
+                       acqs_vec.push_back(item.cast<PyZarrAcquisition>());
+                   }
+                   plate.set_acquisitions(acqs_vec);
+               }
+
+               return plate;
+           }),
+           py::kw_only(),
+           py::arg("path") = std::nullopt,
+           py::arg("name") = std::nullopt,
+           py::arg("row_names") = std::nullopt,
+           py::arg("column_names") = std::nullopt,
+           py::arg("wells") = std::nullopt,
+           py::arg("acquisitions") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrPlate& self) {
+               return "Plate(path='" + self.path() + "', name='" + self.name() +
+                      "', wells=" + std::to_string(self.wells().size()) +
+                      ", acquisitions=" +
+                      std::to_string(self.acquisitions().size()) + ")";
+           })
+      .def_property("path", &PyZarrPlate::path, &PyZarrPlate::set_path)
+      .def_property("name", &PyZarrPlate::name, &PyZarrPlate::set_name)
+      .def_property(
+        "row_names",
+        [](PyZarrPlate& self) -> py::object {
+            return py::cast(self.row_names(),
+                            py::return_value_policy::reference);
+        },
+        [](PyZarrPlate& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<std::string> rows;
+                for (auto item : obj.cast<py::list>()) {
+                    rows.push_back(item.cast<std::string>());
+                }
+                self.set_row_names(rows);
+            } else {
+                PyErr_SetString(PyExc_TypeError, "Expected a list of strings.");
+                throw py::error_already_set();
+            }
+        })
+      .def_property(
+        "column_names",
+        [](PyZarrPlate& self) -> py::object {
+            return py::cast(self.column_names(),
+                            py::return_value_policy::reference);
+        },
+        [](PyZarrPlate& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<std::string> cols;
+                for (auto item : obj.cast<py::list>()) {
+                    cols.push_back(item.cast<std::string>());
+                }
+                self.set_column_names(cols);
+            } else {
+                PyErr_SetString(PyExc_TypeError, "Expected a list of strings.");
+                throw py::error_already_set();
+            }
+        })
+      .def_property(
+        "wells",
+        [](PyZarrPlate& self) -> py::object {
+            return py::cast(self.wells(), py::return_value_policy::reference);
+        },
+        [](PyZarrPlate& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrWell> wells_vec;
+                for (auto item : obj.cast<py::list>()) {
+                    wells_vec.push_back(item.cast<PyZarrWell>());
+                }
+                self.set_wells(wells_vec);
+            } else {
+                PyErr_SetString(PyExc_TypeError,
+                                "Expected a list of Well objects.");
+                throw py::error_already_set();
+            }
+        })
+      .def_property(
+        "acquisitions",
+        [](PyZarrPlate& self) -> py::object {
+            return py::cast(self.acquisitions(),
+                            py::return_value_policy::reference);
+        },
+        [](PyZarrPlate& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrAcquisition> acqs_vec;
+                for (auto item : obj.cast<py::list>()) {
+                    acqs_vec.push_back(item.cast<PyZarrAcquisition>());
+                }
+                self.set_acquisitions(acqs_vec);
+            } else {
+                PyErr_SetString(PyExc_TypeError,
+                                "Expected a list of Acquisition objects.");
+                throw py::error_already_set();
+            }
+        });
+
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](std::optional<std::string> store_path,
                        std::optional<PyZarrS3Settings> s3,
                        std::optional<ZarrVersion> version,
                        std::optional<unsigned> max_threads,
                        std::optional<bool> overwrite,
-                       std::optional<py::list> arrays) {
+                       std::optional<py::list> arrays,
+                       std::optional<py::list> hcs_plates) {
                PyZarrStreamSettings settings;
                if (store_path) {
                    settings.set_store_path(*store_path);
@@ -1597,6 +1954,15 @@ PYBIND11_MODULE(acquire_zarr, m)
                    }
                    settings.set_arrays(arrs_vec);
                }
+               if (hcs_plates) {
+                   auto& plates = *hcs_plates;
+                   std::vector<PyZarrPlate> plates_vec(plates.size());
+
+                   for (auto i = 0; i < plates.size(); ++i) {
+                       plates_vec[i] = plates[i].cast<PyZarrPlate>();
+                   }
+                   settings.set_plates(plates_vec);
+               }
 
                return settings;
            }),
@@ -1606,7 +1972,8 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("version") = std::nullopt,
            py::arg("max_threads") = std::nullopt,
            py::arg("overwrite") = std::nullopt,
-           py::arg("arrays") = std::nullopt)
+           py::arg("arrays") = std::nullopt,
+           py::arg("hcs_plates") = std::nullopt)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
@@ -1669,6 +2036,24 @@ PYBIND11_MODULE(acquire_zarr, m)
                 // raise a TypeError if not a list
                 PyErr_SetString(PyExc_TypeError,
                                 "Expected a list of ArraySettings.");
+                throw py::error_already_set();
+            }
+        })
+      .def_property(
+        "hcs_plates",
+        [](PyZarrStreamSettings& self) -> py::object {
+            return py::cast(self.plates(), py::return_value_policy::reference);
+        },
+        [](PyZarrStreamSettings& self, py::object& obj) {
+            if (py::isinstance<py::list>(obj)) {
+                std::vector<PyZarrPlate> plates;
+                for (auto item : obj.cast<py::list>()) {
+                    plates.push_back(item.cast<PyZarrPlate>());
+                }
+                self.set_plates(plates);
+            } else {
+                // raise a TypeError if not a list
+                PyErr_SetString(PyExc_TypeError, "Expected a list of Plates.");
                 throw py::error_already_set();
             }
         });

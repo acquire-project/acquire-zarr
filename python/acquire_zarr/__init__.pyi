@@ -14,6 +14,7 @@ import numpy
 from typing import Any, ClassVar, List, Optional, Union
 
 __all__ = [
+    "Acquisition",
     "ArraySettings",
     "CompressionCodec",
     "CompressionSettings",
@@ -22,14 +23,37 @@ __all__ = [
     "Dimension",
     "DimensionType",
     "DownsamplingMethod",
+    "FieldOfView",
     "LogLevel",
+    "Plate",
     "S3Settings",
     "StreamSettings",
+    "Well",
     "ZarrStream",
     "ZarrVersion",
     "get_log_level",
     "set_log_level",
 ]
+
+class Acquisition:
+    """Acquisition metadata for HCS experiments.
+
+    Attributes:
+        id: Unique identifier for this acquisition.
+        name: Optional human-readable name for the acquisition.
+        description: Optional description of the acquisition.
+        start_time: Optional acquisition start timestamp.
+        end_time: Optional acquisition end timestamp.
+    """
+
+    id: int
+    name: Optional[str]
+    description: Optional[str]
+    start_time: Optional[int]
+    end_time: Optional[int]
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
 
 class ArraySettings:
     """Settings for a single array in the Zarr stream.
@@ -257,6 +281,22 @@ class DownsamplingMethod:
     @property
     def value(self) -> int: ...
 
+class FieldOfView:
+    """Field of view configuration for HCS datasets.
+
+    Attributes:
+        path: Path to this field of view within the plate structure.
+        acquisition_id: Optional ID linking this field of view to a specific acquisition.
+        array_settings: Array configuration for this field of view's data.
+    """
+
+    path: str
+    acquisition_id: Optional[int]
+    array_settings: ArraySettings
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
 class LogLevel:
     """
     Severity level to filter logs by.
@@ -292,6 +332,28 @@ class LogLevel:
     def name(self) -> str: ...
     @property
     def value(self) -> int: ...
+
+class Plate:
+    """Plate configuration for HCS datasets.
+
+    Attributes:
+        path: Storage path for the plate dataset.
+        name: Human-readable name for the plate.
+        row_names: List of row identifiers (e.g., ["A", "B", "C"]).
+        column_names: List of column identifiers (e.g., ["01", "02", "03"]).
+        wells: List of well configurations in this plate.
+        acquisitions: List of acquisition metadata for this plate.
+    """
+
+    path: str
+    name: str
+    row_names: List[str]
+    column_names: List[str]
+    wells: List[Well]
+    acquisitions: List[Acquisition]
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
 
 class S3Settings:
     """Settings for connecting to and storing data in S3."""
@@ -332,11 +394,28 @@ class StreamSettings:
     version: ZarrVersion
     max_threads: int
     overwrite: bool
+    plates: List[Plate]
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
     def get_maximum_memory_usage(self) -> int:
         """Get the maximum memory usage of the stream in bytes."""
+
+class Well:
+    """Well configuration for HCS plate layouts.
+
+    Attributes:
+        row_name: Row identifier for this well (e.g., "A", "B", "C").
+        column_name: Column identifier for this well (e.g., "01", "02", "03").
+        images: List of field of view configurations within this well.
+    """
+
+    row_name: str
+    column_name: str
+    images: List[FieldOfView]
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
 
 class ZarrStream:
     def __init__(self, arg0: StreamSettings) -> None: ...
@@ -348,7 +427,6 @@ class ZarrStream:
     ) -> bool: ...
     def is_active(self) -> bool: ...
     def close(self) -> None: ...
-
     def get_current_memory_usage(self) -> int:
         """Get the current memory usage of the stream in bytes."""
 
