@@ -32,6 +32,10 @@ from acquire_zarr import (
     ZarrVersion,
     LogLevel,
     DownsamplingMethod,
+    Plate,
+    Well,
+    FieldOfView,
+    Acquisition,
     set_log_level,
     get_log_level,
 )
@@ -96,6 +100,171 @@ def s3_settings():
 def store_path(tmp_path):
     yield tmp_path
     shutil.rmtree(tmp_path)
+
+
+def create_hcs_settings():
+    """Create HCS settings that match the C++ test structure."""
+    # Well C/5 with two FOVs
+    c5_fov1_array = ArraySettings(
+        output_key="fov1",  # Will be at test_plate/C/5/fov1
+        data_type=np.uint8,
+        dimensions=[
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=480,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=640,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+        ],
+    )
+
+    c5_fov2_array = ArraySettings(
+        output_key="fov2",  # Will be at test_plate/C/5/fov2
+        data_type=np.uint16,
+        dimensions=[
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=480,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=640,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+        ],
+    )
+
+    c5_well = Well(
+        row_name="C",
+        column_name="5",
+        images=[
+            FieldOfView(
+                path="fov1", acquisition_id=0, array_settings=c5_fov1_array
+            ),
+            FieldOfView(
+                path="fov2", acquisition_id=1, array_settings=c5_fov2_array
+            ),
+        ],
+    )
+
+    # Well D/7 with one FOV
+    d7_fov1_array = ArraySettings(
+        output_key="fov1",  # Will be at test_plate/D/7/fov1
+        data_type=np.uint16,
+        dimensions=[
+            Dimension(
+                name="t",
+                kind=DimensionType.TIME,
+                array_size_px=10,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="c",
+                kind=DimensionType.CHANNEL,
+                array_size_px=3,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=5,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=512,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=512,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+        ],
+    )
+
+    d7_well = Well(
+        row_name="D",
+        column_name="7",
+        images=[
+            FieldOfView(
+                path="fov1", acquisition_id=0, array_settings=d7_fov1_array
+            ),
+        ],
+    )
+
+    # Create plate with acquisitions
+    acquisitions = [
+        Acquisition(
+            id=0,
+            name="Meas_01(2012-07-31_10-41-12)",
+            start_time=1343731272000,
+        ),
+        Acquisition(
+            id=1,
+            name="Meas_02(2012-07-31_10-45-12)",
+            start_time=1343735801000,
+            end_time=1343737645000,
+        ),
+    ]
+
+    plate = Plate(
+        path="test_plate",
+        name="Test Plate",
+        row_names=["A", "B", "C", "D", "E", "F", "G", "H"],
+        column_names=[
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+        ],
+        wells=[c5_well, d7_well],
+        acquisitions=acquisitions,
+    )
+
+    return plate
 
 
 def validate_v2_metadata(store_path: Path):
@@ -1561,3 +1730,279 @@ def test_get_current_memory_usage(settings: StreamSettings, store_path: Path):
     assert usage == 3 * frame_buffer_size  # everything should be cleared out
 
     stream.close()
+
+
+def validate_generic_group_metadata(base_path: Path):
+    """Validate generic Zarr group metadata files."""
+    paths = [
+        base_path / "zarr.json",
+        base_path / "test_plate" / "C" / "zarr.json",
+        base_path / "test_plate" / "D" / "zarr.json",
+    ]
+
+    for path in paths:
+        assert path.exists(), f"Missing metadata file: {path}"
+
+        with open(path, "r") as f:
+            metadata = json.load(f)
+
+        assert metadata["zarr_format"] == 3
+        assert metadata["consolidated_metadata"] is None
+        assert metadata["node_type"] == "group"
+        assert metadata["attributes"] == {}
+
+
+def validate_plate_metadata(base_path: Path):
+    """Validate plate-level HCS metadata."""
+    plate_path = base_path / "test_plate" / "zarr.json"
+    assert plate_path.exists()
+
+    with open(plate_path, "r") as f:
+        metadata = json.load(f)
+
+    assert metadata["zarr_format"] == 3
+    assert metadata["consolidated_metadata"] is None
+    assert metadata["node_type"] == "group"
+
+    attributes = metadata["attributes"]
+    assert "ome" in attributes
+
+    ome = attributes["ome"]
+    assert len(ome) == 2
+    assert ome["version"] == "0.5"
+
+    plate = ome["plate"]
+    assert len(plate) == 7
+
+    # Validate plate fields
+    assert plate["name"] == "Test Plate"
+    assert plate["version"] == "0.5"
+    assert plate["field_count"] == 2
+
+    # Validate acquisitions
+    acquisitions = plate["acquisitions"]
+    assert len(acquisitions) == 2
+
+    acq0 = acquisitions[0]
+    assert len(acq0) == 4
+    assert acq0["id"] == 0
+    assert acq0["maximumfieldcount"] == 1
+    assert acq0["name"] == "Meas_01(2012-07-31_10-41-12)"
+    assert acq0["starttime"] == 1343731272000
+    assert "endtime" not in acq0
+
+    acq1 = acquisitions[1]
+    assert len(acq1) == 5
+    assert acq1["id"] == 1
+    assert acq1["maximumfieldcount"] == 1
+    assert acq1["name"] == "Meas_02(2012-07-31_10-45-12)"
+    assert acq1["starttime"] == 1343735801000
+    assert acq1["endtime"] == 1343737645000
+
+    # Validate columns
+    columns = plate["columns"]
+    assert len(columns) == 12
+    for i in range(1, 13):
+        assert columns[i - 1]["name"] == str(i)
+
+    # Validate rows
+    rows = plate["rows"]
+    assert len(rows) == 8
+    for i, letter in enumerate("ABCDEFGH"):
+        assert rows[i]["name"] == letter
+
+    # Validate wells
+    wells = plate["wells"]
+    assert len(wells) == 2
+
+    well0 = wells[0]
+    assert len(well0) == 3
+    assert well0["rowIndex"] == 2  # C
+    assert well0["columnIndex"] == 4  # 5
+    assert well0["path"] == "C/5"
+
+    well1 = wells[1]
+    assert len(well1) == 3
+    assert well1["rowIndex"] == 3  # D
+    assert well1["columnIndex"] == 6  # 7
+    assert well1["path"] == "D/7"
+
+
+def validate_well_metadata(base_path: Path):
+    """Validate well-level HCS metadata."""
+    paths = [
+        base_path / "test_plate" / "C" / "5" / "zarr.json",
+        base_path / "test_plate" / "D" / "7" / "zarr.json",
+    ]
+    expected_image_counts = [2, 1]
+
+    for i, path in enumerate(paths):
+        assert path.exists()
+
+        with open(path, "r") as f:
+            metadata = json.load(f)
+
+        assert metadata["zarr_format"] == 3
+        assert metadata["consolidated_metadata"] is None
+        assert metadata["node_type"] == "group"
+
+        attributes = metadata["attributes"]
+        assert "ome" in attributes
+
+        ome = attributes["ome"]
+        assert len(ome) == 2
+        assert ome["version"] == "0.5"
+
+        well = ome["well"]
+        assert len(well) == 2
+        assert well["version"] == "0.5"
+
+        images = well["images"]
+        assert len(images) == expected_image_counts[i]
+
+        # Check first image
+        img0 = images[0]
+        assert len(img0) == 2
+        assert img0["acquisition"] == 0
+        assert img0["path"] == "fov1"
+
+        # Check second image if present
+        if expected_image_counts[i] == 2:
+            img1 = images[1]
+            assert len(img1) == 2
+            assert img1["acquisition"] == 1
+            assert img1["path"] == "fov2"
+
+
+def check_arrays_exist(base_path: Path):
+    """Check that HCS arrays exist."""
+    paths = [
+        base_path / "test_plate" / "C" / "5" / "fov1",
+        base_path / "test_plate" / "C" / "5" / "fov2",
+        base_path / "test_plate" / "D" / "7" / "fov1",
+    ]
+
+    for path in paths:
+        array_path = path / "zarr.json"
+        assert array_path.exists(), f"Missing array: {path}"
+
+
+def check_arrays_exist_mixed(base_path: Path):
+    """Check that both HCS and flat arrays exist."""
+    paths = [
+        base_path / "test_plate" / "C" / "5" / "fov1",
+        base_path / "test_plate" / "C" / "5" / "fov2",
+        base_path / "test_plate" / "D" / "7" / "fov1",
+        base_path / "test_plate" / "C" / "5" / "labels",
+    ]
+
+    for path in paths:
+        array_path = path / "zarr.json"
+        assert array_path.exists(), f"Missing array: {path}"
+
+
+def test_pure_hcs_acquisition(store_path: Path):
+    """Test pure HCS acquisition (equivalent to stream-pure-hcs-acquisition.cpp)"""
+    plate = create_hcs_settings()
+
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        version=ZarrVersion.V3,
+        overwrite=True,
+        arrays=[],  # No flat arrays, only HCS
+        hcs_plates=[plate],
+    )
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Write test data to each FOV
+    # FOV1 in well C/5 (uint8, 3D: z,y,x)
+    fov1_data = np.zeros((640, 480), dtype=np.uint8)
+    stream.append(fov1_data, key="test_plate/C/5/fov1")
+
+    # FOV2 in well C/5 (uint16, 3D: z,y,x)
+    fov2_data = np.zeros((640, 480), dtype=np.uint16)
+    stream.append(fov2_data, key="test_plate/C/5/fov2")
+
+    # FOV1 in well D/7 (uint16, 5D: t,c,z,y,x)
+    d7_fov1_data = np.zeros((512, 512), dtype=np.uint16)
+    stream.append(d7_fov1_data, key="test_plate/D/7/fov1")
+
+    stream.close()
+
+    # Validate the structure
+    validate_generic_group_metadata(store_path / "test.zarr")
+    validate_plate_metadata(store_path / "test.zarr")
+    validate_well_metadata(store_path / "test.zarr")
+    check_arrays_exist(store_path / "test.zarr")
+
+
+def test_mixed_flat_and_hcs_acquisition(store_path: Path):
+    """Test mixed flat and HCS acquisition (equivalent to stream-mixed-flat-and-hcs-acquisition.cpp)"""
+    plate = create_hcs_settings()
+
+    # Add a labels array outside the HCS structure
+    labels_array = ArraySettings(
+        output_key="test_plate/C/5/labels",
+        data_type=np.uint8,
+        dimensions=[
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=480,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=640,
+                chunk_size_px=256,
+                shard_size_chunks=4,
+            ),
+        ],
+    )
+
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        version=ZarrVersion.V3,
+        overwrite=True,
+        arrays=[labels_array],
+        hcs_plates=[plate],
+    )
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Write test data to each array
+    # FOV1 in well C/5
+    fov1_data = np.zeros((640, 480), dtype=np.uint8)
+    stream.append(fov1_data, key="test_plate/C/5/fov1")
+
+    # FOV2 in well C/5
+    fov2_data = np.zeros((640, 480), dtype=np.uint16)
+    stream.append(fov2_data, key="test_plate/C/5/fov2")
+
+    # FOV1 in well D/7
+    d7_fov1_data = np.zeros((512, 512), dtype=np.uint16)
+    stream.append(d7_fov1_data, key="test_plate/D/7/fov1")
+
+    # Labels array in well C/5
+    labels_data = np.zeros((640, 480), dtype=np.uint8)
+    stream.append(labels_data, key="test_plate/C/5/labels")
+
+    stream.close()
+
+    # Validate the structure (same as pure HCS)
+    validate_generic_group_metadata(store_path / "test.zarr")
+    validate_plate_metadata(store_path / "test.zarr")
+    validate_well_metadata(store_path / "test.zarr")
+    check_arrays_exist_mixed(store_path / "test.zarr")

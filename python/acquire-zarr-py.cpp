@@ -24,11 +24,16 @@ auto ZarrStreamDeleter = [](ZarrStream_s* stream) {
 struct ArrayLifetimeProps
 {
     std::string output_key;
-    std::vector<std::string> dimension_names;
-    std::vector<std::string> dimension_units;
+    std::vector<std::string> names;
+    std::vector<std::string> units;
+    std::vector<ZarrDimensionType> types;
+    std::vector<double> scales;
+    std::vector<uint32_t> array_sizes;
+    std::vector<uint32_t> chunk_sizes;
+    std::vector<uint32_t> shard_sizes;
+
     ZarrCompressionSettings compression;
     bool has_compression{ false };
-    std::vector<ZarrDimensionProperties> dimension_props;
     ZarrDataType data_type;
     std::optional<ZarrDownsamplingMethod> downsampling_method;
 
@@ -46,14 +51,27 @@ struct ArrayLifetimeProps
             array_settings_.compression_settings = nullptr;
         }
 
-        const size_t n_dims = dimension_props.size();
-        for (auto i = 0; i < n_dims; ++i) {
-            dimension_props[i].name = dimension_names[i].c_str();
-            dimension_props[i].unit = dimension_units[i].c_str();
+        const size_t n_dims = names.size();
+
+        if (auto code = ZarrArraySettings_create_dimension_array(
+              &array_settings_, n_dims);
+            code != ZarrStatusCode_Success) {
+            const std::string err =
+              "Failed to allocate memory for dimension array: " +
+              std::string(Zarr_get_status_message(code));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
         }
 
-        array_settings_.dimensions = dimension_props.data();
-        array_settings_.dimension_count = n_dims;
+        for (auto i = 0; i < n_dims; ++i) {
+            array_settings_.dimensions[i].name = names[i].c_str();
+            array_settings_.dimensions[i].unit = units[i].c_str();
+            array_settings_.dimensions[i].type = types[i];
+            array_settings_.dimensions[i].array_size_px = array_sizes[i];
+            array_settings_.dimensions[i].chunk_size_px = chunk_sizes[i];
+            array_settings_.dimensions[i].shard_size_chunks = shard_sizes[i];
+            array_settings_.dimensions[i].scale = scales[i];
+        }
 
         array_settings_.data_type = data_type;
         array_settings_.multiscale = downsampling_method.has_value();
@@ -104,8 +122,8 @@ struct WellLifetimeProps
         well_.row_name = row_name.c_str();
         well_.column_name = column_name.c_str();
 
-        if (const auto code =
-              ZarrHCSWell_create_image_array(&well_, images.size());
+        const size_t n_images = images.size();
+        if (const auto code = ZarrHCSWell_create_image_array(&well_, n_images);
             code != ZarrStatusCode_Success) {
             const std::string err =
               "Failed to allocate memory for images array: " +
@@ -114,7 +132,7 @@ struct WellLifetimeProps
             throw py::error_already_set();
         }
 
-        for (size_t i = 0; i < images.size(); ++i) {
+        for (size_t i = 0; i < n_images; ++i) {
             well_.images[i] = *images[i].field_of_view();
         }
 
@@ -550,26 +568,23 @@ class PyZarrArraySettings
         }
 
         const size_t n_dims = dims_.size();
-        lt_props.dimension_names.resize(n_dims);
-        lt_props.dimension_units.resize(n_dims);
-        lt_props.dimension_props.resize(n_dims);
+        lt_props.names.resize(n_dims);
+        lt_props.units.resize(n_dims);
+        lt_props.array_sizes.resize(n_dims);
+        lt_props.chunk_sizes.resize(n_dims);
+        lt_props.shard_sizes.resize(n_dims);
+        lt_props.types.resize(n_dims);
+        lt_props.scales.resize(n_dims);
 
         for (auto i = 0; i < n_dims; ++i) {
             const auto& dim = dims_[i];
-            lt_props.dimension_names[i] = dim.name();
-            lt_props.dimension_units[i] =
-              dim.unit().has_value() ? *dim.unit() : "";
-
-            ZarrDimensionProperties properties{
-                .name = nullptr,
-                .type = dim.type(),
-                .array_size_px = dim.array_size_px(),
-                .chunk_size_px = dim.chunk_size_px(),
-                .shard_size_chunks = dim.shard_size_chunks(),
-                .unit = nullptr,
-                .scale = dim.scale(),
-            };
-            lt_props.dimension_props[i] = properties;
+            lt_props.names[i] = dim.name();
+            lt_props.units[i] = dim.unit().has_value() ? *dim.unit() : "";
+            lt_props.array_sizes[i] = dim.array_size_px();
+            lt_props.chunk_sizes[i] = dim.chunk_size_px();
+            lt_props.shard_sizes[i] = dim.shard_size_chunks();
+            lt_props.types[i] = dim.type();
+            lt_props.scales[i] = dim.scale();
         }
 
         return lt_props;
@@ -683,14 +698,14 @@ class PyZarrAcquisition
         description_ = description;
     }
 
-    std::optional<uint32_t> start_time() const { return start_time_; }
-    void set_start_time(const std::optional<uint32_t>& time)
+    std::optional<uint64_t> start_time() const { return start_time_; }
+    void set_start_time(const std::optional<uint64_t>& time)
     {
         start_time_ = time;
     }
 
-    std::optional<uint32_t> end_time() const { return end_time_; }
-    void set_end_time(const std::optional<uint32_t>& time) { end_time_ = time; }
+    std::optional<uint64_t> end_time() const { return end_time_; }
+    void set_end_time(const std::optional<uint64_t>& time) { end_time_ = time; }
 
     AcquisitionLifetimeProps to_lifetime_props() const
     {
@@ -718,8 +733,8 @@ class PyZarrAcquisition
     uint32_t id_;
     std::optional<std::string> name_;
     std::optional<std::string> description_;
-    std::optional<uint32_t> start_time_;
-    std::optional<uint32_t> end_time_;
+    std::optional<uint64_t> start_time_;
+    std::optional<uint64_t> end_time_;
 };
 
 class PyZarrPlate
@@ -768,6 +783,10 @@ class PyZarrPlate
     PlateLifetimeProps to_lifetime_props() const
     {
         PlateLifetimeProps lt_props{};
+
+        lt_props.name = name_;
+        lt_props.path = path_;
+
         const size_t n_rows = row_names_.size();
         const size_t n_columns = column_names_.size();
         const size_t n_wells = wells_.size();
@@ -781,7 +800,7 @@ class PyZarrPlate
 
         lt_props.column_names.resize(n_columns);
         for (size_t i = 0; i < n_columns; ++i) {
-            lt_props.column_names[i] = lt_props.column_names[i];
+            lt_props.column_names[i] = column_names_[i];
         }
 
         lt_props.wells.resize(n_wells);
@@ -1149,8 +1168,8 @@ class PyZarrStream
         // set up arrays
         std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
         for (size_t i = 0; i < n_arrays; ++i) {
-            const auto& array_settings = settings.arrays()[i];
-            array_props_array[i] = array_settings.to_lifetime_props();
+            const auto& array = settings.arrays()[i];
+            array_props_array[i] = array.to_lifetime_props();
             stream_settings.arrays[i] = *array_props_array[i].array_settings();
         }
 
@@ -1681,8 +1700,8 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def(py::init([](std::optional<uint32_t> id,
                        std::optional<std::string> name,
                        std::optional<std::string> description,
-                       std::optional<uint32_t> start_time,
-                       std::optional<uint32_t> end_time) {
+                       std::optional<uint64_t> start_time,
+                       std::optional<uint64_t> end_time) {
                PyZarrAcquisition acq;
 
                if (id) {
