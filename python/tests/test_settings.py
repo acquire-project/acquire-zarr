@@ -272,25 +272,53 @@ def test_set_dtype(
 def test_estimate_max_memory_usage():
     array = aqz.ArraySettings()
     array.dimensions = [
-        aqz.Dimension(name="t", kind=aqz.DimensionType.TIME, array_size_px=0, chunk_size_px=5),
-        aqz.Dimension(name="c", kind=aqz.DimensionType.CHANNEL, array_size_px=3, chunk_size_px=1),
-        aqz.Dimension(name="z", kind=aqz.DimensionType.SPACE, array_size_px=6, chunk_size_px=2),
-        aqz.Dimension(name="y", kind=aqz.DimensionType.SPACE, array_size_px=48, chunk_size_px=16),
-        aqz.Dimension(name="x", kind=aqz.DimensionType.SPACE, array_size_px=64, chunk_size_px=16),
+        aqz.Dimension(
+            name="t",
+            kind=aqz.DimensionType.TIME,
+            array_size_px=0,
+            chunk_size_px=5,
+        ),
+        aqz.Dimension(
+            name="c",
+            kind=aqz.DimensionType.CHANNEL,
+            array_size_px=3,
+            chunk_size_px=1,
+        ),
+        aqz.Dimension(
+            name="z",
+            kind=aqz.DimensionType.SPACE,
+            array_size_px=6,
+            chunk_size_px=2,
+        ),
+        aqz.Dimension(
+            name="y",
+            kind=aqz.DimensionType.SPACE,
+            array_size_px=48,
+            chunk_size_px=16,
+        ),
+        aqz.Dimension(
+            name="x",
+            kind=aqz.DimensionType.SPACE,
+            array_size_px=64,
+            chunk_size_px=16,
+        ),
     ]
     array.data_type = np.uint16
 
-    array_usage = np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
+    array_usage = (
+        np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
+    )
     for dim in array.dimensions[1:]:
         array_usage *= dim.array_size_px
     frame_queue_usage = 1 << 30
-    frame_buffer_usage = array.dimensions[-2].array_size_px * array.dimensions[-1].array_size_px * np.dtype(
-        np.uint16).itemsize
+    frame_buffer_usage = (
+        array.dimensions[-2].array_size_px
+        * array.dimensions[-1].array_size_px
+        * np.dtype(np.uint16).itemsize
+    )
     expected_memory = array_usage + frame_buffer_usage + frame_queue_usage
 
-    stream = aqz.StreamSettings(
-        arrays=[array]
-    )
+    stream = aqz.StreamSettings(arrays=[array])
     max_memory = stream.get_maximum_memory_usage()
 
     assert max_memory == expected_memory

@@ -75,10 +75,10 @@ def settings():
 @pytest.fixture(scope="module")
 def s3_settings():
     if (
-            "ZARR_S3_ENDPOINT" not in os.environ
-            or "ZARR_S3_BUCKET_NAME" not in os.environ
-            or "AWS_ACCESS_KEY_ID" not in os.environ
-            or "AWS_SECRET_ACCESS_KEY" not in os.environ
+        "ZARR_S3_ENDPOINT" not in os.environ
+        or "ZARR_S3_BUCKET_NAME" not in os.environ
+        or "AWS_ACCESS_KEY_ID" not in os.environ
+        or "AWS_SECRET_ACCESS_KEY" not in os.environ
     ):
         yield None
     else:
@@ -149,10 +149,10 @@ def validate_v3_metadata(store_path: Path):
     ],
 )
 def test_create_stream(
-        settings: StreamSettings,
-        store_path: Path,
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -180,41 +180,41 @@ def test_create_stream(
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_filesystem(
-        settings: StreamSettings,
-        store_path: Path,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    store_path: Path,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
     settings.version = version
@@ -256,7 +256,7 @@ def test_stream_data_to_filesystem(
             shard_size_bytes *= dim.shard_size_chunks
             table_size_bytes *= dim.shard_size_chunks
     shard_size_bytes = (
-            shard_size_bytes + table_size_bytes + 4
+        shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
 
     group = zarr.open(settings.store_path, mode="r")
@@ -282,8 +282,8 @@ def test_stream_data_to_filesystem(
             # check that the data is compressed
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
             assert (
-                           store_path / "test.zarr" / "0" / "0" / "0" / "0"
-                   ).stat().st_size <= chunk_size_bytes
+                store_path / "test.zarr" / "0" / "0" / "0" / "0"
+            ).stat().st_size <= chunk_size_bytes
         else:
             cname = (
                 zblosc.BloscCname.lz4
@@ -296,68 +296,68 @@ def test_stream_data_to_filesystem(
             assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
             assert (
-                    store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
             ).is_file()
             assert (
-                           store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-                   ).stat().st_size <= shard_size_bytes
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).stat().st_size <= shard_size_bytes
     else:
         if version == ZarrVersion.V2:
             assert metadata.compressor is None
 
             assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
             assert (
-                           store_path / "test.zarr" / "0" / "0" / "0" / "0"
-                   ).stat().st_size == chunk_size_bytes
+                store_path / "test.zarr" / "0" / "0" / "0" / "0"
+            ).stat().st_size == chunk_size_bytes
         else:
             assert len(metadata.codecs[0].codecs) == 1
 
             assert (
-                    store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
             ).is_file()
             assert (
-                           store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-                   ).stat().st_size == shard_size_bytes
+                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+            ).stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
     (
-            "version",
-            "compression_codec",
+        "version",
+        "compression_codec",
     ),
     [
         (
-                ZarrVersion.V2,
-                None,
+            ZarrVersion.V2,
+            None,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V2,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V2,
+            CompressionCodec.BLOSC_ZSTD,
         ),
         (
-                ZarrVersion.V3,
-                None,
+            ZarrVersion.V3,
+            None,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_LZ4,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_LZ4,
         ),
         (
-                ZarrVersion.V3,
-                CompressionCodec.BLOSC_ZSTD,
+            ZarrVersion.V3,
+            CompressionCodec.BLOSC_ZSTD,
         ),
     ],
 )
 def test_stream_data_to_s3(
-        settings: StreamSettings,
-        s3_settings: Optional[S3Settings],
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    s3_settings: Optional[S3Settings],
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
+    compression_codec: Optional[CompressionCodec],
 ):
     if s3_settings is None:
         pytest.skip("S3 settings not set")
@@ -470,11 +470,11 @@ def test_set_log_level(level: LogLevel):
     ],
 )
 def test_write_custom_metadata(
-        settings: StreamSettings,
-        store_path: Path,
-        request: pytest.FixtureRequest,
-        version: ZarrVersion,
-        overwrite: bool,
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    version: ZarrVersion,
+    overwrite: bool,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
     settings.version = version
@@ -506,7 +506,7 @@ def test_write_custom_metadata(
 
 
 def test_write_transposed_array(
-        store_path: Path,
+    store_path: Path,
 ):
     settings = StreamSettings(
         arrays=[
@@ -556,8 +556,8 @@ def test_write_transposed_array(
     settings.version = ZarrVersion.V3
 
     data = np.random.randint(
-        -(2 ** 16),
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.arrays[0].dimensions[0].chunk_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -584,7 +584,7 @@ def test_write_transposed_array(
 
 
 def test_column_ragged_sharding(
-        store_path: Path,
+    store_path: Path,
 ):
     settings = StreamSettings(
         arrays=[
@@ -620,8 +620,8 @@ def test_column_ragged_sharding(
     settings.version = ZarrVersion.V3
 
     data = np.random.randint(
-        -(2 ** 16),
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.arrays[0].dimensions[0].array_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -684,8 +684,8 @@ def test_custom_dimension_units_and_scales(store_path: Path):
     settings.version = ZarrVersion.V3
 
     data = np.random.randint(
-        -(2 ** 16),
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.arrays[0].dimensions[0].array_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -779,8 +779,8 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     settings.version = ZarrVersion.V3
 
     data = np.random.randint(
-        -(2 ** 16),
-        2 ** 16 - 1,
+        -(2**16),
+        2**16 - 1,
         (
             settings.arrays[0].dimensions[0].array_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -868,7 +868,7 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     data = np.random.randint(
         0,
-        2 ** 16 - 1,
+        2**16 - 1,
         (
             settings.arrays[0].dimensions[0].array_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -945,10 +945,10 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
     ],
 )
 def test_stream_data_to_named_array(
-        settings: StreamSettings,
-        store_path: Path,
-        output_key: str,
-        downsampling_method: DownsamplingMethod,
+    settings: StreamSettings,
+    store_path: Path,
+    output_key: str,
+    downsampling_method: DownsamplingMethod,
 ):
     settings.store_path = str(
         store_path
@@ -1040,7 +1040,7 @@ def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     # Create test data
     data = np.random.randint(
         0,
-        2 ** 8 - 1,
+        2**8 - 1,
         (
             settings.arrays[0].dimensions[0].array_size_px,
             settings.arrays[0].dimensions[1].array_size_px,
@@ -1086,9 +1086,9 @@ def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     ],
 )
 def test_multiarray_metadata_structure(
-        settings: StreamSettings,
-        store_path: Path,
-        version: ZarrVersion,
+    settings: StreamSettings,
+    store_path: Path,
+    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / "multiarray_metadata_test.zarr")
     settings.version = version
@@ -1284,24 +1284,47 @@ def test_multiarray_metadata_structure(
     assert np.array_equal(array2_group, array2_data)
 
 
-def test_get_current_memory_usage(
-        settings: StreamSettings,
-        store_path: Path):
+def test_get_current_memory_usage(settings: StreamSettings, store_path: Path):
     settings.store_path = str(store_path / "memory_usage_test.zarr")
     settings.overwrite = True
 
     array1_settings = ArraySettings(
         output_key="array1",
         dimensions=[
-            Dimension(name="time", kind=DimensionType.TIME, array_size_px=0, chunk_size_px=32, shard_size_chunks=1),
-            Dimension(name="channel", kind=DimensionType.CHANNEL, array_size_px=3, chunk_size_px=1,
-                      shard_size_chunks=1),
-            Dimension(name="height", kind=DimensionType.SPACE, array_size_px=48, chunk_size_px=16, shard_size_chunks=3),
-            Dimension(name="width", kind=DimensionType.SPACE, array_size_px=64, chunk_size_px=16, shard_size_chunks=4),
+            Dimension(
+                name="time",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=32,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="channel",
+                kind=DimensionType.CHANNEL,
+                array_size_px=3,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="height",
+                kind=DimensionType.SPACE,
+                array_size_px=48,
+                chunk_size_px=16,
+                shard_size_chunks=3,
+            ),
+            Dimension(
+                name="width",
+                kind=DimensionType.SPACE,
+                array_size_px=64,
+                chunk_size_px=16,
+                shard_size_chunks=4,
+            ),
         ],
         data_type=np.uint16,
     )
-    array1_usage = 64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize  # 64 * 48 * 3 * 32 * 2 bytes
+    array1_usage = (
+        64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize
+    )  # 64 * 48 * 3 * 32 * 2 bytes
 
     array2_settings = ArraySettings(
         output_key="array2",
@@ -1312,15 +1335,40 @@ def test_get_current_memory_usage(
             shuffle=1,
         ),
         dimensions=[
-            Dimension(name="time", kind=DimensionType.TIME, array_size_px=0, chunk_size_px=32, shard_size_chunks=2),
-            Dimension(name="channel", kind=DimensionType.CHANNEL, array_size_px=3, chunk_size_px=1,
-                      shard_size_chunks=1),
-            Dimension(name="height", kind=DimensionType.SPACE, array_size_px=48, chunk_size_px=16, shard_size_chunks=3),
-            Dimension(name="width", kind=DimensionType.SPACE, array_size_px=64, chunk_size_px=16, shard_size_chunks=4),
+            Dimension(
+                name="time",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=32,
+                shard_size_chunks=2,
+            ),
+            Dimension(
+                name="channel",
+                kind=DimensionType.CHANNEL,
+                array_size_px=3,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="height",
+                kind=DimensionType.SPACE,
+                array_size_px=48,
+                chunk_size_px=16,
+                shard_size_chunks=3,
+            ),
+            Dimension(
+                name="width",
+                kind=DimensionType.SPACE,
+                array_size_px=64,
+                chunk_size_px=16,
+                shard_size_chunks=4,
+            ),
         ],
         data_type=np.uint16,
     )
-    array2_usage = 64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize  # 64 * 48 * 3 * 32 * 2 bytes
+    array2_usage = (
+        64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize
+    )  # 64 * 48 * 3 * 32 * 2 bytes
 
     array3_settings = ArraySettings(
         output_key="array3",
@@ -1331,19 +1379,50 @@ def test_get_current_memory_usage(
             shuffle=1,
         ),
         dimensions=[
-            Dimension(name="time", kind=DimensionType.TIME, array_size_px=0, chunk_size_px=32, shard_size_chunks=3),
-            Dimension(name="channel", kind=DimensionType.CHANNEL, array_size_px=3, chunk_size_px=1,
-                      shard_size_chunks=1),
-            Dimension(name="height", kind=DimensionType.SPACE, array_size_px=48, chunk_size_px=16, shard_size_chunks=3),
-            Dimension(name="width", kind=DimensionType.SPACE, array_size_px=64, chunk_size_px=16, shard_size_chunks=4),
+            Dimension(
+                name="time",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=32,
+                shard_size_chunks=3,
+            ),
+            Dimension(
+                name="channel",
+                kind=DimensionType.CHANNEL,
+                array_size_px=3,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="height",
+                kind=DimensionType.SPACE,
+                array_size_px=48,
+                chunk_size_px=16,
+                shard_size_chunks=3,
+            ),
+            Dimension(
+                name="width",
+                kind=DimensionType.SPACE,
+                array_size_px=64,
+                chunk_size_px=16,
+                shard_size_chunks=4,
+            ),
         ],
         data_type=np.uint16,
         downsampling_method=DownsamplingMethod.MEAN,
     )
-    lod0_usage = 64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize  # 64 * 48 * 3 * 32 * 2 bytes
-    lod1_usage = 32 * 32 * 3 * 32 * np.dtype(np.uint16).itemsize  # 32 * 24 (padded to 32) * 3 * 32 * 2 bytes
-    lod2_usage = 16 * 12 * 3 * 32 * np.dtype(np.uint16).itemsize  # 16 * 12 * 3 * 32 * 2 bytes
-    array3_usage = lod0_usage + lod1_usage + lod2_usage  # total memory usage for all LODs
+    lod0_usage = (
+        64 * 48 * 3 * 32 * np.dtype(np.uint16).itemsize
+    )  # 64 * 48 * 3 * 32 * 2 bytes
+    lod1_usage = (
+        32 * 32 * 3 * 32 * np.dtype(np.uint16).itemsize
+    )  # 32 * 24 (padded to 32) * 3 * 32 * 2 bytes
+    lod2_usage = (
+        16 * 12 * 3 * 32 * np.dtype(np.uint16).itemsize
+    )  # 16 * 12 * 3 * 32 * 2 bytes
+    array3_usage = (
+        lod0_usage + lod1_usage + lod2_usage
+    )  # total memory usage for all LODs
 
     frame_buffer_size = 2 * 48 * 64
 
@@ -1356,7 +1435,7 @@ def test_get_current_memory_usage(
     assert usage == frame_buffer_size
 
     # add some data to the stream
-    data = np.random.randint(0, 2 ** 16 - 1, (32, 3, 48, 64))
+    data = np.random.randint(0, 2**16 - 1, (32, 3, 48, 64))
     stream.append(data[:31, :, :, :])  # fill the buffer, but don't flush
 
     time.sleep(0.5)  # allow some time for the stream to process
@@ -1384,9 +1463,13 @@ def test_get_current_memory_usage(
     assert usage == 2 * frame_buffer_size
 
     # add some data to the stream
-    data = np.random.randint(0, 2 ** 16 - 1, (32, 3, 48, 64))
-    stream.append(data[:31, :, :, :], key="array1")  # fill the buffer, but don't flush
-    stream.append(data[:31, :, :, :], key="array2")  # fill the buffer, but don't flush
+    data = np.random.randint(0, 2**16 - 1, (32, 3, 48, 64))
+    stream.append(
+        data[:31, :, :, :], key="array1"
+    )  # fill the buffer, but don't flush
+    stream.append(
+        data[:31, :, :, :], key="array2"
+    )  # fill the buffer, but don't flush
 
     time.sleep(0.5)  # allow some time for the stream to process
 
@@ -1394,14 +1477,20 @@ def test_get_current_memory_usage(
     assert usage == 2 * frame_buffer_size + array1_usage + array2_usage
 
     # add the last frame to induce a flush
-    stream.append(data[31:, :, :, :], key="array1")  # this should flush the data in array1
+    stream.append(
+        data[31:, :, :, :], key="array1"
+    )  # this should flush the data in array1
 
     time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
-    assert usage == 2 * frame_buffer_size + array2_usage  # the first array should be cleared out, but the second one is still in memory
+    assert (
+        usage == 2 * frame_buffer_size + array2_usage
+    )  # the first array should be cleared out, but the second one is still in memory
 
-    stream.append(data[31:, :, :, :], key="array2")  # this should flush the data in array2
+    stream.append(
+        data[31:, :, :, :], key="array2"
+    )  # this should flush the data in array2
 
     time.sleep(0.75)  # wait for data to flush
 
@@ -1420,36 +1509,55 @@ def test_get_current_memory_usage(
     assert usage == 3 * frame_buffer_size
 
     # add some data to the stream
-    data = np.random.randint(0, 2 ** 16 - 1, (32, 3, 48, 64))
-    stream.append(data[:31, :, :, :], key="array1")  # fill the buffer, but don't flush
-    stream.append(data[:31, :, :, :], key="array2")  # fill the buffer, but don't flush
-    stream.append(data[:31, :, :, :], key="array3")  # fill the buffer, but don't flush
+    data = np.random.randint(0, 2**16 - 1, (32, 3, 48, 64))
+    stream.append(
+        data[:31, :, :, :], key="array1"
+    )  # fill the buffer, but don't flush
+    stream.append(
+        data[:31, :, :, :], key="array2"
+    )  # fill the buffer, but don't flush
+    stream.append(
+        data[:31, :, :, :], key="array3"
+    )  # fill the buffer, but don't flush
 
     time.sleep(0.5)  # allow some time for the stream to process
 
     usage = stream.get_current_memory_usage()
-    assert usage == 3 * frame_buffer_size + array1_usage + array2_usage + array3_usage
+    assert (
+        usage
+        == 3 * frame_buffer_size + array1_usage + array2_usage + array3_usage
+    )
 
     # add the last frame to induce a flush
-    stream.append(data[31:, :, :, :], key="array1")  # this should flush the data in array1
+    stream.append(
+        data[31:, :, :, :], key="array1"
+    )  # this should flush the data in array1
 
     time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
-    assert usage == 3 * frame_buffer_size + array2_usage + array3_usage # the first array should be cleared out, but the second and third are still in memory
+    assert (
+        usage == 3 * frame_buffer_size + array2_usage + array3_usage
+    )  # the first array should be cleared out, but the second and third are still in memory
 
-    stream.append(data[31:, :, :, :], key="array2")  # this should flush the data in array2
-
-    time.sleep(0.75)  # wait for data to flush
-
-    usage = stream.get_current_memory_usage()
-    assert usage == 3 * frame_buffer_size + array3_usage  # array3 is still in memory
-
-    stream.append(data[31:, :, :, :], key="array3")  # this should flush some of the data in array3
+    stream.append(
+        data[31:, :, :, :], key="array2"
+    )  # this should flush the data in array2
 
     time.sleep(0.75)  # wait for data to flush
 
     usage = stream.get_current_memory_usage()
-    assert usage == 3 * frame_buffer_size # everything should be cleared out
+    assert (
+        usage == 3 * frame_buffer_size + array3_usage
+    )  # array3 is still in memory
+
+    stream.append(
+        data[31:, :, :, :], key="array3"
+    )  # this should flush some of the data in array3
+
+    time.sleep(0.75)  # wait for data to flush
+
+    usage = stream.get_current_memory_usage()
+    assert usage == 3 * frame_buffer_size  # everything should be cleared out
 
     stream.close()
