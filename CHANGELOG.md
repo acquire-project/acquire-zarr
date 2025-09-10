@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New API methods for determining the maximum and current memory usage of a stream
+- Support for high-content screening (HCS) workflows with NGFF 0.5 metadata (#153)
 
 ## [0.5.2] - [2025-08-07](https://github.com/acquire-project/acquire-zarr/compare/v0.5.1...v0.5.2)
 
