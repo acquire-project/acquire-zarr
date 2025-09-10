@@ -329,6 +329,268 @@ The `overwrite` parameter controls whether existing data at the `store_path` is 
 When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
 When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.
 
+### High-content screening workflows
+
+The library supports high-content screening (HCS) datasets following the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
+HCS data is organized into plates, wells, and fields of view, with automatic generation of appropriate metadata.
+
+**Note:** HCS is *not* supported for Zarr V2.
+
+Here's an example of creating an HCS dataset in Python:
+
+```python
+import acquire_zarr as aqz
+import numpy as np
+
+# Configure field of view arrays
+fov1_array = aqz.ArraySettings(
+    output_key="fov1",  # Relative to the well: plate/A/1/fov1
+    data_type=np.uint16,
+    dimensions=[
+        aqz.Dimension(
+            name="t",
+            type=aqz.DimensionType.TIME,
+            array_size_px=0,
+            chunk_size_px=10,
+            shard_size_chunks=1
+        ),
+        aqz.Dimension(
+            name="c",
+            type=aqz.DimensionType.CHANNEL,
+            array_size_px=3,
+            chunk_size_px=1,
+            shard_size_chunks=1
+        ),
+        aqz.Dimension(
+            name="y",
+            type=aqz.DimensionType.SPACE,
+            array_size_px=512,
+            chunk_size_px=256,
+            shard_size_chunks=2
+        ),
+        aqz.Dimension(
+            name="x",
+            type=aqz.DimensionType.SPACE,
+            array_size_px=512,
+            chunk_size_px=256,
+            shard_size_chunks=2
+        )
+    ]
+)
+
+# Create acquisition metadata
+acquisition = aqz.Acquisition(
+    id=0,
+    name="Measurement_01",
+    start_time=1343731272000,  # Unix timestamp in milliseconds
+    end_time=1343737645000
+)
+
+# Configure wells with fields of view
+well_a1 = aqz.Well(
+    row_name="A",
+    column_name="1",
+    images=[
+        aqz.FieldOfView(
+            path="fov1",
+            acquisition_id=0,
+            array_settings=fov1_array
+        )
+    ]
+)
+
+# Configure the plate
+plate = aqz.Plate(
+    path="experiment_plate",
+    name="My HCS Experiment",
+    row_names=["A", "B", "C", "D", "E", "F", "G", "H"],
+    column_names=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+    wells=[well_a1],  # Add more wells as needed
+    acquisitions=[acquisition]
+)
+
+# Create stream with HCS configuration
+settings = aqz.StreamSettings(
+    store_path="hcs_experiment.zarr",
+    version=aqz.ZarrVersion.V3,
+    overwrite=True,
+    hcs_plates=[plate]
+)
+
+stream = aqz.ZarrStream(settings)
+
+# Write data to specific field of view
+frame_data = np.random.randint(0, 2**16, (3, 512, 512), dtype=np.uint16)
+stream.append(frame_data, key="experiment_plate/A/1/fov1")
+
+# Close when done
+stream.close()
+```
+
+You can also combine HCS plates with flat arrays in the same dataset:
+
+```python
+# Add a labels array alongside HCS data
+labels_array = aqz.ArraySettings(
+    output_key="experiment_plate/A/1/labels",
+    data_type=np.uint8,
+    dimensions=[
+        aqz.Dimension(
+            name="y",
+            type=aqz.DimensionType.SPACE,
+            array_size_px=512,
+            chunk_size_px=256,
+            shard_size_chunks=2
+        ),
+        aqz.Dimension(
+            name="x",
+            type=aqz.DimensionType.SPACE,
+            array_size_px=512,
+            chunk_size_px=256,
+            shard_size_chunks=2
+        )
+    ]
+)
+
+settings = aqz.StreamSettings(
+    store_path="mixed_experiment.zarr",
+    version=aqz.ZarrVersion.V3,
+    overwrite=True,
+    arrays=[labels_array],  # Flat arrays
+    hcs_plates=[plate]      # HCS structure
+)
+
+stream = aqz.ZarrStream(settings)
+
+# Write to both HCS and flat arrays
+stream.append(frame_data, key="experiment_plate/A/1/fov1")
+labels_data = np.zeros((512, 512), dtype=np.uint8)
+stream.append(labels_data, key="experiment_plate/A/1/labels")
+
+stream.close()
+```
+
+In C, the equivalent HCS workflow would look like this:
+
+```c
+#include "acquire.zarr.h"
+
+// Create array settings for field of view
+ZarrArraySettings fov_array = {
+    .output_key = "fov1",  // Relative to well: plate/A/1/fov1
+    .data_type = ZarrDataType_uint16,
+};
+
+ZarrArraySettings_create_dimension_array(&fov_array, 4);
+fov_array.dimensions[0] = (ZarrDimensionProperties){
+    .name = "t",
+    .type = ZarrDimensionType_Time,
+    .array_size_px = 0,
+    .chunk_size_px = 10,
+    .shard_size_chunks = 1,
+};
+fov_array.dimensions[1] = (ZarrDimensionProperties){
+    .name = "c", 
+    .type = ZarrDimensionType_Channel,
+    .array_size_px = 3,
+    .chunk_size_px = 1,
+    .shard_size_chunks = 1,
+};
+fov_array.dimensions[2] = (ZarrDimensionProperties){
+    .name = "y",
+    .type = ZarrDimensionType_Space,
+    .array_size_px = 512,
+    .chunk_size_px = 256,
+    .shard_size_chunks = 2,
+};
+fov_array.dimensions[3] = (ZarrDimensionProperties){
+    .name = "x",
+    .type = ZarrDimensionType_Space,
+    .array_size_px = 512,
+    .chunk_size_px = 256,
+    .shard_size_chunks = 2,
+};
+
+// Create well with field of view
+ZarrHCSWell well = {
+    .row_name = "A",
+    .column_name = "1",
+};
+
+ZarrHCSWell_create_image_array(&well, 1);
+well.images[0] = (ZarrHCSFieldOfView){
+    .path = "fov1",
+    .acquisition_id = 0,
+    .has_acquisition_id = true,
+    .array_settings = &fov_array,
+};
+
+// Create plate
+ZarrHCSPlate plate = {
+    .path = "experiment_plate",
+    .name = "My HCS Experiment",
+};
+
+// Set up row and column names
+ZarrHCSPlate_create_row_name_array(&plate, 8);
+const char* row_names[] = {"A", "B", "C", "D", "E", "F", "G", "H"};
+for (int i = 0; i < 8; i++) {
+    plate.row_names[i] = row_names[i];
+}
+
+ZarrHCSPlate_create_column_name_array(&plate, 12);
+const char* col_names[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"};
+for (int i = 0; i < 12; i++) {
+    plate.column_names[i] = col_names[i];
+}
+
+// Add wells and acquisitions
+ZarrHCSPlate_create_well_array(&plate, 1);
+plate.wells[0] = well;
+
+ZarrHCSPlate_create_acquisition_array(&plate, 1);
+plate.acquisitions[0] = (ZarrHCSAcquisition){
+    .id = 0,
+    .name = "Measurement_01",
+    .start_time = 1343731272000,
+    .has_start_time = true,
+    .end_time = 1343737645000,
+    .has_end_time = true,
+};
+
+// Create HCS settings
+ZarrHCSSettings hcs_settings = {
+    .plates = &plate,
+    .plate_count = 1,
+};
+
+// Configure stream
+ZarrStreamSettings settings = {
+    .store_path = "hcs_experiment.zarr",
+    .version = ZarrVersion_3,
+    .overwrite = true,
+    .arrays = NULL,
+    .array_count = 0,
+    .hcs_settings = &hcs_settings,
+};
+
+ZarrStream* stream = ZarrStream_create(&settings);
+
+// Write data
+uint16_t* frame_data = /* your image data */;
+size_t frame_size = 3 * 512 * 512 * sizeof(uint16_t);
+size_t bytes_written;
+
+ZarrStream_append(stream, frame_data, frame_size, &bytes_written, "experiment_plate/A/1/fov1");
+
+// Cleanup
+ZarrStream_destroy(stream);
+ZarrHCSPlate_destroy_well_array(&plate);
+ZarrArraySettings_destroy_dimension_array(&fov_array);
+```
+
+The resulting dataset will include proper OME-NGFF metadata for [plates](https://ngff.openmicroscopy.org/latest/#plate-md) and [wells](https://ngff.openmicroscopy.org/latest/#well-md).
+
 ### S3
 
 The library supports writing directly to S3-compatible storage.
