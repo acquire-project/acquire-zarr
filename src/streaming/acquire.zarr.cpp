@@ -471,20 +471,17 @@ extern "C"
             return;
         }
 
-        if (settings->plates == nullptr) {
-            settings->plate_count = 0;
-            return;
+        if (settings->plates != nullptr) {
+            // destroy well and acquisition arrays for each plate
+            for (auto i = 0; i < settings->plate_count; ++i) {
+                ZarrHCSPlate_destroy_well_array(settings->plates + i);
+                ZarrHCSPlate_destroy_acquisition_array(settings->plates + i);
+                ZarrHCSPlate_destroy_row_name_array(settings->plates + i);
+                ZarrHCSPlate_destroy_column_name_array(settings->plates + i);
+            }
+            delete[] settings->plates;
+            settings->plates = nullptr;
         }
-
-        // destroy well and acquisition arrays for each plate
-        for (auto i = 0; i < settings->plate_count; ++i) {
-            ZarrHCSPlate_destroy_well_array(settings->plates + i);
-            ZarrHCSPlate_destroy_acquisition_array(settings->plates + i);
-            ZarrHCSPlate_destroy_row_name_array(settings->plates + i);
-            ZarrHCSPlate_destroy_column_name_array(settings->plates + i);
-        }
-        delete[] settings->plates;
-        settings->plates = nullptr;
         settings->plate_count = 0;
     }
 
