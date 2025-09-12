@@ -3,6 +3,7 @@
 
 #include <blosc.h>
 
+#include <regex>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -86,7 +87,7 @@ uint32_t
 zarr::chunks_along_dimension(const ZarrDimension& dimension)
 {
     return parts_along_dimension(dimension.array_size_px,
-                                  dimension.chunk_size_px);
+                                 dimension.chunk_size_px);
 }
 
 uint32_t
@@ -132,4 +133,30 @@ zarr::compress_in_place(ByteVector& data,
     data.swap(compressed_data);
 
     return true;
+}
+
+std::string
+zarr::regularize_key(const char* key)
+{
+    if (key == nullptr) {
+        return "";
+    }
+
+    return regularize_key(std::string_view{ key });
+}
+
+std::string
+zarr::regularize_key(const std::string_view key)
+{
+    std::string regularized_key{ key };
+
+    // replace leading and trailing whitespace and/or slashes
+    regularized_key = std::regex_replace(
+      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
+
+    // replace multiple consecutive slashes with single slashes
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
+
+    return regularized_key;
 }
