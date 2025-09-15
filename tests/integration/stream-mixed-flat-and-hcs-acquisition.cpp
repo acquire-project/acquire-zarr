@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -250,6 +251,37 @@ make_mixed_stream()
         .array_count = 1,
         .hcs_settings = &hcs_settings,
     };
+
+    size_t n_arrays = ZarrStreamSettings_get_array_path_count(&settings);
+    EXPECT(n_arrays == 4,
+           "Expected 4 arrays in the stream settings, got ",
+           n_arrays);
+    char** array_paths;
+    if (auto code = ZarrStreamSettings_get_array_paths(
+          &settings, &array_paths, &n_arrays);
+        code != ZarrStatusCode_Success) {
+        std::string error = "Failed to get array paths: " +
+                            std::string(Zarr_get_status_message(code));
+        throw std::runtime_error(error);
+        }
+
+    EXPECT(n_arrays == 4,
+           "Expected 4 arrays in the stream settings, got ",
+           n_arrays);
+
+    const std::unordered_set<std::string> expected_paths = {
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/C/5/labels",
+        "test_plate/D/7/fov1",
+    };
+
+    for (size_t i = 0; i < n_arrays; ++i) {
+        std::string path(array_paths[i]);
+        EXPECT(expected_paths.contains(path),
+               "Unexpected array path: ",
+               path);
+    }
 
     ZarrStream* stream = ZarrStream_create(&settings);
 

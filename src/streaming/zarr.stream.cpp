@@ -1068,10 +1068,19 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     std::vector<std::string> hcs_array_keys;
     if (settings->hcs_settings) {
         const auto& hcs = settings->hcs_settings;
+        if (hcs->plates == nullptr) {
+            error_ = "Null pointer: plates in HCS settings";
+            return false;
+        }
+
         for (auto i = 0; i < hcs->plate_count; ++i) {
-            EXPECT(
-              hcs->plates + i != nullptr, "Null pointer: plate at index ", i);
             const auto& plate = hcs->plates[i];
+            if (plate.wells == nullptr) {
+                error_ =
+                  "Null pointer: wells in plate at index " + std::to_string(i);
+                return false;
+            }
+
             const std::string plate_path = zarr::regularize_key(plate.path);
             if (!plate_path.empty() && !is_valid_zarr_key(plate_path, error_)) {
                 error_ = "Invalid plate path: '" + plate_path + "': " + error_;
@@ -1081,12 +1090,12 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
             const std::string plate_name(plate.name);
 
             for (auto j = 0; j < plate.well_count; ++j) {
-                if (plate.wells + j == nullptr) {
-                    error_ = "Null pointer: well at index " +
+                const auto& well = plate.wells[j];
+                if (well.images == nullptr) {
+                    error_ = "Null pointer: images in well at index " +
                              std::to_string(j) + " of plate " + plate_name;
                     return false;
                 }
-                const auto& well = plate.wells[j];
 
                 const std::string row_name(well.row_name);
                 if (!is_valid_zarr_key(row_name, error_)) {
@@ -1105,12 +1114,6 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
                 }
 
                 for (auto k = 0; k < well.image_count; ++k) {
-                    if (well.images + k == nullptr) {
-                        error_ = "Null pointer: image at index " +
-                                 std::to_string(k) + " of well " +
-                                 std::to_string(j) + " of plate " + plate_name;
-                        return false;
-                    }
                     const auto& field = well.images[k];
 
                     if (field.array_settings == nullptr) {

@@ -95,6 +95,32 @@ extern "C"
       size_t* usage);
 
     /**
+     * @brief Get the number of array paths configured in the Zarr stream
+     * settings.
+     * @param settings The Zarr stream settings struct.
+     * @return The number of array paths configured in the settings.
+     */
+    size_t ZarrStreamSettings_get_array_path_count(
+      const ZarrStreamSettings* settings);
+
+    /**
+     * @brief Get the array paths configured in the Zarr stream settings.
+     * The caller is responsible for freeing the memory allocated for each path
+     * in the array of paths.
+     * @param settings  The Zarr stream settings struct.
+     * @param[in, out] paths Pointer to an array of strings to be allocated and
+     * filled with the array paths. The caller is responsible for freeing the
+     * memory allocated for each path in the array.
+     * @param path_count Pointer to a size_t to be filled with the number of
+     * paths allocated.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_get_array_paths(
+      const ZarrStreamSettings* settings,
+      char*** paths,
+      size_t* path_count);
+
+    /**
      * @brief Allocate memory for the dimension array in the Zarr array settings
      * struct.
      * @param[in, out] settings The Zarr array settings struct.
