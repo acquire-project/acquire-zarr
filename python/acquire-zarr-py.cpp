@@ -408,10 +408,24 @@ class PyZarrS3Settings
                bucket_name_ + "', region=" + region + ")";
     }
 
+    ZarrS3Settings* settings()
+    {
+        s3_settings_.endpoint = endpoint_.c_str();
+        s3_settings_.bucket_name = bucket_name_.c_str();
+        if (region_) {
+            s3_settings_.region = region_->c_str();
+        } else {
+            s3_settings_.region = nullptr;
+        }
+        return &s3_settings_;
+    }
+
   private:
     std::string endpoint_;
     std::string bucket_name_;
     std::optional<std::string> region_;
+
+    ZarrS3Settings s3_settings_{};
 };
 
 class PyZarrCompressionSettings
@@ -831,7 +845,11 @@ class PyZarrStreamSettings
 {
   public:
     PyZarrStreamSettings() = default;
-    ~PyZarrStreamSettings() = default;
+    ~PyZarrStreamSettings()
+    {
+        ZarrStreamSettings_destroy_arrays(&settings_);
+        ZarrHCSSettings_destroy_plate_array(&hcs_settings_);
+    };
 
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
@@ -868,55 +886,104 @@ class PyZarrStreamSettings
         plates_ = plates;
     }
 
-    size_t get_maximum_memory_usage() const
+    ZarrStreamSettings* to_settings() const
     {
-        ZarrStreamSettings settings{ 0 };
-        if (ZarrStreamSettings_create_arrays(&settings, arrays_.size()) !=
-            ZarrStatusCode_Success) {
-            PyErr_SetString(PyExc_RuntimeError,
-                            "Failed to create Zarr stream settings.");
-            throw py::error_already_set();
+        settings_.store_path = store_path_.c_str();
+        settings_.version = version_;
+        settings_.max_threads = max_threads_;
+        settings_.overwrite = static_cast<int>(overwrite_);
+
+        if (s3_settings_) {
+            settings_.s3_settings = s3_settings_->settings();
         }
 
-        for (auto i = 0; i < arrays_.size(); ++i) {
-            auto& array_settings = settings.arrays[i];
-            const auto& dims = arrays_[i].dimensions();
-            ZarrArraySettings_create_dimension_array(&array_settings,
-                                                     dims.size());
-            for (auto j = 0; j < dims.size(); ++j) {
-                const auto& dim = dims[j];
-                auto& array_dim = array_settings.dimensions[j];
+        // clear out old arrays
+        ZarrStreamSettings_destroy_arrays(&settings_);
 
-                // dimension sizes are really all that matters for memory usage
-                array_dim.array_size_px = dim.array_size_px();
-                array_dim.chunk_size_px = dim.chunk_size_px();
-                array_dim.shard_size_chunks = dim.shard_size_chunks();
+        // construct array lifetime props and set up arrays
+        const size_t n_arrays = arrays_.size();
+        array_lifetimes_.clear();
+        for (size_t i = 0; i < n_arrays; ++i) {
+            array_lifetimes_.push_back(arrays_[i].to_lifetime_props());
+        }
+
+        if (n_arrays > 0) {
+            if (auto code =
+                  ZarrStreamSettings_create_arrays(&settings_, n_arrays);
+                code != ZarrStatusCode_Success) {
+                const std::string err =
+                  "Failed to allocate memory for array settings: " +
+                  std::string(Zarr_get_status_message(code));
+                PyErr_SetString(PyExc_RuntimeError, err.c_str());
+                throw py::error_already_set();
             }
 
-            array_settings.data_type = arrays_[i].data_type();
+            for (size_t i = 0; i < n_arrays; ++i) {
+                settings_.arrays[i] = *array_lifetimes_[i].array_settings();
+            }
         }
 
+        // clear out old plates
+        ZarrHCSSettings_destroy_plate_array(&hcs_settings_);
+
+        // construct plate lifetime props and set up HCS settings
+        const size_t n_plates = plates_.size();
+        plate_lifetimes_.clear();
+        for (size_t i = 0; i < n_plates; ++i) {
+            plate_lifetimes_.push_back(plates_[i].to_lifetime_props());
+        }
+
+        if (n_plates > 0) {
+            if (auto code =
+                  ZarrHCSSettings_create_plate_array(&hcs_settings_, n_plates);
+                code != ZarrStatusCode_Success) {
+                const std::string err =
+                  "Failed to allocate memory for plate settings: " +
+                  std::string(Zarr_get_status_message(code));
+                PyErr_SetString(PyExc_RuntimeError, err.c_str());
+                throw py::error_already_set();
+            }
+
+            for (size_t i = 0; i < n_plates; ++i) {
+                hcs_settings_.plates[i] = *plate_lifetimes_[i].plate();
+            }
+            settings_.hcs_settings = &hcs_settings_;
+        } else {
+            settings_.hcs_settings = nullptr;
+        }
+
+        return &settings_;
+    }
+
+    size_t get_maximum_memory_usage() const
+    {
+        const ZarrStreamSettings* settings = to_settings();
+
         size_t usage;
-        if (ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) !=
+        if (ZarrStreamSettings_estimate_max_memory_usage(settings, &usage) !=
             ZarrStatusCode_Success) {
             PyErr_SetString(PyExc_RuntimeError,
                             "Failed to estimate maximum memory usage.");
             throw py::error_already_set();
         }
 
-        ZarrStreamSettings_destroy_arrays(&settings);
-
         return usage;
     }
 
   private:
     std::string store_path_;
-    std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
+    mutable std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
     ZarrVersion version_{ ZarrVersion_3 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
+
     std::vector<PyZarrArraySettings> arrays_;
     std::vector<PyZarrPlate> plates_;
+
+    mutable std::vector<ArrayLifetimeProps> array_lifetimes_;
+    mutable std::vector<PlateLifetimeProps> plate_lifetimes_;
+    mutable ZarrHCSSettings hcs_settings_{};
+    mutable ZarrStreamSettings settings_{};
 };
 
 class PyZarrStream
@@ -1121,87 +1188,13 @@ class PyZarrStream
             return;
         }
 
-        const size_t n_arrays = settings.arrays().size();
-        const size_t n_plates = settings.plates().size();
-
-        ZarrS3Settings s3_settings{ 0 };
-        ZarrHCSSettings hcs_settings{ 0 };
-
-        ZarrStreamSettings stream_settings{
-            .store_path = nullptr,
-            .s3_settings = nullptr,
-            .version = settings.version(),
-            .max_threads = settings.max_threads(),
-            .overwrite = settings.overwrite(),
-            .arrays = nullptr,
-            .array_count = 0,
-            .hcs_settings = n_plates > 0 ? &hcs_settings : nullptr,
-        };
-
-        std::vector<ZarrArraySettings> array_settings(n_arrays);
-        if (n_arrays > 0) {
-            stream_settings.arrays = array_settings.data();
-            stream_settings.array_count = n_arrays;
-        }
-
-        store_path_ = settings.store_path();
-        stream_settings.store_path = store_path_.c_str();
-
-        if (settings.s3().has_value()) {
-            const auto& s3 = settings.s3().value();
-            s3_endpoint_ = s3.endpoint();
-            s3_settings.endpoint = s3_endpoint_.c_str();
-
-            s3_bucket_name_ = s3.bucket_name();
-            s3_settings.bucket_name = s3_bucket_name_.c_str();
-
-            if (s3.region().has_value()) {
-                s3_region_ = s3.region().value();
-                s3_settings.region = s3_region_.c_str();
-            } else {
-                s3_settings.region = nullptr;
-            }
-
-            stream_settings.s3_settings = &s3_settings;
-        }
-
-        // set up arrays
-        std::vector<ArrayLifetimeProps> array_props_array(n_arrays);
-        for (size_t i = 0; i < n_arrays; ++i) {
-            const auto& array = settings.arrays()[i];
-            array_props_array[i] = array.to_lifetime_props();
-            stream_settings.arrays[i] = *array_props_array[i].array_settings();
-        }
-
-        // set up HCS settings
-        if (n_plates > 0) {
-            if (auto code =
-                  ZarrHCSSettings_create_plate_array(&hcs_settings, n_plates);
-                code != ZarrStatusCode_Success) {
-                const std::string error =
-                  "Failed to allocate memory for plates :" +
-                  std::string(Zarr_get_status_message(code));
-                PyErr_SetString(PyExc_RuntimeError, error.c_str());
-                throw py::error_already_set();
-            }
-        }
-
-        const auto& plates = settings.plates();
-        std::vector<PlateLifetimeProps> plate_props_array(n_plates);
-        for (size_t i = 0; i < n_plates; ++i) {
-            const auto& plate_in = plates[i];
-            plate_props_array[i] = plate_in.to_lifetime_props();
-            hcs_settings.plates[i] = *plate_props_array[i].plate();
-        }
-
+        auto* stream_settings = settings.to_settings();
         stream_ =
-          ZarrStreamPtr(ZarrStream_create(&stream_settings), ZarrStreamDeleter);
+          ZarrStreamPtr(ZarrStream_create(stream_settings), ZarrStreamDeleter);
         if (!stream_) {
             PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
             throw py::error_already_set();
         }
-
-        ZarrHCSSettings_destroy_plate_array(&hcs_settings);
     }
 };
 
