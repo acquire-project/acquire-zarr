@@ -15,6 +15,16 @@
 namespace py = pybind11;
 
 namespace {
+auto ZarrStreamSettingsDeleter = [](ZarrStreamSettings_s* settings) {
+    if (settings) {
+        ZarrStreamSettings_destroy_arrays(settings);
+        ZarrHCSSettings_destroy_plate_array(settings->hcs_settings);
+        delete settings->hcs_settings;
+        delete settings->s3_settings;
+        delete settings;
+    }
+};
+
 auto ZarrStreamDeleter = [](ZarrStream_s* stream) {
     if (stream) {
         ZarrStream_destroy(stream);
@@ -845,11 +855,7 @@ class PyZarrStreamSettings
 {
   public:
     PyZarrStreamSettings() = default;
-    ~PyZarrStreamSettings()
-    {
-        ZarrStreamSettings_destroy_arrays(&settings_);
-        ZarrHCSSettings_destroy_plate_array(&hcs_settings_);
-    };
+    ~PyZarrStreamSettings() = default;
 
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
@@ -888,68 +894,52 @@ class PyZarrStreamSettings
 
     ZarrStreamSettings* to_settings() const
     {
+        memset(&settings_, 0, sizeof(settings_));
+
         settings_.store_path = store_path_.c_str();
         settings_.version = version_;
         settings_.max_threads = max_threads_;
         settings_.overwrite = static_cast<int>(overwrite_);
 
         if (s3_settings_) {
-            settings_.s3_settings = s3_settings_->settings();
+            *(settings_.s3_settings) = *(s3_settings_->settings());
         }
-
-        // clear out old arrays
-        ZarrStreamSettings_destroy_arrays(&settings_);
 
         // construct array lifetime props and set up arrays
         const size_t n_arrays = arrays_.size();
+
         array_lifetimes_.clear();
         for (size_t i = 0; i < n_arrays; ++i) {
             array_lifetimes_.push_back(arrays_[i].to_lifetime_props());
         }
 
-        if (n_arrays > 0) {
-            if (auto code =
-                  ZarrStreamSettings_create_arrays(&settings_, n_arrays);
-                code != ZarrStatusCode_Success) {
-                const std::string err =
-                  "Failed to allocate memory for array settings: " +
-                  std::string(Zarr_get_status_message(code));
-                PyErr_SetString(PyExc_RuntimeError, err.c_str());
-                throw py::error_already_set();
-            }
-
-            for (size_t i = 0; i < n_arrays; ++i) {
-                settings_.arrays[i] = *array_lifetimes_[i].array_settings();
-            }
+        array_settings_.clear();
+        for (size_t i = 0; i < n_arrays; ++i) {
+            array_settings_.emplace_back(*array_lifetimes_[i].array_settings());
         }
 
-        // clear out old plates
-        ZarrHCSSettings_destroy_plate_array(&hcs_settings_);
+        if (n_arrays > 0) {
+            settings_.arrays = array_settings_.data();
+            settings_.array_count = n_arrays;
+        }
 
         // construct plate lifetime props and set up HCS settings
         const size_t n_plates = plates_.size();
+
         plate_lifetimes_.clear();
         for (size_t i = 0; i < n_plates; ++i) {
             plate_lifetimes_.push_back(plates_[i].to_lifetime_props());
         }
 
-        if (n_plates > 0) {
-            if (auto code =
-                  ZarrHCSSettings_create_plate_array(&hcs_settings_, n_plates);
-                code != ZarrStatusCode_Success) {
-                const std::string err =
-                  "Failed to allocate memory for plate settings: " +
-                  std::string(Zarr_get_status_message(code));
-                PyErr_SetString(PyExc_RuntimeError, err.c_str());
-                throw py::error_already_set();
-            }
+        plate_settings_.clear();
+        for (size_t i = 0; i < n_plates; ++i) {
+            plate_settings_.emplace_back(*plate_lifetimes_[i].plate());
+        }
 
-            for (size_t i = 0; i < n_plates; ++i) {
-                hcs_settings_.plates[i] = *plate_lifetimes_[i].plate();
-            }
+        if (n_plates > 0) {
+            hcs_settings_.plates = plate_settings_.data();
+            hcs_settings_.plate_count = n_plates;
             settings_.hcs_settings = &hcs_settings_;
-        } else {
-            settings_.hcs_settings = nullptr;
         }
 
         return &settings_;
@@ -970,6 +960,36 @@ class PyZarrStreamSettings
         return usage;
     }
 
+    std::vector<std::string> get_array_keys() const
+    {
+        auto* settings = to_settings();
+        std::vector<std::string> keys;
+
+        char** array_keys = nullptr;
+        size_t n_keys = 0;
+
+        if (auto code =
+              ZarrStreamSettings_get_array_keys(settings, &array_keys, &n_keys);
+            code != ZarrStatusCode_Success) {
+            const std::string err = "Failed to get array keys: " +
+                                    std::string(Zarr_get_status_message(code));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+
+        if (array_keys == nullptr || n_keys == 0) {
+            return keys;
+        }
+
+        for (size_t i = 0; i < n_keys; ++i) {
+            keys.push_back(array_keys[i]);
+            free(array_keys[i]);
+        }
+        free(array_keys);
+
+        return keys;
+    }
+
   private:
     std::string store_path_;
     mutable std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
@@ -982,8 +1002,12 @@ class PyZarrStreamSettings
 
     mutable std::vector<ArrayLifetimeProps> array_lifetimes_;
     mutable std::vector<PlateLifetimeProps> plate_lifetimes_;
-    mutable ZarrHCSSettings hcs_settings_{};
-    mutable ZarrStreamSettings settings_{};
+
+    mutable std::vector<ZarrArraySettings> array_settings_;
+    mutable std::vector<ZarrHCSPlate> plate_settings_;
+    mutable ZarrHCSSettings hcs_settings_;
+
+    mutable ZarrStreamSettings settings_;
 };
 
 class PyZarrStream
@@ -2068,7 +2092,18 @@ PYBIND11_MODULE(acquire_zarr, m)
                 PyErr_SetString(PyExc_TypeError, "Expected a list of Plates.");
                 throw py::error_already_set();
             }
-        });
+        })
+      .def(
+        "get_array_keys",
+        [](PyZarrStreamSettings& self) -> py::list {
+            auto keys = self.get_array_keys();
+            py::list key_list;
+            for (const auto& key : keys) {
+                key_list.append(key);
+            }
+            return key_list;
+        },
+        "Get a list of all array output keys defined in the stream settings.");
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())
