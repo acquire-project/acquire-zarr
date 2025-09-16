@@ -219,12 +219,12 @@ make_hcs_stream()
         .hcs_settings = &hcs_settings,
     };
 
-    size_t n_arrays = ZarrStreamSettings_get_array_path_count(&settings);
+    size_t n_arrays = ZarrStreamSettings_get_array_count(&settings);
     EXPECT(n_arrays == 3,
            "Expected 3 arrays in the stream settings, got ",
            n_arrays);
     char** array_paths;
-    if (auto code = ZarrStreamSettings_get_array_paths(
+    if (auto code = ZarrStreamSettings_get_array_keys(
           &settings, &array_paths, &n_arrays);
         code != ZarrStatusCode_Success) {
         std::string error = "Failed to get array paths: " +

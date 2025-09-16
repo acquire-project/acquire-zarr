@@ -95,16 +95,16 @@ extern "C"
       size_t* usage);
 
     /**
-     * @brief Get the number of array paths configured in the Zarr stream
-     * settings.
+     * @brief Get the number of arrays configured in the Zarr stream settings,
+     * including both flat arrays and arrays in HCS plates.
      * @param settings The Zarr stream settings struct.
      * @return The number of array paths configured in the settings.
      */
-    size_t ZarrStreamSettings_get_array_path_count(
+    size_t ZarrStreamSettings_get_array_count(
       const ZarrStreamSettings* settings);
 
     /**
-     * @brief Get the array paths configured in the Zarr stream settings.
+     * @brief Get the array keys configured in the Zarr stream settings.
      * The caller is responsible for freeing the memory allocated for each path
      * in the array of paths.
      * @param settings  The Zarr stream settings struct.
@@ -115,7 +115,7 @@ extern "C"
      * paths allocated.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode ZarrStreamSettings_get_array_paths(
+    ZarrStatusCode ZarrStreamSettings_get_array_keys(
       const ZarrStreamSettings* settings,
       char*** paths,
       size_t* path_count);

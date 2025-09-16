@@ -275,7 +275,7 @@ extern "C"
         return ZarrStatusCode_Success;
     }
 
-    size_t ZarrStreamSettings_get_array_path_count(
+    size_t ZarrStreamSettings_get_array_count(
       const ZarrStreamSettings* settings)
     {
         if (settings == nullptr) {
@@ -286,7 +286,7 @@ extern "C"
         return get_unique_array_paths(settings).size();
     }
 
-    ZarrStatusCode ZarrStreamSettings_get_array_paths(
+    ZarrStatusCode ZarrStreamSettings_get_array_keys(
       const ZarrStreamSettings* settings,
       char*** paths,
       size_t* path_count)
