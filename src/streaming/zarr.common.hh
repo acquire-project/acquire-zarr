@@ -77,11 +77,32 @@ shards_along_dimension(const ZarrDimension& dimension);
  * @brief Compress @p data in place using Blosc with the given parameters.
  * @param data The buffer to compress.
  * @param params Compression parameters.
- * @param type_size Size of the data type being compressed (e.g., 1 for uint8, 2 for uint16).
+ * @param type_size Size of the data type being compressed (e.g., 1 for uint8, 2
+ * for uint16).
  * @return true if compression was successful, false otherwise.
  */
 bool
 compress_in_place(ByteVector& data,
                   const BloscCompressionParams& params,
                   size_t type_size);
+
+/**
+ * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
+ * slashes.
+ * @param key The key to regularize.
+ * @return The regularized key. If the input key is null, empty, or consists
+ * only of slashes, an empty string is returned.
+ */
+std::string
+regularize_key(const char* key);
+
+/**
+ * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
+ * slashes.
+ * @param key The key to regularize.
+ * @return The regularized key. If the input key is empty or consists only of
+ * slashes, an empty string is returned.
+ */
+std::string
+regularize_key(std::string_view key);
 } // namespace zarr

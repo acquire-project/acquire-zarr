@@ -95,6 +95,32 @@ extern "C"
       size_t* usage);
 
     /**
+     * @brief Get the number of arrays configured in the Zarr stream settings,
+     * including both flat arrays and arrays in HCS plates.
+     * @param settings The Zarr stream settings struct.
+     * @return The number of array paths configured in the settings.
+     */
+    size_t ZarrStreamSettings_get_array_count(
+      const ZarrStreamSettings* settings);
+
+    /**
+     * @brief Get the @p i th array key configured in the Zarr stream settings.
+     * The caller is responsible for freeing the memory allocated for the path
+     * in the array of paths. C++ callers should use `free` to free the memory.
+     * @param settings  The Zarr stream settings struct.
+     * @param index The index .
+     * @param[out] key Pointer to a string to be allocated and filled with the
+     * @i th array key. The caller is responsible for freeing the memory
+     * allocated for @p key.
+     * @return ZarrStatusCode_Success on success, ZarrStatusCode_InvalidIndex
+     * if the index is out of range, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_get_array_key(
+      const ZarrStreamSettings* settings,
+      size_t index,
+      char** key);
+
+    /**
      * @brief Allocate memory for the dimension array in the Zarr array settings
      * struct.
      * @param[in, out] settings The Zarr array settings struct.

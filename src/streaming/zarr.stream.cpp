@@ -272,26 +272,6 @@ is_valid_zarr_key(const std::string& key, std::string& error)
     return true;
 }
 
-std::string
-regularize_key(const char* key)
-{
-    if (key == nullptr) {
-        return "";
-    }
-
-    std::string regularized_key{ key };
-
-    // replace leading and trailing whitespace and/or slashes
-    regularized_key = std::regex_replace(
-      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
-
-    // replace multiple consecutive slashes with single slashes
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
-
-    return regularized_key;
-}
-
 std::shared_ptr<zarr::ArrayConfig>
 make_array_config(const ZarrArraySettings* settings,
                   const std::string& store_root,
@@ -300,9 +280,9 @@ make_array_config(const ZarrArraySettings* settings,
                   std::string& error)
 {
     // remove leading/trailing slashes and whitespace
-    std::string key = regularize_key(settings->output_key);
+    std::string key = zarr::regularize_key(settings->output_key);
     key = parent_path + "/" + key;
-    key = regularize_key(key.c_str());
+    key = zarr::regularize_key(key);
 
     if (!key.empty() && !is_valid_zarr_key(key, error)) {
         error = "Invalid output key: '" + key + "': " + error;
@@ -381,9 +361,9 @@ validate_array_settings(const ZarrArraySettings* settings,
         return false;
     }
 
-    std::string key = regularize_key(settings->output_key);
+    std::string key = zarr::regularize_key(settings->output_key);
     key = parent_path + "/" + key;
-    key = regularize_key(key.c_str());
+    key = zarr::regularize_key(key);
 
     if (!key.empty() && !is_valid_zarr_key(key, error)) {
         error = "Invalid output key: '" + key + "': " + error;
@@ -530,7 +510,8 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
                 return false;
             }
 
-            const std::string row_name = regularize_key(plate.row_names[j]);
+            const std::string row_name =
+              zarr::regularize_key(plate.row_names[j]);
             if (!is_valid_zarr_key(row_name, error)) {
                 error = "Invalid row name in plate " + std::to_string(i) +
                         ": " + error;
@@ -563,7 +544,7 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
             }
 
             const std::string column_name =
-              regularize_key(plate.column_names[j]);
+              zarr::regularize_key(plate.column_names[j]);
             if (!is_valid_zarr_key(column_name, error)) {
                 error = "Invalid column name in plate " + std::to_string(i) +
                         ": " + error;
@@ -630,7 +611,7 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
                             std::to_string(i);
                     return false;
                 }
-                const std::string fov_path = regularize_key(fov.path);
+                const std::string fov_path = zarr::regularize_key(fov.path);
 
                 if (!is_valid_zarr_key(fov_path, error)) {
                     error = "Invalid path for image " + std::to_string(k) +
@@ -870,7 +851,7 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
     if (key_ == nullptr && output_arrays_.size() == 1) {
         key = output_arrays_.begin()->first;
     } else {
-        key = regularize_key(key_);
+        key = zarr::regularize_key(key_);
     }
 
     auto it = output_arrays_.find(key);
@@ -1087,11 +1068,20 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     std::vector<std::string> hcs_array_keys;
     if (settings->hcs_settings) {
         const auto& hcs = settings->hcs_settings;
+        if (hcs->plates == nullptr) {
+            error_ = "Null pointer: plates in HCS settings";
+            return false;
+        }
+
         for (auto i = 0; i < hcs->plate_count; ++i) {
-            EXPECT(
-              hcs->plates + i != nullptr, "Null pointer: plate at index ", i);
             const auto& plate = hcs->plates[i];
-            const std::string plate_path = regularize_key(plate.path);
+            if (plate.wells == nullptr) {
+                error_ =
+                  "Null pointer: wells in plate at index " + std::to_string(i);
+                return false;
+            }
+
+            const std::string plate_path = zarr::regularize_key(plate.path);
             if (!plate_path.empty() && !is_valid_zarr_key(plate_path, error_)) {
                 error_ = "Invalid plate path: '" + plate_path + "': " + error_;
                 return false;
@@ -1100,12 +1090,12 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
             const std::string plate_name(plate.name);
 
             for (auto j = 0; j < plate.well_count; ++j) {
-                if (plate.wells + j == nullptr) {
-                    error_ = "Null pointer: well at index " +
+                const auto& well = plate.wells[j];
+                if (well.images == nullptr) {
+                    error_ = "Null pointer: images in well at index " +
                              std::to_string(j) + " of plate " + plate_name;
                     return false;
                 }
-                const auto& well = plate.wells[j];
 
                 const std::string row_name(well.row_name);
                 if (!is_valid_zarr_key(row_name, error_)) {
@@ -1124,12 +1114,6 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
                 }
 
                 for (auto k = 0; k < well.image_count; ++k) {
-                    if (well.images + k == nullptr) {
-                        error_ = "Null pointer: image at index " +
-                                 std::to_string(k) + " of well " +
-                                 std::to_string(j) + " of plate " + plate_name;
-                        return false;
-                    }
                     const auto& field = well.images[k];
 
                     if (field.array_settings == nullptr) {
@@ -1229,16 +1213,16 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
     for (auto i = 0; i < hcs_settings->plate_count; ++i) {
         const auto& plate_in = hcs_settings->plates[i];
         const std::string plate_name(hcs_settings->plates[i].name);
-        const std::string plate_path = regularize_key(plate_in.path);
+        const std::string plate_path = zarr::regularize_key(plate_in.path);
 
         std::vector<std::string> row_names(plate_in.row_count);
         for (auto j = 0; j < plate_in.row_count; ++j) {
-            row_names[j] = regularize_key(plate_in.row_names[j]);
+            row_names[j] = zarr::regularize_key(plate_in.row_names[j]);
         }
 
         std::vector<std::string> column_names(plate_in.column_count);
         for (auto j = 0; j < plate_in.column_count; ++j) {
-            column_names[j] = regularize_key(plate_in.column_names[j]);
+            column_names[j] = zarr::regularize_key(plate_in.column_names[j]);
         }
 
         // collect acquisitions
@@ -1278,13 +1262,13 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
             const auto& well_in = plate_in.wells[j];
             auto& well_out = wells_out[j];
 
-            well_out.row_name = regularize_key(well_in.row_name);
-            well_out.column_name = regularize_key(well_in.column_name);
+            well_out.row_name = zarr::regularize_key(well_in.row_name);
+            well_out.column_name = zarr::regularize_key(well_in.column_name);
             well_out.images.resize(well_in.image_count);
 
             std::string well_key =
               plate_path + "/" + well_out.row_name + "/" + well_out.column_name;
-            well_key = regularize_key(well_key.c_str());
+            well_key = zarr::regularize_key(well_key);
 
             for (auto k = 0; k < well_in.image_count; ++k) {
                 const auto& image_in = well_in.images[k];
@@ -1293,7 +1277,7 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                 if (image_in.has_acquisition_id) {
                     image_out.acquisition_id = image_in.acquisition_id;
                 }
-                image_out.path = regularize_key(image_in.path);
+                image_out.path = zarr::regularize_key(image_in.path);
 
                 if (!configure_array_(image_in.array_settings, well_key)) {
                     set_error_("Failed to configure array for field of view " +
@@ -1316,7 +1300,7 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
         for (const auto& well : plate.wells()) {
             auto well_key =
               plate.path() + "/" + well.row_name + "/" + well.column_name;
-            well_key = regularize_key(well_key.c_str());
+            well_key = zarr::regularize_key(well_key);
 
             wells_.emplace(well_key, well);
         }
