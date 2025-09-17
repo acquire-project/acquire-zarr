@@ -256,18 +256,20 @@ make_mixed_stream()
     EXPECT(n_arrays == 4,
            "Expected 4 arrays in the stream settings, got ",
            n_arrays);
-    char** array_paths;
-    if (auto code = ZarrStreamSettings_get_array_keys(
-          &settings, &array_paths, &n_arrays);
-        code != ZarrStatusCode_Success) {
-        std::string error = "Failed to get array paths: " +
-                            std::string(Zarr_get_status_message(code));
-        throw std::runtime_error(error);
+
+    std::vector<std::string> array_keys;
+    char* c_key = nullptr;
+    for (size_t i = 0; i < n_arrays; ++i) {
+        if (auto code = ZarrStreamSettings_get_array_key(&settings, i, &c_key);
+            code != ZarrStatusCode_Success) {
+            std::string error = "Failed to get array paths: " +
+                                std::string(Zarr_get_status_message(code));
+            throw std::runtime_error(error);
         }
 
-    EXPECT(n_arrays == 4,
-           "Expected 4 arrays in the stream settings, got ",
-           n_arrays);
+        array_keys.emplace_back(c_key);
+        free(c_key);
+    }
 
     const std::unordered_set<std::string> expected_paths = {
         "test_plate/C/5/fov1",
@@ -277,10 +279,8 @@ make_mixed_stream()
     };
 
     for (size_t i = 0; i < n_arrays; ++i) {
-        std::string path(array_paths[i]);
-        EXPECT(expected_paths.contains(path),
-               "Unexpected array path: ",
-               path);
+        const auto& key(array_keys[i]);
+        EXPECT(expected_paths.contains(key), "Unexpected array path: ", key);
     }
 
     ZarrStream* stream = ZarrStream_create(&settings);

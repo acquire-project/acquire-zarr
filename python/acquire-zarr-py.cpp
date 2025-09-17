@@ -953,29 +953,28 @@ class PyZarrStreamSettings
     std::vector<std::string> get_array_keys() const
     {
         auto* settings = to_settings();
-        std::vector<std::string> keys;
+        size_t n_keys = ZarrStreamSettings_get_array_count(settings);
 
-        char** array_keys = nullptr;
-        size_t n_keys = 0;
-
-        if (auto code =
-              ZarrStreamSettings_get_array_keys(settings, &array_keys, &n_keys);
-            code != ZarrStatusCode_Success) {
-            const std::string err = "Failed to get array keys: " +
-                                    std::string(Zarr_get_status_message(code));
-            PyErr_SetString(PyExc_RuntimeError, err.c_str());
-            throw py::error_already_set();
+        if (n_keys == 0) {
+            return {};
         }
 
-        if (array_keys == nullptr || n_keys == 0) {
-            return keys;
-        }
+        std::vector<std::string> keys(n_keys);
+        char* c_key = nullptr;
 
         for (size_t i = 0; i < n_keys; ++i) {
-            keys.push_back(array_keys[i]);
-            free(array_keys[i]);
+            if (auto code =
+                  ZarrStreamSettings_get_array_key(settings, i, &c_key);
+                code != ZarrStatusCode_Success) {
+                const std::string err =
+                  "Failed to get array key: " +
+                  std::string(Zarr_get_status_message(code));
+                PyErr_SetString(PyExc_RuntimeError, err.c_str());
+                throw py::error_already_set();
+            }
+            keys[i] = c_key;
+            free(c_key);
         }
-        free(array_keys);
 
         return keys;
     }

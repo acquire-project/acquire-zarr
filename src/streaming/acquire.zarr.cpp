@@ -9,7 +9,7 @@
 #include <vector>
 
 std::vector<std::string>
-get_unique_array_paths(const ZarrStreamSettings* settings)
+get_unique_array_keys(const ZarrStreamSettings* settings)
 {
     // caller should have validated settings already
     std::unordered_set<std::string> unique_paths;
@@ -283,53 +283,36 @@ extern "C"
             return 0;
         }
 
-        return get_unique_array_paths(settings).size();
+        return get_unique_array_keys(settings).size();
     }
 
-    ZarrStatusCode ZarrStreamSettings_get_array_keys(
+    ZarrStatusCode ZarrStreamSettings_get_array_key(
       const ZarrStreamSettings* settings,
-      char*** paths,
-      size_t* path_count)
+      size_t index,
+      char** key)
     {
         EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
-        EXPECT_VALID_ARGUMENT(paths, "Null pointer: paths");
+        EXPECT_VALID_ARGUMENT(key, "Null pointer: key");
 
-        auto unique_paths = get_unique_array_paths(settings);
+        auto unique_keys = get_unique_array_keys(settings);
+        if (index > unique_keys.size()) {
+            LOG_ERROR(
+              "Index out of range: ", index, " >= ", unique_keys.size());
+            return ZarrStatusCode_InvalidIndex;
+        }
 
-        const size_t n_paths = unique_paths.size();
-        *path_count = n_paths;
+        *key = nullptr;
+        const std::string& k = unique_keys[index];
 
-        *paths = static_cast<char**>(malloc(n_paths * sizeof(char*)));
-        if (*paths == nullptr) {
-            LOG_ERROR("Failed to allocate memory for array paths");
+        // round up to next power of 2 for alignment
+        const size_t len = std::bit_ceil(k.length() + 1);
+        *key = static_cast<char*>(malloc(len * sizeof(char)));
+        if (*key == nullptr) {
+            LOG_ERROR("Failed to allocate memory for array path");
             return ZarrStatusCode_OutOfMemory;
         }
-
-        char** array_paths = *paths;
-        memset(array_paths, 0, n_paths * sizeof(char*));
-
-        for (size_t i = 0; i < n_paths; ++i) {
-            const std::string path = unique_paths[i];
-            const size_t len = std::bit_ceil(path.length() + 1);
-            array_paths[i] = static_cast<char*>(malloc(len * sizeof(char)));
-            if (array_paths[i] == nullptr) {
-                LOG_ERROR("Failed to allocate memory for array path ", i);
-                // free previously allocated paths
-                for (size_t j = 0; j < i; ++j) {
-                    free(array_paths[j]);
-                }
-                free(*paths);
-                *paths = nullptr;
-                *path_count = 0;
-
-                return ZarrStatusCode_OutOfMemory;
-            }
-
-            memset(array_paths[i], 0, len * sizeof(char));
-            memcpy(
-              array_paths[i], unique_paths[i].c_str(), unique_paths[i].size());
-        }
-
+        memset(*key, 0, len * sizeof(char));
+        memcpy(*key, k.c_str(), k.size());
         return ZarrStatusCode_Success;
     }
 
