@@ -15,16 +15,6 @@
 namespace py = pybind11;
 
 namespace {
-auto ZarrStreamSettingsDeleter = [](ZarrStreamSettings_s* settings) {
-    if (settings) {
-        ZarrStreamSettings_destroy_arrays(settings);
-        ZarrHCSSettings_destroy_plate_array(settings->hcs_settings);
-        delete settings->hcs_settings;
-        delete settings->s3_settings;
-        delete settings;
-    }
-};
-
 auto ZarrStreamDeleter = [](ZarrStream_s* stream) {
     if (stream) {
         ZarrStream_destroy(stream);
