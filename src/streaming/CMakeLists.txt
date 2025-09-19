@@ -1,8 +1,10 @@
 set(tgt acquire-zarr)
 
 if (WIN32)
+    set(PLATFORM_CPP win32/platform.cpp)
     set(PLATFORM_FILE_SINK_CPP win32/file.sink.impl.cpp)
 else ()
+    set(PLATFORM_CPP posix/platform.cpp)
     set(PLATFORM_FILE_SINK_CPP posix/file.sink.impl.cpp)
 endif ()
 
@@ -50,6 +52,8 @@ add_library(${tgt}
         v3.multiscale.array.cpp
         plate.hh
         plate.cpp
+        platform.hh
+        ${PLATFORM_CPP}
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 

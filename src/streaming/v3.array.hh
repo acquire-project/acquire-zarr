@@ -17,6 +17,8 @@ class V3Array final : public Array
 
     std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
+    size_t sector_size_; // cached system sector size
+
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 
@@ -26,6 +28,6 @@ class V3Array final : public Array
     void close_sinks_() override;
     bool should_rollover_() const override;
 
-    ByteVector consolidate_chunks_(uint32_t shard_index);
+    std::vector<std::vector<uint8_t>> collect_chunks_(uint32_t shard_index);
 };
 } // namespace zarr

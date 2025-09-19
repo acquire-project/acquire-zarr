@@ -19,10 +19,21 @@ class Sink
      * @brief Write data to the sink.
      * @param offset The offset in the sink to write to.
      * @param data The buffer to write to the sink.
-     * @param bytes_of_buf The number of bytes to write from @p buf.
-     * @return True if the write was successful, false otherwise.
+     * @return True if the data was written successfully, false otherwise.
      */
     [[nodiscard]] virtual bool write(size_t offset, ConstByteSpan data) = 0;
+
+    /**
+     * @brief Write multiple buffers to the sink.
+     * @param[in, out] offset The offset in the sink to write to. May be aligned
+     * to the system sector size, in which case the aligned offset is written
+     * back to this parameter.
+     * @param buffers The buffers to write to the sink.
+     * @return True if the data was written successfully, false otherwise.
+     */
+    [[nodiscard]] virtual bool write(
+      size_t& offset,
+      const std::vector<std::vector<uint8_t>>& buffers) = 0;
 
   protected:
     /**

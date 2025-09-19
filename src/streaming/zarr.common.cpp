@@ -86,7 +86,7 @@ uint32_t
 zarr::chunks_along_dimension(const ZarrDimension& dimension)
 {
     return parts_along_dimension(dimension.array_size_px,
-                                  dimension.chunk_size_px);
+                                 dimension.chunk_size_px);
 }
 
 uint32_t
@@ -132,4 +132,12 @@ zarr::compress_in_place(ByteVector& data,
     data.swap(compressed_data);
 
     return true;
+}
+
+size_t
+zarr::align_to(const size_t size, const size_t align)
+{
+    EXPECT(align > 0 && (align & (align - 1)) == 0,
+           "Alignment must be a power of two.");
+    return (size + align - 1) & ~(align - 1);
 }

@@ -16,6 +16,8 @@ class S3Sink : public Sink
            std::shared_ptr<S3ConnectionPool> connection_pool);
 
     bool write(size_t offset, ConstByteSpan data) override;
+    bool write(size_t& offset,
+               const std::vector<std::vector<uint8_t>>& buffers) override;
 
   protected:
     bool flush_() override;
