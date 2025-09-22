@@ -1,16 +1,40 @@
 #include "definitions.hh"
 #include "macros.hh"
-#include "platform.hh"
-
-#include <string_view>
 
 #include <cstring>
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
+std::string
+get_last_error_as_string()
+{
+    if (auto* err = strerror(errno); err != nullptr) {
+        return std::string(err);
+    }
+    return "";
+}
+
+size_t
+get_page_size()
+{
+    return sysconf(_SC_PAGESIZE);
+}
+
+size_t
+get_sector_size(const std::string& /*path*/)
+{
+    return 0; // no additional alignment needed on POSIX
+}
+
+size_t
+align_to_system_size(const size_t size, const size_t, const size_t)
+{
+    return size; // no additional alignment needed on POSIX
+}
+
 void
-init_handle(void** handle, const std::string& filename, size_t&, bool)
+init_handle(void** handle, const std::string& filename, bool)
 {
     EXPECT(handle, "Expected nonnull pointer file handle.");
     auto* fd = new int;
@@ -77,7 +101,7 @@ destroy_handle(void** handle)
 }
 
 void
-reopen_handle(void**, const std::string&, size_t&, bool)
+reopen_handle(void**, const std::string&, bool)
 {
     // no-op for POSIX implementation, as the same flags are used for sequential
     // or vectorized writes
@@ -85,7 +109,8 @@ reopen_handle(void**, const std::string&, size_t&, bool)
 
 bool
 write_vectors(void** handle,
-              size_t& offset,
+              size_t offset,
+              size_t /* page_size */,
               size_t /* sector_size */,
               const std::vector<std::vector<uint8_t>>& buffers)
 {
@@ -110,10 +135,15 @@ write_vectors(void** handle,
     const ssize_t bytes_written = pwritev(*fd,
                                           iovecs.data(),
                                           static_cast<int>(iovecs.size()),
-                                          static_cast<int>(offset));
+                                          static_cast<off_t>(offset));
 
     if (bytes_written != total_bytes) {
-        std::cerr << "Failed to write file: " << get_last_error_as_string();
+        LOG_ERROR("Failed to write file: ",
+                  get_last_error_as_string(),
+                  ". Expected bytes written: ",
+                  total_bytes,
+                  ", actual: ",
+                  bytes_written);
         return false;
     }
 

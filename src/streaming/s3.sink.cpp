@@ -107,6 +107,13 @@ zarr::S3Sink::write(size_t& offset,
     return true;
 }
 
+size_t
+zarr::S3Sink::align_to_system_size(size_t size)
+{
+    // S3 does not require alignment
+    return size;
+}
+
 bool
 zarr::S3Sink::put_object_()
 {

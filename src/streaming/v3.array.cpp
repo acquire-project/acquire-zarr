@@ -2,7 +2,6 @@
 
 #include "definitions.hh"
 #include "macros.hh"
-#include "platform.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
 
@@ -69,7 +68,6 @@ zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : Array(config, thread_pool, s3_connection_pool)
   , current_layer_{ 0 }
-  , sector_size_(get_system_alignment_size(config->store_root))
 {
     const auto& dims = config_->dimensions;
     const auto number_of_shards = dims->number_of_shards();
@@ -338,7 +336,7 @@ zarr::V3Array::compress_and_flush_data_()
 
                 promise->set_value();
 
-                all_successful.fetch_and(static_cast<char>(success));
+                all_successful.fetch_and(success);
                 return success;
             };
 
@@ -375,7 +373,6 @@ zarr::V3Array::compress_and_flush_data_()
 
         // align file offset to system si
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
-        *file_offset = align_to_system_size(*file_offset, sector_size_);
         auto* shard_table = shard_tables_.data() + shard_idx;
 
         auto promise = std::make_shared<std::promise<void>>();
@@ -401,13 +398,6 @@ zarr::V3Array::compress_and_flush_data_()
                 semaphore.acquire();
                 semaphore_acquired = true;
 
-                // collect chunks in shard
-                const auto shard_data = collect_chunks_(shard_idx);
-                size_t shard_size = 0;
-                for (const auto& chunk : shard_data) {
-                    shard_size += chunk.size();
-                }
-
                 if (data_sinks_.contains(data_path)) { // S3 sink, constructed
                     sink = std::move(data_sinks_[data_path]);
                     data_sinks_.erase(data_path);
@@ -424,11 +414,20 @@ zarr::V3Array::compress_and_flush_data_()
                     err = "Failed to create sink for " + data_path;
                     success = false;
                 } else {
+                    *file_offset = sink->align_to_system_size(*file_offset);
+
+                    // collect chunks in shard
+                    const auto shard_data = collect_chunks_(shard_idx);
+                    size_t shard_size = 0;
+                    for (const auto& chunk : shard_data) {
+                        shard_size += chunk.size();
+                    }
+
                     success = sink->write(*file_offset, shard_data);
                     if (!success) {
                         err = "Failed to write shard at path " + data_path;
                     } else {
-                        *file_offset += shard_size;
+                        *file_offset += sink->align_to_system_size(shard_size);
 
                         if (write_table) {
                             const auto* table_ptr =
@@ -479,7 +478,7 @@ zarr::V3Array::compress_and_flush_data_()
                 data_sinks_.emplace(data_path, std::move(sink));
             }
 
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
             promise->set_value();
 
             return success;

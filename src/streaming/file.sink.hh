@@ -14,6 +14,7 @@ class FileSink : public Sink
     bool write(size_t offset, ConstByteSpan data) override;
     bool write(size_t& offset,
                const std::vector<std::vector<uint8_t>>& buffers) override;
+    size_t align_to_system_size(size_t size) override;
 
   protected:
     bool flush_() override;
@@ -22,6 +23,7 @@ class FileSink : public Sink
     void* handle_;         // platform-specific file handle
     std::string filename_; // keep a copy of the filename for reopening
     bool vectorized_;      // whether to use vectorized writes
+    size_t page_size_;     // cached system page size
     size_t sector_size_;   // cached system sector size
     std::mutex mutex_;
 };

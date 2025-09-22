@@ -35,6 +35,14 @@ class Sink
       size_t& offset,
       const std::vector<std::vector<uint8_t>>& buffers) = 0;
 
+    /**
+     * @brief Align a size to the system sector size (or don't align if not
+     * appropriate.)
+     * @param size The size to align.
+     * @return The aligned size.
+     */
+    virtual size_t align_to_system_size(size_t size) = 0;
+
   protected:
     /**
      * @brief Flush any buffered data to the sink.

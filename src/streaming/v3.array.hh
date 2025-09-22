@@ -17,8 +17,6 @@ class V3Array final : public Array
 
     std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
-    size_t sector_size_; // cached system sector size
-
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 

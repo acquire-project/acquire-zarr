@@ -18,6 +18,7 @@ class S3Sink : public Sink
     bool write(size_t offset, ConstByteSpan data) override;
     bool write(size_t& offset,
                const std::vector<std::vector<uint8_t>>& buffers) override;
+    size_t align_to_system_size(size_t size) override;
 
   protected:
     bool flush_() override;

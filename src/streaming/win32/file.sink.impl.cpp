@@ -1,17 +1,88 @@
 #include "definitions.hh"
 #include "macros.hh"
-#include "platform.hh"
 
 #include <string_view>
 
 #include <windows.h>
 #include <zarr.common.hh>
 
+std::string
+get_last_error_as_string()
+{
+    const DWORD error_message_id = ::GetLastError();
+    if (error_message_id == 0) {
+        return ""; // No error message has been recorded
+    }
+
+    LPSTR message_buffer = nullptr;
+
+    constexpr auto format = FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                            FORMAT_MESSAGE_FROM_SYSTEM |
+                            FORMAT_MESSAGE_IGNORE_INSERTS;
+    constexpr auto lang_id = MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT);
+    const size_t size = FormatMessageA(format,
+                                       nullptr,
+                                       error_message_id,
+                                       lang_id,
+                                       reinterpret_cast<LPSTR>(&message_buffer),
+                                       0,
+                                       nullptr);
+
+    std::string message(message_buffer, size);
+
+    LocalFree(message_buffer);
+
+    return message;
+}
+
+size_t
+get_page_size()
+{
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    EXPECT(si.dwPageSize > 0, "Could not get system page size");
+
+    return si.dwPageSize;
+}
+
+size_t
+get_sector_size(const std::string& path)
+{
+    // get volume root path
+    char volume_path[MAX_PATH];
+    EXPECT(GetVolumePathNameA(path.c_str(), volume_path, MAX_PATH),
+           "Failed to get volume name for path '",
+           path,
+           "'");
+
+    DWORD sectors_per_cluster;
+    DWORD bytes_per_sector;
+    DWORD number_of_free_clusters;
+    DWORD total_number_of_clusters;
+
+    EXPECT(GetDiskFreeSpaceA(volume_path,
+                             &sectors_per_cluster,
+                             &bytes_per_sector,
+                             &number_of_free_clusters,
+                             &total_number_of_clusters),
+           "Failed to get disk free space for volume: " +
+             std::string(volume_path));
+
+    EXPECT(bytes_per_sector > 0, "Could not get sector size");
+
+    return bytes_per_sector;
+}
+
+size_t
+align_to_system_size(const size_t size,
+                     const size_t page_size,
+                     const size_t sector_size)
+{
+    return zarr::align_to(zarr::align_to(size, page_size), sector_size);
+}
+
 void
-init_handle(void** handle,
-            const std::string& filename,
-            size_t& sector_size,
-            bool vectorized)
+init_handle(void** handle, const std::string& filename, bool vectorized)
 {
     EXPECT(handle, "Expected nonnull pointer to file handle.");
     auto* fd = new HANDLE;
@@ -36,9 +107,6 @@ init_handle(void** handle,
                                  "': " + err);
     }
     *handle = reinterpret_cast<void*>(fd);
-
-    sector_size = get_system_alignment_size(filename);
-    EXPECT(sector_size > 0, "Could not get sector size for file: ", filename);
 }
 
 bool
@@ -106,18 +174,16 @@ destroy_handle(void** handle)
 }
 
 void
-reopen_handle(void** handle,
-              const std::string& filename,
-              size_t& sector_size,
-              bool vectorized)
+reopen_handle(void** handle, const std::string& filename, bool vectorized)
 {
     destroy_handle(handle);
-    init_handle(handle, filename, sector_size, vectorized);
+    init_handle(handle, filename, vectorized);
 }
 
 bool
 write_vectors(void** handle,
-              size_t& offset,
+              size_t offset,
+              size_t page_size,
               size_t sector_size,
               const std::vector<std::vector<uint8_t>>& buffers)
 {
@@ -133,17 +199,16 @@ write_vectors(void** handle,
     }
 
     const size_t offset_aligned = zarr::align_to(offset, get_page_size());
-    if (offset_aligned < offset) {
-        LOG_ERROR("Aligned offset is less than offset: ",
+    if (offset_aligned != offset) {
+        LOG_ERROR("Aligned offset is not equalt to offset: ",
                   offset_aligned,
-                  " < ",
+                  " != ",
                   offset);
         return false;
     }
-    offset = offset_aligned;
 
     const size_t nbytes_aligned =
-      align_to_system_size(total_bytes_to_write, sector_size);
+      align_to_system_size(total_bytes_to_write, page_size, sector_size);
     if (nbytes_aligned < total_bytes_to_write) {
         LOG_ERROR("Aligned size is less than total bytes to write: ",
                   nbytes_aligned,
