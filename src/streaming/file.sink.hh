@@ -12,7 +12,7 @@ class FileSink : public Sink
     ~FileSink() override;
 
     bool write(size_t offset, ConstByteSpan data) override;
-    bool write(size_t& offset,
+    bool write(size_t offset,
                const std::vector<std::vector<uint8_t>>& buffers) override;
     size_t align_to_system_size(size_t size) override;
 

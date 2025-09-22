@@ -75,7 +75,7 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
-zarr::FileSink::write(size_t& offset,
+zarr::FileSink::write(size_t offset,
                       const std::vector<std::vector<uint8_t>>& buffers)
 {
     if (buffers.empty()) {

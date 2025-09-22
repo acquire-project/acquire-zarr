@@ -32,7 +32,7 @@ class Sink
      * @return True if the data was written successfully, false otherwise.
      */
     [[nodiscard]] virtual bool write(
-      size_t& offset,
+      size_t offset,
       const std::vector<std::vector<uint8_t>>& buffers) = 0;
 
     /**

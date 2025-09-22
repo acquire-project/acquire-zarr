@@ -90,7 +90,7 @@ zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
-zarr::S3Sink::write(size_t& offset,
+zarr::S3Sink::write(size_t offset,
                     const std::vector<std::vector<uint8_t>>& buffers)
 {
     if (buffers.empty()) {
