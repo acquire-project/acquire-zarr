@@ -250,10 +250,10 @@ class DownsamplingMethod:
     Method used to downsample frames.
 
     Attributes:
-      DECIMATE: Take the top left of each 4x4 block of pixels
-      MEAN: Take the mean value of each 4x4 block of pixels
-      MIN: Take the minimum value of each 4x4 block of pixels
-      MAX: Take the maximum value of each 4x4 block of pixels
+      DECIMATE: Take the top left of each 2x2 block of pixels
+      MEAN: Take the mean value of each 2x2 block of pixels
+      MIN: Take the minimum value of each 2x2 block of pixels
+      MAX: Take the maximum value of each 2x2 block of pixels
     """
 
     DECIMATE: ClassVar[
