@@ -20,6 +20,7 @@ class V3Array final : public Array
     std::vector<std::string> metadata_keys_() const override;
     bool make_metadata_() override;
 
+    bool close_impl_() override;
     std::string data_root_() const override;
     const DimensionPartsFun parts_along_dimension_() const override;
     bool compress_and_flush_data_() override;

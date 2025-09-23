@@ -256,6 +256,128 @@ zarr::V3Array::consolidate_chunks_(uint32_t shard_index)
     return std::move(shard_layer);
 }
 
+bool
+zarr::V3Array::close_impl_()
+{
+    if (current_layer_ == 0) {
+        return true;
+    }
+
+    const auto is_s3 = is_s3_array_();
+    if (!is_s3) {
+        const auto parent_paths = get_parent_paths(data_paths_);
+        CHECK(make_dirs(parent_paths, thread_pool_)); // no-op if they exist
+    }
+
+    const auto bucket_name = config_->bucket_name;
+    auto connection_pool = s3_connection_pool_;
+
+    // write the table
+    const auto& dims = config_->dimensions;
+    const auto n_shards = dims->number_of_shards();
+    std::vector<std::future<void>> futures;
+
+    std::atomic<char> all_successful = 1;
+    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
+      MAX_CONCURRENT_FILES);
+    for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
+        const std::string data_path = data_paths_[shard_idx];
+        auto* file_offset = shard_file_offsets_.data() + shard_idx;
+        auto* shard_table = shard_tables_.data() + shard_idx;
+
+        auto promise = std::make_shared<std::promise<void>>();
+        futures.emplace_back(promise->get_future());
+
+        auto job = [shard_idx,
+                    is_s3,
+                    data_path,
+                    shard_table,
+                    file_offset,
+                    bucket_name,
+                    connection_pool,
+                    promise,
+                    &semaphore,
+                    &all_successful,
+                    this](std::string& err) {
+            bool success = true;
+            std::unique_ptr<Sink> sink;
+            bool semaphore_acquired = false;
+
+            try {
+                semaphore.acquire();
+                semaphore_acquired = true;
+
+                if (data_sinks_.contains(data_path)) { // S3 sink, constructed
+                    sink = std::move(data_sinks_[data_path]);
+                    data_sinks_.erase(data_path);
+                }
+
+                if (!sink && is_s3) { // S3 sink, not yet constructed
+                    sink =
+                      make_s3_sink(*bucket_name, data_path, connection_pool);
+                } else if (!is_s3) { // file sink
+                    sink = make_file_sink(data_path);
+                }
+
+                if (sink == nullptr) {
+                    err = "Failed to create sink for " + data_path;
+                    success = false;
+                } else {
+                    const auto table_size =
+                      shard_table->size() * sizeof(uint64_t);
+                    std::vector<uint8_t> table(table_size + sizeof(uint32_t));
+
+                    // copy the table data
+                    memcpy(table.data(),
+                           shard_table->data(),
+                           table.size() - sizeof(uint32_t));
+                    const auto* table_ptr = table.data();
+
+                    // compute crc32 checksum of the table
+                    const uint32_t checksum =
+                      crc32c::Crc32c(table_ptr, table_size);
+                    memcpy(
+                      table.data() + table_size, &checksum, sizeof(uint32_t));
+
+                    if (!sink->write(*file_offset, table)) {
+                        err = "Failed to write table and checksum to shard " +
+                              std::to_string(shard_idx);
+                        success = false;
+                    }
+
+                    if (!is_s3 && !finalize_sink(std::move(sink))) {
+                        err = "Failed to finalize sink at path " + data_path;
+                        success = false;
+                    }
+                }
+            } catch (const std::exception& exc) {
+                err = "Failed to flush data: " + std::string(exc.what());
+                success = false;
+            }
+
+            // Cleanup and single point of promise resolution
+            if (semaphore_acquired) {
+                semaphore.release();
+            }
+
+            all_successful.fetch_and(static_cast<char>(success));
+            promise->set_value();
+
+            return success;
+        };
+
+        // one thread is reserved for processing the frame queue and runs the
+        // entire lifetime of the stream
+        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
+            if (std::string err; !job(err)) {
+                LOG_ERROR(err);
+            }
+        }
+    }
+
+    return all_successful;
+}
+
 std::string
 zarr::V3Array::data_root_() const
 {

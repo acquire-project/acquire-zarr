@@ -36,6 +36,7 @@ class Array : public ArrayBase
     bool is_closing_;
 
     [[nodiscard]] bool close_() override;
+    [[nodiscard]] virtual bool close_impl_() = 0;
 
     bool is_s3_array_() const;
     virtual std::string data_root_() const = 0;
