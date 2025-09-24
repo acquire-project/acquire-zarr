@@ -1,0 +1,62 @@
+name: Run benchmarks
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  benchmark:
+    name: Run benchmark on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "ubuntu-24.04-arm"
+          - "windows-latest"
+          - "macos-latest" # arm
+          - "macos-13" # x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.3"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          brew install libomp
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+
+      - name: Build and install Python bindings
+        run: python -m pip install ".[testing]" tensorstore rich click
+
+      - name: Run benchmark
+        run: python benchmarks/benchmark.py --output benchmark_${{ matrix.platform }}.json --nocompare
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-benchmark-results
+          path: benchmark_${{ matrix.platform }}.json
