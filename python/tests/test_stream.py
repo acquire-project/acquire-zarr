@@ -2017,3 +2017,35 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
     validate_plate_metadata(store_path / "test.zarr")
     validate_well_metadata(store_path / "test.zarr")
     check_arrays_exist_mixed(store_path / "test.zarr")
+
+
+def test_with_ragged_final_shard(store_path: Path):
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(name="t", array_size_px=0, chunk_size_px=1, shard_size_chunks=16, kind=DimensionType.TIME),
+                    Dimension(name="c", array_size_px=1, chunk_size_px=1, shard_size_chunks=1, kind=DimensionType.CHANNEL),
+                    Dimension(name="z", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
+                    Dimension(name="y", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
+                    Dimension(name="x", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
+                ],
+                data_type=np.uint8,
+            )
+        ]
+    )
+    stream = ZarrStream(settings)
+
+    assert stream is not None
+
+    # 17 timepoints, with 16 timepoints per shard
+    data = np.random.randint(0, 255, (17, 1, 125, 125, 125), dtype=np.uint8)
+    stream.append(data)
+    stream.close()
+
+    del stream
+
+    dataset = zarr.open(settings.store_path)
+
+    np.testing.assert_array_equal(data, dataset["0"])
