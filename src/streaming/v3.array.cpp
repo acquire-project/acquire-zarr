@@ -328,9 +328,7 @@ zarr::V3Array::close_impl_()
                     std::vector<uint8_t> table(table_size + sizeof(uint32_t));
 
                     // copy the table data
-                    memcpy(table.data(),
-                           shard_table->data(),
-                           table.size() - sizeof(uint32_t));
+                    memcpy(table.data(), shard_table->data(), table_size);
                     const auto* table_ptr = table.data();
 
                     // compute crc32 checksum of the table
@@ -553,29 +551,25 @@ zarr::V3Array::compress_and_flush_data_()
                         *file_offset += shard_data.size();
 
                         if (write_table) {
-                            const auto* table_ptr =
-                              reinterpret_cast<uint8_t*>(shard_table->data());
-                            const auto table_size =
+                            const size_t table_size =
                               shard_table->size() * sizeof(uint64_t);
+                            std::vector<uint8_t> table(
+                              table_size + sizeof(uint32_t), 0);
+
+                            memcpy(
+                              table.data(), shard_table->data(), table_size);
 
                             // compute crc32 checksum of the table
-                            const uint32_t checksum = crc32c::Crc32c(
-                              reinterpret_cast<const uint8_t*>(table_ptr),
-                              table_size);
-                            const auto* checksum_bytes =
-                              reinterpret_cast<const uint8_t*>(&checksum);
+                            const uint32_t checksum =
+                              crc32c::Crc32c(table.data(), table_size);
+                            memcpy(table.data() + table_size,
+                                   &checksum,
+                                   sizeof(uint32_t));
 
-                            if (!sink->write(*file_offset,
-                                             { table_ptr, table_size })) {
-                                err = "Failed to write table to shard " +
+                            if (!sink->write(*file_offset, table)) {
+                                err = "Failed to write table and checksum to "
+                                      "shard " +
                                       std::to_string(shard_idx);
-                                success = false;
-                            } else if (!sink->write(*file_offset + table_size,
-                                                    { checksum_bytes,
-                                                      sizeof(checksum) })) {
-                                err =
-                                  "Failed to write table checksum to shard " +
-                                  std::to_string(shard_idx);
                                 success = false;
                             }
                         }
