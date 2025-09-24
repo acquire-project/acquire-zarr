@@ -1913,6 +1913,11 @@ def test_pure_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
+    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1"}
+    actual_keys = set(settings.get_array_keys())
+    assert expected_keys == actual_keys
+
+
     stream = ZarrStream(settings)
     assert stream
 
@@ -1979,8 +1984,14 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
+    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1", "test_plate/C/5/labels"}
+    actual_keys = set(settings.get_array_keys())
+    assert expected_keys == actual_keys
+
     stream = ZarrStream(settings)
     assert stream
+
+    del settings
 
     # Write test data to each array
     # FOV1 in well C/5

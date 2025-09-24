@@ -3,7 +3,73 @@
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
+#include <bit>     // bit_ceil
 #include <cstdint> // uint32_t
+#include <unordered_set>
+#include <vector>
+
+std::vector<std::string>
+get_unique_array_keys(const ZarrStreamSettings* settings)
+{
+    // caller should have validated settings already
+    std::unordered_set<std::string> unique_paths;
+
+    size_t array_count = settings->array_count;
+
+    for (size_t i = 0; i < settings->array_count; ++i) {
+        unique_paths.emplace(
+          zarr::regularize_key(settings->arrays[i].output_key));
+    }
+
+    if (settings->hcs_settings) {
+        const auto& hcs = settings->hcs_settings;
+        EXPECT(hcs->plates != nullptr, "Null pointer: plates");
+
+        for (auto i = 0; i < hcs->plate_count; ++i) {
+            const auto& plate = hcs->plates[i];
+            EXPECT(plate.wells != nullptr,
+                   "Null pointer: wells in plate at index ",
+                   i);
+
+            const std::string plate_name(plate.name);
+            const auto plate_path = zarr::regularize_key(plate.path);
+
+            for (auto j = 0; j < plate.well_count; ++j) {
+                const auto& well = plate.wells[j];
+                EXPECT(well.images != nullptr,
+                       "Null pointer: images in well at index ",
+                       j,
+                       " of plate ",
+                       plate_name);
+
+                const auto row_name = zarr::regularize_key(well.row_name);
+                const auto col_name = zarr::regularize_key(well.column_name);
+
+                for (auto k = 0; k < well.image_count; ++k) {
+                    const auto& field = well.images[k];
+
+                    // array key here is relative to the plate/well/field,
+                    // so we need to account for that here
+                    unique_paths.emplace(plate_path + "/" + row_name + "/" +
+                                         col_name + "/" +
+                                         zarr::regularize_key(field.path));
+                    ++array_count;
+                }
+            }
+        }
+    }
+
+    // duplicate keys?
+    if (unique_paths.size() != array_count) {
+        LOG_WARNING("Duplicate array output keys found in settings. Expected ",
+                    array_count,
+                    " unique keys, but found ",
+                    unique_paths.size());
+    }
+
+    std::vector paths(unique_paths.begin(), unique_paths.end());
+    return paths;
+}
 
 extern "C"
 {
@@ -209,6 +275,47 @@ extern "C"
         return ZarrStatusCode_Success;
     }
 
+    size_t ZarrStreamSettings_get_array_count(
+      const ZarrStreamSettings* settings)
+    {
+        if (settings == nullptr) {
+            LOG_WARNING("Null pointer: settings");
+            return 0;
+        }
+
+        return get_unique_array_keys(settings).size();
+    }
+
+    ZarrStatusCode ZarrStreamSettings_get_array_key(
+      const ZarrStreamSettings* settings,
+      size_t index,
+      char** key)
+    {
+        EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
+        EXPECT_VALID_ARGUMENT(key, "Null pointer: key");
+
+        auto unique_keys = get_unique_array_keys(settings);
+        if (index > unique_keys.size()) {
+            LOG_ERROR(
+              "Index out of range: ", index, " >= ", unique_keys.size());
+            return ZarrStatusCode_InvalidIndex;
+        }
+
+        *key = nullptr;
+        const std::string& k = unique_keys[index];
+
+        // round up to next power of 2 for alignment
+        const size_t len = std::bit_ceil(k.length() + 1);
+        *key = static_cast<char*>(malloc(len * sizeof(char)));
+        if (*key == nullptr) {
+            LOG_ERROR("Failed to allocate memory for array path");
+            return ZarrStatusCode_OutOfMemory;
+        }
+        memset(*key, 0, len * sizeof(char));
+        memcpy(*key, k.c_str(), k.size());
+        return ZarrStatusCode_Success;
+    }
+
     ZarrStatusCode ZarrArraySettings_create_dimension_array(
       ZarrArraySettings* settings,
       size_t dimension_count)
@@ -406,10 +513,11 @@ extern "C"
     }
 
     ZarrStatusCode ZarrHCSPlate_create_column_name_array(ZarrHCSPlate* plate,
-                                                      size_t column_count)
+                                                         size_t column_count)
     {
         EXPECT_VALID_ARGUMENT(plate, "Null pointer: plate");
-        EXPECT_VALID_ARGUMENT(column_count > 0, "Invalid column count: ", column_count);
+        EXPECT_VALID_ARGUMENT(
+          column_count > 0, "Invalid column count: ", column_count);
 
         const char** column_names = nullptr;
 

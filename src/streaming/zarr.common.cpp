@@ -3,6 +3,7 @@
 
 #include <blosc.h>
 
+#include <regex>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -133,6 +134,33 @@ zarr::compress_in_place(ByteVector& data,
 
     return true;
 }
+
+std::string
+zarr::regularize_key(const char* key)
+{
+    if (key == nullptr) {
+        return "";
+    }
+
+    return regularize_key(std::string_view{ key });
+}
+
+std::string
+zarr::regularize_key(const std::string_view key)
+{
+    std::string regularized_key{ key };
+
+    // replace leading and trailing whitespace and/or slashes
+    regularized_key = std::regex_replace(
+      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
+
+    // replace multiple consecutive slashes with single slashes
+    regularized_key =
+      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
+
+    return regularized_key;
+}
+
 
 size_t
 zarr::align_to(const size_t size, const size_t align)

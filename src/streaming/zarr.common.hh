@@ -86,6 +86,26 @@ compress_in_place(ByteVector& data,
                   const BloscCompressionParams& params,
                   size_t type_size);
 
+/**
+ * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
+ * slashes.
+ * @param key The key to regularize.
+ * @return The regularized key. If the input key is null, empty, or consists
+ * only of slashes, an empty string is returned.
+ */
+std::string
+regularize_key(const char* key);
+
+/**
+ * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
+ * slashes.
+ * @param key The key to regularize.
+ * @return The regularized key. If the input key is empty or consists only of
+ * slashes, an empty string is returned.
+ */
+std::string
+regularize_key(std::string_view key);
+
 size_t
 align_to(size_t size, size_t align);
 } // namespace zarr

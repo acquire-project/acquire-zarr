@@ -401,6 +401,9 @@ class StreamSettings:
     def get_maximum_memory_usage(self) -> int:
         """Get the maximum memory usage of the stream in bytes."""
 
+    def get_array_keys(self) -> List[str]:
+        """Get the list of array keys configured in this stream."""
+
 class Well:
     """Well configuration for HCS plate layouts.
 
