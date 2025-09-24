@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(acquire-zarr VERSION 0.5.2)
+project(acquire-zarr VERSION 0.6.0)
 cmake_policy(SET CMP0057 NEW) # allows IN_LIST operator (for pybind11)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()

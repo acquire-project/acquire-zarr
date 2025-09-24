@@ -128,6 +128,12 @@ zarr::V2Array::make_metadata_()
     return true;
 }
 
+bool
+zarr::V2Array::close_impl_()
+{
+    return true; // no-op
+}
+
 std::string
 zarr::V2Array::data_root_() const
 {
@@ -165,7 +171,8 @@ zarr::V2Array::compress_and_flush_data_()
 
     std::atomic<char> all_successful = 1;
     std::vector<std::future<void>> futures;
-    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(MAX_CONCURRENT_FILES);
+    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
+      MAX_CONCURRENT_FILES);
 
     for (auto i = 0; i < n_chunks; ++i) {
         auto promise = std::make_shared<std::promise<void>>();
@@ -244,8 +251,7 @@ zarr::V2Array::compress_and_flush_data_()
         };
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 ||
-            !thread_pool_->push_job(job)) {
+        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
             std::string err;
             if (!job(err)) {
                 LOG_ERROR(err);

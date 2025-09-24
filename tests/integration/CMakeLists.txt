@@ -21,6 +21,7 @@ set(tests
         estimate-memory-usage
         stream-pure-hcs-acquisition
         stream-mixed-flat-and-hcs-acquisition
+        stream-with-ragged-final-shard
 )
 
 foreach (name ${tests})

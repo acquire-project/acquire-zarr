@@ -87,6 +87,8 @@ zarr::Array::close_()
     try {
         if (bytes_to_flush_ > 0) {
             CHECK(compress_and_flush_data_());
+        } else {
+            CHECK(close_impl_());
         }
         close_sinks_();
 
