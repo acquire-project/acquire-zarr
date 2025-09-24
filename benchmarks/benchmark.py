@@ -56,6 +56,20 @@ class CyclicArray:
             )
 
 
+def safe_print(text):
+    """Print text with fallback for Unicode encoding issues."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # Fallback to ASCII-safe alternatives
+        fallbacks = {
+            "✅": "[OK]",
+            "❌": "[ERROR]"
+        }
+        for unicode_char, fallback in fallbacks.items():
+            text = text.replace(unicode_char, fallback)
+        print(text)
+
 def run_tensorstore_test(data: CyclicArray, path: str, metadata: dict) -> Tuple[float, np.ndarray]:
     """Write data using TensorStore and print per-plane and total write times."""
     # Define a TensorStore spec for a Zarr v3 store.
@@ -204,7 +218,6 @@ def compare(
 
     print("\nRunning acquire-zarr test:")
     az_path = "acquire_zarr_test.zarr"
-    print("I'm saving to ", Path(az_path).absolute())
 
     # Pre-generate the data (timing excluded)
     data = CyclicArray(
@@ -233,7 +246,7 @@ def compare(
             ts = zarr.open(ts_path)
             data.compare_array(az)  # ensure acquire-zarr wrote the correct data
             data.compare_array(ts)  # ensure tensorstore wrote the correct data
-            print("✅\n")
+            safe_print("✅\n")
 
             metadata_match = ts.metadata == az.metadata
             print(f"Metadata matches: {metadata_match}")
@@ -245,7 +258,7 @@ def compare(
                 "metadata_match": metadata_match
             }
         except Exception as e:
-            print(f"❌ Comparison failed: {e}")
+            safe_print(f"❌ Comparison failed: {e}")
             comparison_result = {
                 "data_match": False,
                 "metadata_match": False,
@@ -261,9 +274,9 @@ def compare(
         print("\nCleaning up test data...", end="")
         shutil.rmtree(az_path)
         shutil.rmtree(ts_path)
-        print("✅")
+        safe_print("✅")
     except Exception:
-        print("❌ Failed to remove test data")
+        safe_print("❌ Failed to remove test data")
 
 
     data_size_gib = (2048 * 2048 * 2 * frame_count) / (1 << 30)
