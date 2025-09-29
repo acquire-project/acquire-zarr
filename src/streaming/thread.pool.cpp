@@ -4,11 +4,13 @@
 
 zarr::ThreadPool::ThreadPool(unsigned int n_threads, ErrorCallback&& err)
   : error_handler_{ std::move(err) }
+  , main_thread_id_(std::this_thread::get_id())
 {
     // hardware_concurrency() can return 0 if not computable
     const auto max_threads = std::max(std::thread::hardware_concurrency(), 1u);
 
-    // On multi-core systems, enforce minimum 2 threads: user requested + frame queue thread
+    // On multi-core systems, enforce minimum 2 threads: user requested + frame
+    // queue thread
     n_threads = max_threads == 1 ? 1 : std::clamp(n_threads, 2u, max_threads);
 
     for (auto i = 0; i < n_threads; ++i) {
@@ -32,7 +34,8 @@ bool
 zarr::ThreadPool::push_job(Task&& job)
 {
     std::unique_lock lock(jobs_mutex_);
-    if (!accepting_jobs) {
+    // only allow pushing jobs from the main thread
+    if (!accepting_jobs || std::this_thread::get_id() != main_thread_id_) {
         return false;
     }
 
@@ -92,6 +95,7 @@ zarr::ThreadPool::process_tasks_()
         if (auto job = pop_from_job_queue_(); job.has_value()) {
             lock.unlock();
             if (std::string err_msg; !job.value()(err_msg)) {
+                error_messages_.push_back(err_msg);
                 error_handler_(err_msg);
             }
         }
