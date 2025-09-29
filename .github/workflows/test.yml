@@ -19,7 +19,7 @@ jobs:
   test:
     name: Test on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
