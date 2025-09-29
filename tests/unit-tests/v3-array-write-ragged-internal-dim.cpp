@@ -130,8 +130,11 @@ main()
           5);
 
         {
-            auto writer =
-              std::make_unique<zarr::V3Array>(config, thread_pool, nullptr);
+            auto writer = std::make_unique<zarr::V3Array>(
+              config,
+              thread_pool,
+              std::make_shared<zarr::FileHandlePool>(),
+              nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));

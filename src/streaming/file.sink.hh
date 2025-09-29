@@ -1,5 +1,6 @@
 #pragma once
 
+#include "file.handle.hh"
 #include "sink.hh"
 
 #include <fstream>
@@ -9,7 +10,8 @@ namespace zarr {
 class FileSink : public Sink
 {
   public:
-    FileSink(std::string_view filename);
+    FileSink(std::string_view filename,
+             std::shared_ptr<FileHandlePool> file_handle_pool);
     ~FileSink() override;
 
     bool write(size_t offset, ConstByteSpan data) override;
@@ -18,8 +20,9 @@ class FileSink : public Sink
     bool flush_() override;
 
   private:
-    std::mutex mutex_;
+    std::shared_ptr<FileHandlePool> file_handle_pool_;
 
-    void* handle_;
+    std::string filename_;
+    void* flags_;
 };
 } // namespace zarr

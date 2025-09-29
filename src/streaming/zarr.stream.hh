@@ -4,6 +4,7 @@
 #include "array.dimensions.hh"
 #include "definitions.hh"
 #include "downsampler.hh"
+#include "file.handle.hh"
 #include "frame.queue.hh"
 #include "locked.buffer.hh"
 #include "multiscale.array.hh"
@@ -85,6 +86,7 @@ struct ZarrStream_s
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
 
     std::unique_ptr<zarr::Sink> custom_metadata_sink_;
 

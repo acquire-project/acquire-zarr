@@ -1,6 +1,5 @@
 #include "v3.array.hh"
 
-#include "definitions.hh"
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
@@ -10,7 +9,6 @@
 
 #include <algorithm> // std::fill
 #include <future>
-#include <semaphore>
 #include <stdexcept>
 
 using json = nlohmann::json;
@@ -65,8 +63,9 @@ shuffle_to_string(uint8_t shuffle)
 
 zarr::V3Array::V3Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<FileHandlePool> file_handle_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config, thread_pool, s3_connection_pool)
+  : Array(config, thread_pool, file_handle_pool, s3_connection_pool)
   , current_layer_{ 0 }
 {
     const auto& dims = config_->dimensions;
@@ -263,23 +262,13 @@ zarr::V3Array::close_impl_()
         return true;
     }
 
-    const auto is_s3 = is_s3_array_();
-    if (!is_s3) {
-        const auto parent_paths = get_parent_paths(data_paths_);
-        CHECK(make_dirs(parent_paths, thread_pool_)); // no-op if they exist
-    }
-
-    const auto bucket_name = config_->bucket_name;
-    auto connection_pool = s3_connection_pool_;
-
     // write the table
     const auto& dims = config_->dimensions;
     const auto n_shards = dims->number_of_shards();
     std::vector<std::future<void>> futures;
 
     std::atomic<char> all_successful = 1;
-    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
-      MAX_CONCURRENT_FILES);
+
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const std::string data_path = data_paths_[shard_idx];
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
@@ -289,34 +278,23 @@ zarr::V3Array::close_impl_()
         futures.emplace_back(promise->get_future());
 
         auto job = [shard_idx,
-                    is_s3,
                     data_path,
                     shard_table,
                     file_offset,
-                    bucket_name,
-                    connection_pool,
                     promise,
-                    &semaphore,
                     &all_successful,
                     this](std::string& err) {
             bool success = true;
-            std::unique_ptr<Sink> sink;
-            bool semaphore_acquired = false;
 
             try {
-                semaphore.acquire();
-                semaphore_acquired = true;
+                std::unique_ptr<Sink> sink;
 
-                if (data_sinks_.contains(data_path)) { // S3 sink, constructed
+                if (data_sinks_.contains(
+                      data_path)) { // sink already constructed
                     sink = std::move(data_sinks_[data_path]);
                     data_sinks_.erase(data_path);
-                }
-
-                if (!sink && is_s3) { // S3 sink, not yet constructed
-                    sink =
-                      make_s3_sink(*bucket_name, data_path, connection_pool);
-                } else if (!is_s3) { // file sink
-                    sink = make_file_sink(data_path);
+                } else {
+                    sink = make_data_sink_(data_path);
                 }
 
                 if (sink == nullptr) {
@@ -342,23 +320,13 @@ zarr::V3Array::close_impl_()
                               std::to_string(shard_idx);
                         success = false;
                     }
-
-                    if (!is_s3 && !finalize_sink(std::move(sink))) {
-                        err = "Failed to finalize sink at path " + data_path;
-                        success = false;
-                    }
                 }
             } catch (const std::exception& exc) {
                 err = "Failed to flush data: " + std::string(exc.what());
                 success = false;
             }
 
-            // Cleanup and single point of promise resolution
-            if (semaphore_acquired) {
-                semaphore.release();
-            }
-
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
             promise->set_value();
 
             return success;
@@ -495,8 +463,6 @@ zarr::V3Array::compress_and_flush_data_()
 
     // wait for the chunks in each shard to finish compressing, then defragment
     // and write the shard
-    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
-      MAX_CONCURRENT_FILES);
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const std::string data_path = data_paths_[shard_idx];
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
@@ -514,30 +480,20 @@ zarr::V3Array::compress_and_flush_data_()
                     bucket_name,
                     connection_pool,
                     promise,
-                    &semaphore,
                     &all_successful,
                     this](std::string& err) {
             bool success = true;
             std::unique_ptr<Sink> sink;
-            bool semaphore_acquired = false;
 
             try {
-                semaphore.acquire();
-                semaphore_acquired = true;
-
-                // defragment chunks in shard
+                // consolidate chunks in shard
                 const auto shard_data = consolidate_chunks_(shard_idx);
 
                 if (data_sinks_.contains(data_path)) { // S3 sink, constructed
                     sink = std::move(data_sinks_[data_path]);
                     data_sinks_.erase(data_path);
-                }
-
-                if (!sink && is_s3) { // S3 sink, not yet constructed
-                    sink =
-                      make_s3_sink(*bucket_name, data_path, connection_pool);
-                } else if (!is_s3) { // file sink
-                    sink = make_file_sink(data_path);
+                } else {
+                    sink = make_data_sink_(data_path);
                 }
 
                 if (sink == nullptr) {
@@ -573,12 +529,6 @@ zarr::V3Array::compress_and_flush_data_()
                                 success = false;
                             }
                         }
-
-                        if (!is_s3 && !finalize_sink(std::move(sink))) {
-                            err =
-                              "Failed to finalize sink at path " + data_path;
-                            success = false;
-                        }
                     }
                 }
             } catch (const std::exception& exc) {
@@ -586,16 +536,11 @@ zarr::V3Array::compress_and_flush_data_()
                 success = false;
             }
 
-            // Cleanup and single point of promise resolution
-            if (semaphore_acquired) {
-                semaphore.release();
-            }
-
-            if (is_s3 && sink) {
+            if (sink != nullptr) {
                 data_sinks_.emplace(data_path, std::move(sink));
             }
 
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
             promise->set_value();
 
             return success;

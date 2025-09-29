@@ -30,6 +30,7 @@ bucket_exists(std::string_view bucket_name,
 bool
 make_file_sinks(std::vector<std::string>& file_paths,
                 std::shared_ptr<zarr::ThreadPool> thread_pool,
+                std::shared_ptr<zarr::FileHandlePool> file_handle_pool,
                 std::vector<std::unique_ptr<zarr::Sink>>& sinks)
 {
     if (file_paths.empty()) {
@@ -56,27 +57,28 @@ make_file_sinks(std::vector<std::string>& file_paths,
         auto promise = std::make_shared<std::promise<void>>();
         futures.emplace_back(promise->get_future());
 
-        auto job = [filename,
-                    psink, promise, &all_successful](std::string& err) -> bool {
+        auto job =
+          [filename, file_handle_pool, psink, promise, &all_successful](
+            std::string& err) -> bool {
             bool success = false;
 
             try {
-                *psink = std::make_unique<zarr::FileSink>(filename);
+                *psink =
+                  std::make_unique<zarr::FileSink>(filename, file_handle_pool);
                 success = true;
             } catch (const std::exception& exc) {
                 err = "Failed to create file '" + filename + "': " + exc.what();
             }
 
             promise->set_value();
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
 
             return success;
         };
 
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
-        if (thread_pool->n_threads() == 1 ||
-            !thread_pool->push_job(job)) {
+        if (thread_pool->n_threads() == 1 || !thread_pool->push_job(job)) {
             std::string err;
             if (!job(err)) {
                 LOG_ERROR(err);
@@ -207,8 +209,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
     EXPECT(thread_pool, "Thread pool not provided.");
 
     std::atomic<char> all_successful = 1;
-    std::unordered_set<std::string> unique_paths(dir_paths.begin(),
-                                                 dir_paths.end());
+    const std::unordered_set unique_paths(dir_paths.begin(), dir_paths.end());
 
     std::vector<std::future<void>> futures;
 
@@ -216,7 +217,7 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
         auto promise = std::make_shared<std::promise<void>>();
         futures.emplace_back(promise->get_future());
 
-        auto job_impl = [path, promise, &all_successful](std::string& err) {
+        auto job = [path, promise, &all_successful](std::string& err) {
             bool success = true;
             try {
                 if (fs::is_directory(path) || path.empty()) {
@@ -232,20 +233,18 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
                     success = false;
                 }
             } catch (const std::exception& exc) {
-                err = "Failed to create directory '" + path +
-                      "': " + exc.what();
+                err =
+                  "Failed to create directory '" + path + "': " + exc.what();
                 success = false;
             }
 
             promise->set_value();
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
             return success;
         };
 
-        if (thread_pool->n_threads() == 1 ||
-            !thread_pool->push_job(job_impl)) {  // Copy, don't move
-            std::string err;
-            if (!job_impl(err)) {  // Use the original, not moved-from version
+        if (thread_pool->n_threads() == 1 || !thread_pool->push_job(job)) {
+            if (std::string err; !job(err)) {
                 LOG_ERROR(err);
             }
         }
@@ -256,11 +255,12 @@ zarr::make_dirs(const std::vector<std::string>& dir_paths,
         future.wait();
     }
 
-    return static_cast<bool>(all_successful);
+    return all_successful;
 }
 
 std::unique_ptr<zarr::Sink>
-zarr::make_file_sink(std::string_view file_path)
+zarr::make_file_sink(std::string_view file_path,
+                     std::shared_ptr<FileHandlePool> file_handle_pool)
 {
     if (file_path.starts_with("file://")) {
         file_path = file_path.substr(7);
@@ -283,7 +283,7 @@ zarr::make_file_sink(std::string_view file_path)
         }
     }
 
-    return std::make_unique<FileSink>(file_path);
+    return std::make_unique<FileSink>(file_path, file_handle_pool);
 }
 
 bool
@@ -291,6 +291,7 @@ zarr::make_data_file_sinks(std::string_view base_path,
                            const ArrayDimensions& dimensions,
                            const DimensionPartsFun& parts_along_dimension,
                            std::shared_ptr<ThreadPool> thread_pool,
+                           std::shared_ptr<FileHandlePool> file_handle_pool,
                            std::vector<std::unique_ptr<Sink>>& part_sinks)
 {
     if (base_path.starts_with("file://")) {
@@ -308,7 +309,7 @@ zarr::make_data_file_sinks(std::string_view base_path,
         return false;
     }
 
-    return make_file_sinks(paths, thread_pool, part_sinks);
+    return make_file_sinks(paths, thread_pool, file_handle_pool, part_sinks);
 }
 
 std::unique_ptr<zarr::Sink>

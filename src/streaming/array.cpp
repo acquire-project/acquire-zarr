@@ -9,8 +9,9 @@
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
+                   std::shared_ptr<FileHandlePool> file_handle_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, s3_connection_pool)
+  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
@@ -123,6 +124,27 @@ zarr::Array::make_data_paths_()
         data_paths_ = construct_data_paths(
           data_root_(), *config_->dimensions, parts_along_dimension_());
     }
+}
+
+std::unique_ptr<zarr::Sink>
+zarr::Array::make_data_sink_(std::string_view path)
+{
+    const auto is_s3 = is_s3_array_();
+
+    std::unique_ptr<Sink> sink;
+
+    // create parent directories if needed
+    if (is_s3) {
+        const auto bucket_name = *config_->bucket_name;
+        sink = make_s3_sink(bucket_name, path, s3_connection_pool_);
+    } else {
+        const auto parent_paths = get_parent_paths(data_paths_);
+        CHECK(make_dirs(parent_paths, thread_pool_));
+
+        sink = make_file_sink(path, file_handle_pool_);
+    }
+
+    return sink;
 }
 
 void

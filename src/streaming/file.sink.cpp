@@ -3,25 +3,31 @@
 
 #include <string_view>
 
-void
-init_handle(void**, std::string_view);
+void*
+make_flags();
 
 void
-destroy_handle(void**);
-bool
-seek_and_write(void**, size_t, ConstByteSpan);
+destroy_flags(void*);
 
 bool
-flush_file(void**);
+seek_and_write(void* handle, size_t offset, ConstByteSpan data);
 
-zarr::FileSink::FileSink(std::string_view filename)
+bool
+flush_file(void* handle);
+
+zarr::FileSink::FileSink(std::string_view filename,
+                         std::shared_ptr<FileHandlePool> file_handle_pool)
+  : file_handle_pool_(file_handle_pool)
+  , filename_(filename)
+  , flags_(make_flags())
 {
-    init_handle(&handle_, filename);
+    EXPECT(file_handle_pool_ != nullptr, "File handle pool not provided.");
 }
 
 zarr::FileSink::~FileSink()
 {
-    destroy_handle(&handle_);
+    destroy_flags(flags_);
+    flags_ = nullptr;
 }
 
 bool
@@ -31,11 +37,40 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
         return true;
     }
 
-    return seek_and_write(&handle_, offset, data);
+    auto handle = file_handle_pool_->get_handle(filename_, flags_);
+    if (handle == nullptr) {
+        LOG_ERROR("Failed to get file handle for ", filename_);
+        return false;
+    }
+
+    bool retval = false;
+    try {
+        retval = seek_and_write(handle->get(), offset, data);
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to write to file ", filename_, ": ", exc.what());
+    }
+
+    file_handle_pool_->return_handle(std::move(handle));
+
+    return retval;
 }
 
 bool
 zarr::FileSink::flush_()
 {
-    return flush_file(&handle_);
+    auto handle = file_handle_pool_->get_handle(filename_, flags_);
+    if (handle == nullptr) {
+        LOG_ERROR("Failed to get file handle for ", filename_);
+        return false;
+    }
+
+    bool retval = false;
+    try {
+        retval = flush_file(handle->get());
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Failed to flush file ", filename_, ": ", exc.what());
+    }
+    file_handle_pool_->return_handle(std::move(handle));
+
+    return retval;
 }

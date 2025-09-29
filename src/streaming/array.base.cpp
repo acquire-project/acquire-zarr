@@ -10,13 +10,17 @@
 
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
+                           std::shared_ptr<FileHandlePool> file_handle_pool,
                            std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : config_(config)
   , thread_pool_(thread_pool)
   , s3_connection_pool_(s3_connection_pool)
+  , file_handle_pool_(file_handle_pool)
 {
     CHECK(config_);      // required
     CHECK(thread_pool_); // required
+    EXPECT(s3_connection_pool_ != nullptr || file_handle_pool_ != nullptr,
+           "Either S3 connection pool or file handle pool must be provided.");
 }
 
 std::string
@@ -42,7 +46,7 @@ zarr::ArrayBase::make_metadata_sinks_()
             std::unique_ptr<Sink> sink =
               config_->bucket_name
                 ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
-                : make_file_sink(path);
+                : make_file_sink(path, file_handle_pool_);
 
             if (sink == nullptr) {
                 LOG_ERROR("Failed to create metadata sink for ", key);
@@ -96,8 +100,9 @@ zarr::ArrayBase::write_metadata_()
 }
 
 std::unique_ptr<zarr::ArrayBase>
-zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
+zarr::make_array(std::shared_ptr<ArrayConfig> config,
                  std::shared_ptr<ThreadPool> thread_pool,
+                 std::shared_ptr<FileHandlePool> file_handle_pool,
                  std::shared_ptr<S3ConnectionPool> s3_connection_pool,
                  ZarrVersion format)
 {
@@ -113,18 +118,18 @@ zarr::make_array(std::shared_ptr<zarr::ArrayConfig> config,
     if (multiscale) {
         if (format == ZarrVersion_2) {
             array = std::make_unique<V2MultiscaleArray>(
-              config, thread_pool, s3_connection_pool);
+              config, thread_pool, file_handle_pool, s3_connection_pool);
         } else {
             array = std::make_unique<V3MultiscaleArray>(
-              config, thread_pool, s3_connection_pool);
+              config, thread_pool, file_handle_pool, s3_connection_pool);
         }
     } else {
         if (format == ZarrVersion_2) {
             array = std::make_unique<V2Array>(
-              config, thread_pool, s3_connection_pool);
+              config, thread_pool, file_handle_pool, s3_connection_pool);
         } else {
             array = std::make_unique<V3Array>(
-              config, thread_pool, s3_connection_pool);
+              config, thread_pool, file_handle_pool, s3_connection_pool);
         }
     }
 
