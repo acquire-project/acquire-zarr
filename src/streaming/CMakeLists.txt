@@ -1,9 +1,9 @@
 set(tgt acquire-zarr)
 
 if (WIN32)
-    set(PLATFORM_FILE_SINK_CPP win32/file.sink.impl.cpp)
+    set(PLATFORM_CPP win32/platform.cpp)
 else ()
-    set(PLATFORM_FILE_SINK_CPP posix/file.sink.impl.cpp)
+    set(PLATFORM_CPP posix/platform.cpp)
 endif ()
 
 add_library(${tgt}
@@ -27,11 +27,13 @@ add_library(${tgt}
         thread.pool.cpp
         s3.connection.hh
         s3.connection.cpp
+        file.handle.hh
+        file.handle.cpp
         sink.hh
         sink.cpp
         file.sink.hh
         file.sink.cpp
-        ${PLATFORM_FILE_SINK_CPP}
+        ${PLATFORM_CPP}
         s3.sink.hh
         s3.sink.cpp
         array.base.hh
