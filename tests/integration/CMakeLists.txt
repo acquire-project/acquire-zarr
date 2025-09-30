@@ -22,6 +22,7 @@ set(tests
         stream-pure-hcs-acquisition
         stream-mixed-flat-and-hcs-acquisition
         stream-with-ragged-final-shard
+        profile
 )
 
 foreach (name ${tests})
