@@ -105,4 +105,7 @@ regularize_key(const char* key);
  */
 std::string
 regularize_key(std::string_view key);
+
+size_t
+align_to(size_t size, size_t align);
 } // namespace zarr

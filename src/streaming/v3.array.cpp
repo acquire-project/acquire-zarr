@@ -197,8 +197,8 @@ zarr::V3Array::make_metadata_()
     return true;
 }
 
-ByteVector
-zarr::V3Array::consolidate_chunks_(uint32_t shard_index)
+std::vector<std::vector<uint8_t>>
+zarr::V3Array::collect_chunks_(uint32_t shard_index)
 {
     const auto& dims = config_->dimensions;
     CHECK(shard_index < dims->number_of_shards());
@@ -232,27 +232,18 @@ zarr::V3Array::consolidate_chunks_(uint32_t shard_index)
         shard_size += last_chunk_size;
     }
 
-    std::vector<uint8_t> shard_layer(shard_size);
+    std::vector<std::vector<uint8_t>> chunks_to_write;
 
     const auto chunk_indices_this_layer =
       dims->chunk_indices_for_shard_layer(shard_index, current_layer_);
 
-    size_t offset = 0;
     for (const auto& idx : chunk_indices_this_layer) {
         // this clears the chunk data out of the LockedBuffer
         const auto chunk = chunk_buffers_[idx - chunk_offset].take();
-        std::copy(chunk.begin(), chunk.end(), shard_layer.begin() + offset);
-
-        offset += chunk.size();
+        chunks_to_write.emplace_back(std::move(chunk));
     }
 
-    EXPECT(offset == shard_size,
-           "Consolidated shard size does not match expected: ",
-           offset,
-           " != ",
-           shard_size);
-
-    return std::move(shard_layer);
+    return std::move(chunks_to_write);
 }
 
 bool
@@ -433,7 +424,7 @@ zarr::V3Array::compress_and_flush_data_()
 
                 promise->set_value();
 
-                all_successful.fetch_and(static_cast<char>(success));
+                all_successful.fetch_and(success);
                 return success;
             };
 
@@ -465,6 +456,8 @@ zarr::V3Array::compress_and_flush_data_()
     // and write the shard
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const std::string data_path = data_paths_[shard_idx];
+
+        // align file offset to system si
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
         auto* shard_table = shard_tables_.data() + shard_idx;
 
@@ -486,9 +479,6 @@ zarr::V3Array::compress_and_flush_data_()
             std::unique_ptr<Sink> sink;
 
             try {
-                // consolidate chunks in shard
-                const auto shard_data = consolidate_chunks_(shard_idx);
-
                 if (data_sinks_.contains(data_path)) { // S3 sink, constructed
                     sink = std::move(data_sinks_[data_path]);
                     data_sinks_.erase(data_path);
@@ -500,11 +490,20 @@ zarr::V3Array::compress_and_flush_data_()
                     err = "Failed to create sink for " + data_path;
                     success = false;
                 } else {
+                    *file_offset = sink->align_to_system_size(*file_offset);
+
+                    // collect chunks in shard
+                    const auto shard_data = collect_chunks_(shard_idx);
+                    size_t shard_size = 0;
+                    for (const auto& chunk : shard_data) {
+                        shard_size += chunk.size();
+                    }
+
                     success = sink->write(*file_offset, shard_data);
                     if (!success) {
                         err = "Failed to write shard at path " + data_path;
                     } else {
-                        *file_offset += shard_data.size();
+                        *file_offset += sink->align_to_system_size(shard_size);
 
                         if (write_table) {
                             const size_t table_size =

@@ -160,3 +160,12 @@ zarr::regularize_key(const std::string_view key)
 
     return regularized_key;
 }
+
+
+size_t
+zarr::align_to(const size_t size, const size_t align)
+{
+    EXPECT(align > 0 && (align & (align - 1)) == 0,
+           "Alignment must be a power of two.");
+    return (size + align - 1) & ~(align - 1);
+}

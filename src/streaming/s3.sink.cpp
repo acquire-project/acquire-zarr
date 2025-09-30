@@ -90,6 +90,31 @@ zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
+zarr::S3Sink::write(size_t offset,
+                    const std::vector<std::vector<uint8_t>>& buffers)
+{
+    if (buffers.empty()) {
+        return true;
+    }
+
+    for (const auto& buffer : buffers) {
+        if (!write(offset, buffer)) {
+            return false;
+        }
+        offset += buffer.size();
+    }
+
+    return true;
+}
+
+size_t
+zarr::S3Sink::align_to_system_size(size_t size)
+{
+    // S3 does not require alignment
+    return size;
+}
+
+bool
 zarr::S3Sink::put_object_()
 {
     if (nbytes_buffered_ == 0) {

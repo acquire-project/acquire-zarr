@@ -28,6 +28,6 @@ class V3Array final : public Array
     void close_sinks_() override;
     bool should_rollover_() const override;
 
-    ByteVector consolidate_chunks_(uint32_t shard_index);
+    std::vector<std::vector<uint8_t>> collect_chunks_(uint32_t shard_index);
 };
 } // namespace zarr
