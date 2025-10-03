@@ -25,7 +25,7 @@ class FileSink : public Sink
     std::shared_ptr<FileHandlePool> file_handle_pool_;
     std::string filename_; // keep a copy of the filename for reopening
 
-    void* flags_;
+    void* flags_;          // platform-specific flags for opening the file
     void* handle_;         // platform-specific file handle
     bool vectorized_;      // whether to use vectorized writes
     size_t page_size_;     // cached system page size

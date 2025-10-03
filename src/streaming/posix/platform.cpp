@@ -1,6 +1,8 @@
 #include "definitions.hh"
 #include "macros.hh"
 
+#include <string_view>
+
 #include <cstring>
 #include <fcntl.h>
 #include <sys/resource.h>

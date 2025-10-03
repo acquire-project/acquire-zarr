@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Vectorized file writing for Zarr V3 to improve performance when writing many small chunks (#156)
+- File handles are now managed by a pool to centrally limit the number of open files (#161) 
 
 ## [0.6.0] - [2025-09-24](https://github.com/acquire-project/acquire-zarr/compare/v0.5.2...v0.6.0)
 

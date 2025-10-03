@@ -457,7 +457,7 @@ zarr::V3Array::compress_and_flush_data_()
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         const std::string data_path = data_paths_[shard_idx];
 
-        // align file offset to system si
+        // align file offset to system size
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
         auto* shard_table = shard_tables_.data() + shard_idx;
 
