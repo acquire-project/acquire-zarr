@@ -25,8 +25,7 @@ main()
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          std::thread::hardware_concurrency(),
-          [](const std::string& err) { LOG_ERROR("Error: ", err); });
+          0, [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
         std::vector<ZarrDimension> dims;
         dims.emplace_back(
@@ -50,7 +49,10 @@ main()
           std::nullopt,
           0);
 
-        zarr::V2Array writer(config, thread_pool, nullptr);
+        zarr::V2Array writer(config,
+                             thread_pool,
+                             std::make_shared<zarr::FileHandlePool>(),
+                             nullptr);
 
         const size_t frame_size = array_width * array_height * nbytes_px;
         zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));

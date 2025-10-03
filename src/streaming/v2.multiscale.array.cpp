@@ -5,8 +5,9 @@
 zarr::V2MultiscaleArray::V2MultiscaleArray(
   std::shared_ptr<ArrayConfig> config,
   std::shared_ptr<ThreadPool> thread_pool,
+  std::shared_ptr<FileHandlePool> file_handle_pool,
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : MultiscaleArray(config, thread_pool, s3_connection_pool)
+  : MultiscaleArray(config, thread_pool, file_handle_pool, s3_connection_pool)
 {
     // dimensions may be null in the case of intermediate groups, e.g., the
     // A in A/1
@@ -51,13 +52,13 @@ zarr::V2MultiscaleArray::create_arrays_()
         arrays_.resize(configs.size());
 
         for (const auto& [lod, config] : configs) {
-            arrays_[lod] = std::make_unique<zarr::V2Array>(
-              config, thread_pool_, s3_connection_pool_);
+            arrays_[lod] = std::make_unique<V2Array>(
+              config, thread_pool_, file_handle_pool_, s3_connection_pool_);
         }
     } else {
         const auto config = make_base_array_config_();
-        arrays_.push_back(std::make_unique<zarr::V2Array>(
-          config, thread_pool_, s3_connection_pool_));
+        arrays_.push_back(std::make_unique<V2Array>(
+          config, thread_pool_, file_handle_pool_, s3_connection_pool_));
     }
 
     return true;

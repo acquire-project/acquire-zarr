@@ -179,7 +179,7 @@ def compare(
     )
 
     time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
-
+    """
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
     az = zarr.open(az_path)["0"]
@@ -214,10 +214,13 @@ def compare(
     print(
         f"  TensorStore: {time_ts_ms:.3f} ms, {1000 * data_size_gib / time_ts_ms:.3f} GiB/s, 50th percentile frame write time: {np.percentile(frame_write_times_ts, 50):.3f} ms, 99th percentile: {np.percentile(frame_write_times_ts, 99):.3f} ms"
     )
-    print(f"  TS/AZ Ratio: {time_ts_ms / time_az_ms:.3f}")
+    print(f"  TS/AZ Ratio: {time_ts_ms / time_az_ms:.3f}")"""
 
 
 def main():
+    import time
+    time.sleep(10)
+
     T_CHUNK_SIZE = int(sys.argv[1]) if len(sys.argv) > 1 else 64
     XY_CHUNK_SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 64
     XY_SHARD_SIZE = int(sys.argv[3]) if len(sys.argv) > 3 else 16

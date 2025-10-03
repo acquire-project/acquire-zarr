@@ -44,11 +44,21 @@ make_chunk_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
     // create the sinks, then let them go out of scope to close the handles
     {
         std::vector<std::unique_ptr<zarr::Sink>> sinks;
-        CHECK(zarr::make_data_file_sinks(test_dir,
-                                         dimensions,
-                                         zarr::chunks_along_dimension,
-                                         thread_pool,
-                                         sinks));
+        CHECK(
+          zarr::make_data_file_sinks(test_dir,
+                                     dimensions,
+                                     zarr::chunks_along_dimension,
+                                     thread_pool,
+                                     std::make_shared<zarr::FileHandlePool>(),
+                                     sinks));
+
+        std::vector<uint8_t> data(2, 0);
+        for (auto& sink : sinks) {
+            CHECK(sink);
+            // we need to write some data to the sink to ensure it is created
+            CHECK(sink->write(0, data));
+            CHECK(zarr::finalize_sink(std::move(sink)));
+        }
     }
 
     const auto chunks_in_y =
@@ -137,7 +147,16 @@ make_shard_file_sinks(std::shared_ptr<zarr::ThreadPool> thread_pool,
                                    dimensions,
                                    zarr::shards_along_dimension,
                                    thread_pool,
+                                   std::make_shared<zarr::FileHandlePool>(),
                                    sinks));
+
+        std::vector<uint8_t> data(2, 0);
+        for (auto& sink : sinks) {
+            CHECK(sink);
+            // we need to write some data to the sink to ensure it is created
+            CHECK(sink->write(0, data));
+            CHECK(zarr::finalize_sink(std::move(sink)));
+        }
     }
 
     const auto shards_in_y =
@@ -256,7 +275,8 @@ main()
         return 0;
     }
 
-    auto connection_pool = std::make_shared<zarr::S3ConnectionPool>(4, settings);
+    auto connection_pool =
+      std::make_shared<zarr::S3ConnectionPool>(4, settings);
 
     try {
         make_chunk_s3_sinks(

@@ -48,6 +48,8 @@ class ThreadPool
   private:
     ErrorCallback error_handler_;
 
+    std::thread::id main_thread_id_;
+
     std::vector<std::thread> threads_;
 
     std::atomic<bool> accepting_jobs{ true };
@@ -55,6 +57,7 @@ class ThreadPool
     std::condition_variable jobs_cv_;
     std::queue<Task> jobs_;
 
+    std::vector<std::string> error_messages_;
 
     std::optional<ThreadPool::Task> pop_from_job_queue_() noexcept;
     [[nodiscard]] bool should_stop_() const noexcept;

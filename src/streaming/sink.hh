@@ -6,8 +6,8 @@
 #include "array.dimensions.hh"
 
 #include <cstddef> // size_t
-#include <memory>  // std::unique_ptr
-#include <span>    // std::span
+#include <file.handle.hh>
+#include <memory> // std::unique_ptr
 
 namespace zarr {
 class Sink
@@ -36,7 +36,7 @@ class Sink
 };
 
 /**
- * @brief Finalize and destroy the Sink @p sink.
+ * @brief Finalize and destroy @p sink.
  * @note @p sink is no longer accessible after a successful call to this
  * function.
  * @param[in] sink The Sink to finalize.
@@ -81,12 +81,14 @@ make_dirs(const std::vector<std::string>& dir_paths,
 /**
  * @brief Create a file sink from a path.
  * @param file_path The path to the file.
+ * @param file_handle_pool Pointer to a pool of file handles.
  * @return Pointer to the sink created, or nullptr if the file cannot be
  * opened.
  * @throws std::runtime_error if the file path is not valid.
  */
 std::unique_ptr<zarr::Sink>
-make_file_sink(std::string_view file_path);
+make_file_sink(std::string_view file_path,
+               std::shared_ptr<FileHandlePool> file_handle_pool);
 
 /**
  * @brief Create a collection of file sinks for a Zarr dataset.
@@ -96,6 +98,7 @@ make_file_sink(std::string_view file_path);
  * parts (i.e., shards or chunks) along a dimension.
  * @param[in] thread_pool Pointer to a thread pool object. Used to create files
  * in parallel.
+ * @param file_handle_pool Pointer to a pool of file handles.
  * @param[out] part_sinks The sinks created.
  * @return True iff all file sinks were created successfully.
  * @throws std::runtime_error if @p base_path is not valid, or if the number
@@ -106,6 +109,7 @@ make_data_file_sinks(std::string_view base_path,
                      const ArrayDimensions& dimensions,
                      const DimensionPartsFun& parts_along_dimension,
                      std::shared_ptr<ThreadPool> thread_pool,
+                     std::shared_ptr<FileHandlePool> file_handle_pool,
                      std::vector<std::unique_ptr<Sink>>& part_sinks);
 
 /**

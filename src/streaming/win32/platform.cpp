@@ -34,18 +34,37 @@ get_last_error_as_string()
     return message;
 }
 
-void
-init_handle(void** handle, std::string_view filename)
+void*
+make_flags()
 {
-    EXPECT(handle, "Expected nonnull pointer to file handle.");
-    auto* fd = new HANDLE;
+    auto* flags = new DWORD;
+    *flags = FILE_FLAG_OVERLAPPED;
+    return flags;
+}
 
-    *fd = CreateFileA(filename.data(),
+void
+destroy_flags(void* flags)
+{
+    const auto* fd = static_cast<DWORD*>(flags);
+    delete fd;
+}
+
+uint64_t
+get_max_active_handles()
+{
+    return _getmaxstdio();
+}
+
+void*
+init_handle(const std::string& filename, void* flags)
+{
+    auto* fd = new HANDLE;
+    *fd = CreateFileA(filename.c_str(),
                       GENERIC_WRITE,
                       0, // No sharing
                       nullptr,
                       OPEN_ALWAYS,
-                      FILE_FLAG_OVERLAPPED,
+                      *static_cast<DWORD*>(flags),
                       nullptr);
 
     if (*fd == INVALID_HANDLE_VALUE) {
@@ -54,14 +73,14 @@ init_handle(void** handle, std::string_view filename)
         throw std::runtime_error("Failed to open file: '" +
                                  std::string(filename) + "': " + err);
     }
-    *handle = reinterpret_cast<void*>(fd);
+    return fd;
 }
 
 bool
-seek_and_write(void** handle, size_t offset, ConstByteSpan data)
+seek_and_write(void* handle, size_t offset, ConstByteSpan data)
 {
     CHECK(handle);
-    auto* fd = reinterpret_cast<HANDLE*>(*handle);
+    const auto* fd = static_cast<HANDLE*>(handle);
 
     auto* cur = reinterpret_cast<const char*>(data.data());
     auto* end = cur + data.size();
@@ -70,10 +89,10 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
     OVERLAPPED overlapped = { 0 };
     overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 
-    const auto max_retries = 3;
+    constexpr auto max_retries = 3;
     while (cur < end && retries < max_retries) {
         DWORD written = 0;
-        auto remaining = static_cast<DWORD>(end - cur); // may truncate
+        const auto remaining = static_cast<DWORD>(end - cur); // may truncate
         overlapped.Pointer = reinterpret_cast<void*>(offset);
         if (!WriteFile(*fd, cur, remaining, nullptr, &overlapped) &&
             GetLastError() != ERROR_IO_PENDING) {
@@ -89,33 +108,31 @@ seek_and_write(void** handle, size_t offset, ConstByteSpan data)
             CloseHandle(overlapped.hEvent);
             return false;
         }
-        retries += (written == 0) ? 1 : 0;
+        retries += written == 0 ? 1 : 0;
         offset += written;
         cur += written;
     }
 
     CloseHandle(overlapped.hEvent);
-    return (retries < max_retries);
+    return retries < max_retries;
 }
 
 bool
-flush_file(void** handle)
+flush_file(void* handle)
 {
     CHECK(handle);
-    auto* fd = reinterpret_cast<HANDLE*>(*handle);
-    if (fd && *fd != INVALID_HANDLE_VALUE) {
+    if (const auto* fd = static_cast<HANDLE*>(handle); *fd != INVALID_HANDLE_VALUE) {
         return FlushFileBuffers(*fd);
     }
     return true;
 }
 
 void
-destroy_handle(void** handle)
+destroy_handle(void* handle)
 {
-    auto* fd = reinterpret_cast<HANDLE*>(*handle);
-    if (fd) {
+    if (const auto* fd = static_cast<HANDLE*>(handle)) {
         if (*fd != INVALID_HANDLE_VALUE) {
-            FlushFileBuffers(*fd);  // Ensure all buffers are flushed
+            FlushFileBuffers(*fd); // Ensure all buffers are flushed
             CloseHandle(*fd);
         }
         delete fd;

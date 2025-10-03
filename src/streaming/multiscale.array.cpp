@@ -24,13 +24,13 @@ dimension_type_to_string(ZarrDimensionType type)
 zarr::MultiscaleArray::MultiscaleArray(
   std::shared_ptr<ArrayConfig> config,
   std::shared_ptr<ThreadPool> thread_pool,
+  std::shared_ptr<FileHandlePool> file_handle_pool,
   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, s3_connection_pool)
+  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
 {
-    bytes_per_frame_ =
-      config_->dimensions == nullptr
-        ? 0
-        : zarr::bytes_of_frame(*config_->dimensions, config_->dtype);
+    bytes_per_frame_ = config_->dimensions == nullptr
+                         ? 0
+                         : bytes_of_frame(*config_->dimensions, config_->dtype);
 
     EXPECT(create_downsampler_(), "Failed to create downsampler");
 }
@@ -73,7 +73,7 @@ zarr::MultiscaleArray::write_frame(LockedBuffer& data)
 bool
 zarr::MultiscaleArray::close_()
 {
-    for (auto& array: arrays_) {
+    for (auto& array : arrays_) {
         if (!array->close_()) {
             LOG_ERROR("Error closing group: failed to finalize sub-array");
             return false;
@@ -235,4 +235,3 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
         }
     }
 }
-

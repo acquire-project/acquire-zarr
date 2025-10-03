@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -14,53 +15,78 @@ get_last_error_as_string()
     return strerror(errno);
 }
 
-void
-init_handle(void** handle, std::string_view filename)
+void*
+make_flags()
 {
-    EXPECT(handle, "Expected nonnull pointer file handle.");
+    auto* flags = new int;
+    *flags = O_WRONLY | O_CREAT;
+    return flags;
+}
+
+void
+destroy_flags(void* flags)
+{
+    const auto* fd = static_cast<int*>(flags);
+    delete fd;
+}
+
+uint64_t
+get_max_active_handles()
+{
+    rlimit rl;
+    if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+        return rl.rlim_cur; // current soft limit
+        // rl.rlim_max gives hard limit
+    }
+    return 0; // error
+}
+
+void*
+init_handle(const std::string& filename, void* flags)
+{
     auto* fd = new int;
 
-    *fd = open(filename.data(), O_WRONLY | O_CREAT, 0644);
+    *fd = open(filename.data(), *static_cast<int*>(flags), 0644);
     if (*fd < 0) {
         const auto err = get_last_error_as_string();
         delete fd;
         throw std::runtime_error("Failed to open file: '" +
                                  std::string(filename) + "': " + err);
     }
-    *handle = (void*)fd;
+    return fd;
 }
 
 bool
-seek_and_write(void** handle, size_t offset, ConstByteSpan data)
+seek_and_write(void* handle, size_t offset, ConstByteSpan data)
 {
     CHECK(handle);
-    auto* fd = reinterpret_cast<int*>(*handle);
+    const auto* fd = static_cast<int*>(handle);
 
     auto* cur = reinterpret_cast<const char*>(data.data());
     auto* end = cur + data.size();
 
     int retries = 0;
-    const auto max_retries = 3;
+    constexpr auto max_retries = 3;
     while (cur < end && retries < max_retries) {
-        size_t remaining = end - cur;
-        ssize_t written = pwrite(*fd, cur, remaining, offset);
+        const size_t remaining = end - cur;
+        const ssize_t written = pwrite(*fd, cur, remaining, offset);
         if (written < 0) {
             const auto err = get_last_error_as_string();
             throw std::runtime_error("Failed to write to file: " + err);
         }
-        retries += (written == 0) ? 1 : 0;
+        retries += written == 0 ? 1 : 0;
         offset += written;
         cur += written;
     }
 
-    return (retries < max_retries);
+    return retries < max_retries;
 }
 
 bool
-flush_file(void** handle)
+flush_file(void* handle)
 {
     CHECK(handle);
-    auto* fd = reinterpret_cast<int*>(*handle);
+    const auto* fd = static_cast<int*>(handle);
 
     const auto res = fsync(*fd);
     if (res < 0) {
@@ -71,10 +97,9 @@ flush_file(void** handle)
 }
 
 void
-destroy_handle(void** handle)
+destroy_handle(void* handle)
 {
-    auto* fd = reinterpret_cast<int*>(*handle);
-    if (fd) {
+    if (const auto* fd = static_cast<int*>(handle)) {
         if (*fd >= 0) {
             close(*fd);
         }

@@ -1,6 +1,5 @@
 #include "v2.array.hh"
 
-#include "definitions.hh"
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
@@ -8,7 +7,6 @@
 #include <nlohmann/json.hpp>
 
 #include <future>
-#include <semaphore>
 #include <stdexcept>
 
 using json = nlohmann::json;
@@ -64,8 +62,9 @@ sample_type_to_dtype(ZarrDataType t, std::string& t_str)
 
 zarr::V2Array::V2Array(std::shared_ptr<ArrayConfig> config,
                        std::shared_ptr<ThreadPool> thread_pool,
+                       std::shared_ptr<FileHandlePool> file_handle_pool,
                        std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : Array(config, thread_pool, s3_connection_pool)
+  : Array(config, thread_pool, file_handle_pool, s3_connection_pool)
 {
 }
 
@@ -157,41 +156,24 @@ zarr::V2Array::compress_and_flush_data_()
     CHECK(data_paths_.size() == n_chunks);
 
     const auto compression_params = config_->compression_params;
-    const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
     const auto bytes_per_px = bytes_of_type(config_->dtype);
-    const auto bucket_name = config_->bucket_name;
-    auto connection_pool = s3_connection_pool_;
-
-    // create parent directories if needed
-    const auto is_s3 = is_s3_array_();
-    if (!is_s3) {
-        const auto parent_paths = get_parent_paths(data_paths_);
-        CHECK(make_dirs(parent_paths, thread_pool_));
-    }
 
     std::atomic<char> all_successful = 1;
     std::vector<std::future<void>> futures;
-    std::counting_semaphore<MAX_CONCURRENT_FILES> semaphore(
-      MAX_CONCURRENT_FILES);
 
     for (auto i = 0; i < n_chunks; ++i) {
         auto promise = std::make_shared<std::promise<void>>();
         futures.emplace_back(promise->get_future());
 
-        auto job =
-          [bytes_per_px,
-           compression_params,
-           is_s3,
-           data_path = data_paths_[i],
-           chunk_buffer = std::move(chunk_buffers_[i].take()),
-           bucket_name,
-           connection_pool,
-           &semaphore,
-           promise,
-           &all_successful](std::string& err) mutable // chunk_buffer is mutable
+        auto job = [bytes_per_px,
+                    compression_params,
+                    data_path = data_paths_[i],
+                    chunk_buffer = std::move(chunk_buffers_[i].take()),
+                    promise,
+                    &all_successful,
+                    this](std::string& err) mutable // chunk_buffer is mutable
         {
             bool success = true;
-            bool semaphore_acquired = false;
 
             if (!all_successful) {
                 promise->set_value();
@@ -200,10 +182,6 @@ zarr::V2Array::compress_and_flush_data_()
             }
 
             try {
-                std::unique_ptr<Sink> sink;
-                semaphore.acquire();
-                semaphore_acquired = true;
-
                 // compress the chunk
                 if (compression_params) {
                     if (!(success = compress_in_place(
@@ -213,25 +191,20 @@ zarr::V2Array::compress_and_flush_data_()
                 }
 
                 if (success) {
-                    if (is_s3) {
-                        sink = make_s3_sink(
-                          *bucket_name, data_path, connection_pool);
+                    if (auto sink = make_data_sink_(data_path);
+                        sink == nullptr) {
+                        err = "Failed to create sink for " + data_path;
+                        success = false;
                     } else {
-                        sink = make_file_sink(data_path);
-                    }
-                }
-
-                if (success && sink == nullptr) {
-                    err = "Failed to create sink for " + data_path;
-                    success = false;
-                } else if (success) {
-                    // try to write the chunk to the sink
-                    if (!sink->write(0, chunk_buffer)) {
-                        err = "Failed to write chunk to " + data_path;
-                        success = false;
-                    } else if (!finalize_sink(std::move(sink))) {
-                        err = "Failed to finalize sink at path " + data_path;
-                        success = false;
+                        // try to write the chunk to the sink
+                        if (!sink->write(0, chunk_buffer)) {
+                            err = "Failed to write chunk to " + data_path;
+                            success = false;
+                        } else if (!finalize_sink(std::move(sink))) {
+                            err =
+                              "Failed to finalize sink at path " + data_path;
+                            success = false;
+                        }
                     }
                 }
             } catch (const std::exception& exc) {
@@ -239,21 +212,16 @@ zarr::V2Array::compress_and_flush_data_()
                 success = false;
             }
 
-            // Cleanup - single exit point
-            if (semaphore_acquired) {
-                semaphore.release();
-            }
-
-            all_successful.fetch_and(static_cast<char>(success));
+            all_successful.fetch_and(success);
             promise->set_value();
 
             return success;
         };
+
         // one thread is reserved for processing the frame queue and runs the
         // entire lifetime of the stream
         if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
-            std::string err;
-            if (!job(err)) {
+            if (std::string err; !job(err)) {
                 LOG_ERROR(err);
             }
         }
@@ -264,7 +232,7 @@ zarr::V2Array::compress_and_flush_data_()
         future.wait();
     }
 
-    return static_cast<bool>(all_successful);
+    return all_successful;
 }
 
 void

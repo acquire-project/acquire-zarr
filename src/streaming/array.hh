@@ -16,6 +16,7 @@ class Array : public ArrayBase
   public:
     Array(std::shared_ptr<ArrayConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
+          std::shared_ptr<FileHandlePool> file_handle_pool,
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
     size_t memory_usage() const noexcept override;
@@ -43,6 +44,7 @@ class Array : public ArrayBase
     virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
     void make_data_paths_();
+    [[nodiscard]] std::unique_ptr<Sink> make_data_sink_(std::string_view path);
     void fill_buffers_();
 
     bool should_flush_() const;

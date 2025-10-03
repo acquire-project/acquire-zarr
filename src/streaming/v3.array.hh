@@ -8,6 +8,7 @@ class V3Array final : public Array
   public:
     V3Array(std::shared_ptr<ArrayConfig> config,
             std::shared_ptr<ThreadPool> thread_pool,
+            std::shared_ptr<FileHandlePool> file_handle_pool,
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   private:

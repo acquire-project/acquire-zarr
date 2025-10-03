@@ -955,7 +955,8 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
             custom_metadata_sink_ = zarr::make_s3_sink(
               s3_settings_->bucket_name, sink_path, s3_connection_pool_);
         } else {
-            custom_metadata_sink_ = zarr::make_file_sink(sink_path);
+            custom_metadata_sink_ =
+              zarr::make_file_sink(sink_path, file_handle_pool_);
         }
     } else if (!overwrite) { // custom metadata already written, don't overwrite
         LOG_ERROR("Custom metadata already written, use overwrite flag");
@@ -1172,8 +1173,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     ZarrOutputArray output_node{ .output_key = config->node_key,
                                  .frame_buffer_offset = 0 };
     try {
-        output_node.array =
-          zarr::make_array(config, thread_pool_, s3_connection_pool_, version_);
+        output_node.array = zarr::make_array(
+          config, thread_pool_, file_handle_pool_, s3_connection_pool_, version_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1377,6 +1378,14 @@ ZarrStream_s::create_store_(bool overwrite)
             return false;
         }
     } else {
+        try {
+            file_handle_pool_ = std::make_shared<zarr::FileHandlePool>();
+        } catch (const std::exception& e) {
+            set_error_("Error creating file handle pool: " +
+                       std::string(e.what()));
+            return false;
+        }
+
         if (!overwrite) {
             if (fs::is_directory(store_path_)) {
                 return true;
@@ -1478,7 +1487,7 @@ ZarrStream_s::write_intermediate_metadata_()
             metadata_sink = zarr::make_s3_sink(
               bucket_name.value(), sink_path, s3_connection_pool_);
         } else {
-            metadata_sink = zarr::make_file_sink(sink_path);
+            metadata_sink = zarr::make_file_sink(sink_path, file_handle_pool_);
         }
 
         if (!metadata_sink->write(0, metadata_span) ||

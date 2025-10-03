@@ -2,7 +2,7 @@
 
 #include "array.dimensions.hh"
 #include "blosc.compression.params.hh"
-#include "definitions.hh"
+#include "file.handle.hh"
 #include "locked.buffer.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
@@ -57,6 +57,7 @@ class ArrayBase
   public:
     ArrayBase(std::shared_ptr<ArrayConfig> config,
               std::shared_ptr<ThreadPool> thread_pool,
+              std::shared_ptr<FileHandlePool> file_handle_pool,
               std::shared_ptr<S3ConnectionPool> s3_connection_pool);
     virtual ~ArrayBase() = default;
 
@@ -83,6 +84,7 @@ class ArrayBase
     std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<FileHandlePool> file_handle_pool_;
 
     std::unordered_map<std::string, std::string> metadata_strings_;
     std::unordered_map<std::string, std::unique_ptr<Sink>> metadata_sinks_;
@@ -99,6 +101,7 @@ class ArrayBase
 std::unique_ptr<ArrayBase>
 make_array(std::shared_ptr<zarr::ArrayConfig> config,
            std::shared_ptr<ThreadPool> thread_pool,
+           std::shared_ptr<FileHandlePool> file_handle_pool,
            std::shared_ptr<S3ConnectionPool> s3_connection_pool,
            ZarrVersion format);
 
