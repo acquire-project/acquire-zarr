@@ -5,7 +5,64 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
+
+namespace {
+size_t
+align_to(size_t size, size_t align)
+{
+    if (align == 0) {
+        return size;
+    }
+    return (size + align - 1) & ~(align - 1);
+}
+
+size_t
+align_to_system_size(size_t size, const std::string& path)
+{
+#ifdef _WIN32
+
+    // get page size
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    EXPECT(si.dwPageSize > 0, "Could not get system page size");
+    size_t page_size = si.dwPageSize;
+
+    // get sector size
+    char volume_path[MAX_PATH];
+    EXPECT(GetVolumePathNameA(path.c_str(), volume_path, MAX_PATH),
+           "Failed to get volume name for path '",
+           path,
+           "'");
+
+    DWORD sectors_per_cluster;
+    DWORD bytes_per_sector;
+    DWORD number_of_free_clusters;
+    DWORD total_number_of_clusters;
+
+    EXPECT(GetDiskFreeSpaceA(volume_path,
+                             &sectors_per_cluster,
+                             &bytes_per_sector,
+                             &number_of_free_clusters,
+                             &total_number_of_clusters),
+           "Failed to get disk free space for volume: " +
+             std::string(volume_path));
+
+    EXPECT(bytes_per_sector > 0, "Could not get sector size");
+
+    size_t sector_size = bytes_per_sector;
+
+    return align_to(align_to(size, page_size), sector_size);
+
+#else
+    return size; // no additional alignment needed on POSIX
+#endif
+}
+}
 
 int
 main()
@@ -101,8 +158,9 @@ main()
                "Expected shard file does not exist: ",
                first_shard.string());
 
-        constexpr auto expected_full_shard_size =
-          16 * expected_chunk_size + table_size;
+        const size_t expected_full_shard_size =
+          16 * align_to_system_size(expected_chunk_size, first_shard.string()) +
+          table_size;
         EXPECT(fs::file_size(first_shard) == expected_full_shard_size,
                "Expected ",
                first_shard.string(),
@@ -116,8 +174,9 @@ main()
                "Expected shard file does not exist: ",
                last_shard.string());
 
-        constexpr auto expected_partial_shard_size =
-          expected_chunk_size + table_size;
+        const size_t expected_partial_shard_size =
+          align_to_system_size(expected_chunk_size, last_shard.string()) +
+          table_size;
         EXPECT(fs::file_size(last_shard) == expected_partial_shard_size,
                "Expected ",
                last_shard.string(),
