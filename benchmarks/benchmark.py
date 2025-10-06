@@ -211,7 +211,7 @@ def compare(
         np.random.randint(0, 2 ** 16 - 1, (128, 2048, 2048), dtype=np.uint16), frame_count
     )
 
-    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
+    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size, xy_shard_size)
 
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
