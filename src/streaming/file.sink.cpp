@@ -37,20 +37,14 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
         return true;
     }
 
-    auto handle = file_handle_pool_->get_handle(filename_, flags_);
-    if (handle == nullptr) {
-        LOG_ERROR("Failed to get file handle for ", filename_);
-        return false;
-    }
+    const auto handle_guard = file_handle_pool_->get(filename_, flags_);
 
     bool retval = false;
     try {
-        retval = seek_and_write(handle->get(), offset, data);
+        retval = seek_and_write(handle_guard.get(), offset, data);
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to write to file ", filename_, ": ", exc.what());
     }
-
-    file_handle_pool_->return_handle(std::move(handle));
 
     return retval;
 }
@@ -58,19 +52,14 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
 bool
 zarr::FileSink::flush_()
 {
-    auto handle = file_handle_pool_->get_handle(filename_, flags_);
-    if (handle == nullptr) {
-        LOG_ERROR("Failed to get file handle for ", filename_);
-        return false;
-    }
+    const auto handle_guard = file_handle_pool_->get(filename_, flags_);
 
     bool retval = false;
     try {
-        retval = flush_file(handle->get());
+        retval = flush_file(handle_guard.get());
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to flush file ", filename_, ": ", exc.what());
     }
-    file_handle_pool_->return_handle(std::move(handle));
 
     return retval;
 }
