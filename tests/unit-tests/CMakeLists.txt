@@ -19,13 +19,9 @@ set(tests
         s3-sink-write
         s3-sink-write-multipart
         make-data-sinks
-        v2-array-write-frame-to-chunks
-        v2-array-write-even
-        v2-array-write-ragged-append-dim
-        v2-array-write-ragged-internal-dim
-        v3-array-write-even
-        v3-array-write-ragged-append-dim
-        v3-array-write-ragged-internal-dim
+        array-write-even
+        array-write-ragged-append-dim
+        array-write-ragged-internal-dim
         zarr-stream-partial-append
         frame-queue
         downsampler

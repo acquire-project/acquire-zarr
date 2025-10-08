@@ -1,23 +1,17 @@
 set(project acquire-zarr)
 
 set(tests
-        stream-zarr-v2-raw-to-filesystem
-        stream-zarr-v2-named-array-to-filesystem
-        stream-zarr-v2-compressed-to-filesystem
-        stream-zarr-v2-raw-to-s3
-        stream-zarr-v2-named-array-to-s3
-        stream-zarr-v2-compressed-to-s3
-        stream-zarr-v3-raw-to-filesystem
-        stream-zarr-v3-named-array-to-filesystem
-        stream-zarr-v3-compressed-to-filesystem
-        stream-zarr-v3-2d-multiscale-to-filesystem
-        stream-zarr-v3-3d-multiscale-to-filesystem
-        stream-zarr-v3-raw-to-s3
-        stream-zarr-v3-named-array-to-s3
-        stream-zarr-v3-compressed-to-s3
-        stream-zarr-v3-multi-frame-append
-        stream-zarr-v3-multiscale-trivial-3rd-dim
-        stream-zarr-v3-multiple-arrays-to-filesystem
+        stream-raw-to-filesystem
+        stream-named-array-to-filesystem
+        stream-compressed-to-filesystem
+        stream-2d-multiscale-to-filesystem
+        stream-3d-multiscale-to-filesystem
+        stream-raw-to-s3
+        stream-named-array-to-s3
+        stream-compressed-to-s3
+        stream-multi-frame-append
+        stream-multiscale-trivial-3rd-dim
+        stream-multiple-arrays-to-filesystem
         estimate-memory-usage
         stream-pure-hcs-acquisition
         stream-mixed-flat-and-hcs-acquisition
