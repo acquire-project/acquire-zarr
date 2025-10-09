@@ -856,9 +856,6 @@ class PyZarrStreamSettings
         s3_settings_ = settings;
     }
 
-    ZarrVersion version() const { return version_; }
-    void set_version(ZarrVersion version) { version_ = version; }
-
     unsigned int max_threads() const { return max_threads_; }
     void set_max_threads(unsigned int max_threads)
     {
@@ -887,7 +884,6 @@ class PyZarrStreamSettings
         memset(&settings_, 0, sizeof(settings_));
 
         settings_.store_path = store_path_.c_str();
-        settings_.version = version_;
         settings_.max_threads = max_threads_;
         settings_.overwrite = static_cast<int>(overwrite_);
 
@@ -982,7 +978,6 @@ class PyZarrStreamSettings
   private:
     std::string store_path_;
     mutable std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
-    ZarrVersion version_{ ZarrVersion_3 };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
 
@@ -1231,10 +1226,6 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::bind_vector<std::vector<PyZarrDimensionProperties>>(m,
                                                             "VectorDimension");
     py::bind_vector<std::vector<PyZarrArraySettings>>(m, "VectorArraySettings");
-
-    py::enum_<ZarrVersion>(m, "ZarrVersion")
-      .value("V2", ZarrVersion_2)
-      .value("V3", ZarrVersion_3);
 
     py::enum_<ZarrDataType>(m, "DataType")
       .value(data_type_to_str(ZarrDataType_uint8), ZarrDataType_uint8)
@@ -1949,7 +1940,6 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](std::optional<std::string> store_path,
                        std::optional<PyZarrS3Settings> s3,
-                       std::optional<ZarrVersion> version,
                        std::optional<unsigned> max_threads,
                        std::optional<bool> overwrite,
                        std::optional<py::list> arrays,
@@ -1960,9 +1950,6 @@ PYBIND11_MODULE(acquire_zarr, m)
                }
                if (s3) {
                    settings.set_s3(*s3);
-               }
-               if (version) {
-                   settings.set_version(*version);
                }
                if (max_threads) {
                    settings.set_max_threads(*max_threads);
@@ -1994,7 +1981,6 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::kw_only(),
            py::arg("store_path") = std::nullopt,
            py::arg("s3") = std::nullopt,
-           py::arg("version") = std::nullopt,
            py::arg("max_threads") = std::nullopt,
            py::arg("overwrite") = std::nullopt,
            py::arg("arrays") = std::nullopt,
@@ -2008,8 +1994,6 @@ PYBIND11_MODULE(acquire_zarr, m)
                    repr += ", s3=" + self.s3()->repr();
                }
                repr +=
-                 ", version=ZarrVersion." +
-                 std::string(self.version() == ZarrVersion_2 ? "V2" : "V3") +
                  ", max_threads=" + std::to_string(self.max_threads()) + "," +
                  (self.overwrite() ? " overwrite=True" : " overwrite=False") +
                  ")";
@@ -2036,9 +2020,6 @@ PYBIND11_MODULE(acquire_zarr, m)
                 self.set_s3(obj.cast<PyZarrS3Settings>());
             }
         })
-      .def_property("version",
-                    &PyZarrStreamSettings::version,
-                    &PyZarrStreamSettings::set_version)
       .def_property("max_threads",
                     &PyZarrStreamSettings::max_threads,
                     &PyZarrStreamSettings::set_max_threads)

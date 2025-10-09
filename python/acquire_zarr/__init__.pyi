@@ -30,7 +30,6 @@ __all__ = [
     "StreamSettings",
     "Well",
     "ZarrStream",
-    "ZarrVersion",
     "get_log_level",
     "set_log_level",
 ]
@@ -376,7 +375,6 @@ class StreamSettings:
         store_path: Path to the store. Can be a filesystem path or S3 key prefix.
             For S3, this becomes the key prefix within the specified bucket.
         s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
-        version: Zarr format version to use (V2 or V3).
         max_threads: Maximum number of threads for parallel processing.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
@@ -391,7 +389,6 @@ class StreamSettings:
     custom_metadata: Optional[str]
     s3: Optional[S3Settings]
     store_path: str
-    version: ZarrVersion
     max_threads: int
     overwrite: bool
     plates: List[Plate]
@@ -432,36 +429,6 @@ class ZarrStream:
     def close(self) -> None: ...
     def get_current_memory_usage(self) -> int:
         """Get the current memory usage of the stream in bytes."""
-
-class ZarrVersion:
-    """
-    Zarr format version.
-
-    Attributes:
-      V2: Zarr format version 2
-      V3: Zarr format version 3
-    """
-
-    V2: ClassVar[ZarrVersion]  # value = <ZarrVersion.V2: 2>
-    V3: ClassVar[ZarrVersion]  # value = <ZarrVersion.V3: 3>
-    __members__: ClassVar[
-        dict[str, ZarrVersion]
-    ]  # value = {'V2': <ZarrVersion.V2: 2>, 'V3': <ZarrVersion.V3: 3>}
-
-    def __eq__(self, other: Any) -> bool: ...
-    def __getstate__(self) -> int: ...
-    def __hash__(self) -> int: ...
-    def __index__(self) -> int: ...
-    def __init__(self, value: int) -> None: ...
-    def __int__(self) -> int: ...
-    def __ne__(self, other: Any) -> bool: ...
-    def __repr__(self) -> str: ...
-    def __setstate__(self, state: int) -> None: ...
-    def __str__(self) -> str: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def value(self) -> int: ...
 
 def get_log_level() -> LogLevel:
     """Get the current log level for the Zarr API"""

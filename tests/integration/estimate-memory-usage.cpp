@@ -68,7 +68,7 @@ initialize_array(ZarrArraySettings& settings,
 void
 test_max_memory_usage()
 {
-    ZarrStreamSettings settings{ 0 };
+    ZarrStreamSettings settings{};
 
     // create settings for a Zarr stream with one array
     EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==

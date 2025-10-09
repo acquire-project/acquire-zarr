@@ -41,7 +41,6 @@ main()
     ZarrStreamSettings settings = {
         .store_path = "output_multiarray.zarr",
         .s3_settings = nullptr,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .overwrite = true,
     };

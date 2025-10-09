@@ -62,7 +62,6 @@ setup()
     ZarrStreamSettings settings = {
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,
@@ -70,8 +69,7 @@ setup()
 
     CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 5));
 
-    ZarrDimensionProperties* dim;
-    dim = settings.arrays->dimensions;
+    ZarrDimensionProperties* dim = settings.arrays->dimensions;
     *dim = DIM("t",
                ZarrDimensionType_Time,
                array_timepoints,

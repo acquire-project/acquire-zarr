@@ -63,7 +63,6 @@ setup()
     ZarrStreamSettings settings = {
         .store_path = test_path.c_str(),
         .s3_settings = nullptr,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,

@@ -182,7 +182,6 @@ setup()
     };
     ZarrStreamSettings settings = {
         .store_path = TEST,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,

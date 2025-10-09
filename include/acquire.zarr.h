@@ -23,8 +23,6 @@ extern "C"
         const char* store_path; /**< Path to the store. Filesystem path or S3
                                    key prefix. */
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
-        ZarrVersion
-          version; /**< The version of the Zarr format to use. 2 or 3. */
         unsigned int max_threads; /**< The maximum number of threads to use in
                                      the stream. Set to 0 to use the supported
                                      number of concurrent threads. */

@@ -9,13 +9,10 @@
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/acquire-zarr)](https://pypistats.org/packages/acquire-zarr)
 [![Docs](https://img.shields.io/badge/docs-stable-blue)](https://acquire-project.github.io/acquire-docs/stable/)
 
-This library supports chunked, compressed, multiscale streaming to [Zarr][], both [version 2][] and [version 3][], with
+This library supports chunked, compressed, multiscale streaming to [Zarr][] [version 3][], with
 [OME-NGFF metadata].
 
 This code builds targets for Python and C.
-
-**Note:** Zarr Version 2 is deprecated and will be removed in a future release.
-We recommend using Zarr Version 3 for new projects.
 
 **For complete documentation, please visit the [Acquire documentation site](https://acquire-project.github.io/acquire-docs/).**
 
@@ -147,7 +144,6 @@ array.dimensions[0] = (ZarrDimensionProperties){
 
 ZarrStreamSettings settings = (ZarrStreamSettings){
     .store_path = "my_stream.zarr",
-    .version = ZarrVersion_3,
     .overwrite = true, // Optional: remove existing data at store_path if true
     .arrays = &array,
     .array_count = 1, // Number of arrays in the stream
@@ -177,7 +173,6 @@ import numpy as np
 
 settings = aqz.StreamSettings(
     store_path="my_stream.zarr",
-    version=aqz.ZarrVersion.V3,
     overwrite=True  # Optional: remove existing data at store_path if true
 )
 
@@ -242,7 +237,6 @@ import numpy as np
 # configure the stream with two arrays
 settings = aqz.StreamSettings(
     store_path="experiment.zarr",
-    version=aqz.ZarrVersion.V3,
     overwrite=True,  # Remove existing data at store_path if true
     arrays=[
         aqz.ArraySettings(
@@ -337,8 +331,6 @@ When set to `false`, the stream will use the existing directory if it exists, or
 The library supports high-content screening (HCS) datasets following the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
 HCS data is organized into plates, wells, and fields of view, with automatic generation of appropriate metadata.
 
-**Note:** HCS is *not* supported for Zarr V2.
-
 Here's an example of creating an HCS dataset in Python:
 
 ```python
@@ -415,7 +407,6 @@ plate = aqz.Plate(
 # Create stream with HCS configuration
 settings = aqz.StreamSettings(
     store_path="hcs_experiment.zarr",
-    version=aqz.ZarrVersion.V3,
     overwrite=True,
     hcs_plates=[plate]
 )
@@ -457,7 +448,6 @@ labels_array = aqz.ArraySettings(
 
 settings = aqz.StreamSettings(
     store_path="mixed_experiment.zarr",
-    version=aqz.ZarrVersion.V3,
     overwrite=True,
     arrays=[labels_array],  # Flat arrays
     hcs_plates=[plate]      # HCS structure
@@ -570,7 +560,6 @@ ZarrHCSSettings hcs_settings = {
 // Configure stream
 ZarrStreamSettings settings = {
     .store_path = "hcs_experiment.zarr",
-    .version = ZarrVersion_3,
     .overwrite = true,
     .arrays = NULL,
     .array_count = 0,
@@ -665,8 +654,6 @@ conda install -c conda-forge libstdcxx-ng
 ```
 
 [Zarr]: https://zarr.dev/
-
-[version 2]: https://zarr-specs.readthedocs.io/en/latest/v2/v2.0.html
 
 [version 3]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 

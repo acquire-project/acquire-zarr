@@ -109,7 +109,6 @@ def run_acquire_zarr_test(
     """Write data using acquire-zarr and print per-plane and total write times."""
     settings = aqz.StreamSettings(
         store_path=path,
-        version=aqz.ZarrVersion.V3,
         arrays=[
             aqz.ArraySettings(
                 dimensions=[
