@@ -1,4 +1,4 @@
-#include "v3.array.hh"
+#include "array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -102,7 +102,7 @@ main()
     const ZarrDataType dtype = ZarrDataType_uint16;
     const unsigned int nbytes_px = zarr::bytes_of_type(dtype);
 
-    try {
+    // try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
           std::thread::hardware_concurrency(),
           [](const std::string& err) { LOG_ERROR("Error: ", err); });
@@ -142,7 +142,7 @@ main()
           level_of_detail);
 
         {
-            auto writer = std::make_unique<zarr::V3Array>(
+            auto writer = std::make_unique<zarr::Array>(
               config,
               thread_pool,
               std::make_shared<zarr::FileHandlePool>(),
@@ -211,9 +211,9 @@ main()
         CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
 
         retval = 0;
-    } catch (const std::exception& exc) {
-        LOG_ERROR("Exception: ", exc.what());
-    }
+    // } catch (const std::exception& exc) {
+    //     LOG_ERROR("Exception: ", exc.what());
+    // }
 
     // cleanup
     if (fs::exists(base_dir)) {

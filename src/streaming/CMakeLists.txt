@@ -40,8 +40,6 @@ add_library(${tgt}
         array.base.cpp
         array.hh
         array.cpp
-        v3.array.hh
-        v3.array.cpp
         multiscale.array.hh
         multiscale.array.cpp
         v3.multiscale.array.hh

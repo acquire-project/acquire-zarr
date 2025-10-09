@@ -1,7 +1,7 @@
 #pragma once
 
 #include "multiscale.array.hh"
-#include "v3.array.hh"
+#include "array.hh"
 
 namespace zarr {
 class V3MultiscaleArray final : public MultiscaleArray

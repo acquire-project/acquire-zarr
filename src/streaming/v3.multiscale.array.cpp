@@ -53,12 +53,12 @@ zarr::V3MultiscaleArray::create_arrays_()
         arrays_.resize(configs.size());
 
         for (const auto& [lod, config] : configs) {
-            arrays_[lod] = std::make_unique<V3Array>(
+            arrays_[lod] = std::make_unique<Array>(
               config, thread_pool_, file_handle_pool_, s3_connection_pool_);
         }
     } else {
         const auto config = make_base_array_config_();
-        arrays_.push_back(std::make_unique<V3Array>(
+        arrays_.push_back(std::make_unique<Array>(
           config, thread_pool_, file_handle_pool_, s3_connection_pool_));
     }
 

@@ -1,4 +1,4 @@
-#include "v3.array.hh"
+#include "array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
@@ -113,7 +113,7 @@ main()
           4);
 
         {
-            auto writer = std::make_unique<zarr::V3Array>(
+            auto writer = std::make_unique<zarr::Array>(
               config,
               thread_pool,
               std::make_shared<zarr::FileHandlePool>(),
