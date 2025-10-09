@@ -1,10 +1,9 @@
 #include <utility>
 
-#include "array.base.hh"
-#include "multiscale.array.hh"
-#include "macros.hh"
 #include "array.hh"
-#include "v3.multiscale.array.hh"
+#include "array.base.hh"
+#include "macros.hh"
+#include "multiscale.array.hh"
 
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
@@ -110,7 +109,7 @@ zarr::make_array(std::shared_ptr<ArrayConfig> config,
 
     std::unique_ptr<ArrayBase> array;
     if (multiscale) {
-        array = std::make_unique<V3MultiscaleArray>(
+        array = std::make_unique<MultiscaleArray>(
           config, thread_pool, file_handle_pool, s3_connection_pool);
     } else {
         array = std::make_unique<Array>(
