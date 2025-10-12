@@ -57,6 +57,9 @@ class FileHandlePool
     std::unique_ptr<FileHandle> get_handle(const std::string& filename,
                                            void* flags);
 
+    std::shared_ptr<void> get_handle_shared(const std::string& filename,
+                                            void* flags);
+
     /**
      * @brief Return a file handle to the pool.
      * @details This function should be called when a file handle is no longer
