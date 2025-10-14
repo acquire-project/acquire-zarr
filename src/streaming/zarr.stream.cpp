@@ -1008,6 +1008,13 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
+    if (const auto version =
+          settings->version == 0 ? ZarrVersion_3 : settings->version;
+        version != ZarrVersion_3) {
+        error_ = "Invalid Zarr version: " + std::to_string(version);
+        return false;
+    }
+
     if (settings->store_path == nullptr) {
         error_ = "Null pointer: store_path";
         return false;

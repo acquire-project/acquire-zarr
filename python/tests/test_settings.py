@@ -222,6 +222,13 @@ def test_set_dimensions_in_constructor():
     assert settings.dimensions[2].shard_size_chunks == 9
 
 
+def test_set_version(settings):
+    assert settings.version == aqz.ZarrVersion.V3
+
+    with pytest.raises(RuntimeError):
+        settings.version = 2  # only V3 is supported
+
+
 def test_set_max_threads(settings):
     assert (
         settings.max_threads > 0
