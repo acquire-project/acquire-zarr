@@ -1227,6 +1227,8 @@ PYBIND11_MODULE(acquire_zarr, m)
                                                             "VectorDimension");
     py::bind_vector<std::vector<PyZarrArraySettings>>(m, "VectorArraySettings");
 
+    py::enum_<ZarrVersion>(m, "ZarrVersion").value("V3", ZarrVersion_3);
+
     py::enum_<ZarrDataType>(m, "DataType")
       .value(data_type_to_str(ZarrDataType_uint8), ZarrDataType_uint8)
       .value(data_type_to_str(ZarrDataType_uint16), ZarrDataType_uint16)
@@ -1940,6 +1942,7 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
       .def(py::init([](std::optional<std::string> store_path,
                        std::optional<PyZarrS3Settings> s3,
+                       std::optional<ZarrVersion> version,
                        std::optional<unsigned> max_threads,
                        std::optional<bool> overwrite,
                        std::optional<py::list> arrays,
@@ -1981,6 +1984,7 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::kw_only(),
            py::arg("store_path") = std::nullopt,
            py::arg("s3") = std::nullopt,
+           py::arg("version") = std::nullopt,
            py::arg("max_threads") = std::nullopt,
            py::arg("overwrite") = std::nullopt,
            py::arg("arrays") = std::nullopt,
@@ -2018,6 +2022,19 @@ PYBIND11_MODULE(acquire_zarr, m)
                 self.set_s3(std::nullopt);
             } else {
                 self.set_s3(obj.cast<PyZarrS3Settings>());
+            }
+        })
+      .def_property(
+        "version",
+        [](const PyZarrStreamSettings& self) { return ZarrVersion_3; },
+        [](PyZarrStreamSettings&, const py::object& version) {
+            if (!version.is_none()) {
+                if (const auto ver = version.cast<ZarrVersion>();
+                    ver != ZarrVersion_3) {
+                    PyErr_SetString(PyExc_ValueError,
+                                    "Only ZarrVersion.V3 is supported.");
+                    throw py::error_already_set();
+                }
             }
         })
       .def_property("max_threads",

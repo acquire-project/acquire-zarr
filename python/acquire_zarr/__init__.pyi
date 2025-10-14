@@ -30,6 +30,7 @@ __all__ = [
     "StreamSettings",
     "Well",
     "ZarrStream",
+    "ZarrVersion",
     "get_log_level",
     "set_log_level",
 ]
@@ -429,6 +430,24 @@ class ZarrStream:
     def close(self) -> None: ...
     def get_current_memory_usage(self) -> int:
         """Get the current memory usage of the stream in bytes."""
+
+class ZarrVersion:
+    """
+    Zarr format version.
+
+    Attributes:
+      V3: Zarr format version 3.
+    """
+
+    V3: ClassVar[ZarrVersion]  # value = <ZarrVersion.V3: 3>
+    __members__: ClassVar[
+        dict[str, ZarrVersion]
+    ]  # value = {'V2': <ZarrVersion.V2: 0>, 'V3': <ZarrVersion.V3: 1>}
+
+    def __eq__(self, other: Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
 
 def get_log_level() -> LogLevel:
     """Get the current log level for the Zarr API"""
