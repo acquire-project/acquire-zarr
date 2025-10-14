@@ -1954,6 +1954,13 @@ PYBIND11_MODULE(acquire_zarr, m)
                if (s3) {
                    settings.set_s3(*s3);
                }
+               if (version) {
+                   if (*version != ZarrVersion_3) {
+                       PyErr_SetString(PyExc_ValueError,
+                                       "Only ZarrVersion.V3 is supported.");
+                       throw py::error_already_set();
+                   }
+               }
                if (max_threads) {
                    settings.set_max_threads(*max_threads);
                }
