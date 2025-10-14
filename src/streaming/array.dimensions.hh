@@ -115,7 +115,8 @@ class ArrayDimensions
     uint32_t chunk_layers_per_shard() const;
 
     /**
-     * @brief Get the shard index for a given chunk index, given array dimensions.
+     * @brief Get the shard index for a given chunk index, given array
+     * dimensions.
      * @param chunk_index The index of the chunk.
      * @return The index of the shard containing the chunk.
      */
@@ -145,6 +146,8 @@ class ArrayDimensions
      */
     uint32_t shard_internal_index(uint32_t chunk_index) const;
 
+    uint64_t frames_before_flush() const;
+
   private:
     std::vector<ZarrDimension> dims_;
     ZarrDataType dtype_;
@@ -158,6 +161,8 @@ class ArrayDimensions
     std::unordered_map<uint32_t, uint32_t> shard_indices_;
     std::unordered_map<uint32_t, uint32_t> shard_internal_indices_;
     std::vector<std::vector<uint32_t>> chunk_indices_for_shard_;
+
+    uint64_t frames_before_flush_;
 
     uint32_t shard_index_for_chunk_(uint32_t chunk_index) const;
     uint32_t shard_internal_index_(uint32_t chunk_index) const;

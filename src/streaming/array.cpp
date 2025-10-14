@@ -768,15 +768,7 @@ bool
 zarr::Array::should_rollover_() const
 {
     const auto& dims = config_->dimensions;
-    const auto& append_dim = dims->final_dim();
-    size_t frames_before_flush =
-      append_dim.chunk_size_px * append_dim.shard_size_chunks;
-    for (auto i = 1; i < dims->ndims() - 2; ++i) {
-        frames_before_flush *= dims->at(i).array_size_px;
-    }
-
-    CHECK(frames_before_flush > 0);
-    return frames_written_ % frames_before_flush == 0;
+    return frames_written_ % dims->frames_before_flush() == 0;
 }
 
 bool
