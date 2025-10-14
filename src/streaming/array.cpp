@@ -603,6 +603,9 @@ zarr::Array::consolidate_chunks_(uint32_t shard_index)
 bool
 zarr::Array::compress_and_flush_data_()
 {
+    CHECK(compress_chunks_());
+    update_table_entries_();
+
     // construct paths to shard sinks if they don't already exist
     if (data_paths_.empty()) {
         make_data_paths_();
@@ -620,90 +623,17 @@ zarr::Array::compress_and_flush_data_()
     const auto n_shards = dims->number_of_shards();
     CHECK(data_paths_.size() == n_shards);
 
-    const auto chunks_in_memory = chunk_buffers_.size();
     const auto n_layers = dims->chunk_layers_per_shard();
     CHECK(n_layers > 0);
-
-    const auto chunk_group_offset = current_layer_ * chunks_in_memory;
 
     std::atomic<char> all_successful = 1;
 
     auto write_table = is_closing_ || should_rollover_();
 
-    std::vector<std::future<void>> futures;
-
-    // queue jobs to compress all chunks
-    const auto bytes_of_raw_chunk = config_->dimensions->bytes_per_chunk();
-    const auto bytes_per_px = bytes_of_type(config_->dtype);
-
-    for (auto i = 0; i < chunks_in_memory; ++i) {
-        auto promise = std::make_shared<std::promise<void>>();
-        futures.emplace_back(promise->get_future());
-
-        const auto chunk_idx = i + chunk_group_offset;
-        const auto shard_idx = dims->shard_index_for_chunk(chunk_idx);
-        const auto internal_idx = dims->shard_internal_index(chunk_idx);
-        auto* shard_table = shard_tables_.data() + shard_idx;
-
-        if (config_->compression_params) {
-            const auto compression_params = config_->compression_params.value();
-
-            auto job = [&chunk_buffer = chunk_buffers_[i],
-                        bytes_per_px,
-                        compression_params,
-                        shard_table,
-                        shard_idx,
-                        chunk_idx,
-                        internal_idx,
-                        promise,
-                        &all_successful](std::string& err) {
-                bool success = false;
-
-                try {
-                    if (!chunk_buffer.compress(compression_params,
-                                               bytes_per_px)) {
-                        err = "Failed to compress chunk " +
-                              std::to_string(chunk_idx) + " (internal index " +
-                              std::to_string(internal_idx) + " of shard " +
-                              std::to_string(shard_idx) + ")";
-                    }
-
-                    // update shard table with size
-                    shard_table->at(2 * internal_idx + 1) = chunk_buffer.size();
-                    success = true;
-                } catch (const std::exception& exc) {
-                    err = exc.what();
-                }
-
-                promise->set_value();
-
-                all_successful.fetch_and(static_cast<char>(success));
-                return success;
-            };
-
-            // one thread is reserved for processing the frame queue and runs
-            // the entire lifetime of the stream
-            if (thread_pool_->n_threads() == 1 ||
-                !thread_pool_->push_job(job)) {
-                std::string err;
-                if (!job(err)) {
-                    LOG_ERROR(err);
-                }
-            }
-        } else {
-            // no compression, just update shard table with size
-            shard_table->at(2 * internal_idx + 1) = bytes_of_raw_chunk;
-        }
-    }
-
-    // if we're not compressing, there aren't any futures to wait for
-    for (auto& future : futures) {
-        future.wait();
-    }
-    futures.clear();
-
     const auto bucket_name = config_->bucket_name;
     auto connection_pool = s3_connection_pool_;
+
+    std::vector<std::future<void>> futures;
 
     // wait for the chunks in each shard to finish compressing, then defragment
     // and write the shard
@@ -847,6 +777,101 @@ zarr::Array::should_rollover_() const
 
     CHECK(frames_before_flush > 0);
     return frames_written_ % frames_before_flush == 0;
+}
+
+bool
+zarr::Array::compress_chunks_()
+{
+    if (!config_->compression_params) {
+        return true; // nothing to do
+    }
+
+    std::atomic<char> all_successful = 1;
+
+    const auto& params = *config_->compression_params;
+    const size_t bytes_per_px = bytes_of_type(config_->dtype);
+
+    const auto& dims = config_->dimensions;
+
+    const uint32_t chunks_in_memory = chunk_buffers_.size();
+    const uint32_t chunk_group_offset = current_layer_ * chunks_in_memory;
+
+    std::vector<std::future<void>> futures;
+    futures.reserve(chunks_in_memory);
+
+    for (size_t i = 0; i < chunks_in_memory; ++i) {
+        auto promise = std::make_shared<std::promise<void>>();
+        futures.emplace_back(promise->get_future());
+
+        const uint32_t chunk_idx = i + chunk_group_offset;
+        const uint32_t shard_idx = dims->shard_index_for_chunk(chunk_idx);
+        const uint32_t internal_idx = dims->shard_internal_index(chunk_idx);
+        auto* shard_table = shard_tables_.data() + shard_idx;
+
+        auto job = [&chunk_buffer = chunk_buffers_[i],
+                    bytes_per_px,
+                    &params,
+                    shard_table,
+                    shard_idx,
+                    chunk_idx,
+                    internal_idx,
+                    promise,
+                    &all_successful](std::string& err) {
+            bool success = false;
+
+            try {
+                if (!chunk_buffer.compress(params, bytes_per_px)) {
+                    err = "Failed to compress chunk " +
+                          std::to_string(chunk_idx) + " (internal index " +
+                          std::to_string(internal_idx) + " of shard " +
+                          std::to_string(shard_idx) + ")";
+                }
+
+                // update shard table with size
+                shard_table->at(2 * internal_idx + 1) = chunk_buffer.size();
+                success = true;
+            } catch (const std::exception& exc) {
+                err = exc.what();
+            }
+
+            promise->set_value();
+
+            all_successful.fetch_and(static_cast<char>(success));
+            return success;
+        };
+
+        // one thread is reserved for processing the frame queue and runs
+        // the entire lifetime of the stream
+        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
+            if (std::string err; !job(err)) {
+                LOG_ERROR(err);
+            }
+        }
+    }
+
+    for (auto& future : futures) {
+        future.wait();
+    }
+
+    return static_cast<bool>(all_successful);
+}
+
+void
+zarr::Array::update_table_entries_()
+{
+    const uint32_t chunks_in_memory = chunk_buffers_.size();
+    const uint32_t chunk_group_offset = current_layer_ * chunks_in_memory;
+    const auto& dims = config_->dimensions;
+
+    for (auto i = 0; i < chunks_in_memory; ++i) {
+        const auto& chunk_buffer = chunk_buffers_[i];
+        const uint32_t chunk_idx = i + chunk_group_offset;
+        const uint32_t shard_idx = dims->shard_index_for_chunk(chunk_idx);
+        const uint32_t internal_idx = dims->shard_internal_index(chunk_idx);
+        auto& shard_table = shard_tables_[shard_idx];
+
+        shard_table[2 * internal_idx + 1] = chunk_buffer.size();
+    }
 }
 
 void

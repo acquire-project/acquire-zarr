@@ -61,6 +61,8 @@ class Array : public ArrayBase
 
     [[nodiscard]] ByteVector consolidate_chunks_(uint32_t shard_index);
     [[nodiscard]] bool compress_and_flush_data_();
+    [[nodiscard]] bool compress_chunks_();
+    void update_table_entries_();
     void rollover_();
     void close_sinks_();
 
