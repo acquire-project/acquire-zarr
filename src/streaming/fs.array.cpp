@@ -3,6 +3,7 @@
 
 #include <crc32c/crc32c.h>
 
+#include <cstring> // memcp
 #include <filesystem>
 #include <future>
 #include <unordered_set>

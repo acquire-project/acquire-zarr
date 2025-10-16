@@ -3,6 +3,7 @@
 
 #include <crc32c/crc32c.h>
 
+#include <cstring> // memcpy
 #include <future>
 
 zarr::S3Array::S3Array(std::shared_ptr<ArrayConfig> config,
