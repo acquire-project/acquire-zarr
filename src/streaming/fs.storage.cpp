@@ -19,8 +19,8 @@ zarr::FSStorage::FSStorage(std::shared_ptr<FileHandlePool> file_handle_pool)
 
 bool
 zarr::FSStorage::write_binary(const std::string& path,
-                               const std::vector<uint8_t>& data,
-                               size_t offset) const
+                              const std::vector<uint8_t>& data,
+                              size_t offset) const
 {
     void* flags = make_flags();
     const auto handle = file_handle_pool_->get_handle(path, flags);
@@ -41,8 +41,8 @@ zarr::FSStorage::write_binary(const std::string& path,
 
 bool
 zarr::FSStorage::write_string(const std::string& path,
-                               const std::string& data,
-                               size_t offset) const
+                              const std::string& data,
+                              size_t offset) const
 {
     void* flags = make_flags();
     const auto handle = file_handle_pool_->get_handle(path, flags);

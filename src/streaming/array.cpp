@@ -2,6 +2,7 @@
 #include "macros.hh"
 #include "zarr.common.hh"
 
+#include <blosc.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm> // std::fill
@@ -71,7 +72,7 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
 {
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
-    chunk_buffers_ = std::vector<LockedBuffer>(n_chunks);
+    chunk_buffers_ = std::vector<std::vector<uint8_t>>(n_chunks);
 
     const auto& dims = config_->dimensions;
     const auto number_of_shards = dims->number_of_shards();
@@ -334,7 +335,8 @@ zarr::Array::fill_buffers_()
     const auto n_bytes = config_->dimensions->bytes_per_chunk();
 
     for (auto& buf : chunk_buffers_) {
-        buf.resize_and_fill(n_bytes, 0);
+        buf.resize(n_bytes); // no-op if already that size
+        std::ranges::fill(buf, 0);
     }
 }
 
@@ -382,64 +384,49 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
         auto& chunk_buffer = chunk_buffers_[tile + group_offset];
-        bytes_written += chunk_buffer.with_lock([chunk_offset,
-                                                 frame_rows,
-                                                 frame_cols,
-                                                 tile_rows,
-                                                 tile_cols,
-                                                 tile,
-                                                 n_tiles_x,
-                                                 bytes_per_px,
-                                                 bytes_per_row,
-                                                 bytes_per_chunk,
-                                                 &frame](auto& chunk_data) {
-            const auto* data_ptr = frame.data();
-            const auto data_size = frame.size();
+        const auto* data_ptr = frame.data();
+        const auto data_size = frame.size();
 
-            const auto chunk_start = chunk_data.data();
+        const auto chunk_start = chunk_buffer.data();
 
-            const auto tile_idx_y = tile / n_tiles_x;
-            const auto tile_idx_x = tile % n_tiles_x;
+        const auto tile_idx_y = tile / n_tiles_x;
+        const auto tile_idx_x = tile % n_tiles_x;
 
-            auto chunk_pos = chunk_offset;
-            size_t bytes_written = 0;
+        auto chunk_pos = chunk_offset;
 
-            for (auto k = 0; k < tile_rows; ++k) {
-                const auto frame_row = tile_idx_y * tile_rows + k;
-                if (frame_row < frame_rows) {
-                    const auto frame_col = tile_idx_x * tile_cols;
+        for (auto k = 0; k < tile_rows; ++k) {
+            const auto frame_row = tile_idx_y * tile_rows + k;
+            if (frame_row < frame_rows) {
+                const auto frame_col = tile_idx_x * tile_cols;
 
-                    const auto region_width =
-                      std::min(frame_col + tile_cols, frame_cols) - frame_col;
+                const auto region_width =
+                  std::min(frame_col + tile_cols, frame_cols) - frame_col;
 
-                    const auto region_start =
-                      bytes_per_px * (frame_row * frame_cols + frame_col);
-                    const auto nbytes = region_width * bytes_per_px;
+                const auto region_start =
+                  bytes_per_px * (frame_row * frame_cols + frame_col);
+                const auto nbytes = region_width * bytes_per_px;
 
-                    // copy region
-                    EXPECT(region_start + nbytes <= data_size,
-                           "Buffer overflow in framme. Region start: ",
-                           region_start,
-                           " nbytes: ",
-                           nbytes,
-                           " data size: ",
-                           data_size);
-                    EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
-                           "Buffer overflow in chunk. Chunk pos: ",
-                           chunk_pos,
-                           " nbytes: ",
-                           nbytes,
-                           " bytes per chunk: ",
-                           bytes_per_chunk);
-                    memcpy(
-                      chunk_start + chunk_pos, data_ptr + region_start, nbytes);
-                    bytes_written += nbytes;
-                }
-                chunk_pos += bytes_per_row;
+                // copy region
+                EXPECT(region_start + nbytes <= data_size,
+                       "Buffer overflow in framme. Region start: ",
+                       region_start,
+                       " nbytes: ",
+                       nbytes,
+                       " data size: ",
+                       data_size);
+                EXPECT(chunk_pos + nbytes <= bytes_per_chunk,
+                       "Buffer overflow in chunk. Chunk pos: ",
+                       chunk_pos,
+                       " nbytes: ",
+                       nbytes,
+                       " bytes per chunk: ",
+                       bytes_per_chunk);
+                memcpy(
+                  chunk_start + chunk_pos, data_ptr + region_start, nbytes);
+                bytes_written += nbytes;
             }
-
-            return bytes_written;
-        });
+            chunk_pos += bytes_per_row;
+        }
     }
 
     data.assign(std::move(frame));
@@ -447,8 +434,8 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
     return bytes_written;
 }
 
-ByteVector
-zarr::Array::consolidate_chunks_(uint32_t shard_index)
+zarr::Array::ShardLayer
+zarr::Array::collect_chunks_(uint32_t shard_index)
 {
     const auto& dims = config_->dimensions;
     CHECK(shard_index < dims->number_of_shards());
@@ -467,7 +454,6 @@ zarr::Array::consolidate_chunks_(uint32_t shard_index)
 
     uint64_t last_chunk_offset = shard_table[2 * layer_offset];
     uint64_t last_chunk_size = shard_table[2 * layer_offset + 1];
-    size_t shard_size = last_chunk_size;
 
     for (auto i = 1; i < chunks_per_layer; ++i) {
         const auto offset_idx = 2 * (layer_offset + i);
@@ -479,30 +465,19 @@ zarr::Array::consolidate_chunks_(uint32_t shard_index)
         shard_table[offset_idx] = last_chunk_offset + last_chunk_size;
         last_chunk_offset = shard_table[offset_idx];
         last_chunk_size = shard_table[size_idx];
-        shard_size += last_chunk_size;
     }
-
-    std::vector<uint8_t> shard_layer(shard_size);
 
     const auto chunk_indices_this_layer =
       dims->chunk_indices_for_shard_layer(shard_index, current_layer_);
 
-    size_t offset = 0;
-    for (const auto& idx : chunk_indices_this_layer) {
-        // this clears the chunk data out of the LockedBuffer
-        const auto chunk = chunk_buffers_[idx - chunk_offset].take();
-        std::copy(chunk.begin(), chunk.end(), shard_layer.begin() + offset);
+    ShardLayer layer{ file_offset, {} };
+    layer.chunks.reserve(chunk_indices_this_layer.size());
 
-        offset += chunk.size();
+    for (const auto& idx : chunk_indices_this_layer) {
+        layer.chunks.emplace_back(chunk_buffers_[idx - chunk_offset]);
     }
 
-    EXPECT(offset == shard_size,
-           "Consolidated shard size does not match expected: ",
-           offset,
-           " != ",
-           shard_size);
-
-    return std::move(shard_layer);
+    return std::move(layer);
 }
 
 bool
@@ -595,16 +570,35 @@ zarr::Array::compress_chunks_()
             bool success = false;
 
             try {
-                if (!chunk_buffer.compress(params, bytes_per_px)) {
-                    err = "Failed to compress chunk " +
+                std::vector<uint8_t> compressed_data(chunk_buffer.size() +
+                                                     BLOSC_MAX_OVERHEAD);
+                const auto n_bytes_compressed =
+                  blosc_compress_ctx(params.clevel,
+                                     params.shuffle,
+                                     bytes_per_px,
+                                     chunk_buffer.size(),
+                                     chunk_buffer.data(),
+                                     compressed_data.data(),
+                                     compressed_data.size(),
+                                     params.codec_id.c_str(),
+                                     0,
+                                     1);
+
+                if (n_bytes_compressed <= 0) {
+                    err = "blosc_compress_ctx failed with code " +
+                          std::to_string(n_bytes_compressed) + " for chunk " +
                           std::to_string(chunk_idx) + " (internal index " +
                           std::to_string(internal_idx) + " of shard " +
                           std::to_string(shard_idx) + ")";
-                }
+                    success = false;
+                } else {
+                    compressed_data.resize(n_bytes_compressed);
+                    chunk_buffer.swap(compressed_data);
 
-                // update shard table with size
-                shard_table->at(2 * internal_idx + 1) = chunk_buffer.size();
-                success = true;
+                    // update shard table with size
+                    shard_table->at(2 * internal_idx + 1) = chunk_buffer.size();
+                    success = true;
+                }
             } catch (const std::exception& exc) {
                 err = exc.what();
             }

@@ -42,8 +42,8 @@ zarr::S3Storage::create_s3_object_(const std::string& key)
 
 bool
 zarr::S3Storage::write_binary(const std::string& key,
-                               const std::vector<uint8_t>& data,
-                               size_t offset)
+                              const std::vector<uint8_t>& data,
+                              size_t offset)
 {
     create_s3_object_(key);
 
@@ -59,8 +59,8 @@ zarr::S3Storage::write_binary(const std::string& key,
 
 bool
 zarr::S3Storage::write_string(const std::string& key,
-                               const std::string& data,
-                               size_t offset)
+                              const std::string& data,
+                              size_t offset)
 {
     create_s3_object_(key);
 

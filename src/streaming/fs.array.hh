@@ -14,10 +14,15 @@ class FSArray final
             std::shared_ptr<FileHandlePool> file_handle_pool);
 
   protected:
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::shared_ptr<void>> handles_;
+
     bool write_metadata_() override;
 
     bool flush_data_() override;
     bool flush_tables_() override;
     void close_io_streams_() override;
+
+    std::shared_ptr<void> get_handle_(const std::string& path);
 };
 } // namespace zarr

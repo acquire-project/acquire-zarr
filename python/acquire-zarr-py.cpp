@@ -1087,7 +1087,7 @@ class PyZarrStream
         }
 
         auto buf = contiguous_data.request();
-        auto* ptr = (uint8_t*)buf.ptr;
+        auto* ptr = static_cast<uint8_t*>(buf.ptr);
 
         py::gil_scoped_release release;
 

@@ -8,6 +8,15 @@
 #include <future>
 #include <unordered_set>
 
+void*
+make_flags();
+
+void
+destroy_flags(void* flags);
+
+bool
+seek_and_write(void* handle, size_t offset, ConstByteSpan data);
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -139,50 +148,76 @@ zarr::FSArray::flush_data_()
         const std::string data_path = data_paths_[shard_idx];
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
 
-        auto promise = std::make_shared<std::promise<void>>();
-        futures.emplace_back(promise->get_future());
-
-        auto job =
-          [shard_idx, data_path, file_offset, promise, &all_successful, this](
-            std::string& err) {
-              bool success = true;
-
-              try {
-                  // consolidate chunks in shard
-                  if (const auto shard_data = consolidate_chunks_(shard_idx);
-                      !write_binary(data_path, shard_data, *file_offset)) {
-                      err = "Failed to write shard at path " + data_path;
-                      success = false;
-                  } else {
-                      *file_offset += shard_data.size();
-                  }
-              } catch (const std::exception& exc) {
-                  err = "Failed to flush data: " + std::string(exc.what());
-                  success = false;
-              }
-
-              all_successful.fetch_and(success);
-              promise->set_value();
-
-              return success;
-          };
-
-        // one thread is reserved for processing the frame queue and runs the
-        // entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
-            std::string err;
-            if (!job(err)) {
-                LOG_ERROR(err);
-            }
+        const auto shard_data = collect_chunks_(shard_idx);
+        if (shard_data.chunks.empty()) {
+            LOG_ERROR("Failed to collect chunks for shard ", shard_idx);
+            return false;
         }
+        if (shard_data.offset != *file_offset) {
+            LOG_ERROR("Inconsistent file offset for shard ",
+                      shard_idx,
+                      ": expected ",
+                      *file_offset,
+                      ", got ",
+                      shard_data.offset);
+            return false;
+        }
+
+        size_t layer_offset = shard_data.offset;
+
+        for (auto& chunk : shard_data.chunks) {
+            auto promise = std::make_shared<std::promise<void>>();
+            futures.emplace_back(promise->get_future());
+
+            const auto handle = get_handle_(data_path);
+            if (handle == nullptr) {
+                LOG_ERROR("Failed to get file handle for ", data_path);
+                return false;
+            }
+
+            const auto chunk_size = chunk.size(); // we move it below
+            auto job = [data_path,
+                        handle,
+                        layer_offset,
+                        chunk = std::move(chunk),
+                        promise](std::string& err) {
+                bool success;
+                try {
+                    success = seek_and_write(handle.get(), layer_offset, chunk);
+                } catch (const std::exception& exc) {
+                    err = "Failed to write chunk at offset " +
+                          std::to_string(layer_offset) + " to path " +
+                          data_path + ": " + exc.what();
+                    success = false;
+                }
+
+                promise->set_value();
+                return success;
+            };
+
+            // one thread is reserved for processing the frame queue and runs
+            // the entire lifetime of the stream
+            if (thread_pool_->n_threads() == 1 ||
+                !thread_pool_->push_job(job)) {
+                std::string err;
+                if (!job(err)) {
+                    LOG_ERROR(err);
+                }
+            }
+
+            layer_offset += chunk_size;
+        }
+
+        *file_offset = layer_offset;
     }
 
     // wait for all threads to finish
-    for (auto& future : futures) {
-        future.wait();
-    }
-
-    return static_cast<bool>(all_successful);
+    // for (auto& future : futures) {
+    //     future.wait();
+    // }
+    //
+    // return static_cast<bool>(all_successful);
+    return true;
 }
 
 bool
@@ -211,13 +246,22 @@ zarr::FSArray::flush_tables_()
 
         std::string data_path = data_paths_[shard_idx];
 
-        if (!write_binary(data_path, table, *file_offset)) {
+        const auto handle = get_handle_(data_path);
+        if (handle == nullptr) {
+            LOG_ERROR("Failed to get file handle for ", data_path);
+            return false;
+        }
+
+        if (!seek_and_write(handle.get(), *file_offset, table)) {
             LOG_ERROR("Failed to write table and checksum to shard ",
                       shard_idx,
                       " at path ",
                       data_path);
             return false;
         }
+        *file_offset += table.size();
+
+        handles_.erase(data_path); // close the handle
     }
 
     // don't reset state if we're closing
@@ -239,4 +283,20 @@ zarr::FSArray::close_io_streams_()
     }
 
     data_paths_.clear();
+}
+
+std::shared_ptr<void>
+zarr::FSArray::get_handle_(const std::string& path)
+{
+    std::unique_lock lock(mutex_);
+    if (handles_.contains(path)) {
+        return handles_[path];
+    }
+
+    void* flags = make_flags();
+    const auto handle = file_handle_pool_->get_handle(path, flags);
+    destroy_flags(flags);
+
+    handles_.emplace(path, handle);
+    return handle;
 }

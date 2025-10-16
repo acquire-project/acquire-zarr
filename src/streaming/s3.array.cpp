@@ -68,14 +68,35 @@ zarr::S3Array::flush_data_()
               bool success = true;
 
               try {
-                  // consolidate chunks in shard
-                  if (const auto shard_data = consolidate_chunks_(shard_idx);
-                      !write_binary(data_path, shard_data, *file_offset)) {
-                      err = "Failed to write shard at path " + data_path;
-                      success = false;
-                  } else {
-                      *file_offset += shard_data.size();
+                  const auto shard_data = collect_chunks_(shard_idx);
+                  if (shard_data.chunks.empty()) {
+                      LOG_ERROR("Failed to collect chunks for shard ",
+                                shard_idx);
+                      return false;
                   }
+                  if (shard_data.offset != *file_offset) {
+                      LOG_ERROR("Inconsistent file offset for shard ",
+                                shard_idx,
+                                ": expected ",
+                                *file_offset,
+                                ", got ",
+                                shard_data.offset);
+                      return false;
+                  }
+
+                  size_t layer_offset = shard_data.offset;
+                  for (auto& chunk : shard_data.chunks) {
+                      if (!write_binary(data_path, chunk, layer_offset)) {
+                          err = "Failed to write chunk " +
+                                std::to_string(shard_idx) + " at offset " +
+                                std::to_string(layer_offset) + " to path " +
+                                data_path;
+                          success = false;
+                          break;
+                      }
+                      layer_offset += chunk.size();
+                  }
+                  *file_offset = layer_offset;
               } catch (const std::exception& exc) {
                   err = "Failed to flush data: " + std::string(exc.what());
                   success = false;

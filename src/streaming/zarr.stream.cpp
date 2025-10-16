@@ -1531,7 +1531,7 @@ ZarrStream_s::process_frame_queue_()
     std::string output_key;
 
     zarr::LockedBuffer frame;
-    while (process_frames_ || !frame_queue_->empty()) {
+    while (process_frames_) {
         {
             std::unique_lock lock(frame_queue_mutex_);
             while (frame_queue_->empty() && process_frames_) {
@@ -1546,9 +1546,10 @@ ZarrStream_s::process_frame_queue_()
                 // done
                 if (!process_frames_) {
                     break;
-                } else {
-                    continue;
                 }
+
+                // spurious wakeup, go back to waiting
+                continue;
             }
         }
 
@@ -1587,11 +1588,36 @@ ZarrStream_s::process_frame_queue_()
         }
     }
 
+    // finish frame queue
     if (!frame_queue_->empty()) {
-        LOG_WARNING("Reached end of frame queue processing with ",
-                    frame_queue_->size(),
-                    " frames remaining on queue");
-        frame_queue_->clear();
+        const size_t frames_remaining = frame_queue_->size();
+        for (size_t i = 0; i < frames_remaining; ++i) {
+            if (!frame_queue_->pop(frame, output_key)) {
+                continue;
+            }
+
+            if (auto it = output_arrays_.find(output_key);
+                it == output_arrays_.end()) {
+                // If we have gotten here, something has gone seriously wrong
+                set_error_("Output node not found for key: '" + output_key +
+                           "'");
+                std::unique_lock lock(frame_queue_mutex_);
+                frame_queue_finished_cv_.notify_all();
+                return;
+            } else {
+                auto& output_node = it->second;
+
+                if (output_node.array->write_frame(frame) != frame.size()) {
+                    set_error_("Failed to write frame to writer for key: " +
+                               output_key);
+                    std::unique_lock lock(frame_queue_mutex_);
+                    frame_queue_finished_cv_.notify_all();
+                    return;
+                }
+            }
+        }
+
+        frame_queue_empty_cv_.notify_all(); // queue is now empty
     }
 
     std::unique_lock lock(frame_queue_mutex_);

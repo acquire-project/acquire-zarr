@@ -20,7 +20,7 @@ class CMakeBuild(build_ext):
 
         build_dir = os.path.abspath(os.path.join(ext.sourcedir, "build"))
 
-        cfg = "Debug" # if self.debug else "Release"
+        cfg = "Debug" if self.debug else "Release"
 
         cmake_args = [
             "--preset=default",

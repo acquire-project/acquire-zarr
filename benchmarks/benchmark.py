@@ -150,15 +150,23 @@ def run_acquire_zarr_test(
     elapsed_times = []
 
     total_start = time.perf_counter_ns()
+    chunk = np.empty((tchunk_size, 2048, 2048), dtype=np.uint16)
     for i in range(data.shape[0]):
         start_plane = time.perf_counter_ns()
-        stream.append(data[i])
+        chunk_idx = i % tchunk_size
+        chunk[chunk_idx] = data[i]
+        if chunk_idx == tchunk_size - 1:
+            stream.append(chunk)
         elapsed = time.perf_counter_ns() - start_plane
         elapsed_times.append(elapsed)
         print(f"Acquire-zarr: Plane {i} written in {elapsed / 1e6:.3f} ms")
 
     # Close (or flush) the stream to finalize writes.
-    del stream
+    start_close = time.perf_counter_ns()
+    stream.close()
+    elapsed = time.perf_counter_ns() - start_close
+    elapsed_times.append(elapsed)
+    print(f"Acquire-zarr: Final close took {elapsed / 1e6:.3f} ms")
     total_elapsed = time.perf_counter_ns() - total_start
     tot_ms = total_elapsed / 1e6
     print(f"Acquire-zarr: Total write time: {tot_ms:.3f} ms")
