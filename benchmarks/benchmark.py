@@ -141,7 +141,8 @@ def run_acquire_zarr_test(
                 ],
                 data_type=aqz.DataType.UINT16,
             )
-        ]
+        ],
+        overwrite=True,
     )
 
     # Create a ZarrStream for appending frames.
