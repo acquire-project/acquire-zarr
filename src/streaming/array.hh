@@ -2,7 +2,6 @@
 
 #include "array.base.hh"
 #include "definitions.hh"
-#include "locked.buffer.hh"
 #include "thread.pool.hh"
 
 namespace zarr {
@@ -16,7 +15,7 @@ class Array : public ArrayBase
 
     size_t memory_usage() const noexcept override;
 
-    [[nodiscard]] size_t write_frame(LockedBuffer&) override;
+    [[nodiscard]] size_t write_frame(std::vector<uint8_t>&) override;
 
   protected:
     struct ShardLayer
@@ -47,7 +46,7 @@ class Array : public ArrayBase
     bool should_flush_() const;
     bool should_rollover_() const;
 
-    size_t write_frame_to_chunks_(LockedBuffer& data);
+    size_t write_frame_to_chunks_(std::vector<uint8_t>& data);
 
     [[nodiscard]] ShardLayer collect_chunks_(uint32_t shard_index);
     [[nodiscard]] bool compress_and_flush_data_();

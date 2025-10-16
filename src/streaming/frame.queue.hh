@@ -1,7 +1,6 @@
 #pragma once
 
 #include "definitions.hh"
-#include "locked.buffer.hh"
 
 #include <atomic>
 #include <condition_variable>
@@ -16,8 +15,8 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(LockedBuffer& frame, const std::string& key);
-    bool pop(LockedBuffer& frame, std::string& key);
+    bool push(std::vector<uint8_t>& frame, const std::string& key);
+    bool pop(std::vector<uint8_t>& frame, std::string& key);
 
     size_t size() const;
     size_t bytes_used() const;
@@ -29,7 +28,7 @@ class FrameQueue
     struct Frame
     {
         std::string key;
-        LockedBuffer data;
+        std::vector<uint8_t> data;
         std::atomic<bool> ready{ false };
     };
 

@@ -44,7 +44,7 @@ zarr::MultiscaleArray::memory_usage() const noexcept
 }
 
 size_t
-zarr::MultiscaleArray::write_frame(LockedBuffer& data)
+zarr::MultiscaleArray::write_frame(std::vector<uint8_t>& data)
 {
     if (arrays_.empty()) {
         LOG_WARNING("Attempt to write to group with no arrays");
@@ -233,7 +233,7 @@ zarr::MultiscaleArray::make_base_array_config_() const
 }
 
 void
-zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
+zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& data)
 {
     if (!downsampler_) {
         return; // no downsampler, nothing to do
@@ -242,7 +242,7 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
-        LockedBuffer downsampled_frame;
+        std::vector<uint8_t> downsampled_frame;
         if (downsampler_->take_frame(i, downsampled_frame)) {
             const auto n_bytes = arrays_[i]->write_frame(downsampled_frame);
             EXPECT(n_bytes == downsampled_frame.size(),

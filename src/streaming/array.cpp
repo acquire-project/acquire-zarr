@@ -101,7 +101,7 @@ zarr::Array::memory_usage() const noexcept
 }
 
 size_t
-zarr::Array::write_frame(LockedBuffer& data)
+zarr::Array::write_frame(std::vector<uint8_t>& data)
 {
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
@@ -341,7 +341,7 @@ zarr::Array::fill_buffers_()
 }
 
 size_t
-zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
+zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& data)
 {
     // break the frame into tiles and write them to the chunk buffers
     const auto bytes_per_px = bytes_of_type(config_->dtype);
@@ -379,7 +379,7 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    auto frame = data.take();
+    std::vector<uint8_t> frame = std::move(data);
 
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {
@@ -429,7 +429,7 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
         }
     }
 
-    data.assign(std::move(frame));
+    data = std::move(frame);
 
     return bytes_written;
 }

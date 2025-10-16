@@ -2,7 +2,6 @@
 
 #include "array.dimensions.hh"
 #include "blosc.compression.params.hh"
-#include "locked.buffer.hh"
 #include "thread.pool.hh"
 #include "zarr.types.h"
 
@@ -73,7 +72,7 @@ class ArrayBase
      * @param data The data to write.
      * @return The number of bytes successfully written.
      */
-    [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
+    [[nodiscard]] virtual size_t write_frame(std::vector<uint8_t>& data) = 0;
 
   protected:
     std::shared_ptr<ArrayConfig> config_;

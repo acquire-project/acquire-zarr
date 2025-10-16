@@ -4,7 +4,6 @@
 #include "array.dimensions.hh"
 #include "file.handle.hh"
 #include "frame.queue.hh"
-#include "locked.buffer.hh"
 #include "plate.hh"
 #include "s3.connection.hh"
 #include "thread.pool.hh"
@@ -50,7 +49,7 @@ struct ZarrStream_s
     struct ZarrOutputArray
     {
         std::string output_key;
-        zarr::LockedBuffer frame_buffer;
+        std::vector<uint8_t> frame_buffer;
         size_t frame_buffer_offset;
         std::unique_ptr<zarr::ArrayBase> array;
     };

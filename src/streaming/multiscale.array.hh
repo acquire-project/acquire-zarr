@@ -25,7 +25,7 @@ class MultiscaleArray : public ArrayBase
      * @param data The frame data to write.
      * @return The number of bytes written of the full-resolution frame.
      */
-    [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
+    [[nodiscard]] size_t write_frame(std::vector<uint8_t>& data) override;
 
   protected:
     std::unique_ptr<Downsampler> downsampler_;
@@ -63,6 +63,6 @@ class MultiscaleArray : public ArrayBase
      * resolution arrays.
      * @param data The frame data to write.
      */
-    void write_multiscale_frames_(LockedBuffer& data);
+    void write_multiscale_frames_(std::vector<uint8_t>& data);
 };
 } // namespace zarr

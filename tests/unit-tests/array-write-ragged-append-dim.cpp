@@ -118,7 +118,7 @@ main()
               config, thread_pool, std::make_shared<zarr::FileHandlePool>());
 
             const size_t frame_size = array_width * array_height * nbytes_px;
-            zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
+            std::vector<uint8_t> data(frame_size, 0);
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
                 CHECK(writer->write_frame(data));

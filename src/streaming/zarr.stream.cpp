@@ -866,8 +866,9 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer.assign_at(frame_buffer_offset,
-                                   { data + bytes_written, bytes_to_copy });
+            memcpy(frame_buffer.data() + frame_buffer_offset,
+                   data + bytes_written,
+                   bytes_to_copy);
             frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
@@ -890,12 +891,12 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
                 frame_buffer_offset = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
-            frame_buffer.assign_at(0, { data, bytes_remaining });
+            memcpy(frame_buffer.data(), data, bytes_remaining);
             frame_buffer_offset = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            zarr::LockedBuffer frame;
-            frame.assign({ data, bytes_of_frame });
+            std::vector<uint8_t> frame(bytes_of_frame);
+            frame.assign(data, data + bytes_of_frame);
 
             std::unique_lock lock(frame_queue_mutex_);
             while (!frame_queue_->push(frame, key) && process_frames_) {
@@ -1178,7 +1179,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                   dims->height_dim().array_size_px *
                                   zarr::bytes_of_type(settings->data_type);
 
-    output_node.frame_buffer.resize_and_fill(frame_size_bytes, 0);
+    output_node.frame_buffer.resize(frame_size_bytes);
+    std::ranges::fill(output_node.frame_buffer, 0);
     output_arrays_.emplace(output_node.output_key, std::move(output_node));
 
     return true;
@@ -1530,7 +1532,7 @@ ZarrStream_s::process_frame_queue_()
 
     std::string output_key;
 
-    zarr::LockedBuffer frame;
+    std::vector<uint8_t> frame;
     while (process_frames_) {
         {
             std::unique_lock lock(frame_queue_mutex_);
