@@ -51,7 +51,15 @@ zarr::FileHandlePool::get_handle(const std::string& filename, void* flags)
 {
     std::unique_lock lock(mutex_);
     if (const auto it = handle_map_.find(filename); it != handle_map_.end()) {
-        return it->second->second.lock();
+        if (auto handle = it->second->second.lock()) {
+            // move to front of list
+            handles_.splice(handles_.begin(), handles_, it->second);
+            return handle;
+        }
+
+        // expired, remove from list and map
+        handles_.erase(it->second);
+        handle_map_.erase(it);
     }
 
     cv_.wait(lock, [&] { return handles_.size() < max_active_handles_; });
@@ -63,7 +71,7 @@ zarr::FileHandlePool::get_handle(const std::string& filename, void* flags)
     EXPECT(handle != nullptr, "Failed to create file handle for " + filename);
 
     handles_.emplace_front(filename, handle);
-    handle_map_[filename] = handles_.begin();
+    handle_map_.emplace(filename, handles_.begin());
 
     return handle;
 }
@@ -83,10 +91,10 @@ bool
 zarr::FileHandlePool::evict_idle_handle_()
 {
     bool evicted = false;
-    for (auto it = handles_.begin(); it != handles_.end(); ++it) {
+    for (auto it = handles_.begin(); it != handles_.end();) {
         if (it->second.expired()) {
             handle_map_.erase(it->first);
-            handles_.erase(it);
+            it = handles_.erase(it);
             evicted = true;
         }
     }

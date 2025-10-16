@@ -23,9 +23,17 @@ zarr::S3MultiscaleArray::write_metadata_()
         LOG_ERROR("Failed to make metadata.");
         return false;
     }
-    const std::string path = node_path_() + "/zarr.json";
 
-    return write_string_(path, metadata, 0);
+    if (last_written_metadata_ == metadata) {
+        return true; // no changes
+    }
+    const std::string key = node_path_() + "/zarr.json";
+
+    bool success;
+    if ((success = write_string(key, metadata, 0) && finalize_object(key))) {
+        last_written_metadata_ = metadata;
+    }
+    return success;
 }
 
 bool

@@ -12,9 +12,6 @@ class FSStorage
     explicit FSStorage(std::shared_ptr<FileHandlePool> file_handle_pool);
     virtual ~FSStorage() = default;
 
-  protected:
-    std::shared_ptr<FileHandlePool> file_handle_pool_;
-
     /**
      * @brief Write binary data to a path at the given offset.
      * @param path The path to write to.
@@ -22,9 +19,9 @@ class FSStorage
      * @param offset The offset to write at.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] bool write_binary_(const std::string& path,
-                                     const std::vector<uint8_t>& data,
-                                     size_t offset) const;
+    [[nodiscard]] bool write_binary(const std::string& path,
+                                    const std::vector<uint8_t>& data,
+                                    size_t offset) const;
 
     /**
      * @brief Write a string to a path at the given offset.
@@ -33,8 +30,11 @@ class FSStorage
      * @param offset The offset to write at.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] bool write_string_(const std::string& path,
-                                     const std::string& data,
-                                     size_t offset) const;
+    [[nodiscard]] bool write_string(const std::string& path,
+                                    const std::string& data,
+                                    size_t offset) const;
+
+  protected:
+    std::shared_ptr<FileHandlePool> file_handle_pool_;
 };
 } // namespace zarr

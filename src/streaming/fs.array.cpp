@@ -97,9 +97,18 @@ zarr::FSArray::write_metadata_()
         LOG_ERROR("Failed to make metadata.");
         return false;
     }
+
+    if (last_written_metadata_ == metadata) {
+        return true; // no changes
+    }
     const std::string path = node_path_() + "/zarr.json";
 
-    return write_string_(path, metadata, 0);
+    bool success;
+    if ((success = write_string(path, metadata, 0))) {
+        last_written_metadata_ = metadata;
+    }
+
+    return success;
 }
 
 bool
@@ -139,12 +148,12 @@ zarr::FSArray::flush_data_()
 
               try {
                   // consolidate chunks in shard
-                  const auto shard_data = consolidate_chunks_(shard_idx);
-                  if (!write_binary_(data_path, shard_data, *file_offset)) {
+                  if (const auto shard_data = consolidate_chunks_(shard_idx);
+                      !write_binary(data_path, shard_data, *file_offset)) {
                       err = "Failed to write shard at path " + data_path;
                       success = false;
                   } else {
-                      *file_offset = shard_data.size();
+                      *file_offset += shard_data.size();
                   }
               } catch (const std::exception& exc) {
                   err = "Failed to flush data: " + std::string(exc.what());
@@ -201,7 +210,7 @@ zarr::FSArray::flush_tables_()
 
         std::string data_path = data_paths_[shard_idx];
 
-        if (!write_binary_(data_path, table, *file_offset)) {
+        if (!write_binary(data_path, table, *file_offset)) {
             LOG_ERROR("Failed to write table and checksum to shard ",
                       shard_idx,
                       " at path ",
@@ -216,7 +225,6 @@ zarr::FSArray::flush_tables_()
             std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
         }
         std::ranges::fill(shard_file_offsets_, 0);
-        current_layer_ = 0;
     }
 
     return true;

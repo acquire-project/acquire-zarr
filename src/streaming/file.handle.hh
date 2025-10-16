@@ -5,6 +5,7 @@
 #include <memory> // for std::unique_ptr
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace zarr {
 /**

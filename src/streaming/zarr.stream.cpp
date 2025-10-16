@@ -2,9 +2,11 @@
 #include "array.base.hh"
 #include "fs.array.hh"
 #include "fs.multiscale.array.hh"
+#include "fs.storage.hh"
 #include "macros.hh"
 #include "s3.array.hh"
-#include <s3.multiscale.array.hh>
+#include "s3.multiscale.array.hh"
+#include "s3.storage.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
@@ -806,23 +808,6 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
 
     return true;
 }
-
-std::string
-dimension_type_to_string(ZarrDimensionType type)
-{
-    switch (type) {
-        case ZarrDimensionType_Time:
-            return "time";
-        case ZarrDimensionType_Channel:
-            return "channel";
-        case ZarrDimensionType_Space:
-            return "space";
-        case ZarrDimensionType_Other:
-            return "other";
-        default:
-            return "(unknown)";
-    }
-}
 } // namespace
 
 /* ZarrStream_s implementation */
@@ -941,46 +926,36 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
         return ZarrStatusCode_InvalidArgument;
     }
 
-    // // check if we have already written custom metadata
-    // if (!custom_metadata_sink_) {
-    //     const std::string metadata_key = "acquire.json";
-    //     std::string base_path = store_path_;
-    //     if (base_path.starts_with("file://")) {
-    //         base_path = base_path.substr(7);
-    //     }
-    //     const auto prefix = base_path.empty() ? "" : base_path + "/";
-    //     const auto sink_path = prefix + metadata_key;
-    //
-    //     if (is_s3_acquisition_()) {
-    //         custom_metadata_sink_ = zarr::make_s3_sink(
-    //           s3_settings_->bucket_name, sink_path, s3_connection_pool_);
-    //     } else {
-    //         custom_metadata_sink_ =
-    //           zarr::make_file_sink(sink_path, file_handle_pool_);
-    //     }
-    // } else if (!overwrite) { // custom metadata already written, don't overwrite
-    //     LOG_ERROR("Custom metadata already written, use overwrite flag");
-    //     return ZarrStatusCode_WillNotOverwrite;
-    // }
-    //
-    // if (!custom_metadata_sink_) {
-    //     LOG_ERROR("Custom metadata sink not found");
-    //     return ZarrStatusCode_InternalError;
-    // }
-    //
-    // const auto metadata_json = nlohmann::json::parse(custom_metadata,
-    //                                                  nullptr, // callback
-    //                                                  false, // allow exceptions
-    //                                                  true   // ignore comments
-    // );
-    //
-    // const auto metadata_str = metadata_json.dump(4);
-    // std::span data{ reinterpret_cast<const uint8_t*>(metadata_str.data()),
-    //                 metadata_str.size() };
-    // if (!custom_metadata_sink_->write(0, data)) {
-    //     LOG_ERROR("Error writing custom metadata");
-    //     return ZarrStatusCode_IOError;
-    // }
+    const std::string prefix = store_path_.empty() ? "" : store_path_ + "/";
+    const std::string path = prefix + "acquire.json";
+
+    // check if we have already written custom metadata
+    if (custom_metadata_ &&
+        !overwrite) { // custom metadata already written, don't
+        LOG_ERROR("Custom metadata already written, use overwrite flag");
+        return ZarrStatusCode_WillNotOverwrite;
+    }
+
+    const auto metadata_json = nlohmann::json::parse(custom_metadata,
+                                                     nullptr, // callback
+                                                     false, // allow exceptions
+                                                     true   // ignore comments
+    );
+
+    custom_metadata_ = metadata_json.dump(4);
+
+    bool success;
+    if (is_s3_acquisition_()) {
+        success = write_string_to_s3_(
+          s3_settings_->bucket_name, path, *custom_metadata_);
+    } else {
+        success = write_string_to_file_(path, *custom_metadata_);
+    }
+
+    if (!success) {
+        LOG_ERROR("Error writing custom metadata");
+        return ZarrStatusCode_IOError;
+    }
     return ZarrStatusCode_Success;
 }
 
@@ -1322,6 +1297,9 @@ bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     store_path_ = zarr::trim(settings->store_path);
+    if (store_path_.starts_with("file://")) {
+        store_path_ = store_path_.substr(7);
+    }
 
     std::optional<std::string> bucket_name;
     s3_settings_ = make_s3_settings(settings->s3_settings);
@@ -1432,75 +1410,62 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    // std::optional<std::string> bucket_name;
-    // if (s3_settings_) {
-    //     bucket_name = s3_settings_->bucket_name;
-    // }
-    //
-    // const nlohmann::json group_metadata = nlohmann::json({
-    //   { "zarr_format", 3 },
-    //   { "consolidated_metadata", nullptr },
-    //   { "node_type", "group" },
-    //   { "attributes", nlohmann::json::object() },
-    // });
-    // const std::string metadata_key = "zarr.json";
-    // std::string metadata_str;
-    //
-    // for (const auto& parent_group_key : intermediate_group_paths_) {
-    //     const std::string relative_path =
-    //       (parent_group_key.empty() ? "" : parent_group_key);
-    //
-    //     if (auto pit = plates_.find(relative_path); // is it a plate?
-    //         pit != plates_.end()) {
-    //         const auto& plate = pit->second;
-    //         nlohmann::json plate_metadata(
-    //           group_metadata); // make a copy to modify
-    //
-    //         // not supported for Zarr V2 / NGFF 0.4
-    //         plate_metadata["attributes"]["ome"] = {
-    //             { "version", "0.5" },
-    //             { "plate", plate.to_json() },
-    //         };
-    //
-    //         metadata_str = plate_metadata.dump(4);
-    //     } else if (auto wit = wells_.find(relative_path); // is it a well?
-    //                wit != wells_.end()) {
-    //         const auto& well = wit->second;
-    //         nlohmann::json well_metadata(
-    //           group_metadata); // make a copy to modify
-    //
-    //         // not supported for Zarr V2 / NGFF 0.4
-    //         well_metadata["attributes"]["ome"] = {
-    //             { "version", "0.5" },
-    //             { "well", well.to_json() },
-    //         };
-    //
-    //         metadata_str = well_metadata.dump(4);
-    //     } else { // generic group
-    //         metadata_str = group_metadata.dump(4);
-    //     }
-    //
-    //     ConstByteSpan metadata_span(
-    //       reinterpret_cast<const uint8_t*>(metadata_str.data()),
-    //       metadata_str.size());
-    //
-    //     const std::string sink_path =
-    //       store_path_ + "/" + relative_path + "/" + metadata_key;
-    //     std::unique_ptr<zarr::Sink> metadata_sink;
-    //     if (is_s3_acquisition_()) {
-    //         metadata_sink = zarr::make_s3_sink(
-    //           bucket_name.value(), sink_path, s3_connection_pool_);
-    //     } else {
-    //         metadata_sink = zarr::make_file_sink(sink_path, file_handle_pool_);
-    //     }
-    //
-    //     if (!metadata_sink->write(0, metadata_span) ||
-    //         !zarr::finalize_sink(std::move(metadata_sink))) {
-    //         set_error_("Failed to write intermediate metadata for group '" +
-    //                    parent_group_key + "'");
-    //         return false;
-    //     }
-    // }
+    const nlohmann::json group_metadata = nlohmann::json({
+      { "zarr_format", 3 },
+      { "consolidated_metadata", nullptr },
+      { "node_type", "group" },
+      { "attributes", nlohmann::json::object() },
+    });
+    const std::string metadata_key = "zarr.json";
+    std::string metadata_str;
+
+    for (const auto& parent_group_key : intermediate_group_paths_) {
+        const std::string relative_path =
+          (parent_group_key.empty() ? "" : parent_group_key);
+
+        if (auto pit = plates_.find(relative_path); // is it a plate?
+            pit != plates_.end()) {
+            const auto& plate = pit->second;
+            nlohmann::json plate_metadata(
+              group_metadata); // make a copy to modify
+
+            // not supported for Zarr V2 / NGFF 0.4
+            plate_metadata["attributes"]["ome"] = {
+                { "version", "0.5" },
+                { "plate", plate.to_json() },
+            };
+
+            metadata_str = plate_metadata.dump(4);
+        } else if (auto wit = wells_.find(relative_path); // is it a well?
+                   wit != wells_.end()) {
+            const auto& well = wit->second;
+            nlohmann::json well_metadata(
+              group_metadata); // make a copy to modify
+
+            // not supported for Zarr V2 / NGFF 0.4
+            well_metadata["attributes"]["ome"] = {
+                { "version", "0.5" },
+                { "well", well.to_json() },
+            };
+
+            metadata_str = well_metadata.dump(4);
+        } else { // generic group
+            metadata_str = group_metadata.dump(4);
+        }
+
+        const std::string path =
+          store_path_ + "/" + relative_path + "/" + metadata_key;
+        if (is_s3_acquisition_()) {
+            if (!write_string_to_s3_(
+                  s3_settings_->bucket_name, path, metadata_str)) {
+                return false;
+            }
+        } else {
+            if (!write_string_to_file_(path, metadata_str)) {
+                return false;
+            }
+        }
+    }
 
     return true;
 }
@@ -1524,7 +1489,7 @@ ZarrStream_s::init_frame_queue_()
     }
 
     // cap the frame buffer at 1 GiB, or 10 frames, whichever is larger
-    const auto buffer_size_bytes = 1ULL << 30;
+    constexpr auto buffer_size_bytes = 1ULL << 30;
     const auto frame_count =
       std::max(10ULL, buffer_size_bytes / frame_size_bytes);
 
@@ -1666,12 +1631,6 @@ finalize_stream(struct ZarrStream_s* stream)
     // thread
     stream->thread_pool_->await_stop();
 
-    // if (stream->custom_metadata_sink_ &&
-    //     !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
-    //     LOG_ERROR(
-    //       "Error finalizing Zarr stream. Failed to write custom metadata");
-    // }
-
     for (auto& [key, output] : stream->output_arrays_) {
         if (!zarr::finalize_array(std::move(output.array))) {
             LOG_ERROR(
@@ -1688,4 +1647,26 @@ finalize_stream(struct ZarrStream_s* stream)
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::write_string_to_file_(const std::string& path,
+                                    const std::string& data) const
+{
+    EXPECT(file_handle_pool_ != nullptr, "File handle pool is not initialized");
+
+    zarr::FSStorage storage(file_handle_pool_);
+    return storage.write_string(path, data, 0);
+}
+
+bool
+ZarrStream_s::write_string_to_s3_(const std::string& bucket_name,
+                                  const std::string& key,
+                                  const std::string& data) const
+{
+    EXPECT(s3_connection_pool_ != nullptr,
+           "S3 connection pool is not initialized");
+
+    zarr::S3Storage storage(bucket_name, s3_connection_pool_);
+    return storage.write_string(key, data, 0) && storage.finalize_object(key);
 }

@@ -15,7 +15,7 @@ zarr::S3Storage::S3Storage(const std::string& bucket_name,
 bool
 zarr::S3Storage::finalize_object(const std::string& path)
 {
-    if (auto it = s3_objects_.find(path); it != s3_objects_.end()) {
+    if (const auto it = s3_objects_.find(path); it != s3_objects_.end()) {
         if (const auto& s3_object = it->second; s3_object != nullptr) {
             if (!s3_object->close()) {
                 LOG_ERROR("Failed to finalize S3 object at ", path);
@@ -41,7 +41,7 @@ zarr::S3Storage::create_s3_object_(const std::string& key)
 }
 
 bool
-zarr::S3Storage::write_binary_(const std::string& key,
+zarr::S3Storage::write_binary(const std::string& key,
                                const std::vector<uint8_t>& data,
                                size_t offset)
 {
@@ -58,7 +58,7 @@ zarr::S3Storage::write_binary_(const std::string& key,
 }
 
 bool
-zarr::S3Storage::write_string_(const std::string& key,
+zarr::S3Storage::write_string(const std::string& key,
                                const std::string& data,
                                size_t offset)
 {

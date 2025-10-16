@@ -165,7 +165,12 @@ jobs:
         run: python -m pip install ".[testing]"
 
       - name: Test Python
-        run: python -m pytest -v -k test_stream_data_to_s3
+        run: |
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >>.env
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >>.env
+          echo "ZARR_S3_ENDPOINT=$ZARR_S3_ENDPOINT" >>.env
+          echo "ZARR_S3_BUCKET_NAME=$ZARR_S3_BUCKET_NAME" >>.env
+          python -m pytest -s -k test_stream_data_to_s3
 
 
   test-python:

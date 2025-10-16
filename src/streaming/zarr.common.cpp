@@ -17,8 +17,7 @@ zarr::trim(std::string_view s)
 
     // trim left
     std::string trimmed(s);
-    trimmed.erase(trimmed.begin(),
-                  std::find_if(trimmed.begin(), trimmed.end(), [](char c) {
+    trimmed.erase(trimmed.begin(), std::ranges::find_if(trimmed, [](char c) {
                       return !std::isspace(c);
                   }));
 

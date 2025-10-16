@@ -248,7 +248,7 @@ zarr::Array::make_metadata_(std::string& metadata_str)
 
     metadata["codecs"] = codecs;
 
-    metadata_str_ = metadata.dump(4);
+    metadata_str = metadata.dump(4);
 
     return true;
 }
@@ -288,7 +288,7 @@ zarr::Array::make_data_paths_()
         paths_queue.emplace(data_root_);
 
         // create intermediate paths
-        for (auto i = 1;                 // skip the last dimension
+        for (auto i = 1;                  // skip the last dimension
              i < dimensions->ndims() - 1; // skip the x dimension
              ++i) {
             const auto& dim = dimensions->at(i);
@@ -305,11 +305,11 @@ zarr::Array::make_data_paths_()
                     paths_queue.push(path + (path.empty() ? kstr : "/" + kstr));
                 }
             }
-             }
+        }
 
         // create final paths
         data_paths_.reserve(paths_queue.size() *
-                          shards_along_dimension(dimensions->width_dim()));
+                            shards_along_dimension(dimensions->width_dim()));
         {
             const auto& dim = dimensions->width_dim();
             const auto n_parts = shards_along_dimension(dim);
@@ -520,12 +520,15 @@ zarr::Array::compress_and_flush_data_()
         return false;
     }
 
-    if (const auto should_write_table = is_closing_ || should_rollover_();
-        should_write_table && !flush_tables_()) {
-        LOG_ERROR("Failed to flush shard tables");
-        return false;
-    } else if (!should_write_table) {
+    if (is_closing_ || should_rollover_()) { // flush table
+        if (!flush_tables_()) {
+            LOG_ERROR("Failed to flush shard tables");
+            return false;
+        }
+        current_layer_ = 0;
+    } else {
         ++current_layer_;
+        CHECK(current_layer_ < config_->dimensions->chunk_layers_per_shard());
     }
 
     return true;

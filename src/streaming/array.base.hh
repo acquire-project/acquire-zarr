@@ -79,7 +79,7 @@ class ArrayBase
     std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
 
-    std::string metadata_str_;
+    std::string last_written_metadata_;
 
     std::string node_path_() const;
     [[nodiscard]] virtual bool make_metadata_(std::string& metadata_str) = 0;

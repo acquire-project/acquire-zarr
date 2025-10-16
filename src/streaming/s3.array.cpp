@@ -22,9 +22,17 @@ zarr::S3Array::write_metadata_()
         LOG_ERROR("Failed to make metadata.");
         return false;
     }
-    const std::string path = node_path_() + "/zarr.json";
 
-    return write_string_(path, metadata, 0);
+    if (last_written_metadata_ == metadata) {
+        return true; // no changes
+    }
+    const std::string key = node_path_() + "/zarr.json";
+
+    bool success;
+    if ((success = write_string(key, metadata, 0) && finalize_object(key))) {
+        last_written_metadata_ = metadata;
+    }
+    return success;
 }
 
 bool
@@ -60,12 +68,12 @@ zarr::S3Array::flush_data_()
 
               try {
                   // consolidate chunks in shard
-                  const auto shard_data = consolidate_chunks_(shard_idx);
-                  if (!write_binary_(data_path, shard_data, *file_offset)) {
+                  if (const auto shard_data = consolidate_chunks_(shard_idx);
+                      !write_binary(data_path, shard_data, *file_offset)) {
                       err = "Failed to write shard at path " + data_path;
                       success = false;
                   } else {
-                      *file_offset = shard_data.size();
+                      *file_offset += shard_data.size();
                   }
               } catch (const std::exception& exc) {
                   err = "Failed to flush data: " + std::string(exc.what());
@@ -122,7 +130,7 @@ zarr::S3Array::flush_tables_()
 
         std::string data_path = data_paths_[shard_idx];
 
-        if (!write_binary_(data_path, table, *file_offset)) {
+        if (!write_binary(data_path, table, *file_offset)) {
             LOG_ERROR("Failed to write table and checksum to shard ",
                       shard_idx,
                       " at path ",
@@ -147,7 +155,7 @@ void
 zarr::S3Array::close_io_streams_()
 {
     for (const auto& key : data_paths_) {
-        s3_objects_.erase(key);
+        EXPECT(finalize_object(key), "Failed to finalize S3 object at ", key);
     }
 
     data_paths_.clear();

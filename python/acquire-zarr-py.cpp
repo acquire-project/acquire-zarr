@@ -888,7 +888,7 @@ class PyZarrStreamSettings
         settings_.overwrite = static_cast<int>(overwrite_);
 
         if (s3_settings_) {
-            *(settings_.s3_settings) = *(s3_settings_->settings());
+            settings_.s3_settings = s3_settings_->settings();
         }
 
         // construct array lifetime props and set up arrays

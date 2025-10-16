@@ -23,9 +23,18 @@ zarr::FSMultiscaleArray::write_metadata_()
         LOG_ERROR("Failed to make metadata.");
         return false;
     }
+
+    if (last_written_metadata_ == metadata) {
+        return true; // no changes
+    }
     const std::string path = node_path_() + "/zarr.json";
 
-    return write_string_(path, metadata, 0);
+    bool success;
+    if ((success = write_string(path, metadata, 0))) {
+        last_written_metadata_ = metadata;
+    }
+
+    return success;
 }
 
 bool

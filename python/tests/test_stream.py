@@ -402,13 +402,16 @@ def test_stream_data_to_filesystem(
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    sharding_codec = metadata.codecs[0]
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
             if compression_codec == CompressionCodec.BLOSC_LZ4
             else zblosc.BloscCname.zstd
         )
-        blosc_codec = metadata.codecs[0].codecs[1]
+
+        assert len(sharding_codec.codecs) == 2
+        blosc_codec = sharding_codec.codecs[1]
         assert blosc_codec.cname == cname
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
@@ -420,7 +423,7 @@ def test_stream_data_to_filesystem(
                        store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
                ).stat().st_size <= shard_size_bytes
     else:
-        assert len(metadata.codecs[0].codecs) == 1
+        assert len(sharding_codec.codecs) == 1
 
         assert (
                 store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
@@ -456,12 +459,12 @@ def test_stream_data_to_s3(
         pytest.skip("S3 settings not set")
 
     settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace(
-        "]", ""
+        "]", "_"
     )
     settings.s3 = s3_settings
-    settings.data_type = np.uint16
+    settings.arrays[0].data_type = np.uint16
     if compression_codec is not None:
-        settings.compression = CompressionSettings(
+        settings.arrays[0].compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
             codec=compression_codec,
             level=1,
@@ -501,18 +504,23 @@ def test_stream_data_to_s3(
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    assert len(metadata.codecs) == 1 # sharding codec
+    sharding_codec = metadata.codecs[0]
+
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
             if compression_codec == CompressionCodec.BLOSC_LZ4
             else zblosc.BloscCname.zstd
         )
-        blosc_codec = metadata.codecs[0].codecs[1]
+        assert len(sharding_codec.codecs) == 2
+
+        blosc_codec = sharding_codec.codecs[1]
         assert blosc_codec.cname == cname
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
     else:
-        assert len(metadata.codecs[0].codecs) == 1
+        assert len(sharding_codec.codecs) == 1 # bytes codec
 
     # cleanup
     s3 = s3fs.S3FileSystem(
