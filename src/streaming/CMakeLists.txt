@@ -29,19 +29,27 @@ add_library(${tgt}
         s3.connection.cpp
         file.handle.hh
         file.handle.cpp
-        sink.hh
-        sink.cpp
-        file.sink.hh
-        file.sink.cpp
         ${PLATFORM_CPP}
-        s3.sink.hh
-        s3.sink.cpp
+        s3.object.hh
+        s3.object.cpp
         array.base.hh
         array.base.cpp
         array.hh
         array.cpp
         multiscale.array.hh
         multiscale.array.cpp
+        fs.storage.hh
+        fs.storage.cpp
+        fs.array.hh
+        fs.array.cpp
+        fs.multiscale.array.hh
+        fs.multiscale.array.cpp
+        s3.storage.hh
+        s3.storage.cpp
+        s3.array.hh
+        s3.array.cpp
+        s3.multiscale.array.hh
+        s3.multiscale.array.cpp
         plate.hh
         plate.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>

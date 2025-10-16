@@ -1,5 +1,5 @@
 #include "macros.hh"
-#include "s3.sink.hh"
+#include "s3.object.hh"
 #include <algorithm>
 
 #include <miniocpp/client.h>
@@ -8,9 +8,9 @@
 #undef min
 #endif
 
-zarr::S3Sink::S3Sink(std::string_view bucket_name,
-                     std::string_view object_key,
-                     std::shared_ptr<S3ConnectionPool> connection_pool)
+zarr::S3Object::S3Object(std::string_view bucket_name,
+                         std::string_view object_key,
+                         std::shared_ptr<S3ConnectionPool> connection_pool)
   : bucket_name_{ bucket_name }
   , object_key_{ object_key }
   , connection_pool_{ connection_pool }
@@ -21,39 +21,14 @@ zarr::S3Sink::S3Sink(std::string_view bucket_name,
 }
 
 bool
-zarr::S3Sink::flush_()
+zarr::S3Object::write(ConstByteSpan data, size_t offset)
 {
-    if (is_multipart_upload_()) {
-        const auto& parts = multipart_upload_->parts;
-        if (nbytes_buffered_ > 0 && !flush_part_()) {
-            LOG_ERROR("Failed to upload part ",
-                      parts.size() + 1,
-                      " of object ",
-                      object_key_);
-            return false;
-        }
-        if (!finalize_multipart_upload_()) {
-            LOG_ERROR("Failed to finalize multipart upload of object ",
-                      object_key_);
-            return false;
-        }
-    } else if (nbytes_buffered_ > 0) {
-        if (!put_object_()) {
-            LOG_ERROR("Failed to upload object: ", object_key_);
-            return false;
-        }
+    if (is_closed_) {
+        LOG_ERROR("Cannot write to closed stream");
+        return false;
     }
 
-    // cleanup
-    nbytes_buffered_ = 0;
-
-    return true;
-}
-
-bool
-zarr::S3Sink::write(size_t offset, ConstByteSpan data)
-{
-    if (data.data() == nullptr || data.empty()) {
+    if (data.empty()) {
         return true;
     }
 
@@ -90,7 +65,42 @@ zarr::S3Sink::write(size_t offset, ConstByteSpan data)
 }
 
 bool
-zarr::S3Sink::put_object_()
+zarr::S3Object::close()
+{
+    if (is_closed_) {
+        return true;
+    }
+
+    if (is_multipart_upload_()) {
+        const auto& parts = multipart_upload_->parts;
+        if (nbytes_buffered_ > 0 && !flush_part_()) {
+            LOG_ERROR("Failed to upload part ",
+                      parts.size() + 1,
+                      " of object ",
+                      object_key_);
+            return false;
+        }
+        if (!finalize_multipart_upload_()) {
+            LOG_ERROR("Failed to finalize multipart upload of object ",
+                      object_key_);
+            return false;
+        }
+    } else if (nbytes_buffered_ > 0) {
+        if (!put_object_()) {
+            LOG_ERROR("Failed to upload object: ", object_key_);
+            return false;
+        }
+    }
+
+    // cleanup
+    nbytes_buffered_ = 0;
+    is_closed_ = true;
+
+    return true;
+}
+
+bool
+zarr::S3Object::put_object_()
 {
     if (nbytes_buffered_ == 0) {
         return false;
@@ -121,13 +131,13 @@ zarr::S3Sink::put_object_()
 }
 
 bool
-zarr::S3Sink::is_multipart_upload_() const
+zarr::S3Object::is_multipart_upload_() const
 {
     return multipart_upload_.has_value();
 }
 
 void
-zarr::S3Sink::create_multipart_upload_()
+zarr::S3Object::create_multipart_upload_()
 {
     multipart_upload_ = MultiPartUpload{};
 
@@ -139,7 +149,7 @@ zarr::S3Sink::create_multipart_upload_()
 }
 
 bool
-zarr::S3Sink::flush_part_()
+zarr::S3Object::flush_part_()
 {
     if (nbytes_buffered_ == 0) {
         return false;
@@ -188,7 +198,7 @@ zarr::S3Sink::flush_part_()
 }
 
 bool
-zarr::S3Sink::finalize_multipart_upload_()
+zarr::S3Object::finalize_multipart_upload_()
 {
     auto connection = connection_pool_->get_connection();
 

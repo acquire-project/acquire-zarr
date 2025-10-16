@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sink.hh"
+#include "definitions.hh"
 #include "s3.connection.hh"
 
 #include <array>
@@ -8,17 +8,26 @@
 #include <string>
 
 namespace zarr {
-class S3Sink : public Sink
+class S3Object
 {
   public:
-    S3Sink(std::string_view bucket_name,
-           std::string_view object_key,
-           std::shared_ptr<S3ConnectionPool> connection_pool);
+    S3Object(std::string_view bucket_name,
+             std::string_view object_key,
+             std::shared_ptr<S3ConnectionPool> connection_pool);
 
-    bool write(size_t offset, ConstByteSpan data) override;
+    /** @brief Write data to the object at the given offset.
+     * @param data The data to write.
+     * @param offset The offset to write at.
+     * @return True if the write was successful, false otherwise.
+     */
+    [[nodiscard]] bool write(ConstByteSpan data, size_t offset);
 
-  protected:
-    bool flush_() override;
+    /**
+     * @brief Close the object, flushing any remaining data.
+     * @details The object must not be used after calling this function.
+     * @return True if the object was successfully closed, otherwise false.
+     */
+    [[nodiscard]] bool close();
 
   private:
     struct MultiPartUpload
@@ -27,17 +36,19 @@ class S3Sink : public Sink
         std::vector<S3Part> parts;
     };
 
-    static constexpr size_t max_part_size_ = 5 << 20;
+    static constexpr size_t max_part_size_ = 5ULL << 20;
     std::string bucket_name_;
     std::string object_key_;
 
     std::shared_ptr<S3ConnectionPool> connection_pool_;
 
-    std::array<uint8_t, max_part_size_> part_buffer_;
+    std::array<uint8_t, max_part_size_> part_buffer_{};
     size_t nbytes_buffered_{ 0 };
     size_t nbytes_flushed_{ 0 };
 
     std::optional<MultiPartUpload> multipart_upload_;
+
+    bool is_closed_{ false };
 
     /**
      * @brief Upload the object to S3.

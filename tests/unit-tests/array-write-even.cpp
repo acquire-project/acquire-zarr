@@ -1,10 +1,11 @@
-#include "array.hh"
+#include "fs.array.hh"
 #include "unit.test.macros.hh"
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -142,11 +143,10 @@ main()
           level_of_detail);
 
         {
-            auto writer = std::make_unique<zarr::Array>(
+            auto writer = std::make_unique<zarr::FSArray>(
               config,
               thread_pool,
-              std::make_shared<zarr::FileHandlePool>(),
-              nullptr);
+              std::make_shared<zarr::FileHandlePool>());
 
             const size_t frame_size = array_width * array_height * nbytes_px;
             zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));

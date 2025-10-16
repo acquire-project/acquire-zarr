@@ -1,10 +1,8 @@
 #include "array.hh"
 #include "macros.hh"
-#include "sink.hh"
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>
-#include <crc32c/crc32c.h>
 
 #include <algorithm> // std::fill
 #include <cstring>
@@ -63,10 +61,8 @@ shuffle_to_string(uint8_t shuffle)
 } // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
-                   std::shared_ptr<ThreadPool> thread_pool,
-                   std::shared_ptr<FileHandlePool> file_handle_pool,
-                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+                   std::shared_ptr<ThreadPool> thread_pool)
+  : ArrayBase(config, thread_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
@@ -150,17 +146,9 @@ zarr::Array::write_frame(LockedBuffer& data)
     return bytes_written;
 }
 
-std::vector<std::string>
-zarr::Array::metadata_keys_() const
-{
-    return { "zarr.json" };
-}
-
 bool
-zarr::Array::make_metadata_()
+zarr::Array::make_metadata_(std::string& metadata_str)
 {
-    metadata_strings_.clear();
-
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
     const auto& dims = config_->dimensions;
 
@@ -260,7 +248,7 @@ zarr::Array::make_metadata_()
 
     metadata["codecs"] = codecs;
 
-    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+    metadata_str_ = metadata.dump(4);
 
     return true;
 }
@@ -273,20 +261,14 @@ zarr::Array::close_()
     try {
         if (bytes_to_flush_ > 0) {
             CHECK(compress_and_flush_data_());
-        } else {
-            CHECK(close_impl_());
+        } else if (current_layer_ > 0) {
+            CHECK(flush_tables_());
         }
-        close_sinks_();
+        close_io_streams_();
 
         if (frames_written_ > 0) {
             CHECK(write_metadata_());
-            for (auto& [key, sink] : metadata_sinks_) {
-                EXPECT(zarr::finalize_sink(std::move(sink)),
-                       "Failed to finalize metadata sink ",
-                       key);
-            }
         }
-        metadata_sinks_.clear();
         retval = true;
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to finalize array writer: ", exc.what());
@@ -296,129 +278,52 @@ zarr::Array::close_()
     return retval;
 }
 
-bool
-zarr::Array::close_impl_()
-{
-    if (current_layer_ == 0) {
-        return true;
-    }
-
-    // write the table
-    const auto& dims = config_->dimensions;
-    const auto n_shards = dims->number_of_shards();
-    std::vector<std::future<void>> futures;
-
-    std::atomic<char> all_successful = 1;
-
-    for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
-        const std::string data_path = data_paths_[shard_idx];
-        auto* file_offset = shard_file_offsets_.data() + shard_idx;
-        auto* shard_table = shard_tables_.data() + shard_idx;
-
-        auto promise = std::make_shared<std::promise<void>>();
-        futures.emplace_back(promise->get_future());
-
-        auto job = [shard_idx,
-                    data_path,
-                    shard_table,
-                    file_offset,
-                    promise,
-                    &all_successful,
-                    this](std::string& err) {
-            bool success = true;
-
-            try {
-                std::unique_ptr<Sink> sink;
-
-                if (data_sinks_.contains(
-                      data_path)) { // sink already constructed
-                    sink = std::move(data_sinks_[data_path]);
-                    data_sinks_.erase(data_path);
-                } else {
-                    sink = make_data_sink_(data_path);
-                }
-
-                if (sink == nullptr) {
-                    err = "Failed to create sink for " + data_path;
-                    success = false;
-                } else {
-                    const auto table_size =
-                      shard_table->size() * sizeof(uint64_t);
-                    std::vector<uint8_t> table(table_size + sizeof(uint32_t));
-
-                    // copy the table data
-                    memcpy(table.data(), shard_table->data(), table_size);
-                    const auto* table_ptr = table.data();
-
-                    // compute crc32 checksum of the table
-                    const uint32_t checksum =
-                      crc32c::Crc32c(table_ptr, table_size);
-                    memcpy(
-                      table.data() + table_size, &checksum, sizeof(uint32_t));
-
-                    if (!sink->write(*file_offset, table)) {
-                        err = "Failed to write table and checksum to shard " +
-                              std::to_string(shard_idx);
-                        success = false;
-                    }
-                }
-            } catch (const std::exception& exc) {
-                err = "Failed to flush data: " + std::string(exc.what());
-                success = false;
-            }
-
-            all_successful.fetch_and(success);
-            promise->set_value();
-
-            return success;
-        };
-
-        // one thread is reserved for processing the frame queue and runs the
-        // entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
-            if (std::string err; !job(err)) {
-                LOG_ERROR(err);
-            }
-        }
-    }
-
-    return all_successful;
-}
-
-bool
-zarr::Array::is_s3_array_() const
-{
-    return config_->bucket_name.has_value();
-}
-
 void
 zarr::Array::make_data_paths_()
 {
     if (data_paths_.empty()) {
-        data_paths_ = construct_data_paths(
-          data_root_, *config_->dimensions, shards_along_dimension);
+        const auto& dimensions = config_->dimensions;
+
+        std::queue<std::string> paths_queue;
+        paths_queue.emplace(data_root_);
+
+        // create intermediate paths
+        for (auto i = 1;                 // skip the last dimension
+             i < dimensions->ndims() - 1; // skip the x dimension
+             ++i) {
+            const auto& dim = dimensions->at(i);
+            const auto n_parts = shards_along_dimension(dim);
+            CHECK(n_parts);
+
+            auto n_paths = paths_queue.size();
+            for (auto j = 0; j < n_paths; ++j) {
+                const auto path = paths_queue.front();
+                paths_queue.pop();
+
+                for (auto k = 0; k < n_parts; ++k) {
+                    const auto kstr = std::to_string(k);
+                    paths_queue.push(path + (path.empty() ? kstr : "/" + kstr));
+                }
+            }
+             }
+
+        // create final paths
+        data_paths_.reserve(paths_queue.size() *
+                          shards_along_dimension(dimensions->width_dim()));
+        {
+            const auto& dim = dimensions->width_dim();
+            const auto n_parts = shards_along_dimension(dim);
+            CHECK(n_parts);
+
+            auto n_paths = paths_queue.size();
+            for (auto i = 0; i < n_paths; ++i) {
+                const auto path = paths_queue.front();
+                paths_queue.pop();
+                for (auto j = 0; j < n_parts; ++j)
+                    data_paths_.push_back(path + "/" + std::to_string(j));
+            }
+        }
     }
-}
-
-std::unique_ptr<zarr::Sink>
-zarr::Array::make_data_sink_(std::string_view path)
-{
-    const auto is_s3 = is_s3_array_();
-
-    std::unique_ptr<Sink> sink;
-
-    // create parent directories if needed
-    if (is_s3) {
-        const auto bucket_name = *config_->bucket_name;
-        sink = make_s3_sink(bucket_name, path, s3_connection_pool_);
-    } else {
-        const auto parent_paths = get_parent_paths(data_paths_);
-        CHECK(make_dirs(parent_paths, thread_pool_));
-
-        sink = make_file_sink(path, file_handle_pool_);
-    }
-
-    return sink;
 }
 
 void
@@ -603,152 +508,27 @@ zarr::Array::consolidate_chunks_(uint32_t shard_index)
 bool
 zarr::Array::compress_and_flush_data_()
 {
-    CHECK(compress_chunks_());
+    if (!compress_chunks_()) {
+        LOG_ERROR("Failed to compress chunk data");
+        return false;
+    }
+
     update_table_entries_();
 
-    // construct paths to shard sinks if they don't already exist
-    if (data_paths_.empty()) {
-        make_data_paths_();
+    if (!flush_data_()) {
+        LOG_ERROR("Failed to flush chunk data");
+        return false;
     }
 
-    // create parent directories if needed
-    const auto is_s3 = is_s3_array_();
-    if (!is_s3) {
-        const auto parent_paths = get_parent_paths(data_paths_);
-        CHECK(make_dirs(parent_paths, thread_pool_)); // no-op if they exist
-    }
-
-    const auto& dims = config_->dimensions;
-
-    const auto n_shards = dims->number_of_shards();
-    CHECK(data_paths_.size() == n_shards);
-
-    const auto n_layers = dims->chunk_layers_per_shard();
-    CHECK(n_layers > 0);
-
-    std::atomic<char> all_successful = 1;
-
-    auto write_table = is_closing_ || should_rollover_();
-
-    const auto bucket_name = config_->bucket_name;
-    auto connection_pool = s3_connection_pool_;
-
-    std::vector<std::future<void>> futures;
-
-    // wait for the chunks in each shard to finish compressing, then defragment
-    // and write the shard
-    for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
-        const std::string data_path = data_paths_[shard_idx];
-        auto* file_offset = shard_file_offsets_.data() + shard_idx;
-        auto* shard_table = shard_tables_.data() + shard_idx;
-
-        auto promise = std::make_shared<std::promise<void>>();
-        futures.emplace_back(promise->get_future());
-
-        auto job = [shard_idx,
-                    is_s3,
-                    data_path,
-                    shard_table,
-                    file_offset,
-                    write_table,
-                    bucket_name,
-                    connection_pool,
-                    promise,
-                    &all_successful,
-                    this](std::string& err) {
-            bool success = true;
-            std::unique_ptr<Sink> sink;
-
-            try {
-                // consolidate chunks in shard
-                const auto shard_data = consolidate_chunks_(shard_idx);
-
-                if (data_sinks_.contains(data_path)) { // S3 sink, constructed
-                    sink = std::move(data_sinks_[data_path]);
-                    data_sinks_.erase(data_path);
-                } else {
-                    sink = make_data_sink_(data_path);
-                }
-
-                if (sink == nullptr) {
-                    err = "Failed to create sink for " + data_path;
-                    success = false;
-                } else {
-                    success = sink->write(*file_offset, shard_data);
-                    if (!success) {
-                        err = "Failed to write shard at path " + data_path;
-                    } else {
-                        *file_offset += shard_data.size();
-
-                        if (write_table) {
-                            const size_t table_size =
-                              shard_table->size() * sizeof(uint64_t);
-                            std::vector<uint8_t> table(
-                              table_size + sizeof(uint32_t), 0);
-
-                            memcpy(
-                              table.data(), shard_table->data(), table_size);
-
-                            // compute crc32 checksum of the table
-                            const uint32_t checksum =
-                              crc32c::Crc32c(table.data(), table_size);
-                            memcpy(table.data() + table_size,
-                                   &checksum,
-                                   sizeof(uint32_t));
-
-                            if (!sink->write(*file_offset, table)) {
-                                err = "Failed to write table and checksum to "
-                                      "shard " +
-                                      std::to_string(shard_idx);
-                                success = false;
-                            }
-                        }
-                    }
-                }
-            } catch (const std::exception& exc) {
-                err = "Failed to flush data: " + std::string(exc.what());
-                success = false;
-            }
-
-            if (sink != nullptr) {
-                data_sinks_.emplace(data_path, std::move(sink));
-            }
-
-            all_successful.fetch_and(success);
-            promise->set_value();
-
-            return success;
-        };
-
-        // one thread is reserved for processing the frame queue and runs the
-        // entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
-            std::string err;
-            if (!job(err)) {
-                LOG_ERROR(err);
-            }
-        }
-    }
-
-    // wait for all threads to finish
-    for (auto& future : futures) {
-        future.wait();
-    }
-
-    // reset shard tables and file offsets
-    if (write_table) {
-        for (auto& table : shard_tables_) {
-            std::fill(
-              table.begin(), table.end(), std::numeric_limits<uint64_t>::max());
-        }
-
-        std::fill(shard_file_offsets_.begin(), shard_file_offsets_.end(), 0);
-        current_layer_ = 0;
-    } else {
+    if (const auto should_write_table = is_closing_ || should_rollover_();
+        should_write_table && !flush_tables_()) {
+        LOG_ERROR("Failed to flush shard tables");
+        return false;
+    } else if (!should_write_table) {
         ++current_layer_;
     }
 
-    return static_cast<bool>(all_successful);
+    return true;
 }
 
 bool
@@ -871,19 +651,7 @@ zarr::Array::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
-    close_sinks_();
+    close_io_streams_();
     ++append_chunk_index_;
     data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
-}
-
-void
-zarr::Array::close_sinks_()
-{
-    data_paths_.clear();
-
-    for (auto& [path, sink] : data_sinks_) {
-        EXPECT(
-          finalize_sink(std::move(sink)), "Failed to finalize sink at ", path);
-    }
-    data_sinks_.clear();
 }

@@ -1,26 +1,18 @@
 #pragma once
 
-#include "array.hh"
+#include "array.base.hh"
 #include "array.dimensions.hh"
-#include "definitions.hh"
-#include "downsampler.hh"
 #include "file.handle.hh"
 #include "frame.queue.hh"
 #include "locked.buffer.hh"
-#include "multiscale.array.hh"
 #include "plate.hh"
 #include "s3.connection.hh"
-#include "sink.hh"
 #include "thread.pool.hh"
 
-#include <nlohmann/json.hpp>
-
 #include <condition_variable>
-#include <cstddef> // size_t
 #include <memory>  // unique_ptr
 #include <mutex>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <unordered_map>
 
@@ -87,7 +79,7 @@ struct ZarrStream_s
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
 
-    std::unique_ptr<zarr::Sink> custom_metadata_sink_;
+    // std::unique_ptr<zarr::Sink> custom_metadata_sink_;
 
     bool is_s3_acquisition_() const;
 

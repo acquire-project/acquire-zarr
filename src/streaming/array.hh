@@ -1,11 +1,8 @@
 #pragma once
 
 #include "array.base.hh"
-#include "blosc.compression.params.hh"
 #include "definitions.hh"
-#include "file.sink.hh"
 #include "locked.buffer.hh"
-#include "s3.connection.hh"
 #include "thread.pool.hh"
 
 namespace zarr {
@@ -15,9 +12,7 @@ class Array : public ArrayBase
 {
   public:
     Array(std::shared_ptr<ArrayConfig> config,
-          std::shared_ptr<ThreadPool> thread_pool,
-          std::shared_ptr<FileHandlePool> file_handle_pool,
-          std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+          std::shared_ptr<ThreadPool> thread_pool);
 
     size_t memory_usage() const noexcept override;
 
@@ -29,7 +24,6 @@ class Array : public ArrayBase
 
     /// Filesystem
     std::vector<std::string> data_paths_;
-    std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
     /// Bookkeeping
     uint64_t bytes_to_flush_;
@@ -43,15 +37,11 @@ class Array : public ArrayBase
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
 
-    std::vector<std::string> metadata_keys_() const override;
-    bool make_metadata_() override;
+    bool make_metadata_(std::string& metadata) override;
     [[nodiscard]] bool close_() override;
     [[nodiscard]] bool close_impl_();
 
-    bool is_s3_array_() const;
-
     void make_data_paths_();
-    [[nodiscard]] std::unique_ptr<Sink> make_data_sink_(std::string_view path);
     void fill_buffers_();
 
     bool should_flush_() const;
@@ -63,8 +53,10 @@ class Array : public ArrayBase
     [[nodiscard]] bool compress_and_flush_data_();
     [[nodiscard]] bool compress_chunks_();
     void update_table_entries_();
+    [[nodiscard]] virtual bool flush_data_() = 0;
+    [[nodiscard]] virtual bool flush_tables_() = 0;
     void rollover_();
-    void close_sinks_();
+    virtual void close_io_streams_() = 0;
 
     friend class MultiscaleArray;
 };

@@ -1,4 +1,4 @@
-#include "s3.sink.hh"
+#include "s3.object.hh"
 #include "unit.test.macros.hh"
 
 #include <miniocpp/client.h>
@@ -55,12 +55,12 @@ main()
 
         {
             char str[] = "Hello, Acquire!";
-            auto sink = std::make_unique<zarr::S3Sink>(
+            auto sink = std::make_unique<zarr::S3Object>(
               settings.bucket_name, object_name, pool);
             std::span data{ reinterpret_cast<uint8_t*>(str),
                             sizeof(str) - 1 };
-            CHECK(sink->write(0, data));
-            CHECK(zarr::finalize_sink(std::move(sink)));
+            CHECK(sink->write(data, 0));
+            CHECK(sink->close());
         }
 
         conn = pool->get_connection();

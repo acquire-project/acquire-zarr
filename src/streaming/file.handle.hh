@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <list>
 #include <memory> // for std::unique_ptr
 #include <mutex>
 #include <string>
@@ -44,7 +45,7 @@ class FileHandlePool
 {
   public:
     FileHandlePool();
-    ~FileHandlePool() = default;
+    ~FileHandlePool();
 
     /**
      * @brief Get a file handle for the specified filename.
@@ -52,26 +53,29 @@ class FileHandlePool
      * been reached, until a handle is returned to the pool.
      * @param filename The path to the file to open.
      * @param flags Platform-specific flags for opening the file.
-     * @return A unique pointer to a FileHandle, or nullptr on failure.
+     * @return A shared pointer to a file handle, or nullptr on failure.
      */
-    std::unique_ptr<FileHandle> get_handle(const std::string& filename,
-                                           void* flags);
-
-    std::shared_ptr<void> get_handle_shared(const std::string& filename,
-                                            void* flags);
+    std::shared_ptr<void> get_handle(const std::string& filename, void* flags);
 
     /**
-     * @brief Return a file handle to the pool.
-     * @details This function should be called when a file handle is no longer
-     * needed, to allow other threads to acquire a handle.
-     * @param handle The file handle to return.
+     * @brief Close the handle for the specified filename, if it exists in the
+     * pool. This will remove the handle from the pool and close the underlying
+     * file.
+     * @param filename The path to the file whose handle should be closed.
      */
-    void return_handle(std::unique_ptr<FileHandle>&& handle);
+    void close_handle(const std::string& filename);
 
   private:
+    using HandleEntry = std::pair<std::string, std::weak_ptr<void>>;
+    using HandleList = std::list<HandleEntry>;
+
     const uint64_t max_active_handles_;
-    std::atomic<uint64_t> n_active_handles_;
+    HandleList handles_;
+    std::unordered_map<std::string, HandleList::iterator> handle_map_;
+
     std::mutex mutex_;
     std::condition_variable cv_;
+
+    bool evict_idle_handle_();
 };
 } // namespace zarr
