@@ -1,22 +1,27 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "acquire-zarr>=0.2.4",
+#     "acquire-zarr>=0.5.2",
 #     "zarr",
 #     "rich",
 #     "tensorstore",
+#     "click",
 # ]
 # ///
 #!/usr/bin/env python3
 """Compare write performance of TensorStore vs. acquire-zarr for a Zarr v3 store. Thanks to Talley Lambert @tlambert03
 for the original version of this script: https://gist.github.com/tlambert03/f8c1b069c2947b411ce24ea05aa370b1"""
 
+import json
+import os
 from pathlib import Path
-import sys
+import shutil
+import subprocess
 import time
 from typing import Tuple
 
 import acquire_zarr as aqz
+import click
 import numpy as np
 import tensorstore
 import zarr
@@ -161,13 +166,41 @@ def run_acquire_zarr_test(
     return tot_ms, np.array(elapsed_times) / 1e6
 
 
+def get_git_commit_hash():
+    """Get the current git commit hash, or None if not in a git repo."""
+    # cache the current working directory
+    cwd = os.getcwd()
+
+    # cd to the script directory
+    os.chdir(Path(__file__).parent)
+
+    hash_out = None
+
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        hash_out = result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    finally:
+        # return to the original working directory
+        os.chdir(cwd)
+
+    return hash_out
+
 def compare(
-        t_chunk_size: int, xy_chunk_size: int, xy_shard_size: int, frame_count: int
-) -> None:
+        t_chunk_size: int, xy_chunk_size: int, xy_shard_size: int, frame_count: int, do_compare: bool = True
+) -> dict:
     print("tchunk_size:", t_chunk_size)
     print("xy_chunk_size:", xy_chunk_size)
     print("xy_shard_size:", xy_shard_size)
     print("frame_count:", frame_count)
+    print("compare_data:", do_compare)
+
     print("\nRunning acquire-zarr test:")
     az_path = "acquire_zarr_test.zarr"
     print("I'm saving to ", Path(az_path).absolute())
@@ -177,8 +210,8 @@ def compare(
         np.random.randint(0, 2 ** 16 - 1, (128, 2048, 2048), dtype=np.uint16), frame_count
     )
 
-    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
-    """
+    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size, xy_shard_size)
+
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
     az = zarr.open(az_path)["0"]
@@ -191,41 +224,113 @@ def compare(
         {**az.metadata.to_dict(), "data_type": "uint16"},
     )
 
-    # ensure that the data is written to disk and that they are the same
+    # Data comparison (optional)
+    comparison_result = None
+    if do_compare:
+        print("\nComparing the written data:", end=" ")
+        try:
+            ts = zarr.open(ts_path)
+            data.compare_array(az)  # ensure acquire-zarr wrote the correct data
+            data.compare_array(ts)  # ensure tensorstore wrote the correct data
+            print("✅\n")
 
-    print("\nComparing the written data:", end=" ")
+            metadata_match = ts.metadata == az.metadata
+            print(f"Metadata matches: {metadata_match}")
+            if metadata_match:
+                print(ts.metadata)
 
-    ts = zarr.open(ts_path)
-    data.compare_array(az)  # ensure acquire-zarr wrote the correct data
-    data.compare_array(ts)  # ensure tensorstore wrote the correct data
-    print("✅\n")
+            comparison_result = {
+                "data_match": True,
+                "metadata_match": metadata_match
+            }
+        except Exception as e:
+            print(f"❌ Comparison failed: {e}")
+            comparison_result = {
+                "data_match": False,
+                "metadata_match": False,
+                "error": str(e)
+            }
+    else:
+        print("\nSkipping data comparison")
 
-    assert ts.metadata == az.metadata
-    print("Metadata matches:")
-    print(ts.metadata)
+    # clean up test data
+    del az
+
+    try:
+        print("\nCleaning up test data...", end="")
+        shutil.rmtree(az_path)
+        shutil.rmtree(ts_path)
+        print("✅")
+    except Exception:
+        print("❌ Failed to remove test data")
+
 
     data_size_gib = (2048 * 2048 * 2 * frame_count) / (1 << 30)
 
+    # Calculate statistics
+    az_stats = {
+        "total_time_ms": time_az_ms,
+        "throughput_gib_per_s": 1000 * data_size_gib / time_az_ms,
+        "frame_write_time_50th_percentile_ms": float(np.percentile(frame_write_times_az, 50)),
+        "frame_write_time_99th_percentile_ms": float(np.percentile(frame_write_times_az, 99))
+    }
+
+    ts_stats = {
+        "total_time_ms": time_ts_ms,
+        "throughput_gib_per_s": 1000 * data_size_gib / time_ts_ms,
+        "frame_write_time_50th_percentile_ms": float(np.percentile(frame_write_times_ts, 50)),
+        "frame_write_time_99th_percentile_ms": float(np.percentile(frame_write_times_ts, 99))
+    }
+
     print("\nPerformance comparison:")
     print(
-        f"  acquire-zarr: {time_az_ms:.3f} ms, {1000 * data_size_gib / time_az_ms:.3f} GiB/s, 50th percentile frame write time: {np.percentile(frame_write_times_az, 50):.3f} ms, 99th percentile: {np.percentile(frame_write_times_az, 99):.3f} ms"
+        f"  acquire-zarr: {az_stats['total_time_ms']:.3f} ms, {az_stats['throughput_gib_per_s']:.3f} GiB/s, "
+        f"50th percentile frame write time: {az_stats['frame_write_time_50th_percentile_ms']:.3f} ms, "
+        f"99th percentile: {az_stats['frame_write_time_99th_percentile_ms']:.3f} ms"
     )
     print(
-        f"  TensorStore: {time_ts_ms:.3f} ms, {1000 * data_size_gib / time_ts_ms:.3f} GiB/s, 50th percentile frame write time: {np.percentile(frame_write_times_ts, 50):.3f} ms, 99th percentile: {np.percentile(frame_write_times_ts, 99):.3f} ms"
+        f"  TensorStore: {ts_stats['total_time_ms']:.3f} ms, {ts_stats['throughput_gib_per_s']:.3f} GiB/s, "
+        f"50th percentile frame write time: {ts_stats['frame_write_time_50th_percentile_ms']:.3f} ms, "
+        f"99th percentile: {ts_stats['frame_write_time_99th_percentile_ms']:.3f} ms"
     )
-    print(f"  TS/AZ Ratio: {time_ts_ms / time_az_ms:.3f}")"""
+    print(f"  TS/AZ Ratio: {time_ts_ms / time_az_ms:.3f}")
 
+    # Structure results for JSON output
+    results = {
+        "test_parameters": {
+            "t_chunk_size": t_chunk_size,
+            "xy_chunk_size": xy_chunk_size,
+            "xy_shard_size": xy_shard_size,
+            "frame_count": frame_count,
+            "data_size_gib": data_size_gib
+        },
+        "acquire_zarr": az_stats,
+        "tensorstore": ts_stats,
+        "ratio_ts_to_az": time_ts_ms / time_az_ms,
+        "timestamp": time.time(),
+        "git_commit_hash": get_git_commit_hash(),
+    }
 
-def main():
-    import time
-    time.sleep(10)
+    if comparison_result is not None:
+        results["comparison"] = comparison_result
 
-    T_CHUNK_SIZE = int(sys.argv[1]) if len(sys.argv) > 1 else 64
-    XY_CHUNK_SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 64
-    XY_SHARD_SIZE = int(sys.argv[3]) if len(sys.argv) > 3 else 16
-    FRAME_COUNT = int(sys.argv[4]) if len(sys.argv) > 4 else 1024
+    return results
 
-    compare(T_CHUNK_SIZE, XY_CHUNK_SIZE, XY_SHARD_SIZE, FRAME_COUNT)
+@click.command()
+@click.option('--t-chunk-size', default=64, help='Time dimension chunk size')
+@click.option('--xy-chunk-size', default=64, help='Spatial dimension chunk size')
+@click.option('--xy-shard-size', default=16, help='Spatial dimension shard size')
+@click.option('--frame-count', default=1024, help='Number of frames to write')
+@click.option('--output', default='results.json', help='Output file for results')
+@click.option('--nocompare/--compare', default=False, help='Disable data comparison between implementations')
+def main(t_chunk_size, xy_chunk_size, xy_shard_size, frame_count, output, nocompare):
+    """Compare write performance of TensorStore vs. acquire-zarr for a Zarr v3 store."""
+    results = compare(t_chunk_size, xy_chunk_size, xy_shard_size, frame_count, not nocompare)
+
+    with open(output, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    print(f"\nResults written to {output}")
 
 
 if __name__ == "__main__":
