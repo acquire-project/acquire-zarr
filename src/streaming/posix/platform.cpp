@@ -1,6 +1,6 @@
-#include "definitions.hh"
 #include "macros.hh"
 
+#include <span>
 #include <string_view>
 
 #include <cstring>
@@ -57,7 +57,7 @@ init_handle(const std::string& filename, void* flags)
 }
 
 bool
-seek_and_write(void* handle, size_t offset, ConstByteSpan data)
+seek_and_write(void* handle, size_t offset, std::span<const uint8_t> data)
 {
     CHECK(handle);
     const auto* fd = static_cast<int*>(handle);

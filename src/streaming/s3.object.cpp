@@ -21,7 +21,7 @@ zarr::S3Object::S3Object(std::string_view bucket_name,
 }
 
 bool
-zarr::S3Object::write(ConstByteSpan data, size_t offset)
+zarr::S3Object::write(std::span<const uint8_t> data, size_t offset)
 {
     if (is_closed_) {
         LOG_ERROR("Cannot write to closed stream");

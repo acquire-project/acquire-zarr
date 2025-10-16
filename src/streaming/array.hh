@@ -1,7 +1,6 @@
 #pragma once
 
 #include "array.base.hh"
-#include "definitions.hh"
 #include "thread.pool.hh"
 
 namespace zarr {

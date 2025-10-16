@@ -1,7 +1,5 @@
 #pragma once
 
-#include "definitions.hh"
-
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>

@@ -16,7 +16,7 @@ test_basic_operations()
     CHECK(queue.empty());
     CHECK(!queue.full());
 
-    ByteVector data(1024);
+    std::vector<uint8_t> data(1024);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = i % 256;
     }
@@ -52,13 +52,13 @@ test_capacity()
 
     // Fill the queue
     for (size_t i = 0; i < capacity; ++i) {
-        std::vector<uint8_t> frame(std::move(ByteVector(100, i)));
+        std::vector<uint8_t> frame(std::move(std::vector<uint8_t>(100, i)));
         bool result = queue.push(frame, std::to_string(i));
         CHECK(result);
     }
 
     // Queue should be full (next push should fail)
-    std::vector<uint8_t> extra_frame(std::move(ByteVector(100)));
+    std::vector<uint8_t> extra_frame(std::move(std::vector<uint8_t>(100)));
     bool push_result = queue.push(extra_frame, std::to_string(capacity));
     CHECK(!push_result);
     CHECK(queue.size() == capacity);
@@ -72,7 +72,7 @@ test_capacity()
     CHECK(received_key == "0");
 
     // Should be able to push again
-    std::vector<uint8_t> new_frame(std::move(ByteVector(100, 99)));
+    std::vector<uint8_t> new_frame(std::move(std::vector<uint8_t>(100, 99)));
     push_result = queue.push(new_frame, std::to_string(capacity));
     CHECK(push_result);
     CHECK(queue.size() == capacity);
@@ -92,7 +92,7 @@ test_producer_consumer()
     std::thread producer([&queue, n_frames, frame_size]() {
         for (size_t i = 0; i < n_frames; ++i) {
             std::vector<uint8_t> frame(
-              std::move(ByteVector(frame_size, i % 256)));
+              std::move(std::vector<uint8_t>(frame_size, i % 256)));
 
             // Try until successful
             while (!queue.push(frame, "spam")) {
@@ -140,7 +140,7 @@ test_throughput()
 
     // Create large frame for testing
     std::vector<uint8_t> large_frame(frame_size, 42);
-    std::vector<uint8_t> data(std::move(ByteVector(large_frame)));
+    std::vector<uint8_t> data(std::move(std::vector<uint8_t>(large_frame)));
 
     auto start_time = std::chrono::high_resolution_clock::now();
 

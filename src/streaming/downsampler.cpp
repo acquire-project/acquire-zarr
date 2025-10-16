@@ -136,8 +136,8 @@ max2(const T& a, const T& b)
 }
 
 template<typename T>
-[[nodiscard]] ByteVector
-scale_image(ConstByteSpan src,
+[[nodiscard]] std::vector<uint8_t>
+scale_image(std::span<const uint8_t> src,
             size_t& width,
             size_t& height,
             ZarrDownsamplingMethod method)
@@ -177,7 +177,7 @@ scale_image(ConstByteSpan src,
     const auto h_pad = height + (height % downscale);
     const auto size_downscaled = w_pad * h_pad * bytes_of_type / factor;
 
-    ByteVector dst(size_downscaled, 0);
+    std::vector<uint8_t> dst(size_downscaled, 0);
     auto* dst_as_T = reinterpret_cast<T*>(dst.data());
     auto* src_as_T = reinterpret_cast<const T*>(src.data());
 
@@ -206,8 +206,8 @@ scale_image(ConstByteSpan src,
 
 template<typename T>
 void
-average_two_frames(ByteVector& dst,
-                   ConstByteSpan src,
+average_two_frames(std::vector<uint8_t>& dst,
+                   std::span<const uint8_t> src,
                    ZarrDownsamplingMethod method)
 {
     T (*average_fun)(const T&, const T&) = nullptr;
@@ -310,8 +310,8 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
     size_t frame_height = base_dims->height_dim().array_size_px;
 
     // frame.with_lock([&](const auto& data) {
-    ByteVector current_frame(frame.begin(), frame.end());
-    ByteVector next_level_frame;
+    std::vector<uint8_t> current_frame(frame.begin(), frame.end());
+    std::vector<uint8_t> next_level_frame;
 
     for (auto level = 1; level < n_levels_(); ++level) {
         const auto& prev_dims = writer_configurations_[level - 1]->dimensions;
@@ -397,7 +397,6 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
             }
         }
     }
-    // });
 }
 
 bool
@@ -593,8 +592,9 @@ zarr::Downsampler::make_writer_configurations_(
 }
 
 void
-zarr::Downsampler::emplace_downsampled_frame_(int level,
-                                              const ByteVector& frame_data)
+zarr::Downsampler::emplace_downsampled_frame_(
+  int level,
+  const std::vector<uint8_t>& frame_data)
 {
     downsampled_frames_.emplace(level, frame_data);
     ++level_frame_count_.at(level);

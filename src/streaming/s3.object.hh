@@ -1,6 +1,5 @@
 #pragma once
 
-#include "definitions.hh"
 #include "s3.connection.hh"
 
 #include <array>
@@ -20,7 +19,7 @@ class S3Object
      * @param offset The offset to write at.
      * @return True if the write was successful, false otherwise.
      */
-    [[nodiscard]] bool write(ConstByteSpan data, size_t offset);
+    [[nodiscard]] bool write(std::span<const uint8_t> data, size_t offset);
 
     /**
      * @brief Close the object, flushing any remaining data.

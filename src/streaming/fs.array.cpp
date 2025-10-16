@@ -6,6 +6,7 @@
 #include <cstring> // memcp
 #include <filesystem>
 #include <future>
+#include <span>
 #include <unordered_set>
 
 void*
@@ -15,7 +16,7 @@ void
 destroy_flags(void* flags);
 
 bool
-seek_and_write(void* handle, size_t offset, ConstByteSpan data);
+seek_and_write(void* handle, size_t offset, std::span<const uint8_t> data);
 
 namespace fs = std::filesystem;
 

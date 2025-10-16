@@ -10,7 +10,7 @@ void
 destroy_flags(void* flags);
 
 bool
-seek_and_write(void* handle, size_t offset, ConstByteSpan data);
+seek_and_write(void* handle, size_t offset, std::span<const uint8_t> data);
 
 zarr::FSStorage::FSStorage(std::shared_ptr<FileHandlePool> file_handle_pool)
   : file_handle_pool_(file_handle_pool)

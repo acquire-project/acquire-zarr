@@ -1,6 +1,6 @@
-#include "definitions.hh"
 #include "macros.hh"
 
+#include <span>
 #include <string_view>
 
 #include <windows.h>
@@ -77,7 +77,7 @@ init_handle(const std::string& filename, void* flags)
 }
 
 bool
-seek_and_write(void* handle, size_t offset, ConstByteSpan data)
+seek_and_write(void* handle, size_t offset, std::span<const uint8_t> data)
 {
     CHECK(handle);
     const auto* fd = static_cast<HANDLE*>(handle);
@@ -121,7 +121,8 @@ bool
 flush_file(void* handle)
 {
     CHECK(handle);
-    if (const auto* fd = static_cast<HANDLE*>(handle); *fd != INVALID_HANDLE_VALUE) {
+    if (const auto* fd = static_cast<HANDLE*>(handle);
+        *fd != INVALID_HANDLE_VALUE) {
         return FlushFileBuffers(*fd);
     }
     return true;

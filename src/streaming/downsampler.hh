@@ -2,7 +2,6 @@
 
 #include "array.hh"
 #include "array.dimensions.hh"
-#include "definitions.hh"
 
 #include "nlohmann/json.hpp"
 
@@ -41,10 +40,12 @@ class Downsampler
     nlohmann::json get_metadata() const;
 
   private:
-    using ScaleFunT = std::function<
-      ByteVector(ConstByteSpan, size_t&, size_t&, ZarrDownsamplingMethod)>;
-    using Average2FunT =
-      std::function<void(ByteVector&, ConstByteSpan, ZarrDownsamplingMethod)>;
+    using ScaleFunT = std::function<std::vector<uint8_t>(std::span<const uint8_t>,
+                                               size_t&,
+                                               size_t&,
+                                               ZarrDownsamplingMethod)>;
+    using Average2FunT = std::function<
+      void(std::vector<uint8_t>&, std::span<const uint8_t>, ZarrDownsamplingMethod)>;
 
     ZarrDownsamplingMethod method_;
 
@@ -53,13 +54,13 @@ class Downsampler
 
     std::unordered_map<int, std::shared_ptr<ArrayConfig>>
       writer_configurations_;
-    std::unordered_map<int, ByteVector> downsampled_frames_;
-    std::unordered_map<int, ByteVector> partial_scaled_frames_;
+    std::unordered_map<int, std::vector<uint8_t>> downsampled_frames_;
+    std::unordered_map<int, std::vector<uint8_t>> partial_scaled_frames_;
     std::unordered_map<int, uint32_t> level_frame_count_;
 
     size_t n_levels_() const;
 
     void make_writer_configurations_(std::shared_ptr<ArrayConfig> config);
-    void emplace_downsampled_frame_(int level, const ByteVector& frame_data);
+    void emplace_downsampled_frame_(int level, const std::vector<uint8_t>& frame_data);
 };
 } // namespace zarr

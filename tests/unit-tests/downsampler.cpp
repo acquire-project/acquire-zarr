@@ -12,7 +12,7 @@ template<typename T>
 std::vector<uint8_t>
 create_test_image(size_t width, size_t height, T value = 100)
 {
-    ByteVector data(width * height * sizeof(T), 0);
+    std::vector<uint8_t> data(width * height * sizeof(T), 0);
     auto* typed_data = reinterpret_cast<T*>(data.data());
 
     for (size_t i = 0; i < width * height; ++i) {
@@ -433,7 +433,7 @@ test_edge_cases()
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
     // Create a test image (11x11)
-    std::vector<uint8_t> image(std::move(ByteVector(11 * 11, 100)));
+    std::vector<uint8_t> image(std::move(std::vector<uint8_t>(11 * 11, 100)));
     downsampler.add_frame(image);
 
     std::vector<uint8_t> downsampled;
@@ -467,7 +467,7 @@ test_min_max_downsampling()
     // Create a test image with a pattern that will show different results for
     // min/max/mean
     std::vector<uint8_t> image(
-      std::move(ByteVector(10 * 10 * sizeof(uint8_t), 0)));
+      std::move(std::vector<uint8_t>(10 * 10 * sizeof(uint8_t), 0)));
     {
         auto* typed_data = reinterpret_cast<uint8_t*>(image.data());
 
@@ -660,7 +660,7 @@ test_pattern_downsampling()
 
     // Create a test image with a gradient pattern
     std::vector<uint8_t> image(
-      std::move(ByteVector(8 * 8 * sizeof(uint16_t), 0)));
+      std::move(std::vector<uint8_t>(8 * 8 * sizeof(uint16_t), 0)));
 
     std::vector<uint16_t> expected_mean(4 * 4);
     std::vector<uint16_t> expected_min(4 * 4);

@@ -3,7 +3,6 @@
 #include "acquire.zarr.h"
 #include "thread.pool.hh"
 #include "array.dimensions.hh"
-#include "definitions.hh"
 #include "blosc.compression.params.hh"
 
 namespace zarr {
@@ -82,7 +81,7 @@ shards_along_dimension(const ZarrDimension& dimension);
  * @return true if compression was successful, false otherwise.
  */
 bool
-compress_in_place(ByteVector& data,
+compress_in_place(std::vector<uint8_t>& data,
                   const BloscCompressionParams& params,
                   size_t type_size);
 

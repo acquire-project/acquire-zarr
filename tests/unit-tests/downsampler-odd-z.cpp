@@ -6,7 +6,7 @@ template<typename T>
 std::vector<uint8_t>
 create_test_image(size_t width, size_t height, T value = 100)
 {
-    ByteVector data(width * height * sizeof(T), 0);
+    std::vector<uint8_t> data(width * height * sizeof(T), 0);
     auto* typed_data = reinterpret_cast<T*>(data.data());
 
     for (size_t i = 0; i < width * height; ++i) {
