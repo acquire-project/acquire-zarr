@@ -888,7 +888,7 @@ class PyZarrStreamSettings
         settings_.overwrite = static_cast<int>(overwrite_);
 
         if (s3_settings_) {
-            *(settings_.s3_settings) = *(s3_settings_->settings());
+            settings_.s3_settings = s3_settings_->settings();
         }
 
         // construct array lifetime props and set up arrays
@@ -1087,7 +1087,7 @@ class PyZarrStream
         }
 
         auto buf = contiguous_data.request();
-        auto* ptr = (uint8_t*)buf.ptr;
+        auto* ptr = static_cast<uint8_t*>(buf.ptr);
 
         py::gil_scoped_release release;
 
