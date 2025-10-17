@@ -100,7 +100,7 @@ jobs:
           merge-multiple: true
 
       - name: Generate plots
-        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output benchmark-comparison.png
+        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output-prefix benchmark_comparison
 
       - name: Upload plot
         uses: actions/upload-artifact@v4
