@@ -276,6 +276,12 @@ zarr::FSArray::flush_tables_()
     return true;
 }
 
+bool
+zarr::FSArray::compress_and_flush_data_()
+{
+    return false;
+}
+
 void
 zarr::FSArray::close_io_streams_()
 {
@@ -300,4 +306,10 @@ zarr::FSArray::get_handle_(const std::string& path)
 
     handles_.emplace(path, handle);
     return handle;
+}
+
+std::string
+zarr::FSArray::index_location_() const
+{
+    return "start";
 }

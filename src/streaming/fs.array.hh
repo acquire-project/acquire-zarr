@@ -18,10 +18,12 @@ class FSArray final
     std::unordered_map<std::string, std::shared_ptr<void>> handles_;
 
     bool write_metadata_() override;
-
-    bool flush_data_() override;
-    bool flush_tables_() override;
+    std::string index_location_() const override;
+    bool compress_and_flush_data_() override;
     void close_io_streams_() override;
+
+    bool flush_data_();
+    bool flush_tables_();
 
     std::shared_ptr<void> get_handle_(const std::string& path);
 };

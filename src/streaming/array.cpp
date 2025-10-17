@@ -66,7 +66,7 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
   : ArrayBase(config, thread_pool)
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
-  , append_chunk_index_{ 0 }
+  , append_shard_index_{ 0 }
   , current_layer_{ 0 }
   , is_closing_{ false }
 {
@@ -86,7 +86,7 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
         std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
     }
 
-    data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    data_root_ = node_path_() + "/c/" + std::to_string(append_shard_index_);
 }
 
 size_t
@@ -224,7 +224,7 @@ zarr::Array::make_metadata_(std::string& metadata_str)
       crc32_codec,
     });
 
-    configuration["index_location"] = "end";
+    configuration["index_location"] = index_location_();
     configuration["codecs"] = json::array({ codec });
 
     if (config_->compression_params) {
@@ -263,7 +263,7 @@ zarr::Array::close_()
         if (bytes_to_flush_ > 0) {
             CHECK(compress_and_flush_data_());
         } else if (current_layer_ > 0) {
-            CHECK(flush_tables_());
+            // CHECK(flush_tables_());
         }
         close_io_streams_();
 
@@ -481,35 +481,6 @@ zarr::Array::collect_chunks_(uint32_t shard_index)
 }
 
 bool
-zarr::Array::compress_and_flush_data_()
-{
-    if (!compress_chunks_()) {
-        LOG_ERROR("Failed to compress chunk data");
-        return false;
-    }
-
-    update_table_entries_();
-
-    if (!flush_data_()) {
-        LOG_ERROR("Failed to flush chunk data");
-        return false;
-    }
-
-    if (is_closing_ || should_rollover_()) { // flush table
-        if (!flush_tables_()) {
-            LOG_ERROR("Failed to flush shard tables");
-            return false;
-        }
-        current_layer_ = 0;
-    } else {
-        ++current_layer_;
-        CHECK(current_layer_ < config_->dimensions->chunk_layers_per_shard());
-    }
-
-    return true;
-}
-
-bool
 zarr::Array::should_flush_() const
 {
     const auto& dims = config_->dimensions;
@@ -529,126 +500,12 @@ zarr::Array::should_rollover_() const
     return frames_written_ % dims->frames_before_flush() == 0;
 }
 
-bool
-zarr::Array::compress_chunks_()
-{
-    if (!config_->compression_params) {
-        return true; // nothing to do
-    }
-
-    std::atomic<char> all_successful = 1;
-
-    const auto& params = *config_->compression_params;
-    const size_t bytes_per_px = bytes_of_type(config_->dtype);
-
-    const auto& dims = config_->dimensions;
-
-    const uint32_t chunks_in_memory = chunk_buffers_.size();
-    const uint32_t chunk_group_offset = current_layer_ * chunks_in_memory;
-
-    std::vector<std::future<void>> futures;
-    futures.reserve(chunks_in_memory);
-
-    for (size_t i = 0; i < chunks_in_memory; ++i) {
-        auto promise = std::make_shared<std::promise<void>>();
-        futures.emplace_back(promise->get_future());
-
-        const uint32_t chunk_idx = i + chunk_group_offset;
-        const uint32_t shard_idx = dims->shard_index_for_chunk(chunk_idx);
-        const uint32_t internal_idx = dims->shard_internal_index(chunk_idx);
-        auto* shard_table = shard_tables_.data() + shard_idx;
-
-        auto job = [&chunk_buffer = chunk_buffers_[i],
-                    bytes_per_px,
-                    &params,
-                    shard_table,
-                    shard_idx,
-                    chunk_idx,
-                    internal_idx,
-                    promise,
-                    &all_successful](std::string& err) {
-            bool success = false;
-
-            try {
-                std::vector<uint8_t> compressed_data(chunk_buffer.size() +
-                                                     BLOSC_MAX_OVERHEAD);
-                const auto n_bytes_compressed =
-                  blosc_compress_ctx(params.clevel,
-                                     params.shuffle,
-                                     bytes_per_px,
-                                     chunk_buffer.size(),
-                                     chunk_buffer.data(),
-                                     compressed_data.data(),
-                                     compressed_data.size(),
-                                     params.codec_id.c_str(),
-                                     0,
-                                     1);
-
-                if (n_bytes_compressed <= 0) {
-                    err = "blosc_compress_ctx failed with code " +
-                          std::to_string(n_bytes_compressed) + " for chunk " +
-                          std::to_string(chunk_idx) + " (internal index " +
-                          std::to_string(internal_idx) + " of shard " +
-                          std::to_string(shard_idx) + ")";
-                    success = false;
-                } else {
-                    compressed_data.resize(n_bytes_compressed);
-                    chunk_buffer.swap(compressed_data);
-
-                    // update shard table with size
-                    shard_table->at(2 * internal_idx + 1) = chunk_buffer.size();
-                    success = true;
-                }
-            } catch (const std::exception& exc) {
-                err = exc.what();
-            }
-
-            promise->set_value();
-
-            all_successful.fetch_and(static_cast<char>(success));
-            return success;
-        };
-
-        // one thread is reserved for processing the frame queue and runs
-        // the entire lifetime of the stream
-        if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
-            if (std::string err; !job(err)) {
-                LOG_ERROR(err);
-            }
-        }
-    }
-
-    for (auto& future : futures) {
-        future.wait();
-    }
-
-    return static_cast<bool>(all_successful);
-}
-
-void
-zarr::Array::update_table_entries_()
-{
-    const uint32_t chunks_in_memory = chunk_buffers_.size();
-    const uint32_t chunk_group_offset = current_layer_ * chunks_in_memory;
-    const auto& dims = config_->dimensions;
-
-    for (auto i = 0; i < chunks_in_memory; ++i) {
-        const auto& chunk_buffer = chunk_buffers_[i];
-        const uint32_t chunk_idx = i + chunk_group_offset;
-        const uint32_t shard_idx = dims->shard_index_for_chunk(chunk_idx);
-        const uint32_t internal_idx = dims->shard_internal_index(chunk_idx);
-        auto& shard_table = shard_tables_[shard_idx];
-
-        shard_table[2 * internal_idx + 1] = chunk_buffer.size();
-    }
-}
-
 void
 zarr::Array::rollover_()
 {
     LOG_DEBUG("Rolling over");
 
     close_io_streams_();
-    ++append_chunk_index_;
-    data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    ++append_shard_index_;
+    data_root_ = node_path_() + "/c/" + std::to_string(append_shard_index_);
 }
