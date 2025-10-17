@@ -104,7 +104,7 @@ main()
     const ZarrDataType dtype = ZarrDataType_uint16;
     const unsigned int nbytes_px = zarr::bytes_of_type(dtype);
 
-    // try {
+    try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
           0, [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
@@ -210,9 +210,9 @@ main()
         CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
 
         retval = 0;
-    // } catch (const std::exception& exc) {
-    //     LOG_ERROR("Exception: ", exc.what());
-    // }
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Exception: ", exc.what());
+    }
 
     // cleanup
     if (fs::exists(base_dir)) {
