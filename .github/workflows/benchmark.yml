@@ -1,4 +1,4 @@
-name: benchmark.yml
+name: Run comparison benchmarks
 on:
   push:
     branches:
@@ -61,7 +61,7 @@ jobs:
           brew install libomp
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich psutil
 
       - name: Build and install Python bindings
         run: python -m pip install ".[testing]"
@@ -100,10 +100,10 @@ jobs:
           merge-multiple: true
 
       - name: Generate plots
-        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output benchmark-comparison.png
+        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output-prefix benchmark_comparison
 
       - name: Upload plot
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-plots-${{ github.sha }}
-          path: benchmark-comparison.png
+          path: benchmark_comparison_*.png
