@@ -1,0 +1,109 @@
+name: benchmark.yml
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-benchmark:
+    name: Benchmark on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "windows-latest"
+          - "ubuntu-latest"
+          - "ubuntu-24.04-arm"
+          - "macos-latest" # arm
+          - "macos-13" # x86_64
+        include:
+          - platform: "ubuntu-latest"
+            vcpkg_triplet: "x64-linux"
+          - platform: "windows-latest"
+            vcpkg_triplet: "x64-windows-static"
+          - platform: "macos-latest"
+            vcpkg_triplet: "arm64-osx"
+          - platform: "macos-13"
+            vcpkg_triplet: "x64-osx"
+          - platform: "ubuntu-24.04-arm"
+            vcpkg_triplet: "arm64-linux"
+    permissions:
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.3"
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          cd vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
+          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
+          ./vcpkg integrate install
+        shell: bash
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          brew install libomp
+
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich
+
+      - name: Build and install Python bindings
+        run: python -m pip install ".[testing]"
+
+      - name: Run benchmark
+        run: python benchmarks/benchmark.py --nocompare --output benchmark-${{ matrix.platform }}-${{ github.sha }}.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.platform }}-${{ github.sha }}
+          path: benchmark-${{ matrix.platform }}-${{ github.sha }}.json
+
+  generate-plots:
+    name: Generate benchmark plots
+    needs: run-benchmark
+    runs-on: ubuntu-latest
+    if: always()  # Run even if some benchmark jobs fail
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.3"
+
+      - name: Install plotting dependencies
+        run: pip install matplotlib click
+
+      - name: Download all benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-*
+          path: benchmark-results
+          merge-multiple: true
+
+      - name: Generate plots
+        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output benchmark-comparison.png
+
+      - name: Upload plot
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-plots-${{ github.sha }}
+          path: benchmark-comparison.png
