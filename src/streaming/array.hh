@@ -29,33 +29,40 @@ class Array : public ArrayBase
 
     /// Filesystem
     std::vector<std::string> data_paths_;
+    std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
     /// Bookkeeping
     uint64_t bytes_to_flush_;
     uint32_t frames_written_;
     uint32_t append_chunk_index_;
+    std::string data_root_;
     bool is_closing_;
 
+    /// Sharding
+    uint32_t current_layer_;
+    std::vector<size_t> shard_file_offsets_;
+    std::vector<std::vector<uint64_t>> shard_tables_;
+
+    std::vector<std::string> metadata_keys_() const override;
+    bool make_metadata_() override;
     [[nodiscard]] bool close_() override;
-    [[nodiscard]] virtual bool close_impl_() = 0;
+    [[nodiscard]] bool close_impl_();
 
     bool is_s3_array_() const;
-    virtual std::string data_root_() const = 0;
-    virtual const DimensionPartsFun parts_along_dimension_() const = 0;
 
     void make_data_paths_();
     [[nodiscard]] std::unique_ptr<Sink> make_data_sink_(std::string_view path);
     void fill_buffers_();
 
     bool should_flush_() const;
-    virtual bool should_rollover_() const = 0;
+    bool should_rollover_() const;
 
     size_t write_frame_to_chunks_(LockedBuffer& data);
 
-    [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
+    [[nodiscard]] ByteVector consolidate_chunks_(uint32_t shard_index);
+    [[nodiscard]] bool compress_and_flush_data_();
     void rollover_();
-
-    virtual void close_sinks_() = 0;
+    void close_sinks_();
 
     friend class MultiscaleArray;
 };

@@ -225,8 +225,8 @@ def test_set_dimensions_in_constructor():
 def test_set_version(settings):
     assert settings.version == aqz.ZarrVersion.V3
 
-    settings.version = aqz.ZarrVersion.V2
-    assert settings.version == aqz.ZarrVersion.V2
+    with pytest.raises(RuntimeError):
+        settings.version = 2  # only V3 is supported
 
 
 def test_set_max_threads(settings):

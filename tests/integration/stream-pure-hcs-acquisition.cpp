@@ -214,7 +214,6 @@ make_hcs_stream()
     };
     ZarrStreamSettings settings = {
         .store_path = TEST ".zarr",
-        .version = ZarrVersion_3,
         .overwrite = true,
         .hcs_settings = &hcs_settings,
     };

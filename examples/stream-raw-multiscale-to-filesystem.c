@@ -16,9 +16,8 @@ main()
         .multiscale = true,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_multiscale.zarr",
+        .store_path = "output_multiscale.zarr",
         .s3_settings = NULL,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,

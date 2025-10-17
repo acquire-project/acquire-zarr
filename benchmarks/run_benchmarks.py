@@ -97,37 +97,7 @@ def main():
     outfile = open(f"zarr_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", "w")
 
     # print header
-    write_out("chunk_size,zarr_version,compression,storage,chunks_per_shard_y,chunks_per_shard_x,time_seconds,run")
-
-    # Run V2 benchmarks
-    for chunk in CHUNK_CONFIGS:
-        for compression in COMPRESSION_TYPES:
-            # Filesystem storage
-            cmd = [
-                executable,
-                "--chunk", chunk,
-                "--version", "2",
-                "--compression", compression,
-                "--storage", "filesystem"
-            ]
-            for run in range(5):
-                success, output = run_benchmark(cmd)
-                if success and output:
-                    write_out(output + f",{run + 1}")
-
-            # S3 storage if configured
-            if s3_args:
-                cmd = [
-                          executable,
-                          "--chunk", chunk,
-                          "--version", "2",
-                          "--compression", compression,
-                          "--storage", "s3"
-                      ] + s3_args
-                for run in range(5):
-                    success, output = run_benchmark(cmd)
-                    if success and output:
-                        write_out(output + f",{run + 1}")
+    write_out("chunk_size,compression,storage,chunks_per_shard_y,chunks_per_shard_x,time_seconds,run")
 
     # Run V3 benchmarks with sharding
     for chunk in CHUNK_CONFIGS:
@@ -149,7 +119,6 @@ def main():
                     cmd = [
                         executable,
                         "--chunk", chunk,
-                        "--version", "3",
                         "--compression", compression,
                         "--storage", "filesystem",
                         "--shard-y", str(cps_y),
@@ -165,7 +134,6 @@ def main():
                         cmd = [
                                   executable,
                                   "--chunk", chunk,
-                                  "--version", "3",
                                   "--compression", compression,
                                   "--storage", "s3",
                                   "--shard-y", str(cps_y),

@@ -23,9 +23,8 @@ main()
         .data_type = ZarrDataType_uint16,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed.zarr",
+        .store_path = "output_compressed.zarr",
         .s3_settings = NULL,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,

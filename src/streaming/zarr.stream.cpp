@@ -312,7 +312,6 @@ make_array_config(const ZarrArraySettings* settings,
 
 [[nodiscard]] bool
 validate_dimension(const ZarrDimensionProperties* dimension,
-                   ZarrVersion version,
                    bool is_append,
                    std::string& error)
 {
@@ -337,7 +336,7 @@ validate_dimension(const ZarrDimensionProperties* dimension,
         return false;
     }
 
-    if (version == ZarrVersion_3 && dimension->shard_size_chunks == 0) {
+    if (dimension->shard_size_chunks == 0) {
         error = "Shard size must be nonzero";
         return false;
     }
@@ -353,7 +352,6 @@ validate_dimension(const ZarrDimensionProperties* dimension,
 [[nodiscard]] bool
 validate_array_settings(const ZarrArraySettings* settings,
                         const std::string& parent_path,
-                        ZarrVersion version,
                         std::string& error)
 {
     if (settings == nullptr) {
@@ -401,8 +399,7 @@ validate_array_settings(const ZarrArraySettings* settings,
 
     // validate the dimensions individually
     for (size_t i = 0; i < ndims; ++i) {
-        if (!validate_dimension(
-              settings->dimensions + i, version, i == 0, error)) {
+        if (!validate_dimension(settings->dimensions + i, i == 0, error)) {
             return false;
         }
     }
@@ -1011,13 +1008,11 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
         return false;
     }
 
-    auto version = settings->version;
-    if (version < ZarrVersion_2 || version >= ZarrVersionCount) {
+    if (const auto version =
+          settings->version == 0 ? ZarrVersion_3 : settings->version;
+        version != ZarrVersion_3) {
         error_ = "Invalid Zarr version: " + std::to_string(version);
         return false;
-    } else if (version == ZarrVersion_2) {
-        LOG_WARNING("Zarr version 2 is deprecated and will be removed in a "
-                    "future release");
     }
 
     if (settings->store_path == nullptr) {
@@ -1043,7 +1038,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     // validate the arrays individually
     for (auto i = 0; i < settings->array_count; ++i) {
         const auto& array_settings = settings->arrays[i];
-        if (!validate_array_settings(&array_settings, "", version, error_)) {
+        if (!validate_array_settings(&array_settings, "", error_)) {
             return false;
         }
     }
@@ -1129,7 +1124,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
                     std::string parent_path = plate_path;
                     parent_path += "/" + row_name + "/" + col_name;
                     if (!validate_array_settings(
-                          field.array_settings, parent_path, version, error_)) {
+                          field.array_settings, parent_path, error_)) {
                         return false;
                     }
 
@@ -1174,7 +1169,7 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                  .frame_buffer_offset = 0 };
     try {
         output_node.array = zarr::make_array(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_, version_);
+          config, thread_pool_, file_handle_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1201,11 +1196,6 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
 {
     if (hcs_settings == nullptr) {
         return true; // nothing to do
-    }
-
-    if (version_ == ZarrVersion_2) {
-        set_error_("HCS settings are not supported in Zarr version 2");
-        return false;
     }
 
     plates_.clear();
@@ -1313,7 +1303,6 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
 bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
-    version_ = settings->version;
     store_path_ = zarr::trim(settings->store_path);
 
     std::optional<std::string> bucket_name;
@@ -1430,16 +1419,13 @@ ZarrStream_s::write_intermediate_metadata_()
         bucket_name = s3_settings_->bucket_name;
     }
 
-    const nlohmann::json group_metadata =
-      version_ == ZarrVersion_2 ? nlohmann::json({ { "zarr_format", 2 } })
-                                : nlohmann::json({
-                                    { "zarr_format", 3 },
-                                    { "consolidated_metadata", nullptr },
-                                    { "node_type", "group" },
-                                    { "attributes", nlohmann::json::object() },
-                                  });
-    const std::string metadata_key =
-      version_ == ZarrVersion_2 ? ".zgroup" : "zarr.json";
+    const nlohmann::json group_metadata = nlohmann::json({
+      { "zarr_format", 3 },
+      { "consolidated_metadata", nullptr },
+      { "node_type", "group" },
+      { "attributes", nlohmann::json::object() },
+    });
+    const std::string metadata_key = "zarr.json";
     std::string metadata_str;
 
     for (const auto& parent_group_key : intermediate_group_paths_) {

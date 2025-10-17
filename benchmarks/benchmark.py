@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "acquire-zarr>=0.5.2",
+#     "acquire-zarr>=0.2.4",
 #     "zarr",
 #     "rich",
 #     "tensorstore",
@@ -114,7 +114,6 @@ def run_acquire_zarr_test(
     """Write data using acquire-zarr and print per-plane and total write times."""
     settings = aqz.StreamSettings(
         store_path=path,
-        version=aqz.ZarrVersion.V3,
         arrays=[
             aqz.ArraySettings(
                 dimensions=[
@@ -210,7 +209,7 @@ def compare(
         np.random.randint(0, 2 ** 16 - 1, (128, 2048, 2048), dtype=np.uint16), frame_count
     )
 
-    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size)
+    time_az_ms, frame_write_times_az = run_acquire_zarr_test(data, az_path, t_chunk_size, xy_chunk_size, xy_shard_size)
 
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...

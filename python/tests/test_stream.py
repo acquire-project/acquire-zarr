@@ -310,21 +310,12 @@ def validate_v3_metadata(store_path: Path):
     assert not (store_path / "acquire.json").is_file()
 
 
-@pytest.mark.parametrize(
-    ("version",),
-    [
-        (ZarrVersion.V2,),
-        (ZarrVersion.V3,),
-    ],
-)
 def test_create_stream(
     settings: StreamSettings,
     store_path: Path,
     request: pytest.FixtureRequest,
-    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / f"{request.node.name}.zarr")
-    settings.version = version
     stream = ZarrStream(settings)
     assert stream
 
@@ -335,46 +326,24 @@ def test_create_stream(
     # check that the stream created the zarr store
     assert store_path.is_dir()
 
-    if version == ZarrVersion.V2:
-        validate_v2_metadata(store_path)
+    validate_v3_metadata(store_path)
 
-        # no data written, so no array metadata
-        assert not (store_path / "0" / ".zarray").exists()
-    else:
-        validate_v3_metadata(store_path)
-
-        # no data written, so no array metadata
-        assert not (store_path / "meta" / "0.array.json").exists()
+    # no data written, so no array metadata
+    assert not (store_path / "meta" / "0.array.json").exists()
 
 
 @pytest.mark.parametrize(
     (
-        "version",
         "compression_codec",
     ),
     [
         (
-            ZarrVersion.V2,
             None,
         ),
         (
-            ZarrVersion.V2,
             CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_ZSTD,
-        ),
-        (
-            ZarrVersion.V3,
-            None,
-        ),
-        (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            ZarrVersion.V3,
             CompressionCodec.BLOSC_ZSTD,
         ),
     ],
@@ -382,11 +351,9 @@ def test_create_stream(
 def test_stream_data_to_filesystem(
     settings: StreamSettings,
     store_path: Path,
-    version: ZarrVersion,
     compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = version
     if compression_codec is not None:
         settings.arrays[0].compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
@@ -420,10 +387,9 @@ def test_stream_data_to_filesystem(
 
     shard_size_bytes = chunk_size_bytes
     table_size_bytes = 16  # 2 * sizeof(uint64_t)
-    if version == ZarrVersion.V3:
-        for dim in settings.arrays[0].dimensions:
-            shard_size_bytes *= dim.shard_size_chunks
-            table_size_bytes *= dim.shard_size_chunks
+    for dim in settings.arrays[0].dimensions:
+        shard_size_bytes *= dim.shard_size_chunks
+        table_size_bytes *= dim.shard_size_chunks
     shard_size_bytes = (
         shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
@@ -437,86 +403,45 @@ def test_stream_data_to_filesystem(
 
     metadata = array.metadata
     if compression_codec is not None:
-        if version == ZarrVersion.V2:
-            cname = (
-                "lz4"
-                if compression_codec == CompressionCodec.BLOSC_LZ4
-                else "zstd"
-            )
-            compressor = metadata.compressor
-            assert compressor.cname == cname
-            assert compressor.clevel == 1
-            assert compressor.shuffle == ncblosc.SHUFFLE
+        cname = (
+            zblosc.BloscCname.lz4
+            if compression_codec == CompressionCodec.BLOSC_LZ4
+            else zblosc.BloscCname.zstd
+        )
+        blosc_codec = metadata.codecs[0].codecs[1]
+        assert blosc_codec.cname == cname
+        assert blosc_codec.clevel == 1
+        assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
-            # check that the data is compressed
-            assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
-            assert (
-                store_path / "test.zarr" / "0" / "0" / "0" / "0"
-            ).stat().st_size <= chunk_size_bytes
-        else:
-            cname = (
-                zblosc.BloscCname.lz4
-                if compression_codec == CompressionCodec.BLOSC_LZ4
-                else zblosc.BloscCname.zstd
-            )
-            blosc_codec = metadata.codecs[0].codecs[1]
-            assert blosc_codec.cname == cname
-            assert blosc_codec.clevel == 1
-            assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
-
-            assert (
+        assert (
                 store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).is_file()
-            assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).stat().st_size <= shard_size_bytes
+        ).is_file()
+        assert (
+                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+               ).stat().st_size <= shard_size_bytes
     else:
-        if version == ZarrVersion.V2:
-            assert metadata.compressor is None
+        assert len(metadata.codecs[0].codecs) == 1
 
-            assert (store_path / "test.zarr" / "0" / "0" / "0" / "0").is_file()
-            assert (
-                store_path / "test.zarr" / "0" / "0" / "0" / "0"
-            ).stat().st_size == chunk_size_bytes
-        else:
-            assert len(metadata.codecs[0].codecs) == 1
-
-            assert (
+        assert (
                 store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).is_file()
-            assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-            ).stat().st_size == shard_size_bytes
+        ).is_file()
+        assert (
+                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+               ).stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
     (
-        "version",
         "compression_codec",
     ),
     [
         (
-            ZarrVersion.V2,
             None,
         ),
         (
-            ZarrVersion.V2,
             CompressionCodec.BLOSC_LZ4,
         ),
         (
-            ZarrVersion.V2,
-            CompressionCodec.BLOSC_ZSTD,
-        ),
-        (
-            ZarrVersion.V3,
-            None,
-        ),
-        (
-            ZarrVersion.V3,
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            ZarrVersion.V3,
             CompressionCodec.BLOSC_ZSTD,
         ),
     ],
@@ -525,7 +450,6 @@ def test_stream_data_to_s3(
     settings: StreamSettings,
     s3_settings: Optional[S3Settings],
     request: pytest.FixtureRequest,
-    version: ZarrVersion,
     compression_codec: Optional[CompressionCodec],
 ):
     if s3_settings is None:
@@ -534,7 +458,6 @@ def test_stream_data_to_s3(
     settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace(
         "]", ""
     )
-    settings.version = version
     settings.s3 = s3_settings
     settings.data_type = np.uint16
     if compression_codec is not None:
@@ -579,31 +502,17 @@ def test_stream_data_to_s3(
 
     metadata = array.metadata
     if compression_codec is not None:
-        if version == ZarrVersion.V2:
-            cname = (
-                "lz4"
-                if compression_codec == CompressionCodec.BLOSC_LZ4
-                else "zstd"
-            )
-            compressor = metadata.compressor
-            assert compressor.cname == cname
-            assert compressor.clevel == 1
-            assert compressor.shuffle == ncblosc.SHUFFLE
-        else:
-            cname = (
-                zblosc.BloscCname.lz4
-                if compression_codec == CompressionCodec.BLOSC_LZ4
-                else zblosc.BloscCname.zstd
-            )
-            blosc_codec = metadata.codecs[0].codecs[1]
-            assert blosc_codec.cname == cname
-            assert blosc_codec.clevel == 1
-            assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
+        cname = (
+            zblosc.BloscCname.lz4
+            if compression_codec == CompressionCodec.BLOSC_LZ4
+            else zblosc.BloscCname.zstd
+        )
+        blosc_codec = metadata.codecs[0].codecs[1]
+        assert blosc_codec.cname == cname
+        assert blosc_codec.clevel == 1
+        assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
     else:
-        if version == ZarrVersion.V2:
-            assert metadata.compressor is None
-        else:
-            assert len(metadata.codecs[0].codecs) == 1
+        assert len(metadata.codecs[0].codecs) == 1
 
     # cleanup
     s3 = s3fs.S3FileSystem(
@@ -630,23 +539,18 @@ def test_set_log_level(level: LogLevel):
 
 
 @pytest.mark.parametrize(
-    ("version", "overwrite"),
+    ("overwrite",),
     [
-        (ZarrVersion.V2, False),
-        (ZarrVersion.V2, True),
-        (ZarrVersion.V3, False),
-        (ZarrVersion.V3, True),
+        (False,),
+        (True,),
     ],
 )
 def test_write_custom_metadata(
     settings: StreamSettings,
     store_path: Path,
-    request: pytest.FixtureRequest,
-    version: ZarrVersion,
     overwrite: bool,
 ):
-    settings.store_path = str(store_path / f"{request.node.name}.zarr")
-    settings.version = version
+    settings.store_path = str(store_path / "test.zarr")
     stream = ZarrStream(settings)
     assert stream
 
@@ -722,7 +626,6 @@ def test_write_transposed_array(
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = ZarrVersion.V3
 
     data = np.random.randint(
         -(2**16),
@@ -786,7 +689,6 @@ def test_column_ragged_sharding(
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = ZarrVersion.V3
 
     data = np.random.randint(
         -(2**16),
@@ -850,7 +752,6 @@ def test_custom_dimension_units_and_scales(store_path: Path):
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = ZarrVersion.V3
 
     data = np.random.randint(
         -(2**16),
@@ -945,7 +846,6 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = ZarrVersion.V3
 
     data = np.random.randint(
         -(2**16),
@@ -1033,7 +933,6 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
         ]
     )
     settings.store_path = str(store_path / "test.zarr")
-    settings.version = ZarrVersion.V3
 
     data = np.random.randint(
         0,
@@ -1123,7 +1022,6 @@ def test_stream_data_to_named_array(
         store_path
         / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr"
     )
-    settings.version = ZarrVersion.V3
     settings.arrays[0].output_key = output_key
     settings.arrays[0].downsampling_method = downsampling_method
     settings.arrays[0].data_type = np.uint16
@@ -1176,7 +1074,6 @@ def test_stream_data_to_named_array(
 
 def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     settings.store_path = str(store_path / "anisotropic_downsampling.zarr")
-    settings.version = ZarrVersion.V3
     settings.arrays[0].data_type = np.uint8
     settings.arrays[0].downsampling_method = DownsamplingMethod.MEAN
     settings.arrays[0].dimensions = [
@@ -1247,20 +1144,11 @@ def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     assert "4" not in group  # No further downsampling
 
 
-@pytest.mark.parametrize(
-    ("version",),
-    [
-        (ZarrVersion.V2,),
-        (ZarrVersion.V3,),
-    ],
-)
 def test_multiarray_metadata_structure(
     settings: StreamSettings,
     store_path: Path,
-    version: ZarrVersion,
 ):
     settings.store_path = str(store_path / "multiarray_metadata_test.zarr")
-    settings.version = version
 
     # Configure three arrays matching the JSON examples
 
@@ -1426,13 +1314,9 @@ def test_multiarray_metadata_structure(
     array1_group = root_group["path"]["to"]["array1"]
 
     # Check multiscale metadata
-    if version == ZarrVersion.V2:
-        assert "multiscales" in array1_group.attrs
-        assert len(array1_group.attrs["multiscales"]) > 0
-    else:
-        assert "ome" in array1_group.attrs
-        assert "multiscales" in array1_group.attrs["ome"]
-        assert len(array1_group.attrs["ome"]["multiscales"]) > 0
+    assert "ome" in array1_group.attrs
+    assert "multiscales" in array1_group.attrs["ome"]
+    assert len(array1_group.attrs["ome"]["multiscales"]) > 0
 
     # Check that all 3 LOD levels exist
     assert "0" in array1_group  # LOD 0 (full resolution)
@@ -1628,7 +1512,6 @@ def test_pure_hcs_acquisition(store_path: Path):
 
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
-        version=ZarrVersion.V3,
         overwrite=True,
         arrays=[],  # No flat arrays, only HCS
         hcs_plates=[plate],
@@ -1699,7 +1582,6 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
 
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
-        version=ZarrVersion.V3,
         overwrite=True,
         arrays=[labels_array],
         hcs_plates=[plate],

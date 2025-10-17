@@ -18,6 +18,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
         .type = ZarrDimensionType_Time,
         .array_size_px = 100,
         .chunk_size_px = 10,
+        .shard_size_chunks = 1,
     };
 
     dim = settings->dimensions + 1;
@@ -26,6 +27,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
         .type = ZarrDimensionType_Space,
         .array_size_px = 200,
         .chunk_size_px = 20,
+        .shard_size_chunks = 1,
     };
 
     dim = settings->dimensions + 2;
@@ -34,6 +36,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
         .type = ZarrDimensionType_Space,
         .array_size_px = 300,
         .chunk_size_px = 30,
+        .shard_size_chunks = 1,
     };
 }
 
@@ -42,10 +45,8 @@ main()
 {
     int retval = 1;
 
-    ZarrStream* stream;
-    ZarrStreamSettings settings;
-    memset(&settings, 0, sizeof(settings));
-    settings.version = ZarrVersion_2;
+    ZarrStream* stream = nullptr;
+    ZarrStreamSettings settings = {};
     settings.max_threads = std::thread::hardware_concurrency();
 
     try {
@@ -75,9 +76,8 @@ main()
     // cleanup
     ZarrStream_destroy(stream);
 
-    std::error_code ec;
-    if (fs::is_directory(settings.store_path) &&
-        !fs::remove_all(settings.store_path, ec)) {
+    if (std::error_code ec; fs::is_directory(settings.store_path) &&
+                            !fs::remove_all(settings.store_path, ec)) {
         LOG_ERROR("Failed to remove store path: ", ec.message().c_str());
     }
 

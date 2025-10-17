@@ -16,6 +16,11 @@ const unsigned int array_width = 64, array_height = 48, array_planes = 6,
 const unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2,
                    chunk_channels = 4, chunk_timepoints = 5;
 
+const unsigned int shard_width = 2, shard_height = 1, shard_planes = 1,
+                   shard_channels = 2, shard_timepoints = 2;
+const unsigned int chunks_per_shard =
+  shard_width * shard_height * shard_planes * shard_channels * shard_timepoints;
+
 const unsigned int chunks_in_x =
   (array_width + chunk_width - 1) / chunk_width; // 4 chunks
 const unsigned int chunks_in_y =
@@ -27,7 +32,18 @@ const unsigned int chunks_in_c =
 const unsigned int chunks_in_t =
   (array_timepoints + chunk_timepoints - 1) / chunk_timepoints;
 
-const size_t nbytes_px = sizeof(int32_t);
+const unsigned int shards_in_x =
+  (chunks_in_x + shard_width - 1) / shard_width; // 2 shards
+const unsigned int shards_in_y =
+  (chunks_in_y + shard_height - 1) / shard_height; // 3 shards
+const unsigned int shards_in_z =
+  (chunks_in_z + shard_planes - 1) / shard_planes; // 3 shards
+const unsigned int shards_in_c =
+  (chunks_in_c + shard_channels - 1) / shard_channels; // 1 shard
+const unsigned int shards_in_t =
+  (chunks_in_t + shard_timepoints - 1) / shard_timepoints; // 1 shard
+
+const size_t nbytes_px = sizeof(uint16_t);
 const uint32_t frames_to_acquire =
   array_planes * array_channels * array_timepoints;
 const size_t bytes_of_frame = array_width * array_height * nbytes_px;
@@ -90,7 +106,7 @@ get_object_size(minio::s3::Client& client, const std::string& object_name)
     minio::s3::StatObjectResponse response = client.StatObject(args);
 
     if (!response) {
-        LOG_ERROR("Failed to get object size: %s", object_name.c_str());
+        LOG_ERROR("Failed to get object size: ", object_name);
         return 0;
     }
 
@@ -145,9 +161,8 @@ remove_items(minio::s3::Client& client,
     for (; result; result++) {
         minio::s3::DeleteError err = *result;
         if (!err) {
-            LOG_ERROR("Failed to delete object %s: %s",
-                      err.object_name.c_str(),
-                      err.message.c_str());
+            LOG_ERROR(
+              "Failed to delete object ", err.object_name, ": ", err.message);
             return false;
         }
     }
@@ -160,14 +175,12 @@ ZarrStream*
 setup()
 {
     ZarrArraySettings array = {
-        .output_key = "intermediate/path",
+        .output_key = "path/to/data",
         .compression_settings = nullptr,
-        .data_type = ZarrDataType_int32,
+        .data_type = ZarrDataType_uint16,
     };
     ZarrStreamSettings settings = {
         .store_path = TEST,
-        .s3_settings = nullptr,
-        .version = ZarrVersion_2,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,
@@ -191,7 +204,7 @@ setup()
                ZarrDimensionType_Time,
                array_timepoints,
                chunk_timepoints,
-               0,
+               shard_timepoints,
                nullptr,
                1.0);
 
@@ -200,7 +213,7 @@ setup()
                ZarrDimensionType_Channel,
                array_channels,
                chunk_channels,
-               0,
+               shard_channels,
                nullptr,
                1.0);
 
@@ -209,7 +222,7 @@ setup()
                ZarrDimensionType_Space,
                array_planes,
                chunk_planes,
-               0,
+               shard_planes,
                "millimeter",
                1.4);
 
@@ -218,7 +231,7 @@ setup()
                ZarrDimensionType_Space,
                array_height,
                chunk_height,
-               0,
+               shard_height,
                "micrometer",
                0.9);
 
@@ -227,7 +240,7 @@ setup()
                ZarrDimensionType_Space,
                array_width,
                chunk_width,
-               0,
+               shard_width,
                "micrometer",
                0.9);
 
@@ -240,8 +253,16 @@ setup()
 void
 verify_group_metadata(const nlohmann::json& meta)
 {
-    const auto zarr_format = meta["zarr_format"].get<int>();
-    EXPECT_EQ(int, zarr_format, 2);
+    auto zarr_format = meta["zarr_format"].get<int>();
+    EXPECT_EQ(int, zarr_format, 3);
+
+    auto node_type = meta["node_type"].get<std::string>();
+    EXPECT_STR_EQ(node_type.c_str(), "group");
+
+    EXPECT(meta["consolidated_metadata"].is_null(),
+           "Expected consolidated_metadata to be null");
+
+    EXPECT(!meta["attributes"].contains("ome"), "Expected no ome attribute");
 }
 
 void
@@ -255,29 +276,64 @@ verify_array_metadata(const nlohmann::json& meta)
     EXPECT_EQ(int, shape[3].get<int>(), array_height);
     EXPECT_EQ(int, shape[4].get<int>(), array_width);
 
-    const auto& chunks = meta["chunks"];
+    const auto& chunks = meta["chunk_grid"]["configuration"]["chunk_shape"];
     EXPECT_EQ(size_t, chunks.size(), 5);
-    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints);
-    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels);
-    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes);
-    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height);
-    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width);
+    EXPECT_EQ(int, chunks[0].get<int>(), chunk_timepoints* shard_timepoints);
+    EXPECT_EQ(int, chunks[1].get<int>(), chunk_channels* shard_channels);
+    EXPECT_EQ(int, chunks[2].get<int>(), chunk_planes* shard_planes);
+    EXPECT_EQ(int, chunks[3].get<int>(), chunk_height* shard_height);
+    EXPECT_EQ(int, chunks[4].get<int>(), chunk_width* shard_width);
 
-    const auto dtype = meta["dtype"].get<std::string>();
-    EXPECT(dtype == "<i4",
-           "Expected dtype to be '<i4', but got '%s'",
-           dtype.c_str());
+    const auto dtype = meta["data_type"].get<std::string>();
+    EXPECT(dtype == "uint16",
+           "Expected dtype to be 'uint16', but got '",
+           dtype,
+           "'");
 
-    const auto& compressor = meta["compressor"];
-    EXPECT(compressor.is_null(),
-           "Expected compressor to be null, but got '%s'",
-           compressor.dump().c_str());
+    const auto& codecs = meta["codecs"];
+    EXPECT_EQ(size_t, codecs.size(), 1);
+    const auto& sharding_codec = codecs[0]["configuration"];
+
+    const auto& shards = sharding_codec["chunk_shape"];
+    EXPECT_EQ(size_t, shards.size(), 5);
+    EXPECT_EQ(int, shards[0].get<int>(), chunk_timepoints);
+    EXPECT_EQ(int, shards[1].get<int>(), chunk_channels);
+    EXPECT_EQ(int, shards[2].get<int>(), chunk_planes);
+    EXPECT_EQ(int, shards[3].get<int>(), chunk_height);
+    EXPECT_EQ(int, shards[4].get<int>(), chunk_width);
+
+    const auto& internal_codecs = sharding_codec["codecs"];
+    EXPECT(internal_codecs.size() == 1,
+           "Expected 1 internal codec, got ",
+           internal_codecs.size());
+
+    EXPECT(internal_codecs[0]["name"].get<std::string>() == "bytes",
+           "Expected first codec to be 'bytes', got ",
+           internal_codecs[0]["name"].get<std::string>());
+
+    const auto& dimension_names = meta["dimension_names"];
+    EXPECT_EQ(size_t, dimension_names.size(), 5);
+
+    EXPECT(dimension_names[0].get<std::string>() == "t",
+           "Expected first dimension name to be 't', got ",
+           dimension_names[0].get<std::string>());
+    EXPECT(dimension_names[1].get<std::string>() == "c",
+           "Expected second dimension name to be 'c', got ",
+           dimension_names[1].get<std::string>());
+    EXPECT(dimension_names[2].get<std::string>() == "z",
+           "Expected third dimension name to be 'z', got ",
+           dimension_names[2].get<std::string>());
+    EXPECT(dimension_names[3].get<std::string>() == "y",
+           "Expected fourth dimension name to be 'y', got ",
+           dimension_names[3].get<std::string>());
+    EXPECT(dimension_names[4].get<std::string>() == "x",
+           "Expected fifth dimension name to be 'x', got ",
+           dimension_names[4].get<std::string>());
 }
 
 void
 verify_and_cleanup()
 {
-
     minio::s3::BaseUrl url(s3_endpoint);
     url.https = s3_endpoint.starts_with("https://");
 
@@ -285,24 +341,15 @@ verify_and_cleanup()
                                           s3_secret_access_key);
     minio::s3::Client client(url, &provider);
 
-    std::string base_metadata_path = TEST "/.zgroup";
-    std::string group_metadata_path = TEST "/intermediate/.zgroup";
-    std::string array_metadata_path = TEST "/intermediate/path/.zarray";
-
-    {
-        EXPECT(object_exists(client, base_metadata_path),
-               "Object does not exist: %s",
-               base_metadata_path.c_str());
-        std::string contents = get_object_contents(client, base_metadata_path);
-        nlohmann::json group_metadata = nlohmann::json::parse(contents);
-
-        verify_group_metadata(group_metadata);
-    }
+    const std::string group_metadata_path = TEST "/zarr.json";
+    const std::string group_metadata_path_2 = TEST "/path/zarr.json";
+    const std::string group_metadata_path_3 = TEST "/path/to/zarr.json";
+    const std::string array_metadata_path = TEST "/path/to/data/zarr.json";
 
     {
         EXPECT(object_exists(client, group_metadata_path),
-               "Object does not exist: %s",
-               group_metadata_path.c_str());
+               "Object does not exist: ",
+               group_metadata_path);
         std::string contents = get_object_contents(client, group_metadata_path);
         nlohmann::json group_metadata = nlohmann::json::parse(contents);
 
@@ -310,57 +357,78 @@ verify_and_cleanup()
     }
 
     {
+        EXPECT(object_exists(client, group_metadata_path_2),
+               "Object does not exist: ",
+               group_metadata_path_2);
+        std::string contents =
+          get_object_contents(client, group_metadata_path_2);
+        nlohmann::json group_metadata = nlohmann::json::parse(contents);
+
+        verify_group_metadata(group_metadata);
+    }
+
+    {
+        EXPECT(object_exists(client, group_metadata_path_3),
+               "Object does not exist: ",
+               group_metadata_path_3);
+        std::string contents =
+          get_object_contents(client, group_metadata_path_3);
+        nlohmann::json group_metadata = nlohmann::json::parse(contents);
+
+        verify_group_metadata(group_metadata);
+    }
+
+    {
         EXPECT(object_exists(client, array_metadata_path),
-               "Object does not exist: %s",
-               array_metadata_path.c_str());
+               "Object does not exist: ",
+               array_metadata_path);
         std::string contents = get_object_contents(client, array_metadata_path);
         nlohmann::json array_metadata = nlohmann::json::parse(contents);
 
         verify_array_metadata(array_metadata);
     }
 
-    CHECK(remove_items(
-      client,
-      { base_metadata_path, group_metadata_path, array_metadata_path }));
+    CHECK(remove_items(client, { group_metadata_path, array_metadata_path }));
 
-    const auto expected_file_size = chunk_width * chunk_height * chunk_planes *
-                                    chunk_channels * chunk_timepoints *
-                                    nbytes_px;
+    const auto chunk_size = chunk_width * chunk_height * chunk_planes *
+                            chunk_channels * chunk_timepoints * nbytes_px;
+    const auto index_size = chunks_per_shard *
+                            sizeof(uint64_t) * // indices are 64 bits
+                            2;                 // 2 indices per chunk
+    const auto checksum_size = 4;              // crc32 checksum is 4 bytes
+    const auto expected_file_size = shard_width * shard_height * shard_planes *
+                                      shard_channels * shard_timepoints *
+                                      chunk_size +
+                                    index_size + checksum_size;
 
     // verify and clean up data files
     std::vector<std::string> data_files;
-    std::string data_root = TEST "/intermediate/path";
+    std::string data_root = TEST "/path/to/data";
 
-    for (auto t = 0; t < chunks_in_t; ++t) {
-        const auto t_dir = data_root + "/" + std::to_string(t);
+    for (auto t = 0; t < shards_in_t; ++t) {
+        const auto t_dir = data_root + "/c/" + std::to_string(t);
 
-        for (auto c = 0; c < chunks_in_c; ++c) {
+        for (auto c = 0; c < shards_in_c; ++c) {
             const auto c_dir = t_dir + "/" + std::to_string(c);
 
-            for (auto z = 0; z < chunks_in_z; ++z) {
+            for (auto z = 0; z < shards_in_z; ++z) {
                 const auto z_dir = c_dir + "/" + std::to_string(z);
 
-                for (auto y = 0; y < chunks_in_y; ++y) {
+                for (auto y = 0; y < shards_in_y; ++y) {
                     const auto y_dir = z_dir + "/" + std::to_string(y);
 
-                    for (auto x = 0; x < chunks_in_x; ++x) {
+                    for (auto x = 0; x < shards_in_x; ++x) {
                         const auto x_file = y_dir + "/" + std::to_string(x);
                         EXPECT(object_exists(client, x_file),
                                "Object does not exist: ",
                                x_file);
                         const auto file_size = get_object_size(client, x_file);
                         EXPECT_EQ(size_t, file_size, expected_file_size);
-                        data_files.push_back(x_file);
                     }
-
-                    CHECK(!object_exists(
-                      client, y_dir + "/" + std::to_string(chunks_in_x)));
                 }
             }
         }
     }
-
-    CHECK(remove_items(client, data_files));
 }
 
 int
@@ -374,7 +442,7 @@ main()
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
     auto* stream = setup();
-    std::vector<int32_t> frame(array_width * array_height, 0);
+    std::vector<uint16_t> frame(array_width * array_height, 0);
 
     int retval = 1;
 
@@ -397,7 +465,7 @@ main()
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Caught exception: %s", e.what());
+        LOG_ERROR("Caught exception: ", e.what());
     }
 
     return retval;

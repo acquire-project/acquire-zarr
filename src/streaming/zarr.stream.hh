@@ -65,7 +65,6 @@ struct ZarrStream_s
 
     std::string error_; // error message. If nonempty, an error occurred.
 
-    ZarrVersion version_;
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
 

@@ -33,9 +33,8 @@ main()
         .multiscale = true,
     };
     ZarrStreamSettings settings = {
-        .store_path = "output_v3_compressed_multiscale_s3.zarr",
+        .store_path = "output_compressed_multiscale_s3.zarr",
         .s3_settings = &s3,
-        .version = ZarrVersion_3,
         .max_threads = 0, // use all available threads
         .arrays = &array,
         .array_count = 1,

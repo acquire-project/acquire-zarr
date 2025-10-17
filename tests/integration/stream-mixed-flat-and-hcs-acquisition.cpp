@@ -245,7 +245,6 @@ make_mixed_stream()
 
     ZarrStreamSettings settings = {
         .store_path = TEST ".zarr",
-        .version = ZarrVersion_3,
         .overwrite = true,
         .arrays = &label_array,
         .array_count = 1,

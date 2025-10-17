@@ -30,7 +30,6 @@ setup() {
     };
     ZarrStreamSettings settings = {  
         .store_path = test_path_cstr,
-        .version = ZarrVersion_3,
         .arrays = &array,
         .array_count = 1,
     };

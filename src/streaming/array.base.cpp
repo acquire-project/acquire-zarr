@@ -1,12 +1,9 @@
 #include <utility>
 
+#include "array.hh"
 #include "array.base.hh"
-#include "multiscale.array.hh"
 #include "macros.hh"
-#include "v2.array.hh"
-#include "v3.array.hh"
-#include "v2.multiscale.array.hh"
-#include "v3.multiscale.array.hh"
+#include "multiscale.array.hh"
 
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
@@ -103,34 +100,20 @@ std::unique_ptr<zarr::ArrayBase>
 zarr::make_array(std::shared_ptr<ArrayConfig> config,
                  std::shared_ptr<ThreadPool> thread_pool,
                  std::shared_ptr<FileHandlePool> file_handle_pool,
-                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
-                 ZarrVersion format)
+                 std::shared_ptr<S3ConnectionPool> s3_connection_pool)
 {
     // create a multiscale array at the dataset root (node_key is empty) or if
     // we have a genuine multiscale dataset
     const auto multiscale =
       config->node_key.empty() || config->downsampling_method.has_value();
-    EXPECT(format < ZarrVersionCount,
-           "Invalid Zarr format: ",
-           static_cast<int>(format));
 
     std::unique_ptr<ArrayBase> array;
     if (multiscale) {
-        if (format == ZarrVersion_2) {
-            array = std::make_unique<V2MultiscaleArray>(
-              config, thread_pool, file_handle_pool, s3_connection_pool);
-        } else {
-            array = std::make_unique<V3MultiscaleArray>(
-              config, thread_pool, file_handle_pool, s3_connection_pool);
-        }
+        array = std::make_unique<MultiscaleArray>(
+          config, thread_pool, file_handle_pool, s3_connection_pool);
     } else {
-        if (format == ZarrVersion_2) {
-            array = std::make_unique<V2Array>(
-              config, thread_pool, file_handle_pool, s3_connection_pool);
-        } else {
-            array = std::make_unique<V3Array>(
-              config, thread_pool, file_handle_pool, s3_connection_pool);
-        }
+        array = std::make_unique<Array>(
+          config, thread_pool, file_handle_pool, s3_connection_pool);
     }
 
     return array;

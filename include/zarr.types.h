@@ -28,8 +28,7 @@ extern "C"
 
     typedef enum
     {
-        ZarrVersion_2 = 2,
-        ZarrVersion_3,
+        ZarrVersion_3 = 3,
         ZarrVersionCount
     } ZarrVersion;
 

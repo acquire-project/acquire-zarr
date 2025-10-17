@@ -41,11 +41,10 @@ configure_stream_dimensions(ZarrArraySettings* settings)
 }
 
 ZarrStream*
-create_stream_with_metadata(ZarrVersion version)
+create_stream_with_metadata()
 {
     ZarrStreamSettings settings;
     memset(&settings, 0, sizeof(settings));
-    settings.version = version;
     settings.max_threads = 0;
     settings.store_path = TEST ".zarr";
 
@@ -68,11 +67,10 @@ create_stream_with_metadata(ZarrVersion version)
 }
 
 ZarrStream*
-create_stream_no_metadata(ZarrVersion version)
+create_stream_no_metadata()
 {
     ZarrStreamSettings settings;
     memset(&settings, 0, sizeof(settings));
-    settings.version = version;
     settings.max_threads = 0;
     settings.store_path = TEST ".zarr";
 
@@ -120,7 +118,7 @@ main()
 
     try {
         {
-            auto* stream = create_stream_no_metadata(ZarrVersion_2);
+            auto* stream = create_stream_no_metadata();
             CHECK(stream);
             check_files(false);
             ZarrStream_destroy(stream);
@@ -129,25 +127,7 @@ main()
         }
 
         {
-            auto* stream = create_stream_with_metadata(ZarrVersion_2);
-            CHECK(stream);
-            check_files(true);
-            ZarrStream_destroy(stream);
-
-            CHECK(destroy_directory());
-        }
-
-        {
-            auto* stream = create_stream_no_metadata(ZarrVersion_3);
-            CHECK(stream);
-            check_files(false);
-            ZarrStream_destroy(stream);
-
-            CHECK(destroy_directory());
-        }
-
-        {
-            auto* stream = create_stream_with_metadata(ZarrVersion_3);
+            auto* stream = create_stream_with_metadata();
             CHECK(stream);
             check_files(true);
             ZarrStream_destroy(stream);

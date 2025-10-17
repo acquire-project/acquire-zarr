@@ -31,22 +31,23 @@ class MultiscaleArray : public ArrayBase
     [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
 
   protected:
-    std::unique_ptr<zarr::Downsampler> downsampler_;
-
+    std::unique_ptr<Downsampler> downsampler_;
     std::vector<std::unique_ptr<Array>> arrays_;
 
     size_t bytes_per_frame_;
 
+    std::vector<std::string> metadata_keys_() const override;
+    bool make_metadata_() override;
     bool close_() override;
 
     /** @brief Create array writers. */
-    [[nodiscard]] virtual bool create_arrays_() = 0;
+    [[nodiscard]] bool create_arrays_();
 
     /**
      * @brief Construct OME metadata for this group.
      * @return JSON structure with OME metadata for this group.
      */
-    virtual nlohmann::json get_ome_metadata_() const = 0;
+    nlohmann::json get_ome_metadata_() const;
 
     /**
      * @brief Create a downsampler for multiscale acquisitions.
