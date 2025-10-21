@@ -1,0 +1,12 @@
+.github
+.ipynb_checkpoints
+.vscode
+_CPack_Packages
+acquire_zarr.egg-info
+benchmarks
+build-release
+cmake-build-*
+comparison_plots
+dist
+examples
+venv
