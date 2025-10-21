@@ -3,6 +3,9 @@
 #include "array.hh"
 #include "fs.storage.hh"
 
+#include <future>
+#include <unordered_map>
+
 namespace zarr {
 class FSArray final
   : public Array
@@ -15,6 +18,8 @@ class FSArray final
 
   protected:
     std::mutex mutex_;
+    size_t table_size_;
+    std::vector<std::vector<std::future<void>>> shard_futures_;
     std::unordered_map<std::string, std::shared_ptr<void>> handles_;
 
     bool write_metadata_() override;
@@ -25,6 +30,12 @@ class FSArray final
     bool flush_data_();
     bool flush_tables_();
 
+    /**
+     * @brief Get a file handle for the given path, creating it and adding it to
+     * the local handle pool if it does not already exist.
+     * @param path The file path.
+     * @return The file handle.
+     */
     std::shared_ptr<void> get_handle_(const std::string& path);
 };
 } // namespace zarr

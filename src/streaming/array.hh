@@ -33,7 +33,6 @@ class Array : public ArrayBase
     bool is_closing_;
 
     uint32_t current_layer_;
-    std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
 
     bool make_metadata_(std::string& metadata) override;

@@ -14,6 +14,8 @@ class S3Array final
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   protected:
+    std::vector<size_t> shard_file_offsets_;
+
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;
