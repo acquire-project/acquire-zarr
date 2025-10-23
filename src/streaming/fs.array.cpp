@@ -128,93 +128,6 @@ zarr::FSArray::write_metadata_()
 }
 
 bool
-zarr::FSArray::flush_data_()
-{
-    // std::atomic<char> all_successful = 1;
-    //
-    // std::vector<std::future<void>> futures;
-    //
-    // // wait for the chunks in each shard to finish compressing, then
-    // defragment
-    // // and write the shard
-    // for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
-    //     const std::string data_path = data_paths_[shard_idx];
-    //     auto* file_offset = shard_file_offsets_.data() + shard_idx;
-    //
-    //     const auto shard_data = collect_chunks_(shard_idx);
-    //     if (shard_data.chunks.empty()) {
-    //         LOG_ERROR("Failed to collect chunks for shard ", shard_idx);
-    //         return false;
-    //     }
-    //     if (shard_data.offset != *file_offset) {
-    //         LOG_ERROR("Inconsistent file offset for shard ",
-    //                   shard_idx,
-    //                   ": expected ",
-    //                   *file_offset,
-    //                   ", got ",
-    //                   shard_data.offset);
-    //         return false;
-    //     }
-    //
-    //     size_t layer_offset = shard_data.offset;
-    //
-    //     for (auto& chunk : shard_data.chunks) {
-    //         auto promise = std::make_shared<std::promise<void>>();
-    //         futures.emplace_back(promise->get_future());
-    //
-    //         const auto handle = get_handle_(data_path);
-    //         if (handle == nullptr) {
-    //             LOG_ERROR("Failed to get file handle for ", data_path);
-    //             return false;
-    //         }
-    //
-    //         const auto chunk_size = chunk.size(); // we move it below
-    //         auto job = [data_path,
-    //                     handle,
-    //                     layer_offset,
-    //                     chunk = std::move(chunk),
-    //                     promise](std::string& err) {
-    //             bool success;
-    //             try {
-    //                 success = seek_and_write(handle.get(), layer_offset,
-    //                 chunk);
-    //             } catch (const std::exception& exc) {
-    //                 err = "Failed to write chunk at offset " +
-    //                       std::to_string(layer_offset) + " to path " +
-    //                       data_path + ": " + exc.what();
-    //                 success = false;
-    //             }
-    //
-    //             promise->set_value();
-    //             return success;
-    //         };
-    //
-    //         // one thread is reserved for processing the frame queue and runs
-    //         // the entire lifetime of the stream
-    //         if (thread_pool_->n_threads() == 1 ||
-    //             !thread_pool_->push_job(job)) {
-    //             std::string err;
-    //             if (!job(err)) {
-    //                 LOG_ERROR(err);
-    //             }
-    //         }
-    //
-    //         layer_offset += chunk_size;
-    //     }
-    //
-    //     *file_offset = layer_offset;
-    // }
-
-    // wait for all threads to finish
-    // for (auto& future : futures) {
-    //     future.wait();
-    // }
-    //
-    // return static_cast<bool>(all_successful);
-    return true;
-}
-
-bool
 zarr::FSArray::flush_tables_()
 {
     // construct paths to shard sinks if they don't already exist
@@ -401,17 +314,6 @@ zarr::FSArray::compress_and_flush_data_()
         }
     }
 
-    if (is_closing_ || should_rollover_()) { // flush table
-        if (!flush_tables_()) {
-            LOG_ERROR("Failed to flush shard tables");
-            return false;
-        }
-        current_layer_ = 0;
-    } else {
-        ++current_layer_;
-        CHECK(current_layer_ < config_->dimensions->chunk_layers_per_shard());
-    }
-
     return true;
 }
 
@@ -429,8 +331,8 @@ std::shared_ptr<void>
 zarr::FSArray::get_handle_(const std::string& path)
 {
     std::unique_lock lock(mutex_);
-    if (handles_.contains(path)) {
-        return handles_[path];
+    if (const auto it = handles_.find(path); it != handles_.end()) {
+        return it->second;
     }
 
     void* flags = make_flags();

@@ -12,29 +12,27 @@ namespace fs = std::filesystem;
 namespace {
 const fs::path base_dir = fs::temp_directory_path() / TEST;
 
-const unsigned int array_width = 64, array_height = 48, array_planes = 5;
-const unsigned int n_frames = array_planes;
+constexpr unsigned int array_width = 64, array_height = 48, array_planes = 5;
+constexpr unsigned int n_frames = array_planes;
 
-const unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2;
+constexpr unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2;
 
-const unsigned int shard_width = 2, shard_height = 1, shard_planes = 1;
-const unsigned int chunks_per_shard = shard_width * shard_height * shard_planes;
+constexpr unsigned int shard_width = 2, shard_height = 1, shard_planes = 1;
+constexpr unsigned int chunks_per_shard = shard_width * shard_height * shard_planes;
 
-const unsigned int chunks_in_x =
+constexpr unsigned int chunks_in_x =
   (array_width + chunk_width - 1) / chunk_width; // 4 chunks
-const unsigned int chunks_in_y =
+constexpr unsigned int chunks_in_y =
   (array_height + chunk_height - 1) / chunk_height; // 3 chunks
-const unsigned int chunks_in_z =
+constexpr unsigned int chunks_in_z =
   (array_planes + chunk_planes - 1) / chunk_planes; // 3 chunks
 
-const unsigned int shards_in_x =
+constexpr unsigned int shards_in_x =
   (chunks_in_x + shard_width - 1) / shard_width; // 2 shards
-const unsigned int shards_in_y =
+constexpr unsigned int shards_in_y =
   (chunks_in_y + shard_height - 1) / shard_height; // 3 shards
-const unsigned int shards_in_z =
+constexpr unsigned int shards_in_z =
   (chunks_in_z + shard_planes - 1) / shard_planes; // 3 shards
-
-const int level_of_detail = 4;
 } // namespace
 
 void

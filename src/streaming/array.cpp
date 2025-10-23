@@ -67,8 +67,8 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_shard_index_{ 0 }
-  , current_layer_{ 0 }
   , is_closing_{ false }
+  , current_layer_{ 0 }
 {
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
@@ -134,11 +134,15 @@ zarr::Array::write_frame(std::vector<uint8_t>& data)
     bytes_to_flush_ += bytes_written;
     ++frames_written_;
 
-    if (should_flush_()) {
+    if (should_flush_layer_()) {
         CHECK(compress_and_flush_data_());
 
+        const auto& dims = config_->dimensions;
+        const auto lps = dims->chunk_layers_per_shard();
+        current_layer_ = (current_layer_ + 1) % lps;
+
         if (should_rollover_()) {
-            rollover_();
+            close_shards_(); // also writes the shard tables
             CHECK(write_metadata_());
         }
         bytes_to_flush_ = 0;
@@ -260,10 +264,18 @@ zarr::Array::close_()
     bool retval = false;
     is_closing_ = true;
     try {
+        const bool flush_tables = bytes_to_flush_ > 0 || current_layer_ > 0;
+
         if (bytes_to_flush_ > 0) {
-            CHECK(compress_and_flush_data_());
-        } else if (current_layer_ > 0) {
-            // CHECK(flush_tables_());
+            if (!compress_and_flush_data_()) {
+                LOG_ERROR("Failed to flush remaining data on close");
+                return false;
+            }
+        }
+
+        if (flush_tables && !flush_tables_()) {
+            LOG_ERROR("Failed to flush shard tables on close");
+            return false;
         }
         close_io_streams_();
 
@@ -434,78 +446,33 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& data)
     return bytes_written;
 }
 
-zarr::Array::ShardLayer
-zarr::Array::collect_chunks_(uint32_t shard_index)
-{
-    const auto& dims = config_->dimensions;
-    CHECK(shard_index < dims->number_of_shards());
-
-    const auto chunks_per_shard = dims->chunks_per_shard();
-    const auto chunks_in_mem = dims->number_of_chunks_in_memory();
-    const auto n_layers = dims->chunk_layers_per_shard();
-
-    const auto chunks_per_layer = chunks_per_shard / n_layers;
-    const auto layer_offset = current_layer_ * chunks_per_layer;
-    const auto chunk_offset = current_layer_ * chunks_in_mem;
-
-    auto& shard_table = shard_tables_[shard_index];
-    const auto file_offset = shard_file_offsets_[shard_index];
-    shard_table[2 * layer_offset] = file_offset;
-
-    uint64_t last_chunk_offset = shard_table[2 * layer_offset];
-    uint64_t last_chunk_size = shard_table[2 * layer_offset + 1];
-
-    for (auto i = 1; i < chunks_per_layer; ++i) {
-        const auto offset_idx = 2 * (layer_offset + i);
-        const auto size_idx = offset_idx + 1;
-        if (shard_table[size_idx] == std::numeric_limits<uint64_t>::max()) {
-            continue;
-        }
-
-        shard_table[offset_idx] = last_chunk_offset + last_chunk_size;
-        last_chunk_offset = shard_table[offset_idx];
-        last_chunk_size = shard_table[size_idx];
-    }
-
-    const auto chunk_indices_this_layer =
-      dims->chunk_indices_for_shard_layer(shard_index, current_layer_);
-
-    ShardLayer layer{ file_offset, {} };
-    layer.chunks.reserve(chunk_indices_this_layer.size());
-
-    for (const auto& idx : chunk_indices_this_layer) {
-        layer.chunks.emplace_back(chunk_buffers_[idx - chunk_offset]);
-    }
-
-    return std::move(layer);
-}
-
 bool
-zarr::Array::should_flush_() const
+zarr::Array::should_flush_layer_() const
 {
     const auto& dims = config_->dimensions;
-    size_t frames_before_flush = dims->final_dim().chunk_size_px;
-    for (auto i = 1; i < dims->ndims() - 2; ++i) {
-        frames_before_flush *= dims->at(i).array_size_px;
-    }
-
-    CHECK(frames_before_flush > 0);
-    return frames_written_ % frames_before_flush == 0;
+    const size_t frames_per_layer = dims->frames_per_layer();
+    return frames_written_ % frames_per_layer == 0;
 }
 
 bool
 zarr::Array::should_rollover_() const
 {
     const auto& dims = config_->dimensions;
-    return frames_written_ % dims->frames_before_flush() == 0;
+    const size_t frames_per_shard = dims->frames_per_shard();
+    return frames_written_ % frames_per_shard == 0;
 }
 
 void
-zarr::Array::rollover_()
+zarr::Array::close_shards_()
 {
     LOG_DEBUG("Rolling over");
 
+    EXPECT(flush_tables_(), "Failed to flush shard tables during rollover");
     close_io_streams_();
-    ++append_shard_index_;
-    data_root_ = node_path_() + "/c/" + std::to_string(append_shard_index_);
+
+    // advance to the next shard index
+    if (!is_closing_) {
+        data_root_ =
+          node_path_() + "/c/" + std::to_string(++append_shard_index_);
+    }
 }

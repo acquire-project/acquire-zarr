@@ -105,5 +105,5 @@ zarr::ThreadPool::process_tasks_()
 uint32_t
 zarr::ThreadPool::n_threads() const
 {
-    return threads_.size();
+    return threads_.size() - 1; // exclude frame queue thread
 }

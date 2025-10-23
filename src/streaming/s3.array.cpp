@@ -15,6 +15,8 @@ zarr::S3Array::S3Array(std::shared_ptr<ArrayConfig> config,
   , S3Storage(*config->bucket_name, s3_connection_pool)
 {
     CHECK(config_->dimensions);
+
+    const auto& dims = config_->dimensions;
 }
 
 bool
@@ -57,17 +59,6 @@ zarr::S3Array::compress_and_flush_data_()
     if (!flush_data_()) {
         LOG_ERROR("Failed to flush chunk data");
         return false;
-    }
-
-    if (is_closing_ || should_rollover_()) { // flush table
-        if (!flush_tables_()) {
-            LOG_ERROR("Failed to flush shard tables");
-            return false;
-        }
-        current_layer_ = 0;
-    } else {
-        ++current_layer_;
-        CHECK(current_layer_ < config_->dimensions->chunk_layers_per_shard());
     }
 
     return true;
@@ -195,6 +186,52 @@ zarr::S3Array::update_table_entries_()
 
         shard_table[2 * internal_idx + 1] = chunk_buffer.size();
     }
+}
+
+zarr::Array::ShardLayer
+zarr::S3Array::collect_chunks_(uint32_t shard_index)
+{
+    const auto& dims = config_->dimensions;
+    CHECK(shard_index < dims->number_of_shards());
+
+    const auto chunks_per_shard = dims->chunks_per_shard();
+    const auto chunks_in_mem = dims->number_of_chunks_in_memory();
+    const auto n_layers = dims->chunk_layers_per_shard();
+
+    const auto chunks_per_layer = chunks_per_shard / n_layers;
+    const auto layer_offset = current_layer_ * chunks_per_layer;
+    const auto chunk_offset = current_layer_ * chunks_in_mem;
+
+    auto& shard_table = shard_tables_[shard_index];
+    const auto file_offset = shard_file_offsets_[shard_index];
+    shard_table[2 * layer_offset] = file_offset;
+
+    uint64_t last_chunk_offset = shard_table[2 * layer_offset];
+    uint64_t last_chunk_size = shard_table[2 * layer_offset + 1];
+
+    for (auto i = 1; i < chunks_per_layer; ++i) {
+        const auto offset_idx = 2 * (layer_offset + i);
+        const auto size_idx = offset_idx + 1;
+        if (shard_table[size_idx] == std::numeric_limits<uint64_t>::max()) {
+            continue;
+        }
+
+        shard_table[offset_idx] = last_chunk_offset + last_chunk_size;
+        last_chunk_offset = shard_table[offset_idx];
+        last_chunk_size = shard_table[size_idx];
+    }
+
+    const auto chunk_indices_this_layer =
+      dims->chunk_indices_for_shard_layer(shard_index, current_layer_);
+
+    ShardLayer layer{ file_offset, {} };
+    layer.chunks.reserve(chunk_indices_this_layer.size());
+
+    for (const auto& idx : chunk_indices_this_layer) {
+        layer.chunks.emplace_back(chunk_buffers_[idx - chunk_offset]);
+    }
+
+    return std::move(layer);
 }
 
 bool
@@ -328,7 +365,6 @@ zarr::S3Array::flush_tables_()
             std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
         }
         std::ranges::fill(shard_file_offsets_, 0);
-        current_layer_ = 0;
     }
 
     return true;

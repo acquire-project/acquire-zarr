@@ -14,8 +14,7 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
     const auto ndims = dims_.size();
     EXPECT(ndims > 2, "Array must have at least three dimensions.");
 
-    frames_before_flush_ =
-      final_dim().chunk_size_px * final_dim().shard_size_chunks;
+    frames_per_layer_ = final_dim().chunk_size_px;
 
     for (auto i = 0; i < ndims; ++i) {
         const auto& dim = dims_[i];
@@ -26,7 +25,7 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
             number_of_chunks_in_memory_ *= zarr::chunks_along_dimension(dim);
             number_of_shards_ *= zarr::shards_along_dimension(dim);
             if (i < ndims - 2) {
-                frames_before_flush_ *= dim.array_size_px;
+                frames_per_layer_ *= dim.array_size_px;
             }
         }
     }
@@ -36,7 +35,7 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
     EXPECT(chunks_per_shard_ > 0,
            "Array must have at least one chunk per shard.");
     EXPECT(number_of_shards_ > 0, "Array must have at least one shard.");
-    EXPECT(frames_before_flush_ > 0,
+    EXPECT(frames_per_layer_ > 0,
            "Array must have at least one frame before flush.");
 
     chunk_indices_for_shard_.resize(number_of_shards_);
@@ -231,14 +230,16 @@ ArrayDimensions::shard_internal_index(uint32_t chunk_index) const
     return shard_internal_indices_.at(chunk_index);
 }
 
-/**
- * @brief Get the number of frames before a flush is triggered.
- * @return The number of frames before a flush.
- */
 uint64_t
-ArrayDimensions::frames_before_flush() const
+ArrayDimensions::frames_per_layer() const
 {
-    return frames_before_flush_;
+    return frames_per_layer_;
+}
+
+uint64_t
+ArrayDimensions::frames_per_shard() const
+{
+    return frames_per_layer_ * dims_[0].shard_size_chunks;
 }
 
 uint32_t

@@ -14,11 +14,10 @@ class S3Array final
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   protected:
-    std::vector<size_t> shard_file_offsets_;
-
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;
+    bool flush_tables_() override;
     void close_io_streams_() override;
 
     /**
@@ -33,15 +32,17 @@ class S3Array final
     void update_table_entries_();
 
     /**
+     * @brief Collect all the chunks for a given shard index in the current
+     * layer.
+     * @param shard_index The index of the shard to collect chunks for.
+     * @return The collected chunk buffers in a shard layer structure.
+     */
+    ShardLayer collect_chunks_(uint32_t shard_index);
+
+    /**
      * @brief Flush the chunk data to S3 or intermediate buffers.
      * @return True on success, false on failure.
      */
     bool flush_data_();
-
-    /**
-     * @brief Flush the shard tables to S3 or intermediate buffers.
-     * @return True on success, false on failure.
-     */
-    bool flush_tables_();
 };
 } // namespace zarr

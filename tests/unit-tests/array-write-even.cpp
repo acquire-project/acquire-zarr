@@ -14,8 +14,6 @@ const fs::path base_dir = fs::temp_directory_path() / TEST;
 
 constexpr unsigned int array_width = 64, array_height = 48, array_planes = 6,
                        array_channels = 8, array_timepoints = 10;
-constexpr unsigned int n_frames =
-  array_planes * array_channels * array_timepoints;
 
 constexpr unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2,
                        chunk_channels = 4, chunk_timepoints = 5;
@@ -24,6 +22,9 @@ constexpr unsigned int shard_width = 2, shard_height = 1, shard_planes = 1,
                        shard_channels = 2, shard_timepoints = 2;
 constexpr unsigned int chunks_per_shard =
   shard_width * shard_height * shard_planes * shard_channels * shard_timepoints;
+
+constexpr unsigned int n_frames =
+  array_planes * array_channels * chunk_timepoints * shard_timepoints;
 
 constexpr unsigned int chunks_in_x =
   (array_width + chunk_width - 1) / chunk_width; // 4 chunks
@@ -101,12 +102,12 @@ main()
 
     int retval = 1;
 
-    const ZarrDataType dtype = ZarrDataType_uint16;
+    constexpr ZarrDataType dtype = ZarrDataType_uint16;
     const unsigned int nbytes_px = zarr::bytes_of_type(dtype);
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          0, [](const std::string& err) { LOG_ERROR("Error: ", err); });
+          1, [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
         std::vector<ZarrDimension> dims;
         dims.emplace_back("t",
@@ -132,18 +133,18 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
-        const auto config = std::make_shared<zarr::ArrayConfig>(
-          base_dir.string(),
-          "",
-          std::nullopt,
-          std::nullopt,
-          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-          dtype,
-          std::nullopt,
-          level_of_detail);
-
         // write the data
         {
+            const auto config = std::make_shared<zarr::ArrayConfig>(
+              base_dir.string(),
+              "",
+              std::nullopt,
+              std::nullopt,
+              std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+              dtype,
+              std::nullopt,
+              level_of_detail);
+
             auto writer = std::make_unique<zarr::FSArray>(
               config, thread_pool, std::make_shared<zarr::FileHandlePool>());
 

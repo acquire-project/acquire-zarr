@@ -33,6 +33,7 @@ class Array : public ArrayBase
     bool is_closing_;
 
     uint32_t current_layer_;
+    std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
 
     bool make_metadata_(std::string& metadata) override;
@@ -53,12 +54,12 @@ class Array : public ArrayBase
      * @brief Determine if we should flush the current chunk buffers to storage.
      * @return True if we should flush, false otherwise.
      */
-    bool should_flush_() const;
+    bool should_flush_layer_() const;
 
     /**
-     * @brief Determine if we should rollover to a new shard along the append
+     * @brief Determine if we should roll over to a new shard along the append
      * dimension.
-     * @return True if we should rollover, false otherwise.
+     * @return True if we should roll over, false otherwise.
      */
     bool should_rollover_() const;
 
@@ -70,17 +71,10 @@ class Array : public ArrayBase
     size_t write_frame_to_chunks_(std::vector<uint8_t>& data);
 
     /**
-     * @brief Collect all chunks for the given shard index at the current layer.
-     * @param shard_index The shard index.
-     * @return The collected shard layer.
+     * @brief Finalize all current shard files and close their associated I/O
+     * streams. Update the data root to point to the next shard index.
      */
-    [[nodiscard]] ShardLayer collect_chunks_(uint32_t shard_index);
-
-    /**
-     * @brief Close all current shard files and prepare for writing to a new
-     * shard along the append dimension.
-     */
-    void rollover_();
+    void close_shards_();
 
     /**
      * @brief Return the location of the shard index for this array ("start" or
@@ -95,6 +89,12 @@ class Array : public ArrayBase
      * @return True on success, false on failure.
      */
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
+
+    /**
+     * @brief Flush all shard tables to the underlying storage.
+     * @return True on success, false on failure.
+     */
+    [[nodiscard]] virtual bool flush_tables_() = 0;
 
     /**
      * @brief Close all open IO streams associated with this array.

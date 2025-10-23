@@ -133,8 +133,9 @@ class ArrayDimensions
     /**
      * @brief Get the chunk indices for a specific layer within a shard.
      * @param shard_index The index of the shard.
-     * @param layer
-     * @return
+     * @param layer The layer within the shard.
+     * @return A vector of chunk indices for the specified layer within the
+     * shard.
      */
     std::vector<uint32_t> chunk_indices_for_shard_layer(uint32_t shard_index,
                                                         uint32_t layer) const;
@@ -146,7 +147,22 @@ class ArrayDimensions
      */
     uint32_t shard_internal_index(uint32_t chunk_index) const;
 
-    uint64_t frames_before_flush() const;
+    /**
+     * @brief Get the number of frames in a shard layer, i.e., the number of
+     * frames that can be stored in one layer of chunks within a shard.
+     * @note This is used to determine when to flush chunk buffers to storage.
+     * @return The number of frames in a shard layer.
+     */
+    uint64_t frames_per_layer() const;
+
+    /**
+     * @brief Get the number of frames per full shard, i.e., the number of
+     * frames that are written before closing and rolling over to a new shard.
+     * @details This is just the product of the number of frames per layer and
+     * the number of chunk layers per shard.
+     * @return The number of frames per shard.
+     */
+    uint64_t frames_per_shard() const;
 
   private:
     std::vector<ZarrDimension> dims_;
@@ -162,7 +178,7 @@ class ArrayDimensions
     std::unordered_map<uint32_t, uint32_t> shard_internal_indices_;
     std::vector<std::vector<uint32_t>> chunk_indices_for_shard_;
 
-    uint64_t frames_before_flush_;
+    uint64_t frames_per_layer_;
 
     uint32_t shard_index_for_chunk_(uint32_t chunk_index) const;
     uint32_t shard_internal_index_(uint32_t chunk_index) const;
