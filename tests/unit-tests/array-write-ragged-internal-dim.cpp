@@ -99,7 +99,7 @@ main()
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
           std::thread::hardware_concurrency(),
-          [](const std::string& err) { LOG_ERROR("Error: ", err.c_str()); });
+          [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
         std::vector<ZarrDimension> dims;
         dims.emplace_back("t",

@@ -7,7 +7,6 @@
 
 #include <cstring> // memcp
 #include <filesystem>
-#include <future>
 #include <span>
 #include <unordered_set>
 
@@ -165,8 +164,6 @@ zarr::FSArray::flush_tables_()
                       data_path);
             return false;
         }
-
-        handles_.erase(data_path); // close the handle
     }
 
     // don't reset state if we're closing
@@ -197,8 +194,6 @@ zarr::FSArray::compress_and_flush_data_()
     const auto n_shards = dims->number_of_shards();
     CHECK(data_paths_.size() == n_shards);
 
-    std::vector<std::mutex> mutexes(n_shards);
-
     const uint32_t chunks_per_shard = dims->chunks_per_shard();
     const uint32_t chunks_in_mem = dims->number_of_chunks_in_memory();
     const uint32_t n_layers = dims->chunk_layers_per_shard();
@@ -221,7 +216,11 @@ zarr::FSArray::compress_and_flush_data_()
 
         auto* shard_table = shard_tables_.data() + shard_idx;
         auto* file_offset = shard_file_offsets_.data() + shard_idx;
-        auto* shard_mutex = mutexes.data() + shard_idx;
+
+        if (!shard_mutexes_.contains(data_path)) {
+            shard_mutexes_.emplace();
+        }
+        auto* shard_mutex = &shard_mutexes_[data_path];
 
         auto handle = get_handle_(data_path);
         if (handle == nullptr) {
@@ -229,21 +228,28 @@ zarr::FSArray::compress_and_flush_data_()
             return false;
         }
 
+        if (!futures_.contains(data_path)) {
+            futures_.emplace(data_path, std::vector<std::future<void>>{});
+        }
         const auto& params = config_->compression_params;
 
-        for (auto& chunk_idx : chunk_indices_this_layer) {
+        for (auto i = 0; i < chunk_indices_this_layer.size(); ++i) {
+            const uint32_t chunk_idx = chunk_indices_this_layer[i];
             CHECK(chunk_idx >= chunk_offset);
             uint32_t internal_index = dims->shard_internal_index(chunk_idx);
             const auto& chunk_data = chunk_buffers_[chunk_idx - chunk_offset];
+            auto promise = std::make_shared<std::promise<void>>();
+            futures_[data_path].push_back(promise->get_future());
+
             auto job = [&chunk_data,
                         &params,
                         handle,
                         data_path,
                         bytes_per_px,
                         internal_index,
-                        shard_table,
                         file_offset,
-                        shard_mutex](std::string& err) {
+                        shard_mutex,
+                        promise](std::string& err) {
                 bool success = true;
                 std::vector<uint8_t> compressed;
                 const uint8_t* data_out = nullptr;
@@ -295,11 +301,12 @@ zarr::FSArray::compress_and_flush_data_()
                                      std::span(data_out, chunk_size_out));
                 } catch (const std::exception& exc) {
                     err = "Failed to compress chunk " +
-                          std::to_string(internal_index) + " of shard " + ": " +
-                          exc.what();
+                          std::to_string(internal_index) + " of shard at " +
+                          data_path + ": " + exc.what();
                     success = false;
                 }
 
+                promise->set_value();
                 return success;
             };
 
@@ -321,6 +328,11 @@ void
 zarr::FSArray::close_io_streams_()
 {
     for (const auto& path : data_paths_) {
+        for (auto& future : futures_[path]) {
+            future.wait();
+        }
+        futures_.erase(path);
+        shard_mutexes_.erase(path);
         file_handle_pool_->close_handle(path);
     }
 

@@ -19,7 +19,8 @@ class FSArray final
   protected:
     std::mutex mutex_;
     size_t table_size_;
-    std::vector<std::vector<std::future<void>>> shard_futures_;
+    std::unordered_map<std::string, std::mutex> shard_mutexes_;
+    std::unordered_map<std::string, std::vector<std::future<void>>> futures_;
     std::unordered_map<std::string, std::shared_ptr<void>> handles_;
 
     bool write_metadata_() override;
