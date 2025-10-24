@@ -126,55 +126,10 @@ zarr::FSArray::write_metadata_()
     return success;
 }
 
-bool
-zarr::FSArray::flush_tables_()
+std::string
+zarr::FSArray::index_location_() const
 {
-    // construct paths to shard sinks if they don't already exist
-    if (data_paths_.empty()) {
-        make_data_paths_();
-    }
-
-    const auto& dims = config_->dimensions;
-    const auto n_shards = dims->number_of_shards();
-
-    for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
-        const auto* shard_table = shard_tables_.data() + shard_idx;
-
-        const size_t table_size = shard_table->size() * sizeof(uint64_t);
-        std::vector<uint8_t> table(table_size + sizeof(uint32_t), 0);
-
-        memcpy(table.data(), shard_table->data(), table_size);
-
-        // compute crc32 checksum of the table
-        const uint32_t checksum = crc32c::Crc32c(table.data(), table_size);
-        memcpy(table.data() + table_size, &checksum, sizeof(uint32_t));
-
-        std::string data_path = data_paths_[shard_idx];
-
-        const auto handle = get_handle_(data_path);
-        if (handle == nullptr) {
-            LOG_ERROR("Failed to get file handle for ", data_path);
-            return false;
-        }
-
-        if (!seek_and_write(handle.get(), 0, table)) {
-            LOG_ERROR("Failed to write table and checksum to shard ",
-                      shard_idx,
-                      " at path ",
-                      data_path);
-            return false;
-        }
-    }
-
-    // don't reset state if we're closing
-    if (!is_closing_) {
-        for (auto& table : shard_tables_) {
-            std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
-        }
-        std::ranges::fill(shard_file_offsets_, table_size_);
-    }
-
-    return true;
+    return "start";
 }
 
 bool
@@ -246,6 +201,7 @@ zarr::FSArray::compress_and_flush_data_()
                         handle,
                         data_path,
                         bytes_per_px,
+                        shard_table,
                         internal_index,
                         file_offset,
                         shard_mutex,
@@ -253,7 +209,7 @@ zarr::FSArray::compress_and_flush_data_()
                 bool success = true;
                 std::vector<uint8_t> compressed;
                 const uint8_t* data_out = nullptr;
-                size_t chunk_size_out = 0;
+                uint64_t chunk_size_out = 0;
 
                 try {
                     // compress here
@@ -288,17 +244,38 @@ zarr::FSArray::compress_and_flush_data_()
                     EXPECT(data_out != nullptr, err);
                     EXPECT(chunk_size_out != 0, err);
 
-                    size_t file_offset_local;
+                    uint64_t file_offset_local;
                     {
                         std::lock_guard lock(*shard_mutex);
                         file_offset_local = *file_offset;
                         *file_offset += chunk_size_out;
                     }
 
+                    // write data
                     success =
                       seek_and_write(handle.get(),
                                      file_offset_local,
                                      std::span(data_out, chunk_size_out));
+                    EXPECT(success,
+                           "Failed to write chunk data to ",
+                           data_path,
+                           " internal index ",
+                           internal_index);
+
+                    // write table entry
+                    const std::vector table_entry = { file_offset_local,
+                                                      chunk_size_out };
+                    shard_table->at(2 * internal_index) = file_offset_local;
+                    shard_table->at(2 * internal_index + 1) = chunk_size_out;
+
+                    const size_t table_entry_offset =
+                      2 * sizeof(uint64_t) * internal_index;
+                    success =
+                      seek_and_write(handle.get(),
+                                     table_entry_offset,
+                                     std::span(reinterpret_cast<const uint8_t*>(
+                                                 table_entry.data()),
+                                               sizeof(uint64_t) * 2));
                 } catch (const std::exception& exc) {
                     err = "Failed to compress chunk " +
                           std::to_string(internal_index) + " of shard at " +
@@ -325,14 +302,43 @@ zarr::FSArray::compress_and_flush_data_()
 }
 
 void
-zarr::FSArray::close_io_streams_()
+zarr::FSArray::finalize_io_streams_()
 {
-    for (const auto& path : data_paths_) {
+    for (auto shard_idx = 0; shard_idx < data_paths_.size(); ++shard_idx) {
+        const auto& path = data_paths_[shard_idx];
         for (auto& future : futures_[path]) {
             future.wait();
         }
         futures_.erase(path);
         shard_mutexes_.erase(path);
+
+        // compute table checksum and write it out
+        {
+            const auto handle = get_handle_(path);
+            EXPECT(handle != nullptr,
+                   "Failed to get file handle for finalizing ",
+                   path);
+
+            auto& shard_table = shard_tables_[shard_idx];
+            const size_t table_size = shard_table.size() * sizeof(uint64_t);
+            const auto* table_data =
+              reinterpret_cast<const uint8_t*>(shard_table.data());
+            const uint32_t checksum = crc32c::Crc32c(table_data, table_size);
+
+            EXPECT(seek_and_write(
+                     handle.get(),
+                     table_size,
+                     std::span{ reinterpret_cast<const uint8_t*>(&checksum),
+                                sizeof(uint32_t) }),
+                   "Failed to write final checksum for shard at ",
+                   path);
+
+            std::ranges::fill(shard_table,
+                              std::numeric_limits<uint64_t>::max());
+            shard_file_offsets_[shard_idx] = table_size_;
+        }
+
+        handles_.erase(path);
         file_handle_pool_->close_handle(path);
     }
 
@@ -353,10 +359,4 @@ zarr::FSArray::get_handle_(const std::string& path)
 
     handles_.emplace(path, handle);
     return handle;
-}
-
-std::string
-zarr::FSArray::index_location_() const
-{
-    return "start";
 }

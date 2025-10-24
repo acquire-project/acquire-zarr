@@ -378,7 +378,6 @@ def test_stream_data_to_filesystem(
         data[i, :, :] = i
 
     stream.append(data)
-
     stream.close()  # close the stream, flush the files
 
     chunk_size_bytes = data.dtype.itemsize
@@ -394,12 +393,23 @@ def test_stream_data_to_filesystem(
         shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
 
+    for x in range(settings.arrays[0].dimensions[-1].array_size_px):
+        for y in range(settings.arrays[0].dimensions[-2].array_size_px):
+            for z in range(settings.arrays[0].dimensions[-3].array_size_px):
+                shard_file = store_path / "test.zarr" / "0" / "c" / str(z) / str(y) / str(x)
+                assert shard_file.is_file()
+                if compression_codec is None:
+                    assert shard_file.stat().st_size == shard_size_bytes
+                else:
+                    size = shard_file.stat().st_size
+                    assert table_size_bytes < size <= shard_size_bytes
+
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
 
     assert array.shape == data.shape
     for i in range(array.shape[0]):
-        assert np.array_equal(array[i, :, :], data[i, :, :])
+        assert np.array_equal(array[i, :, :], data[i, :, :]), f"Data mismatch at index {i}"
 
     metadata = array.metadata
     sharding_codec = metadata.codecs[0]
@@ -415,22 +425,8 @@ def test_stream_data_to_filesystem(
         assert blosc_codec.cname == cname
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
-
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size <= shard_size_bytes
     else:
-        assert len(sharding_codec.codecs) == 1
-
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size == shard_size_bytes
+        assert len(sharding_codec.codecs) == 1  # bytes codec
 
 
 @pytest.mark.parametrize(

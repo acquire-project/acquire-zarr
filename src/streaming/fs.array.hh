@@ -26,8 +26,7 @@ class FSArray final
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;
-    bool flush_tables_() override;
-    void close_io_streams_() override;
+    void finalize_io_streams_() override;
 
     /**
      * @brief Get a file handle for the given path, creating it and adding it to

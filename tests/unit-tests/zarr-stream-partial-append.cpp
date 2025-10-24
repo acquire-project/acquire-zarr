@@ -48,6 +48,9 @@ verify_file_data(const ZarrStreamSettings& settings)
     const size_t row_size = settings.arrays->dimensions[2].array_size_px,
                  num_rows = settings.arrays->dimensions[1].array_size_px;
 
+    constexpr size_t table_size = 2 * sizeof(uint64_t) + 4;
+    const size_t chunk_size = row_size * num_rows;
+
     fs::path shard_path =
       fs::path(settings.store_path) / "0" / "c" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
@@ -60,17 +63,20 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Get file size
         file.seekg(0, std::ios::end);
         const auto file_size = file.tellg();
-        file.seekg(0, std::ios::beg);
+        EXPECT(file_size ==
+                 static_cast<std::streamoff>(chunk_size + table_size),
+               "Unexpected file size: ",
+               file_size);
+        file.seekg(table_size, std::ios::beg); // skip table header
 
         // Read entire file into buffer
-        buffer.resize(file_size);
-        file.read(reinterpret_cast<char*>(buffer.data()), file_size);
+        buffer.resize(chunk_size);
+        file.read(reinterpret_cast<char*>(buffer.data()), chunk_size);
         CHECK(file.good());
     }
 
     // Verify each row contains the correct values
-    constexpr size_t table_size = 2 * sizeof(uint64_t) + 4;
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows + table_size);
+    EXPECT_EQ(int, buffer.size(), chunk_size);
     for (size_t row = 0; row < num_rows; ++row) {
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
@@ -90,16 +96,20 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Get file size
         file.seekg(0, std::ios::end);
         const auto file_size = file.tellg();
-        file.seekg(0, std::ios::beg);
+        EXPECT(file_size ==
+                 static_cast<std::streamoff>(chunk_size + table_size),
+               "Unexpected file size: ",
+               file_size);
+        file.seekg(table_size, std::ios::beg); // skip table header
 
         // Read entire file into buffer
-        buffer.resize(file_size);
-        file.read(reinterpret_cast<char*>(buffer.data()), file_size);
+        buffer.resize(chunk_size);
+        file.read(reinterpret_cast<char*>(buffer.data()), chunk_size);
         CHECK(file.good());
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows + table_size);
+    EXPECT_EQ(int, buffer.size(), chunk_size);
     for (size_t row = 0; row < num_rows; ++row) {
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
@@ -124,18 +134,22 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Get file size
         file.seekg(0, std::ios::end);
         const auto file_size = file.tellg();
-        file.seekg(0, std::ios::beg);
+        EXPECT(file_size ==
+                 static_cast<std::streamoff>(chunk_size + table_size),
+               "Unexpected file size: ",
+               file_size);
+        file.seekg(table_size, std::ios::beg); // skip table header
 
         // Read entire file into buffer
-        buffer.resize(file_size);
-        file.read(reinterpret_cast<char*>(buffer.data()), file_size);
+        buffer.resize(chunk_size);
+        file.read(reinterpret_cast<char*>(buffer.data()), chunk_size);
         CHECK(file.good());
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows + table_size);
+    EXPECT_EQ(int, buffer.size(), chunk_size);
 
-    for (auto i = 0; i < row_size * num_rows; ++i) {
+    for (auto i = 0; i < chunk_size; ++i) {
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 
@@ -150,18 +164,22 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Get file size
         file.seekg(0, std::ios::end);
         const auto file_size = file.tellg();
-        file.seekg(0, std::ios::beg);
+        EXPECT(file_size ==
+                 static_cast<std::streamoff>(chunk_size + table_size),
+               "Unexpected file size: ",
+               file_size);
+        file.seekg(table_size, std::ios::beg); // skip table header
 
         // Read entire file into buffer
-        buffer.resize(file_size);
-        file.read(reinterpret_cast<char*>(buffer.data()), file_size);
+        buffer.resize(chunk_size);
+        file.read(reinterpret_cast<char*>(buffer.data()), chunk_size);
         CHECK(file.good());
     }
 
     // Verify each row contains the correct values
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows + table_size);
+    EXPECT_EQ(int, buffer.size(), chunk_size);
 
-    for (auto i = 0; i < row_size * num_rows; ++i) {
+    for (auto i = 0; i < chunk_size; ++i) {
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 }

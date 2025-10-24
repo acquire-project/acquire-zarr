@@ -91,15 +91,10 @@ class Array : public ArrayBase
     [[nodiscard]] virtual bool compress_and_flush_data_() = 0;
 
     /**
-     * @brief Flush all shard tables to the underlying storage.
-     * @return True on success, false on failure.
+     * @brief Ensure all tables are flushed and close all open IO streams
+     * associated with this array.
      */
-    [[nodiscard]] virtual bool flush_tables_() = 0;
-
-    /**
-     * @brief Close all open IO streams associated with this array.
-     */
-    virtual void close_io_streams_() = 0;
+    virtual void finalize_io_streams_() = 0;
 
     friend class MultiscaleArray;
 };

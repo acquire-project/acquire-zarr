@@ -17,8 +17,7 @@ class S3Array final
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;
-    bool flush_tables_() override;
-    void close_io_streams_() override;
+    void finalize_io_streams_() override;
 
     /**
      * @brief Compress all the chunk buffers in place.
@@ -44,5 +43,11 @@ class S3Array final
      * @return True on success, false on failure.
      */
     bool flush_data_();
+
+    /**
+     * @brief Flush all shard tables to S3.
+     * @return True on success, false on failure.
+     */
+    bool flush_tables_();
 };
 } // namespace zarr

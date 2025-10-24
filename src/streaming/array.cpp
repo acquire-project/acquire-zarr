@@ -135,17 +135,17 @@ zarr::Array::write_frame(std::vector<uint8_t>& data)
     ++frames_written_;
 
     if (should_flush_layer_()) {
-        CHECK(compress_and_flush_data_());
+        EXPECT(compress_and_flush_data_(), "Failed to flush chunk layer data");
+        bytes_to_flush_ = 0;
 
         const auto& dims = config_->dimensions;
         const auto lps = dims->chunk_layers_per_shard();
         current_layer_ = (current_layer_ + 1) % lps;
 
         if (should_rollover_()) {
-            close_shards_(); // also writes the shard tables
+            close_shards_();
             CHECK(write_metadata_());
         }
-        bytes_to_flush_ = 0;
     }
 
     return bytes_written;
@@ -264,20 +264,14 @@ zarr::Array::close_()
     bool retval = false;
     is_closing_ = true;
     try {
-        const bool flush_tables = bytes_to_flush_ > 0 || current_layer_ > 0;
-
         if (bytes_to_flush_ > 0) {
             if (!compress_and_flush_data_()) {
                 LOG_ERROR("Failed to flush remaining data on close");
                 return false;
             }
+            bytes_to_flush_ = 0;
         }
-
-        if (flush_tables && !flush_tables_()) {
-            LOG_ERROR("Failed to flush shard tables on close");
-            return false;
-        }
-        close_io_streams_();
+        finalize_io_streams_();
 
         if (frames_written_ > 0) {
             CHECK(write_metadata_());
@@ -467,8 +461,7 @@ zarr::Array::close_shards_()
 {
     LOG_DEBUG("Rolling over");
 
-    EXPECT(flush_tables_(), "Failed to flush shard tables during rollover");
-    close_io_streams_();
+    finalize_io_streams_();
 
     // advance to the next shard index
     if (!is_closing_) {

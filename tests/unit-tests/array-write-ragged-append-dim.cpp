@@ -18,7 +18,8 @@ constexpr unsigned int n_frames = array_planes;
 constexpr unsigned int chunk_width = 16, chunk_height = 16, chunk_planes = 2;
 
 constexpr unsigned int shard_width = 2, shard_height = 1, shard_planes = 1;
-constexpr unsigned int chunks_per_shard = shard_width * shard_height * shard_planes;
+constexpr unsigned int chunks_per_shard =
+  shard_width * shard_height * shard_planes;
 
 constexpr unsigned int chunks_in_x =
   (array_width + chunk_width - 1) / chunk_width; // 4 chunks
@@ -79,12 +80,12 @@ main()
 
     int retval = 1;
 
-    const ZarrDataType dtype = ZarrDataType_int32;
+    constexpr ZarrDataType dtype = ZarrDataType_int32;
     const unsigned int nbytes_px = zarr::bytes_of_type(dtype);
 
     try {
         auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          std::thread::hardware_concurrency(),
+          1,
           [](const std::string& err) { LOG_ERROR("Error: ", err.c_str()); });
 
         std::vector<ZarrDimension> dims;
@@ -101,17 +102,16 @@ main()
         dims.emplace_back(
           "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
-        auto config = std::make_shared<zarr::ArrayConfig>(
-          base_dir.string(),
-          "",
-          std::nullopt,
-          std::nullopt,
-          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-          dtype,
-          std::nullopt,
-          4);
-
         {
+            auto config = std::make_shared<zarr::ArrayConfig>(
+              base_dir.string(),
+              "",
+              std::nullopt,
+              std::nullopt,
+              std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+              dtype,
+              std::nullopt,
+              4);
             auto writer = std::make_unique<zarr::FSArray>(
               config, thread_pool, std::make_shared<zarr::FileHandlePool>());
 
@@ -129,10 +129,10 @@ main()
 
         const auto chunk_size =
           chunk_width * chunk_height * chunk_planes * nbytes_px;
-        const auto index_size = chunks_per_shard *
-                                sizeof(uint64_t) * // indices are 64 bits
-                                2;                 // 2 indices per chunk
-        const auto checksum_size = 4;              // CRC32 checksum
+        constexpr size_t index_size = chunks_per_shard *
+                                      sizeof(uint64_t) * // indices are 64 bits
+                                      2;                 // 2 indices per chunk
+        constexpr size_t checksum_size = 4;              // CRC32 checksum
         const auto expected_file_size =
           shard_width * shard_height * shard_planes * chunk_size + index_size +
           checksum_size;

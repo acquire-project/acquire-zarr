@@ -65,8 +65,9 @@ zarr::S3Array::compress_and_flush_data_()
 }
 
 void
-zarr::S3Array::close_io_streams_()
+zarr::S3Array::finalize_io_streams_()
 {
+    const bool flush_tables = bytes_to_flush_ > 0 || current_layer_ > 0;
     for (const auto& key : data_paths_) {
         EXPECT(finalize_object(key), "Failed to finalize S3 object at ", key);
     }
