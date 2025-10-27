@@ -81,7 +81,13 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
             const size_t index = row * row_size + col;
-            EXPECT_EQ(int, buffer[index], row);
+            EXPECT(buffer[index] == row,
+                   "Unexpected value at row ",
+                   row,
+                   " col ",
+                   col,
+                   ": ",
+                   static_cast<int>(buffer[index]));
         }
     }
 
