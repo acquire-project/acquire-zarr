@@ -18,28 +18,6 @@ zarr::FSStorage::FSStorage(std::shared_ptr<FileHandlePool> file_handle_pool)
 }
 
 bool
-zarr::FSStorage::write_binary(const std::string& path,
-                              const std::vector<uint8_t>& data,
-                              size_t offset) const
-{
-    void* flags = make_flags();
-    const auto handle = file_handle_pool_->get_handle(path, flags);
-    destroy_flags(flags);
-
-    if (handle == nullptr) {
-        LOG_ERROR("Failed to get file handle for ", path);
-        return false;
-    }
-
-    if (!seek_and_write(handle.get(), offset, data)) {
-        LOG_ERROR("Failed to write binary data to ", path);
-        return false;
-    }
-
-    return true;
-}
-
-bool
 zarr::FSStorage::write_string(const std::string& path,
                               const std::string& data,
                               size_t offset) const
