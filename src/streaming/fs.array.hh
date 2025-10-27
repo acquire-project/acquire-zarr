@@ -35,5 +35,11 @@ class FSArray final
      * @return The file handle.
      */
     std::shared_ptr<void> get_handle_(const std::string& path);
+
+    /**
+     * @brief Write the shard table entries for the given shard index.
+     * @param shard_idx The shard index.
+     */
+    void write_table_entries_(uint32_t shard_idx);
 };
 } // namespace zarr

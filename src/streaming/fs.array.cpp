@@ -263,19 +263,8 @@ zarr::FSArray::compress_and_flush_data_()
                            internal_index);
 
                     // write table entry
-                    const std::vector table_entry = { file_offset_local,
-                                                      chunk_size_out };
                     shard_table->at(2 * internal_index) = file_offset_local;
                     shard_table->at(2 * internal_index + 1) = chunk_size_out;
-
-                    const size_t table_entry_offset =
-                      2 * sizeof(uint64_t) * internal_index;
-                    success =
-                      seek_and_write(handle.get(),
-                                     table_entry_offset,
-                                     std::span(reinterpret_cast<const uint8_t*>(
-                                                 table_entry.data()),
-                                               sizeof(uint64_t) * 2));
                 } catch (const std::exception& exc) {
                     err = "Failed to compress chunk " +
                           std::to_string(internal_index) + " of shard at " +
@@ -312,31 +301,7 @@ zarr::FSArray::finalize_io_streams_()
         futures_.erase(path);
         shard_mutexes_.erase(path);
 
-        // compute table checksum and write it out
-        {
-            const auto handle = get_handle_(path);
-            EXPECT(handle != nullptr,
-                   "Failed to get file handle for finalizing ",
-                   path);
-
-            auto& shard_table = shard_tables_[shard_idx];
-            const size_t table_size = shard_table.size() * sizeof(uint64_t);
-            const auto* table_data =
-              reinterpret_cast<const uint8_t*>(shard_table.data());
-            const uint32_t checksum = crc32c::Crc32c(table_data, table_size);
-
-            EXPECT(seek_and_write(
-                     handle.get(),
-                     table_size,
-                     std::span{ reinterpret_cast<const uint8_t*>(&checksum),
-                                sizeof(uint32_t) }),
-                   "Failed to write final checksum for shard at ",
-                   path);
-
-            std::ranges::fill(shard_table,
-                              std::numeric_limits<uint64_t>::max());
-            shard_file_offsets_[shard_idx] = table_size_;
-        }
+        write_table_entries_(shard_idx);
 
         handles_.erase(path);
         file_handle_pool_->close_handle(path);
@@ -359,4 +324,36 @@ zarr::FSArray::get_handle_(const std::string& path)
 
     handles_.emplace(path, handle);
     return handle;
+}
+
+void
+zarr::FSArray::write_table_entries_(uint32_t shard_idx)
+{
+    CHECK(shard_idx < shard_tables_.size());
+    const auto& path = data_paths_[shard_idx];
+    const auto handle = get_handle_(path);
+
+    EXPECT(
+      handle != nullptr, "Failed to get file handle for finalizing ", path);
+
+    // compute table checksum and write it out
+    auto& shard_table = shard_tables_[shard_idx];
+    const size_t table_size = shard_table.size() * sizeof(uint64_t);
+    const auto* table_data =
+      reinterpret_cast<const uint8_t*>(shard_table.data());
+    const uint32_t checksum = crc32c::Crc32c(table_data, table_size);
+
+    const size_t table_buffer_size = shard_table.size() * sizeof(uint64_t);
+    constexpr size_t checksum_size = sizeof(uint32_t);
+
+    std::vector<uint8_t> table_buffer(table_buffer_size + checksum_size);
+    memcpy(table_buffer.data(), table_data, table_size);
+    memcpy(table_buffer.data() + table_buffer_size, &checksum, checksum_size);
+
+    EXPECT(seek_and_write(handle.get(), 0, table_buffer),
+           "Failed to write final checksum for shard at ",
+           path);
+
+    std::ranges::fill(shard_table, std::numeric_limits<uint64_t>::max());
+    shard_file_offsets_[shard_idx] = table_size_;
 }
