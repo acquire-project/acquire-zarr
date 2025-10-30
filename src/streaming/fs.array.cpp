@@ -291,7 +291,7 @@ zarr::FSArray::compress_and_flush_data_()
 }
 
 void
-zarr::FSArray::finalize_io_streams_()
+zarr::FSArray::finalize_append_shard_()
 {
     for (auto shard_idx = 0; shard_idx < data_paths_.size(); ++shard_idx) {
         const auto& path = data_paths_[shard_idx];

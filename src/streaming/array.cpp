@@ -271,7 +271,7 @@ zarr::Array::close_()
             }
             bytes_to_flush_ = 0;
         }
-        finalize_io_streams_();
+        finalize_append_shard_();
 
         if (frames_written_ > 0) {
             CHECK(write_metadata_());
@@ -461,7 +461,7 @@ zarr::Array::close_shards_()
 {
     LOG_DEBUG("Rolling over");
 
-    finalize_io_streams_();
+    finalize_append_shard_();
 
     // advance to the next shard index
     if (!is_closing_) {

@@ -23,7 +23,7 @@ class S3Array final
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;
-    void finalize_io_streams_() override;
+    void finalize_append_shard_() override;
 
     /**
      * @brief Compress all the chunk buffers in place.

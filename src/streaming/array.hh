@@ -88,7 +88,7 @@ class Array : public ArrayBase
      * @brief Ensure all tables are flushed and close all open IO streams
      * associated with this array.
      */
-    virtual void finalize_io_streams_() = 0;
+    virtual void finalize_append_shard_() = 0;
 
     friend class MultiscaleArray;
 };

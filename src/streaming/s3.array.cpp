@@ -65,7 +65,7 @@ zarr::S3Array::compress_and_flush_data_()
 }
 
 void
-zarr::S3Array::finalize_io_streams_()
+zarr::S3Array::finalize_append_shard_()
 {
     const bool should_rollover = should_rollover_();
     const bool should_flush_anyway =
