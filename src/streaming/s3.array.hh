@@ -14,6 +14,12 @@ class S3Array final
             std::shared_ptr<S3ConnectionPool> s3_connection_pool);
 
   protected:
+    struct ShardLayer
+    {
+        size_t offset; // offset in bytes from start of shard
+        std::vector<std::vector<uint8_t>> chunks;
+    };
+
     bool write_metadata_() override;
     std::string index_location_() const override;
     bool compress_and_flush_data_() override;

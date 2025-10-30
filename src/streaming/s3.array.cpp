@@ -197,7 +197,7 @@ zarr::S3Array::update_table_entries_()
     }
 }
 
-zarr::Array::ShardLayer
+zarr::S3Array::ShardLayer
 zarr::S3Array::collect_chunks_(uint32_t shard_index)
 {
     const auto& dims = config_->dimensions;

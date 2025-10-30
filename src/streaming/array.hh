@@ -17,12 +17,6 @@ class Array : public ArrayBase
     [[nodiscard]] size_t write_frame(std::vector<uint8_t>&) override;
 
   protected:
-    struct ShardLayer
-    {
-        size_t offset; // offset in bytes from start of shard
-        std::vector<std::vector<uint8_t>> chunks;
-    };
-
     std::vector<std::vector<uint8_t>> chunk_buffers_;
     std::vector<std::string> data_paths_;
 
