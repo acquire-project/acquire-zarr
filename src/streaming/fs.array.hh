@@ -17,11 +17,27 @@ class FSArray final
             std::shared_ptr<FileHandlePool> file_handle_pool);
 
   protected:
-    std::mutex mutex_;
-    size_t table_size_;
-    std::unordered_map<std::string, std::mutex> shard_mutexes_;
-    std::unordered_map<std::string, std::vector<std::future<void>>> futures_;
+    struct ShardFile
+    {
+        std::string path;
+        std::shared_ptr<void> handle;
+        std::vector<uint64_t> table;
+        std::mutex table_mutex;
+        uint64_t file_offset;
+        std::mutex offset_mutex;
+        std::vector<std::future<void>> chunk_futures;
+
+        [[nodiscard]] bool close();
+    };
+
+    const size_t table_size_bytes_;
+
+    std::unordered_map<std::string, std::shared_ptr<ShardFile>> shard_files_;
+    std::mutex shard_files_mutex_;
+    std::condition_variable shard_files_cv_;
+
     std::unordered_map<std::string, std::shared_ptr<void>> handles_;
+    std::mutex handles_mutex_;
 
     bool write_metadata_() override;
     std::string index_location_() const override;
