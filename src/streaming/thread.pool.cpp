@@ -34,8 +34,7 @@ bool
 zarr::ThreadPool::push_job(Task&& job)
 {
     std::unique_lock lock(jobs_mutex_);
-    // only allow pushing jobs from the main thread
-    if (!accepting_jobs || std::this_thread::get_id() != main_thread_id_) {
+    if (!accepting_jobs /*|| std::this_thread::get_id() != main_thread_id_*/) {
         return false;
     }
 
