@@ -116,7 +116,7 @@ zarr::Array::write_frame(std::vector<uint8_t>& data)
         return 0;
     }
 
-    if (bytes_to_flush_ == 0) { // first frame, we need to init the buffers
+    if (frames_written_ == 0) { // first frame, we need to init the buffers
         fill_buffers_();
     }
 

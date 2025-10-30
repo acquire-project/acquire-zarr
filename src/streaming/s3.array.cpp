@@ -61,6 +61,10 @@ zarr::S3Array::compress_and_flush_data_()
         return false;
     }
 
+    if (!is_closing_) {
+        fill_buffers_();
+    }
+
     return true;
 }
 

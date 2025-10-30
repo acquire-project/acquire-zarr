@@ -215,6 +215,11 @@ zarr::FSArray::compress_and_flush_data_()
 
         const auto& params = config_->compression_params;
 
+        const size_t future_offset = shard_file->chunk_futures.size();
+        shard_file->chunk_futures.resize(shard_file->chunk_futures.size() +
+                                         chunk_indices_this_layer.size());
+
+#pragma omp parallel for
         for (auto i = 0; i < chunk_indices_this_layer.size(); ++i) {
             const uint32_t chunk_idx = chunk_indices_this_layer[i];
             CHECK(chunk_idx >= chunk_offset);
@@ -226,7 +231,8 @@ zarr::FSArray::compress_and_flush_data_()
             auto& chunk_data = chunk_buffers_[chunk_idx - chunk_offset];
             const size_t bytes_of_chunk = chunk_data.size();
 
-            shard_file->chunk_futures.push_back(promise->get_future());
+            shard_file->chunk_futures[i + future_offset] = promise->get_future();
+            // shard_file->chunk_futures.push_back(promise->get_future());
 
             auto job = [chunk_data = std::move(chunk_data),
                         &params,
@@ -314,7 +320,9 @@ zarr::FSArray::compress_and_flush_data_()
             }
 
             if (!is_closing_) {
-                chunk_buffers_[chunk_idx - chunk_offset].resize(bytes_of_chunk);
+                auto& chunk = chunk_buffers_[chunk_idx - chunk_offset];
+                chunk.resize(bytes_of_chunk);
+                std::ranges::fill(chunk, 0);
             }
         }
 
