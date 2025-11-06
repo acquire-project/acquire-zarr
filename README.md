@@ -183,28 +183,28 @@ settings.arrays = [
         dimensions = [
             aqz.Dimension(
                 name="t",
-                type=aqz.DimensionType.TIME,
+                kind=aqz.DimensionType.TIME,
                 array_size_px=0,
                 chunk_size_px=100,
                 shard_size_chunks=10
             ),
             aqz.Dimension(
                 name="c",
-                type=aqz.DimensionType.CHANNEL,
+                kind=aqz.DimensionType.CHANNEL,
                 array_size_px=3,
                 chunk_size_px=1,
                 shard_size_chunks=1
             ),
             aqz.Dimension(
                 name="y",
-                type=aqz.DimensionType.SPACE,
+                kind=aqz.DimensionType.SPACE,
                 array_size_px=1080,
                 chunk_size_px=270,
                 shard_size_chunks=2
             ),
             aqz.Dimension(
                 name="x",
-                type=aqz.DimensionType.SPACE,
+                kind=aqz.DimensionType.SPACE,
                 array_size_px=1920,
                 chunk_size_px=480,
                 shard_size_chunks=2
@@ -245,28 +245,28 @@ settings = aqz.StreamSettings(
             dimensions=[
                 aqz.Dimension(
                     name="t",
-                    type=aqz.DimensionType.TIME,
+                    kind=aqz.DimensionType.TIME,
                     array_size_px=0,
                     chunk_size_px=100,
                     shard_size_chunks=1
                 ),
                 aqz.Dimension(
                     name="c",
-                    type=aqz.DimensionType.CHANNEL,
+                    kind=aqz.DimensionType.CHANNEL,
                     array_size_px=1,
                     chunk_size_px=1,
                     shard_size_chunks=1
                 ),
                 aqz.Dimension(
                     name="y",
-                    type=aqz.DimensionType.SPACE,
+                    kind=aqz.DimensionType.SPACE,
                     array_size_px=1080,
                     chunk_size_px=270,
                     shard_size_chunks=2
                 ),
                 aqz.Dimension(
                     name="x",
-                    type=aqz.DimensionType.SPACE,
+                    kind=aqz.DimensionType.SPACE,
                     array_size_px=1920,
                     chunk_size_px=480,
                     shard_size_chunks=2
@@ -279,28 +279,28 @@ settings = aqz.StreamSettings(
             dimensions=[
                 aqz.Dimension(
                     name="t",
-                    type=aqz.DimensionType.TIME,
+                    kind=aqz.DimensionType.TIME,
                     array_size_px=0,
                     chunk_size_px=100,
                     shard_size_chunks=1
                 ),
                 aqz.Dimension(
                     name="c",
-                    type=aqz.DimensionType.CHANNEL,
+                    kind=aqz.DimensionType.CHANNEL,
                     array_size_px=2,  # two fluorescence channels
                     chunk_size_px=1,
                     shard_size_chunks=1
                 ),
                 aqz.Dimension(
                     name="y",
-                    type=aqz.DimensionType.SPACE,
+                    kind=aqz.DimensionType.SPACE,
                     array_size_px=1080,
                     chunk_size_px=270,
                     shard_size_chunks=2
                 ),
                 aqz.Dimension(
                     name="x",
-                    type=aqz.DimensionType.SPACE,
+                    kind=aqz.DimensionType.SPACE,
                     array_size_px=1920,
                     chunk_size_px=480,
                     shard_size_chunks=2
@@ -344,28 +344,28 @@ fov1_array = aqz.ArraySettings(
     dimensions=[
         aqz.Dimension(
             name="t",
-            type=aqz.DimensionType.TIME,
+            kind=aqz.DimensionType.TIME,
             array_size_px=0,
             chunk_size_px=10,
             shard_size_chunks=1
         ),
         aqz.Dimension(
             name="c",
-            type=aqz.DimensionType.CHANNEL,
+            kind=aqz.DimensionType.CHANNEL,
             array_size_px=3,
             chunk_size_px=1,
             shard_size_chunks=1
         ),
         aqz.Dimension(
             name="y",
-            type=aqz.DimensionType.SPACE,
+            kind=aqz.DimensionType.SPACE,
             array_size_px=512,
             chunk_size_px=256,
             shard_size_chunks=2
         ),
         aqz.Dimension(
             name="x",
-            type=aqz.DimensionType.SPACE,
+            kind=aqz.DimensionType.SPACE,
             array_size_px=512,
             chunk_size_px=256,
             shard_size_chunks=2
@@ -431,14 +431,14 @@ labels_array = aqz.ArraySettings(
     dimensions=[
         aqz.Dimension(
             name="y",
-            type=aqz.DimensionType.SPACE,
+            kind=aqz.DimensionType.SPACE,
             array_size_px=512,
             chunk_size_px=256,
             shard_size_chunks=2
         ),
         aqz.Dimension(
             name="x",
-            type=aqz.DimensionType.SPACE,
+            kind=aqz.DimensionType.SPACE,
             array_size_px=512,
             chunk_size_px=256,
             shard_size_chunks=2
