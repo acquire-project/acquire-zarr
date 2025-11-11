@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "acquire-zarr>=0.5.2",
+#     "acquire-zarr>=0.2.4",
 #     "zarr",
 #     "rich",
 #     "tensorstore",
@@ -258,7 +258,6 @@ def compare(
 
     print("\nRunning acquire-zarr test:")
     az_path = "acquire_zarr_test.zarr"
-    print("I'm saving to ", Path(az_path).absolute())
 
     # Pre-generate the data (timing excluded)
     data = CyclicArray(
