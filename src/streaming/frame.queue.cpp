@@ -19,7 +19,7 @@ zarr::FrameQueue::FrameQueue(size_t num_frames, size_t avg_frame_size)
 }
 
 bool
-zarr::FrameQueue::push(LockedBuffer& frame, const std::string& key)
+zarr::FrameQueue::push(std::vector<uint8_t>& frame, const std::string& key)
 {
     std::unique_lock lock(mutex_);
     size_t write_pos = write_pos_.load(std::memory_order_relaxed);
@@ -39,7 +39,7 @@ zarr::FrameQueue::push(LockedBuffer& frame, const std::string& key)
 }
 
 bool
-zarr::FrameQueue::pop(LockedBuffer& frame, std::string& key)
+zarr::FrameQueue::pop(std::vector<uint8_t>& frame, std::string& key)
 {
     std::unique_lock lock(mutex_);
     size_t read_pos = read_pos_.load(std::memory_order_relaxed);

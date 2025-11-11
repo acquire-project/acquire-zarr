@@ -17,8 +17,7 @@ zarr::trim(std::string_view s)
 
     // trim left
     std::string trimmed(s);
-    trimmed.erase(trimmed.begin(),
-                  std::find_if(trimmed.begin(), trimmed.end(), [](char c) {
+    trimmed.erase(trimmed.begin(), std::ranges::find_if(trimmed, [](char c) {
                       return !std::isspace(c);
                   }));
 
@@ -103,7 +102,7 @@ zarr::shards_along_dimension(const ZarrDimension& dimension)
 }
 
 bool
-zarr::compress_in_place(ByteVector& data,
+zarr::compress_in_place(std::vector<uint8_t>& data,
                         const zarr::BloscCompressionParams& params,
                         size_t type_size)
 {

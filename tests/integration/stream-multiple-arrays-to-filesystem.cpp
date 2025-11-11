@@ -287,8 +287,8 @@ verify_codecs(const nlohmann::json& metadata,
     EXPECT(codec_config.contains("index_location"),
            "Expected key 'index_location' in codec configuration");
     auto index_location = codec_config["index_location"].get<std::string>();
-    EXPECT(index_location == "end",
-           "Expected index_location to be 'end', got '",
+    EXPECT(index_location == "start",
+           "Expected index_location to be 'start', got '",
            index_location,
            "'");
 
