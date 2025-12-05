@@ -273,18 +273,29 @@ def compare(
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
     az = zarr.open(az_path)["0"]
+    az_metadata = az.metadata.to_dict()
+    del az
+
+    if not do_compare:  # free up disk space
+        print("\nCleaning up acquire-zarr output...", end="")
+        try:
+            shutil.rmtree(az_path)
+            print("[OK]")
+        except Exception as e:
+            print("[ERROR]", e)
 
     print("\nRunning TensorStore test:")
     ts_path = "tensorstore_test.zarr"
     time_ts_ms, frame_write_times_ts = run_tensorstore_test(
         data,
         ts_path,
-        {**az.metadata.to_dict(), "data_type": "uint16"},
+        {**az_metadata, "data_type": "uint16"},
     )
 
     # Data comparison (optional)
     comparison_result = None
     if do_compare:
+        az = zarr.open(az_path)["0"]
         print("\nComparing the written data:", end=" ")
         try:
             ts = zarr.open(ts_path)
@@ -292,7 +303,7 @@ def compare(
                 az
             )  # ensure acquire-zarr wrote the correct data
             data.compare_array(ts)  # ensure tensorstore wrote the correct data
-            print("[OK]\n")
+            print("[OK]")
 
             metadata_match = ts.metadata == az.metadata
             print(f"Metadata matches: {metadata_match}")
@@ -310,19 +321,25 @@ def compare(
                 "metadata_match": False,
                 "error": str(e),
             }
+        finally:
+            del az
+
+        try:
+            print("\nCleaning up acquire-zarr output...", end="")
+            shutil.rmtree(az_path) # cleanup
+            print("[OK]")
+        except Exception as e:
+            print("[ERROR]", e)
     else:
         print("\nSkipping data comparison")
 
     # clean up test data
-    del az
-
     try:
-        print("\nCleaning up test data...", end="")
-        shutil.rmtree(az_path)
+        print("\nCleaning up TensorStore output...", end="")
         shutil.rmtree(ts_path)
         print("[OK]")
-    except Exception:
-        print("[ERROR] Failed to remove test data")
+    except Exception as e:
+        print("[ERROR]", e)
 
     data_size_gib = (2048 * 2048 * 2 * frame_count) / (1 << 30)
 
