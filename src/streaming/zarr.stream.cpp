@@ -165,13 +165,11 @@ make_compression_params(const ZarrCompressionSettings* settings)
 }
 
 std::shared_ptr<ArrayDimensions>
-make_array_dimensions(const ZarrDimensionProperties* dimensions,
-                      size_t dimension_count,
-                      ZarrDataType data_type)
+make_array_dimensions(const ZarrArraySettings* settings)
 {
     std::vector<ZarrDimension> dims;
-    for (auto i = 0; i < dimension_count; ++i) {
-        const auto& dim = dimensions[i];
+    for (auto i = 0; i < settings->dimension_count; ++i) {
+        const auto& dim = settings->dimensions[i];
         std::string unit;
         if (dim.unit) {
             unit = zarr::trim(dim.unit);
@@ -187,7 +185,18 @@ make_array_dimensions(const ZarrDimensionProperties* dimensions,
                           unit,
                           scale);
     }
-    return std::make_shared<ArrayDimensions>(std::move(dims), data_type);
+
+    // Build target dimension order vector if specified
+    std::vector<std::string> target_order;
+    if (settings->storage_dimension_order && settings->storage_dimension_order_size > 0) {
+        target_order.reserve(settings->storage_dimension_order_size);
+        for (size_t i = 0; i < settings->storage_dimension_order_size; ++i) {
+            target_order.emplace_back(settings->storage_dimension_order[i]);
+        }
+    }
+
+    return std::make_shared<ArrayDimensions>(
+      std::move(dims), settings->data_type, target_order);
 }
 
 bool
@@ -292,8 +301,8 @@ make_array_config(const ZarrArraySettings* settings,
     std::optional<zarr::BloscCompressionParams> compression_params =
       make_compression_params(settings->compression_settings);
 
-    std::shared_ptr<ArrayDimensions> dimensions = make_array_dimensions(
-      settings->dimensions, settings->dimension_count, settings->data_type);
+    std::shared_ptr<ArrayDimensions> dimensions =
+      make_array_dimensions(settings);
 
     std::optional<ZarrDownsamplingMethod> downsampling_method = std::nullopt;
     if (settings->multiscale) {

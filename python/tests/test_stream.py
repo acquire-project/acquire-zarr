@@ -96,12 +96,6 @@ def s3_settings():
         yield settings
 
 
-@pytest.fixture(scope="function")
-def store_path(tmp_path):
-    yield tmp_path
-    shutil.rmtree(tmp_path)
-
-
 def create_hcs_settings():
     """Create HCS settings that match the C++ test structure."""
     # Well C/5 with two FOVs

@@ -433,6 +433,35 @@ zarr::Array::fill_buffers_()
     }
 }
 
+namespace {
+/**
+ * @brief Transpose a 2D frame buffer (Y×X → X×Y).
+ *
+ * @param src Source buffer containing row-major data
+ * @param dst Destination buffer for transposed data
+ * @param src_rows Number of rows in source
+ * @param src_cols Number of columns in source
+ * @param bytes_per_pixel Size of each pixel in bytes
+ */
+void
+transpose_frame(const uint8_t* src,
+                uint8_t* dst,
+                uint32_t src_rows,
+                uint32_t src_cols,
+                size_t bytes_per_pixel)
+{
+    // Transpose: dst[col][row] = src[row][col]
+    // Output dimensions: src_cols × src_rows
+    for (uint32_t row = 0; row < src_rows; ++row) {
+        for (uint32_t col = 0; col < src_cols; ++col) {
+            const auto src_offset = (row * src_cols + col) * bytes_per_pixel;
+            const auto dst_offset = (col * src_rows + row) * bytes_per_pixel;
+            std::memcpy(dst + dst_offset, src + src_offset, bytes_per_pixel);
+        }
+    }
+}
+} // namespace
+
 size_t
 zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 {
@@ -441,6 +470,30 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 
     const auto& dimensions = config_->dimensions;
 
+    // Take the frame data first
+    auto frame = data.take();
+
+    // Check if we need to transpose spatial dimensions (Y↔X)
+    std::vector<uint8_t> transposed_frame;
+    if (dimensions->needs_xy_transposition()) {
+        const auto acq_rows = dimensions->acquisition_frame_rows();
+        const auto acq_cols = dimensions->acquisition_frame_cols();
+
+        // Allocate buffer for transposed frame
+        transposed_frame.resize(frame.size());
+
+        // Transpose: input is acq_rows × acq_cols, output is acq_cols × acq_rows
+        transpose_frame(frame.data(),
+                        transposed_frame.data(),
+                        acq_rows,
+                        acq_cols,
+                        bytes_per_px);
+
+        // Replace frame with transposed version
+        frame = std::move(transposed_frame);
+    }
+
+    // Now use storage-order dimensions for chunking
     const auto& x_dim = dimensions->width_dim();
     const auto frame_cols = x_dim.array_size_px;
     const auto tile_cols = x_dim.chunk_size_px;
@@ -461,7 +514,10 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 
     // don't take the frame id from the incoming frame, as the camera may have
     // dropped frames
-    const auto frame_id = frames_written_;
+    const auto acquisition_frame_id = frames_written_;
+
+    // Transpose frame_id from acquisition order to prescribed storage_dimension_order
+    const auto frame_id = dimensions->transpose_frame_id(acquisition_frame_id);
 
     // offset among the chunks in the lattice
     const auto group_offset = dimensions->tile_group_offset(frame_id);
@@ -471,8 +527,6 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
-
-    auto frame = data.take();
 
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile = 0; tile < n_tiles; ++tile) {

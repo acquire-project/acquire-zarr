@@ -45,7 +45,9 @@ struct ZarrDimension
 class ArrayDimensions
 {
   public:
-    ArrayDimensions(std::vector<ZarrDimension>&& dims, ZarrDataType dtype);
+    ArrayDimensions(std::vector<ZarrDimension>&& dims,
+                    ZarrDataType dtype,
+                    const std::vector<std::string>& target_dim_order = {});
 
     size_t ndims() const;
 
@@ -55,6 +57,40 @@ class ArrayDimensions
     const ZarrDimension& final_dim() const;
     const ZarrDimension& height_dim() const;
     const ZarrDimension& width_dim() const;
+
+    /**
+     * @brief Get the dimension at the given index in storage dimension order.
+     * @param idx The index in storage order.
+     * @return The dimension at the given index.
+     */
+    const ZarrDimension& storage_dimension(size_t idx) const;
+
+    /**
+     * @brief Check if dimensions need transposition
+     * @return True if dimensions are not in storage dimension order.
+     */
+    bool needs_transposition() const;
+
+    /**
+     * @brief Check if spatial dimensions (Y, X) need transposition.
+     * @return True if the last two dimensions are swapped between acquisition
+     *         and storage order.
+     */
+    bool needs_xy_transposition() const;
+
+    /**
+     * @brief Get the number of rows in frames as they arrive (acquisition
+     * order).
+     * @return The height of incoming frames (may differ from storage order).
+     */
+    uint32_t acquisition_frame_rows() const;
+
+    /**
+     * @brief Get the number of columns in frames as they arrive (acquisition
+     * order).
+     * @return The width of incoming frames (may differ from storage order).
+     */
+    uint32_t acquisition_frame_cols() const;
 
     /**
      * @brief Get the index of a chunk in the chunk lattice for a given frame
@@ -115,7 +151,8 @@ class ArrayDimensions
     uint32_t chunk_layers_per_shard() const;
 
     /**
-     * @brief Get the shard index for a given chunk index, given array dimensions.
+     * @brief Get the shard index for a given chunk index, given array
+     * dimensions.
      * @param chunk_index The index of the chunk.
      * @return The index of the shard containing the chunk.
      */
@@ -145,8 +182,44 @@ class ArrayDimensions
      */
     uint32_t shard_internal_index(uint32_t chunk_index) const;
 
+    /**
+     * @brief Remap a frame ID from acquisition order into the storage
+     *        dimension order.
+     *
+     * Frame IDs encode the linear position across every axis except the final
+     * two spatial tile axes (typically Y and X), which are implicitly zero
+     * because a frame represents a whole 2D plane. When acquisition order
+     * differs from the configured storage order, this permutes those encoded
+     * coordinates so the returned ID walks frames in storage order (e.g.,
+     * TCZYX for NGFF). If reordering is unnecessary, the original frame_id is
+     * returned unchanged.
+     *
+     * @param frame_id Sequential frame counter in acquisition order.
+     * @return Sequential frame counter in the storage dimension order.
+     */
+    uint64_t transpose_frame_id(uint64_t frame_id) const;
+
   private:
-    std::vector<ZarrDimension> dims_;
+    struct TranspositionMap
+    {
+        // Original acquisition order
+        std::vector<ZarrDimension> acquisition_dims;
+        std::vector<size_t> acq_to_storage; // Maps acq index -> storage index
+        std::vector<size_t> storage_to_acq; // Maps storage index -> acq index
+        // Pre-computed: acq_frame_id -> storage_frame_id
+        std::vector<uint64_t> frame_id_lookup;
+        // 0 = use full lookup; >0 = frames per append-dim increment
+        uint64_t inner_frame_count{ 0 };
+    };
+
+    static std::pair<std::vector<ZarrDimension>,
+                     std::optional<TranspositionMap>>
+    compute_transposition(std::vector<ZarrDimension>&& acquisition_dims,
+                          const std::vector<std::string>& target_dim_order);
+
+    std::vector<ZarrDimension> dims_; // Dimensions in storage order
+    std::optional<TranspositionMap> transpose_map_;
+
     ZarrDataType dtype_;
 
     size_t bytes_per_chunk_;
