@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- File handles are now managed by a pool to centrally limit the number of open files (#161)
+- Vectorized file writing to improve performance when writing many small chunks (#156)
+- File handles are now managed by a pool to centrally limit the number of open files (#161) 
 
 ### Removed
 
