@@ -100,7 +100,8 @@ std::unique_ptr<zarr::ArrayBase>
 zarr::make_array(std::shared_ptr<ArrayConfig> config,
                  std::shared_ptr<ThreadPool> thread_pool,
                  std::shared_ptr<FileHandlePool> file_handle_pool,
-                 std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+                 bool is_hcs_array)
 {
     // create a multiscale array at the dataset root (node_key is empty) or if
     // we have a genuine multiscale dataset
@@ -108,7 +109,7 @@ zarr::make_array(std::shared_ptr<ArrayConfig> config,
       config->node_key.empty() || config->downsampling_method.has_value();
 
     std::unique_ptr<ArrayBase> array;
-    if (multiscale) {
+    if (multiscale || is_hcs_array) {
         array = std::make_unique<MultiscaleArray>(
           config, thread_pool, file_handle_pool, s3_connection_pool);
     } else {

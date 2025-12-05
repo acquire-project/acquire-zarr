@@ -104,10 +104,13 @@ struct ZarrStream_s
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      * @param parent_path Path to the parent group of the array.
+     * @param is_hcs_array Whether this array is an HCS array and must be
+     * treated as multiscale even if no downsampling method is supplied.
      * @return True if the array was configured successfully, false otherwise.
      */
     [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings,
-                                        const std::string& parent_path);
+                                        const std::string& parent_path,
+                                        bool is_hcs_array);
 
     /**
      * @brief Commit HCS settings to the stream.
