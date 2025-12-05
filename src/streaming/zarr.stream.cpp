@@ -449,13 +449,12 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         error = "HCS settings given, but no plates specified";
         return false;
     }
+    if (settings->plates == nullptr) {
+        error = "Null pointer: plates";
+        return false;
+    }
 
     for (auto i = 0; i < settings->plate_count; ++i) {
-        if (settings->plates + i == nullptr) {
-            error = "Null pointer: plate " + std::to_string(i);
-            return false;
-        }
-
         const auto& plate = settings->plates[i];
         if (plate.path == nullptr) {
             error = "Null pointer: path for plate " + std::to_string(i);
@@ -472,12 +471,11 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         std::unordered_set<std::string> column_names;
 
         // check acquisitions
+        if (plate.acquisition_count > 0 && plate.acquisitions == nullptr) {
+            error = "Null pointer: acquisitions in plate " + std::to_string(i);
+            return false;
+        }
         for (auto j = 0; j < plate.acquisition_count; ++j) {
-            if (plate.acquisitions + j == nullptr) {
-                error = "Null pointer: acquisition " + std::to_string(j) +
-                        " in plate " + std::to_string(i);
-                return false;
-            }
             const auto& acquisition = plate.acquisitions[j];
 
             if (acquisition_ids.contains(acquisition.id)) {
@@ -501,12 +499,6 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         }
 
         for (auto j = 0; j < plate.row_count; ++j) {
-            if (plate.row_names[j] == nullptr) {
-                error = "Null pointer: row name " + std::to_string(j) +
-                        " in plate " + std::to_string(i);
-                return false;
-            }
-
             const std::string row_name =
               zarr::regularize_key(plate.row_names[j]);
             if (!is_valid_zarr_key(row_name, error)) {
@@ -534,12 +526,6 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         }
 
         for (auto j = 0; j < plate.column_count; ++j) {
-            if (plate.column_names[j] == nullptr) {
-                error = "Null pointer: column name " + std::to_string(j) +
-                        " in plate " + std::to_string(i);
-                return false;
-            }
-
             const std::string column_name =
               zarr::regularize_key(plate.column_names[j]);
             if (!is_valid_zarr_key(column_name, error)) {
@@ -556,12 +542,10 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
         }
 
         // check wells
+        if (plate.wells == nullptr) {
+            error = "Null pointer: well in plate " + std::to_string(i);
+        }
         for (auto j = 0; j < plate.well_count; ++j) {
-            if (plate.wells + j == nullptr) {
-                error = "Null pointer: well " + std::to_string(j) +
-                        " in plate " + std::to_string(i);
-                return false;
-            }
             const auto& well = plate.wells[j];
 
             if (well.row_name == nullptr) {
@@ -591,14 +575,13 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
             }
 
             // check fields of view
+            if (well.images == nullptr) {
+                error = "Null pointer: images in well " + std::to_string(j) +
+                        " in plate " + std::to_string(i);
+                return false;
+            }
             std::unordered_set<std::string> fields_of_view;
             for (auto k = 0; k < well.image_count; ++k) {
-                if (well.images + k == nullptr) {
-                    error = "Image " + std::to_string(k) + " in well " +
-                            std::to_string(j) + " in plate " +
-                            std::to_string(i) + " is a null pointer";
-                    return false;
-                }
                 const auto& fov = well.images[k];
 
                 if (fov.path == nullptr) {
@@ -1152,7 +1135,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 
 bool
 ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
-                               const std::string& parent_path)
+                               const std::string& parent_path,
+                               bool is_hcs_array)
 {
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
@@ -1168,8 +1152,11 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     ZarrOutputArray output_node{ .output_key = config->node_key,
                                  .frame_buffer_offset = 0 };
     try {
-        output_node.array = zarr::make_array(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_);
+        output_node.array = zarr::make_array(config,
+                                             thread_pool_,
+                                             file_handle_pool_,
+                                             s3_connection_pool_,
+                                             is_hcs_array);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1270,7 +1257,8 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                 }
                 image_out.path = zarr::regularize_key(image_in.path);
 
-                if (!configure_array_(image_in.array_settings, well_key)) {
+                if (!configure_array_(
+                      image_in.array_settings, well_key, true)) {
                     set_error_("Failed to configure array for field of view " +
                                std::to_string(k) + " in well " +
                                std::to_string(j) + " in plate " +
@@ -1287,7 +1275,7 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
     }
 
     // collect references to wells
-    for (const auto& [_, plate] : plates_) {
+    for (const auto& plate : plates_ | std::views::values) {
         for (const auto& well : plate.wells()) {
             auto well_key =
               plate.path() + "/" + well.row_name + "/" + well.column_name;
@@ -1317,7 +1305,7 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
     // configure flat arrays
     for (auto i = 0; i < settings->array_count; ++i) {
         const auto& array_settings = settings->arrays[i];
-        if (!configure_array_(&array_settings, "")) {
+        if (!configure_array_(&array_settings, "", false)) {
             set_error_("Failed to configure array '" +
                        std::string(array_settings.output_key) + "': " + error_);
             return false;

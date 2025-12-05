@@ -102,7 +102,8 @@ std::unique_ptr<ArrayBase>
 make_array(std::shared_ptr<ArrayConfig> config,
            std::shared_ptr<ThreadPool> thread_pool,
            std::shared_ptr<FileHandlePool> file_handle_pool,
-           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+           std::shared_ptr<S3ConnectionPool> s3_connection_pool,
+           bool is_hcs_array);
 
 [[nodiscard]] bool
 finalize_array(std::unique_ptr<ArrayBase>&& array);
