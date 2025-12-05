@@ -1,4 +1,4 @@
-#include "s3.sink.hh"
+#include "s3.object.hh"
 #include "unit.test.macros.hh"
 
 #include <miniocpp/client.h>
@@ -57,9 +57,9 @@ main()
         std::vector<uint8_t> data((5 << 20) + 1, 0);
         {
             auto sink =
-              std::make_unique<zarr::S3Sink>(settings.bucket_name, object_name, pool);
-            CHECK(sink->write(0, data));
-            CHECK(zarr::finalize_sink(std::move(sink)));
+              std::make_unique<zarr::S3Object>(settings.bucket_name, object_name, pool);
+            CHECK(sink->write(data, 0));
+            CHECK(sink->close());
         }
 
         conn = pool->get_connection();

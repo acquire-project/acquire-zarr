@@ -10,11 +10,11 @@ main()
 
     std::vector<ZarrDimension> dims;
     dims.emplace_back(
-      "t", ZarrDimensionType_Time, 0, 5, 0); // 5 timepoints / chunk
-    dims.emplace_back("c", ZarrDimensionType_Channel, 3, 2, 0); // 2 chunks
-    dims.emplace_back("z", ZarrDimensionType_Space, 5, 2, 0);   // 3 chunks
-    dims.emplace_back("y", ZarrDimensionType_Space, 48, 16, 0); // 3 chunks
-    dims.emplace_back("x", ZarrDimensionType_Space, 64, 16, 0); // 4 chunks
+      "t", ZarrDimensionType_Time, 0, 5, 1); // 5 timepoints / chunk
+    dims.emplace_back("c", ZarrDimensionType_Channel, 3, 2, 1); // 2 chunks
+    dims.emplace_back("z", ZarrDimensionType_Space, 5, 2, 1);   // 3 chunks
+    dims.emplace_back("y", ZarrDimensionType_Space, 48, 16, 1); // 3 chunks
+    dims.emplace_back("x", ZarrDimensionType_Space, 64, 16, 1); // 4 chunks
     ArrayDimensions dimensions(std::move(dims), ZarrDataType_uint16);
 
     try {

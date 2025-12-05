@@ -21,24 +21,15 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
-zarr::MultiscaleArray::MultiscaleArray(
-  std::shared_ptr<ArrayConfig> config,
-  std::shared_ptr<ThreadPool> thread_pool,
-  std::shared_ptr<FileHandlePool> file_handle_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+zarr::MultiscaleArray::MultiscaleArray(std::shared_ptr<ArrayConfig> config,
+                                       std::shared_ptr<ThreadPool> thread_pool)
+  : ArrayBase(config, thread_pool)
 {
     bytes_per_frame_ = config_->dimensions == nullptr
                          ? 0
                          : bytes_of_frame(*config_->dimensions, config_->dtype);
 
     EXPECT(create_downsampler_(), "Failed to create downsampler");
-
-    // dimensions may be null in the case of intermediate groups, e.g., the
-    // A in A/1
-    if (config_->dimensions) {
-        CHECK(create_arrays_());
-    }
 }
 
 size_t
@@ -53,7 +44,7 @@ zarr::MultiscaleArray::memory_usage() const noexcept
 }
 
 size_t
-zarr::MultiscaleArray::write_frame(LockedBuffer& data)
+zarr::MultiscaleArray::write_frame(std::vector<uint8_t>& data)
 {
     if (arrays_.empty()) {
         LOG_WARNING("Attempt to write to group with no arrays");
@@ -76,17 +67,9 @@ zarr::MultiscaleArray::write_frame(LockedBuffer& data)
     return n_bytes;
 }
 
-std::vector<std::string>
-zarr::MultiscaleArray::metadata_keys_() const
-{
-    return { "zarr.json" };
-}
-
 bool
-zarr::MultiscaleArray::make_metadata_()
+zarr::MultiscaleArray::make_metadata_(std::string& metadata_str)
 {
-    metadata_sinks_.clear();
-
     nlohmann::json metadata = {
         { "zarr_format", 3 },
         { "consolidated_metadata", nullptr },
@@ -98,7 +81,7 @@ zarr::MultiscaleArray::make_metadata_()
         metadata["attributes"]["ome"] = get_ome_metadata_();
     }
 
-    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+    metadata_str = metadata.dump(4);
 
     return true;
 }
@@ -118,36 +101,7 @@ zarr::MultiscaleArray::close_()
         return false;
     }
 
-    for (auto& [key, sink] : metadata_sinks_) {
-        EXPECT(zarr::finalize_sink(std::move(sink)),
-               "Failed to finalize metadata sink ",
-               key);
-    }
-
     arrays_.clear();
-    metadata_sinks_.clear();
-
-    return true;
-}
-
-bool
-zarr::MultiscaleArray::create_arrays_()
-{
-    arrays_.clear();
-
-    if (downsampler_) {
-        const auto& configs = downsampler_->writer_configurations();
-        arrays_.resize(configs.size());
-
-        for (const auto& [lod, config] : configs) {
-            arrays_[lod] = std::make_unique<Array>(
-              config, thread_pool_, file_handle_pool_, s3_connection_pool_);
-        }
-    } else {
-        const auto config = make_base_array_config_();
-        arrays_.push_back(std::make_unique<Array>(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_));
-    }
 
     return true;
 }
@@ -279,7 +233,7 @@ zarr::MultiscaleArray::make_base_array_config_() const
 }
 
 void
-zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
+zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& data)
 {
     if (!downsampler_) {
         return; // no downsampler, nothing to do
@@ -288,7 +242,7 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
-        LockedBuffer downsampled_frame;
+        std::vector<uint8_t> downsampled_frame;
         if (downsampler_->take_frame(i, downsampled_frame)) {
             const auto n_bytes = arrays_[i]->write_frame(downsampled_frame);
             EXPECT(n_bytes == downsampled_frame.size(),

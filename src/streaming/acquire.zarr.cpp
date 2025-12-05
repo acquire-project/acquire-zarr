@@ -4,6 +4,7 @@
 #include "zarr.stream.hh"
 
 #include <bit>     // bit_ceil
+#include <cstring> // memcpy
 #include <cstdint> // uint32_t
 #include <unordered_set>
 #include <vector>

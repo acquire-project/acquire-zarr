@@ -2,10 +2,6 @@
 
 #include "array.dimensions.hh"
 #include "blosc.compression.params.hh"
-#include "file.handle.hh"
-#include "locked.buffer.hh"
-#include "s3.connection.hh"
-#include "sink.hh"
 #include "thread.pool.hh"
 #include "zarr.types.h"
 
@@ -56,9 +52,7 @@ class ArrayBase
 {
   public:
     ArrayBase(std::shared_ptr<ArrayConfig> config,
-              std::shared_ptr<ThreadPool> thread_pool,
-              std::shared_ptr<FileHandlePool> file_handle_pool,
-              std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+              std::shared_ptr<ThreadPool> thread_pool);
     virtual ~ArrayBase() = default;
 
     /**
@@ -78,31 +72,30 @@ class ArrayBase
      * @param data The data to write.
      * @return The number of bytes successfully written.
      */
-    [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
+    [[nodiscard]] virtual size_t write_frame(std::vector<uint8_t>& data) = 0;
 
   protected:
     std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
-    std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
-    std::shared_ptr<FileHandlePool> file_handle_pool_;
 
-    std::unordered_map<std::string, std::string> metadata_strings_;
-    std::unordered_map<std::string, std::unique_ptr<Sink>> metadata_sinks_;
+    std::string last_written_metadata_;
 
     std::string node_path_() const;
-    [[nodiscard]] virtual bool make_metadata_() = 0;
-    virtual std::vector<std::string> metadata_keys_() const = 0;
-    [[nodiscard]] bool make_metadata_sinks_();
-    [[nodiscard]] bool write_metadata_();
+    [[nodiscard]] virtual bool make_metadata_(std::string& metadata_str) = 0;
+    [[nodiscard]] virtual bool write_metadata_() = 0;
 
     friend bool finalize_array(std::unique_ptr<ArrayBase>&& array);
 };
 
+template<typename ArrayType, typename... Args>
 std::unique_ptr<ArrayBase>
 make_array(std::shared_ptr<ArrayConfig> config,
            std::shared_ptr<ThreadPool> thread_pool,
-           std::shared_ptr<FileHandlePool> file_handle_pool,
-           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+           Args&&... args)
+{
+    return std::make_unique<ArrayType>(
+      config, thread_pool, std::forward<Args>(args)...);
+}
 
 [[nodiscard]] bool
 finalize_array(std::unique_ptr<ArrayBase>&& array);

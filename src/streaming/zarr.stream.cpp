@@ -1,7 +1,12 @@
 #include "acquire.zarr.h"
 #include "array.base.hh"
+#include "fs.array.hh"
+#include "fs.multiscale.array.hh"
+#include "fs.storage.hh"
 #include "macros.hh"
-#include "sink.hh"
+#include "s3.array.hh"
+#include "s3.multiscale.array.hh"
+#include "s3.storage.hh"
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
@@ -803,23 +808,6 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
 
     return true;
 }
-
-std::string
-dimension_type_to_string(ZarrDimensionType type)
-{
-    switch (type) {
-        case ZarrDimensionType_Time:
-            return "time";
-        case ZarrDimensionType_Channel:
-            return "channel";
-        case ZarrDimensionType_Space:
-            return "space";
-        case ZarrDimensionType_Other:
-            return "other";
-        default:
-            return "(unknown)";
-    }
-}
 } // namespace
 
 /* ZarrStream_s implementation */
@@ -878,8 +866,9 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer.assign_at(frame_buffer_offset,
-                                   { data + bytes_written, bytes_to_copy });
+            memcpy(frame_buffer.data() + frame_buffer_offset,
+                   data + bytes_written,
+                   bytes_to_copy);
             frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
@@ -902,12 +891,12 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
                 frame_buffer_offset = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
-            frame_buffer.assign_at(0, { data, bytes_remaining });
+            memcpy(frame_buffer.data(), data, bytes_remaining);
             frame_buffer_offset = bytes_remaining;
             bytes_written += bytes_remaining;
         } else { // at least one full frame
-            zarr::LockedBuffer frame;
-            frame.assign({ data, bytes_of_frame });
+            std::vector<uint8_t> frame(bytes_of_frame);
+            frame.assign(data, data + bytes_of_frame);
 
             std::unique_lock lock(frame_queue_mutex_);
             while (!frame_queue_->push(frame, key) && process_frames_) {
@@ -938,31 +927,14 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
         return ZarrStatusCode_InvalidArgument;
     }
 
-    // check if we have already written custom metadata
-    if (!custom_metadata_sink_) {
-        const std::string metadata_key = "acquire.json";
-        std::string base_path = store_path_;
-        if (base_path.starts_with("file://")) {
-            base_path = base_path.substr(7);
-        }
-        const auto prefix = base_path.empty() ? "" : base_path + "/";
-        const auto sink_path = prefix + metadata_key;
+    const std::string prefix = store_path_.empty() ? "" : store_path_ + "/";
+    const std::string path = prefix + "acquire.json";
 
-        if (is_s3_acquisition_()) {
-            custom_metadata_sink_ = zarr::make_s3_sink(
-              s3_settings_->bucket_name, sink_path, s3_connection_pool_);
-        } else {
-            custom_metadata_sink_ =
-              zarr::make_file_sink(sink_path, file_handle_pool_);
-        }
-    } else if (!overwrite) { // custom metadata already written, don't overwrite
+    // check if we have already written custom metadata
+    if (custom_metadata_ &&
+        !overwrite) { // custom metadata already written, don't
         LOG_ERROR("Custom metadata already written, use overwrite flag");
         return ZarrStatusCode_WillNotOverwrite;
-    }
-
-    if (!custom_metadata_sink_) {
-        LOG_ERROR("Custom metadata sink not found");
-        return ZarrStatusCode_InternalError;
     }
 
     const auto metadata_json = nlohmann::json::parse(custom_metadata,
@@ -971,10 +943,17 @@ ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
                                                      true   // ignore comments
     );
 
-    const auto metadata_str = metadata_json.dump(4);
-    std::span data{ reinterpret_cast<const uint8_t*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!custom_metadata_sink_->write(0, data)) {
+    custom_metadata_ = metadata_json.dump(4);
+
+    bool success;
+    if (is_s3_acquisition_()) {
+        success = write_string_to_s3_(
+          s3_settings_->bucket_name, path, *custom_metadata_);
+    } else {
+        success = write_string_to_file_(path, *custom_metadata_);
+    }
+
+    if (!success) {
         LOG_ERROR("Error writing custom metadata");
         return ZarrStatusCode_IOError;
     }
@@ -1168,8 +1147,23 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     ZarrOutputArray output_node{ .output_key = config->node_key,
                                  .frame_buffer_offset = 0 };
     try {
-        output_node.array = zarr::make_array(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_);
+        const bool multiscale =
+          config->node_key.empty() || config->downsampling_method.has_value();
+        const bool s3 = bucket_name.has_value();
+
+        if (multiscale && s3) {
+            output_node.array = zarr::make_array<zarr::S3MultiscaleArray>(
+              config, thread_pool_, s3_connection_pool_);
+        } else if (multiscale) {
+            output_node.array = zarr::make_array<zarr::FSMultiscaleArray>(
+              config, thread_pool_, file_handle_pool_);
+        } else if (s3) {
+            output_node.array = zarr::make_array<zarr::S3Array>(
+              config, thread_pool_, s3_connection_pool_);
+        } else {
+            output_node.array = zarr::make_array<zarr::FSArray>(
+              config, thread_pool_, file_handle_pool_);
+        }
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1185,7 +1179,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                   dims->height_dim().array_size_px *
                                   zarr::bytes_of_type(settings->data_type);
 
-    output_node.frame_buffer.resize_and_fill(frame_size_bytes, 0);
+    output_node.frame_buffer.resize(frame_size_bytes);
+    std::ranges::fill(output_node.frame_buffer, 0);
     output_arrays_.emplace(output_node.output_key, std::move(output_node));
 
     return true;
@@ -1304,6 +1299,9 @@ bool
 ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 {
     store_path_ = zarr::trim(settings->store_path);
+    if (store_path_.starts_with("file://")) {
+        store_path_ = store_path_.substr(7);
+    }
 
     std::optional<std::string> bucket_name;
     s3_settings_ = make_s3_settings(settings->s3_settings);
@@ -1414,11 +1412,6 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    std::optional<std::string> bucket_name;
-    if (s3_settings_) {
-        bucket_name = s3_settings_->bucket_name;
-    }
-
     const nlohmann::json group_metadata = nlohmann::json({
       { "zarr_format", 3 },
       { "consolidated_metadata", nullptr },
@@ -1462,25 +1455,17 @@ ZarrStream_s::write_intermediate_metadata_()
             metadata_str = group_metadata.dump(4);
         }
 
-        ConstByteSpan metadata_span(
-          reinterpret_cast<const uint8_t*>(metadata_str.data()),
-          metadata_str.size());
-
-        const std::string sink_path =
+        const std::string path =
           store_path_ + "/" + relative_path + "/" + metadata_key;
-        std::unique_ptr<zarr::Sink> metadata_sink;
         if (is_s3_acquisition_()) {
-            metadata_sink = zarr::make_s3_sink(
-              bucket_name.value(), sink_path, s3_connection_pool_);
+            if (!write_string_to_s3_(
+                  s3_settings_->bucket_name, path, metadata_str)) {
+                return false;
+            }
         } else {
-            metadata_sink = zarr::make_file_sink(sink_path, file_handle_pool_);
-        }
-
-        if (!metadata_sink->write(0, metadata_span) ||
-            !zarr::finalize_sink(std::move(metadata_sink))) {
-            set_error_("Failed to write intermediate metadata for group '" +
-                       parent_group_key + "'");
-            return false;
+            if (!write_string_to_file_(path, metadata_str)) {
+                return false;
+            }
         }
     }
 
@@ -1506,7 +1491,7 @@ ZarrStream_s::init_frame_queue_()
     }
 
     // cap the frame buffer at 1 GiB, or 10 frames, whichever is larger
-    const auto buffer_size_bytes = 1ULL << 30;
+    constexpr auto buffer_size_bytes = 1ULL << 30;
     const auto frame_count =
       std::max(10ULL, buffer_size_bytes / frame_size_bytes);
 
@@ -1547,8 +1532,8 @@ ZarrStream_s::process_frame_queue_()
 
     std::string output_key;
 
-    zarr::LockedBuffer frame;
-    while (process_frames_ || !frame_queue_->empty()) {
+    std::vector<uint8_t> frame;
+    while (process_frames_) {
         {
             std::unique_lock lock(frame_queue_mutex_);
             while (frame_queue_->empty() && process_frames_) {
@@ -1563,9 +1548,10 @@ ZarrStream_s::process_frame_queue_()
                 // done
                 if (!process_frames_) {
                     break;
-                } else {
-                    continue;
                 }
+
+                // spurious wakeup, go back to waiting
+                continue;
             }
         }
 
@@ -1604,11 +1590,36 @@ ZarrStream_s::process_frame_queue_()
         }
     }
 
+    // finish frame queue
     if (!frame_queue_->empty()) {
-        LOG_WARNING("Reached end of frame queue processing with ",
-                    frame_queue_->size(),
-                    " frames remaining on queue");
-        frame_queue_->clear();
+        const size_t frames_remaining = frame_queue_->size();
+        for (size_t i = 0; i < frames_remaining; ++i) {
+            if (!frame_queue_->pop(frame, output_key)) {
+                continue;
+            }
+
+            if (auto it = output_arrays_.find(output_key);
+                it == output_arrays_.end()) {
+                // If we have gotten here, something has gone seriously wrong
+                set_error_("Output node not found for key: '" + output_key +
+                           "'");
+                std::unique_lock lock(frame_queue_mutex_);
+                frame_queue_finished_cv_.notify_all();
+                return;
+            } else {
+                auto& output_node = it->second;
+
+                if (output_node.array->write_frame(frame) != frame.size()) {
+                    set_error_("Failed to write frame to writer for key: " +
+                               output_key);
+                    std::unique_lock lock(frame_queue_mutex_);
+                    frame_queue_finished_cv_.notify_all();
+                    return;
+                }
+            }
+        }
+
+        frame_queue_empty_cv_.notify_all(); // queue is now empty
     }
 
     std::unique_lock lock(frame_queue_mutex_);
@@ -1648,12 +1659,6 @@ finalize_stream(struct ZarrStream_s* stream)
     // thread
     stream->thread_pool_->await_stop();
 
-    if (stream->custom_metadata_sink_ &&
-        !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
-        LOG_ERROR(
-          "Error finalizing Zarr stream. Failed to write custom metadata");
-    }
-
     for (auto& [key, output] : stream->output_arrays_) {
         if (!zarr::finalize_array(std::move(output.array))) {
             LOG_ERROR(
@@ -1670,4 +1675,26 @@ finalize_stream(struct ZarrStream_s* stream)
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::write_string_to_file_(const std::string& path,
+                                    const std::string& data) const
+{
+    EXPECT(file_handle_pool_ != nullptr, "File handle pool is not initialized");
+
+    zarr::FSStorage storage(file_handle_pool_);
+    return storage.write_string(path, data, 0);
+}
+
+bool
+ZarrStream_s::write_string_to_s3_(const std::string& bucket_name,
+                                  const std::string& key,
+                                  const std::string& data) const
+{
+    EXPECT(s3_connection_pool_ != nullptr,
+           "S3 connection pool is not initialized");
+
+    zarr::S3Storage storage(bucket_name, s3_connection_pool_);
+    return storage.write_string(key, data, 0) && storage.finalize_object(key);
 }

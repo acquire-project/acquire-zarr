@@ -1,33 +1,24 @@
 #pragma once
 
-#include "array.hh"
+#include "array.base.hh"
 #include "array.dimensions.hh"
-#include "definitions.hh"
-#include "downsampler.hh"
 #include "file.handle.hh"
 #include "frame.queue.hh"
-#include "locked.buffer.hh"
-#include "multiscale.array.hh"
 #include "plate.hh"
 #include "s3.connection.hh"
-#include "sink.hh"
 #include "thread.pool.hh"
 
-#include <nlohmann/json.hpp>
-
 #include <condition_variable>
-#include <cstddef> // size_t
-#include <memory>  // unique_ptr
+#include <memory> // unique_ptr
 #include <mutex>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <unordered_map>
 
 struct ZarrStream_s
 {
   public:
-    ZarrStream_s(struct ZarrStreamSettings_s* settings);
+    explicit ZarrStream_s(struct ZarrStreamSettings_s* settings);
 
     /**
      * @brief Append data to the stream with a specific key.
@@ -58,7 +49,7 @@ struct ZarrStream_s
     struct ZarrOutputArray
     {
         std::string output_key;
-        zarr::LockedBuffer frame_buffer;
+        std::vector<uint8_t> frame_buffer;
         size_t frame_buffer_offset;
         std::unique_ptr<zarr::ArrayBase> array;
     };
@@ -87,7 +78,7 @@ struct ZarrStream_s
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
 
-    std::unique_ptr<zarr::Sink> custom_metadata_sink_;
+    std::optional<std::string> custom_metadata_;
 
     bool is_s3_acquisition_() const;
 
@@ -161,6 +152,15 @@ struct ZarrStream_s
 
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
+
+    /** @brief Write a string @p data to a file @p path. */
+    bool write_string_to_file_(const std::string& path,
+                               const std::string& data) const;
+
+    /** @brief Write a string @p data to an S3 object @p key on @p bucket. */
+    bool write_string_to_s3_(const std::string& bucket_name,
+                             const std::string& key,
+                             const std::string& data) const;
 
     friend bool finalize_stream(struct ZarrStream_s* stream);
 };
