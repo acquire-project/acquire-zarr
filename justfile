@@ -6,11 +6,12 @@ set shell := ["bash", "-cu"]
 
 # Global paths - exported to all child processes
 ROOT := justfile_directory()
+BUILD_DIR := ROOT / "build"
 VCPKG_DIR := ROOT / "vcpkg"
 export VCPKG_ROOT := VCPKG_DIR
 
 # Default recipe
-default:
+_default:
     @just --list
 
 # Full development setup: submodules + vcpkg + uv sync
@@ -21,10 +22,15 @@ install *args: _setup-submodules setup-vcpkg (uv-sync args)
 uv-sync *args: _ensure-uv
     uv sync --extra testing {{args}}
 
-# Run tests
+# Run Python tests
 # (args are passed to pytest, e.g.: `just test -k test_function`)
 test *args: _ensure-uv
     uv run pytest {{args}}
+
+# Run C/C++ tests
+# (args are passed to ctest, e.g.: `just test-cpp -R unit`)
+test-cpp *args: cmake-build
+    ctest --test-dir "{{BUILD_DIR}}" --output-on-failure {{args}}
 
 # Setup vcpkg (clone and bootstrap if needed)
 [unix]
@@ -47,6 +53,7 @@ setup-vcpkg:
 
 [windows]
 setup-vcpkg:
+    #!powershell.exe
     if (-not (Test-Path "{{VCPKG_DIR}}\.git")) {
         Write-Host "Cloning vcpkg..."
         git clone https://github.com/microsoft/vcpkg.git "{{VCPKG_DIR}}"
@@ -57,14 +64,15 @@ setup-vcpkg:
     }
 
 # Build with cmake directly (useful for C development)
+# Requires cmake installed (e.g., `brew install cmake` or `uv tool install cmake`)
 [unix]
 cmake-build:
-    cmake --preset=default -B build . && cmake --build build
+    cmake --preset=default -B "{{BUILD_DIR}}" "{{ROOT}}" && cmake --build "{{BUILD_DIR}}"
 
 [windows]
 cmake-build:
-    cmake --preset=default -B build -DVCPKG_TARGET_TRIPLET=x64-windows-static .
-    cmake --build build
+    cmake --preset=default -B "{{BUILD_DIR}}" -DVCPKG_TARGET_TRIPLET=x64-windows-static "{{ROOT}}"
+    cmake --build "{{BUILD_DIR}}"
 
 # Update vcpkg to latest
 [unix]
