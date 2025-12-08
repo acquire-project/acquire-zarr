@@ -1493,6 +1493,7 @@ def check_hcs_multiscale_arrays(base_path: Path):
         assert key in dataset
         node = dataset[key]
         assert isinstance(node, zarr.Group)
+        assert "multiscales" in node.attrs["ome"]
 
 
 def check_arrays_exist_mixed(base_path: Path):
