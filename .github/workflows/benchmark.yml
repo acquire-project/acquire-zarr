@@ -20,7 +20,7 @@ jobs:
           - "ubuntu-latest"
           - "ubuntu-24.04-arm"
           - "macos-latest" # arm
-          - "macos-13" # x86_64
+          - "macos-15-intel" # x86_64
         include:
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
@@ -28,7 +28,7 @@ jobs:
             vcpkg_triplet: "x64-windows-static"
           - platform: "macos-latest"
             vcpkg_triplet: "arm64-osx"
-          - platform: "macos-13"
+          - platform: "macos-15-intel"
             vcpkg_triplet: "x64-osx"
           - platform: "ubuntu-24.04-arm"
             vcpkg_triplet: "arm64-linux"
