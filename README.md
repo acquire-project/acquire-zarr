@@ -33,7 +33,10 @@ pip install acquire-zarr
 
 ## Local Development Quickstart
 
-The included `justfile` provides recipes for common development tasks.
+The included `justfile` provides recipes for common development tasks. [Install
+`uv`](https://docs.astral.sh/uv/getting-started/installation/), if you don't
+have it already, and then [Install `just`](https://github.com/casey/just) with
+your package manager of choice (e.g. `brew install just`).
 
 ```bash
 # setup everything and install python bindings (using python 3.13, optional)
