@@ -75,3 +75,4 @@ venv.bak/
 # Test/example/benchmark output
 *.zarr
 *.csv
+uv.lock
