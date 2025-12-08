@@ -1479,17 +1479,20 @@ def validate_well_metadata(base_path: Path):
             assert img1["path"] == "fov2"
 
 
-def check_arrays_exist(base_path: Path):
-    """Check that HCS arrays exist."""
-    paths = [
-        base_path / "test_plate" / "C" / "5" / "fov1",
-        base_path / "test_plate" / "C" / "5" / "fov2",
-        base_path / "test_plate" / "D" / "7" / "fov1",
+def check_hcs_multiscale_arrays(base_path: Path):
+    """Check that HCS arrays exist and are multiscale/groups."""
+    keys = [
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/D/7/fov1",
     ]
 
-    for path in paths:
-        array_path = path / "zarr.json"
-        assert array_path.exists(), f"Missing array: {path}"
+    dataset = zarr.open(base_path)
+
+    for key in keys:
+        assert key in dataset
+        node = dataset[key]
+        assert isinstance(node, zarr.Group)
 
 
 def check_arrays_exist_mixed(base_path: Path):
@@ -1544,7 +1547,7 @@ def test_pure_hcs_acquisition(store_path: Path):
     validate_generic_group_metadata(store_path / "test.zarr")
     validate_plate_metadata(store_path / "test.zarr")
     validate_well_metadata(store_path / "test.zarr")
-    check_arrays_exist(store_path / "test.zarr")
+    check_hcs_multiscale_arrays(store_path / "test.zarr")
 
 
 def test_mixed_flat_and_hcs_acquisition(store_path: Path):
