@@ -366,42 +366,6 @@ Here's an example of creating an HCS dataset in Python:
 import acquire_zarr as aqz
 import numpy as np
 
-# Configure field of view arrays
-fov1_array = aqz.ArraySettings(
-    output_key="fov1",  # Relative to the well: plate/A/1/fov1
-    data_type=np.uint16,
-    dimensions=[
-        aqz.Dimension(
-            name="t",
-            kind=aqz.DimensionType.TIME,
-            array_size_px=0,
-            chunk_size_px=10,
-            shard_size_chunks=1
-        ),
-        aqz.Dimension(
-            name="c",
-            kind=aqz.DimensionType.CHANNEL,
-            array_size_px=3,
-            chunk_size_px=1,
-            shard_size_chunks=1
-        ),
-        aqz.Dimension(
-            name="y",
-            kind=aqz.DimensionType.SPACE,
-            array_size_px=512,
-            chunk_size_px=256,
-            shard_size_chunks=2
-        ),
-        aqz.Dimension(
-            name="x",
-            kind=aqz.DimensionType.SPACE,
-            array_size_px=512,
-            chunk_size_px=256,
-            shard_size_chunks=2
-        )
-    ]
-)
-
 # Create acquisition metadata
 acquisition = aqz.Acquisition(
     id=0,
@@ -416,9 +380,42 @@ well_a1 = aqz.Well(
     column_name="1",
     images=[
         aqz.FieldOfView(
-            path="fov1",
+            path="fov1", # Relative to the well: plate/A/1/fov1
             acquisition_id=0,
-            array_settings=fov1_array
+            array_settings=aqz.ArraySettings(
+                output_key=None, # must be None for an FOV array; path is specified as a member of FieldOfView 
+                data_type=np.uint16,
+                dimensions=[
+                    aqz.Dimension(
+                        name="t",
+                        kind=aqz.DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=10,
+                        shard_size_chunks=1
+                    ),
+                    aqz.Dimension(
+                        name="c",
+                        kind=aqz.DimensionType.CHANNEL,
+                        array_size_px=3,
+                        chunk_size_px=1,
+                        shard_size_chunks=1
+                    ),
+                    aqz.Dimension(
+                        name="y",
+                        kind=aqz.DimensionType.SPACE,
+                        array_size_px=512,
+                        chunk_size_px=256,
+                        shard_size_chunks=2
+                    ),
+                    aqz.Dimension(
+                        name="x",
+                        kind=aqz.DimensionType.SPACE,
+                        array_size_px=512,
+                        chunk_size_px=256,
+                        shard_size_chunks=2
+                    )
+                ]
+            )
         )
     ]
 )
@@ -499,7 +496,6 @@ In C, the equivalent HCS workflow would look like this:
 
 // Create array settings for field of view
 ZarrArraySettings fov_array = {
-    .output_key = "fov1",  // Relative to well: plate/A/1/fov1
     .data_type = ZarrDataType_uint16,
 };
 
@@ -541,7 +537,7 @@ ZarrHCSWell well = {
 
 ZarrHCSWell_create_image_array(&well, 1);
 well.images[0] = (ZarrHCSFieldOfView){
-    .path = "fov1",
+    .path = "fov1", // Relative to well: plate/A/1/fov1
     .acquisition_id = 0,
     .has_acquisition_id = true,
     .array_settings = &fov_array,

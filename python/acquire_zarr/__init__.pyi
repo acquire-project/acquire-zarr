@@ -59,7 +59,8 @@ class ArraySettings:
     """Settings for a single array in the Zarr stream.
 
     Attributes:
-      output_key: Key within the Zarr dataset where this array will be stored.
+      output_key: Key within the Zarr dataset where this array will be stored. For an Array belonging to a FieldOfView,
+        this MUST be None.
       dimensions: List of dimension properties defining the dataset structure.
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
@@ -299,7 +300,8 @@ class FieldOfView:
     Attributes:
         path: Path to this field of view within the plate structure.
         acquisition_id: Optional ID linking this field of view to a specific acquisition.
-        array_settings: Array configuration for this field of view's data.
+        array_settings: Array configuration for this field of view's data
+            To prevent potential key inconsistency, array_settings.output_key MUST be None.
     """
 
     path: str

@@ -285,11 +285,14 @@ std::shared_ptr<zarr::ArrayConfig>
 make_array_config(const ZarrArraySettings* settings,
                   const std::string& store_root,
                   const std::string& parent_path,
-                  const std::optional<std::string>& bucket_name,
-                  std::string& error)
+                  std::optional<std::string> array_key,
+                  const std::optional<std::string>& bucket_name, std::string& error)
 {
     // remove leading/trailing slashes and whitespace
     std::string key = zarr::regularize_key(settings->output_key);
+    if (array_key) {
+        key = zarr::regularize_key(*array_key);
+    }
     key = parent_path + "/" + key;
     key = zarr::regularize_key(key);
 
@@ -616,6 +619,15 @@ validate_hcs_settings(const ZarrHCSSettings* settings, std::string& error)
                             std::to_string(i);
                     return false;
                 }
+
+                if (fov.array_settings != nullptr &&
+                    fov.array_settings->output_key != nullptr) {
+                    error = "Non-NULL output_key in ArraySettings for image " +
+                            std::to_string(k) + " in well " +
+                            std::to_string(j) + " in plate " +
+                            std::to_string(i);
+                }
+
                 fields_of_view.insert(fov_path);
             }
         }
@@ -817,7 +829,6 @@ dimension_type_to_string(ZarrDimensionType type)
 /* ZarrStream_s implementation */
 
 ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
-  : error_()
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -1044,7 +1055,7 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
       settings->array_count);
     for (auto i = 0; i < settings->array_count; ++i) {
         auto config = make_array_config(
-          settings->arrays + i, store_path, "", std::nullopt, error_);
+          settings->arrays + i, store_path, "", std::nullopt, std::nullopt, error_);
         if (!config) {
             return false;
         }
@@ -1123,8 +1134,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
                     auto config = make_array_config(field.array_settings,
                                                     store_path,
                                                     parent_path,
-                                                    std::nullopt,
-                                                    error_);
+                                                    field.path,
+                                                    std::nullopt, error_);
                     if (config == nullptr) {
                         return false;
                     }
@@ -1153,7 +1164,7 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     }
 
     auto config = make_array_config(
-      settings, store_path_, parent_path, bucket_name, error_);
+        settings, store_path_, parent_path, std::nullopt, bucket_name, error_);
     if (config == nullptr) {
         return false;
     }
@@ -1265,6 +1276,10 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                     image_out.acquisition_id = image_in.acquisition_id;
                 }
                 image_out.path = zarr::regularize_key(image_in.path);
+
+                if (image_in.array_settings) {
+                    image_in.array_settings->output_key = image_in.path;
+                }
 
                 if (!configure_array_(
                       image_in.array_settings, well_key, true)) {

@@ -136,7 +136,7 @@ extern "C"
      * @note The dimensions array may be allocated with ZarrArraySettings_create_dimension_array
      * and freed with ZarrArraySettings_destroy_dimension_array. The order in which you
      * set the dimension properties in the array should match the order of the dimensions
-     * during aquisition from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
+     * during acquisition from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
      * @note To write a transposed target storage order (e.g., for OME-NGFF compliance, which
      * currently requires TCZYX order), set storage_dimension_order to a permutation array
      * specifying the output order. Each element is the index of the acquisition dimension
@@ -159,6 +159,9 @@ extern "C"
     /**
      * @brief Settings for a field of view in a high-content screening (HCS)
      * well.
+     * @note @p array_settings->output_key must be @p NULL, because the path to
+     * the array is fully specified by @p path. Validation will fail if it is
+     * non-@p NULL
      */
     typedef struct
     {
@@ -220,7 +223,7 @@ extern "C"
     typedef struct
     {
         ZarrHCSPlate* plates; /**< Array of Plate structs */
-        size_t plate_count;           /**< Number of Plate structs */
+        size_t plate_count;   /**< Number of Plate structs */
     } ZarrHCSSettings;
 
 #ifdef __cplusplus
