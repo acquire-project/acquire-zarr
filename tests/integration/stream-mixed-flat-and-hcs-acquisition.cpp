@@ -22,7 +22,6 @@ make_mixed_stream()
     CHECK(c5.image_count == 2);
 
     ZarrArraySettings c5_fov1{
-        .output_key = "fov1", // full path: test_plate/C/5/fov1
         .data_type = ZarrDataType_uint8,
     };
     CHECK(ZarrArraySettings_create_dimension_array(&c5_fov1, 3) ==
@@ -52,14 +51,13 @@ make_mixed_stream()
     };
 
     c5.images[0] = {
-        .path = "fov1",
+        .path = "fov1", // full path: test_plate/C/5/fov1
         .acquisition_id = 0,
         .has_acquisition_id = true,
         .array_settings = &c5_fov1,
     };
 
     ZarrArraySettings c5_fov2{
-        .output_key = "fov2", // full path: test_plate/C/5/fov2
         .data_type = ZarrDataType_uint16,
     };
     CHECK(ZarrArraySettings_create_dimension_array(&c5_fov2, 3) ==
@@ -89,7 +87,7 @@ make_mixed_stream()
     };
 
     c5.images[1] = {
-        .path = "fov2",
+        .path = "fov2", // full path: test_plate/C/5/fov2
         .acquisition_id = 1,
         .has_acquisition_id = true,
         .array_settings = &c5_fov2,
@@ -105,7 +103,6 @@ make_mixed_stream()
     CHECK(d7.image_count == 1);
 
     ZarrArraySettings d7_fov1{
-        .output_key = "fov1", // full path: test_plate/D/7/fov1
         .data_type = ZarrDataType_uint16,
     };
     CHECK(ZarrArraySettings_create_dimension_array(&d7_fov1, 5) ==
@@ -149,7 +146,7 @@ make_mixed_stream()
     };
 
     d7.images[0] = {
-        .path = "fov1",
+        .path = "fov1", // full path: test_plate/D/7/fov1
         .acquisition_id = 0,
         .has_acquisition_id = true,
         .array_settings = &d7_fov1,

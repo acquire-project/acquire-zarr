@@ -100,7 +100,6 @@ def create_hcs_settings():
     """Create HCS settings that match the C++ test structure."""
     # Well C/5 with two FOVs
     c5_fov1_array = ArraySettings(
-        output_key="fov1",  # Will be at test_plate/C/5/fov1
         data_type=np.uint8,
         dimensions=[
             Dimension(
@@ -128,7 +127,6 @@ def create_hcs_settings():
     )
 
     c5_fov2_array = ArraySettings(
-        output_key="fov2",  # Will be at test_plate/C/5/fov2
         data_type=np.uint16,
         dimensions=[
             Dimension(
@@ -160,17 +158,20 @@ def create_hcs_settings():
         column_name="5",
         images=[
             FieldOfView(
-                path="fov1", acquisition_id=0, array_settings=c5_fov1_array
+                path="fov1", # Will be at test_plate/C/5/fov1
+                acquisition_id=0,
+                array_settings=c5_fov1_array,
             ),
             FieldOfView(
-                path="fov2", acquisition_id=1, array_settings=c5_fov2_array
+                path="fov2", # Will be at test_plate/C/5/fov2
+                acquisition_id=1,
+                array_settings=c5_fov2_array,
             ),
         ],
     )
 
     # Well D/7 with one FOV
     d7_fov1_array = ArraySettings(
-        output_key="fov1",  # Will be at test_plate/D/7/fov1
         data_type=np.uint16,
         dimensions=[
             Dimension(
@@ -216,7 +217,9 @@ def create_hcs_settings():
         column_name="7",
         images=[
             FieldOfView(
-                path="fov1", acquisition_id=0, array_settings=d7_fov1_array
+                path="fov1", # Will be at test_plate/D/7/fov1
+                acquisition_id=0,
+                array_settings=d7_fov1_array,
             ),
         ],
     )
