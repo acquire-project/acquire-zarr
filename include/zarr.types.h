@@ -159,6 +159,9 @@ extern "C"
     /**
      * @brief Settings for a field of view in a high-content screening (HCS)
      * well.
+     * @note @p array_settings->output_key must be @p NULL, because the path to
+     * the array is fully specified by @p path. Validation will fail if it is
+     * non-@p NULL
      */
     typedef struct
     {
@@ -220,7 +223,7 @@ extern "C"
     typedef struct
     {
         ZarrHCSPlate* plates; /**< Array of Plate structs */
-        size_t plate_count;           /**< Number of Plate structs */
+        size_t plate_count;   /**< Number of Plate structs */
     } ZarrHCSSettings;
 
 #ifdef __cplusplus
