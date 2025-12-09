@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - HCS well images are now written as multiscales groups (#176)
+- FOV array settings output key must be null so it cannot conflict with FOV path (#180)
 
 ### Removed
 
