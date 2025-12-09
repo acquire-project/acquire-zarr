@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support for transposing acquisition dimensions into different storage dimensions (#173)
+
 ### Changed
 
 - File handles are now managed by a pool to centrally limit the number of open files (#161)
+
+### Fixed
+
+- HCS well images are now written as multiscales groups (#176)
 
 ### Removed
 
