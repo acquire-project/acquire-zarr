@@ -16,6 +16,7 @@ set(tests
         stream-pure-hcs-acquisition
         stream-mixed-flat-and-hcs-acquisition
         stream-with-ragged-final-shard
+        get-timing-info
 )
 
 foreach (name ${tests})
@@ -48,5 +49,7 @@ foreach (name ${tests})
         list(APPEND test_labels "s3")
     endif ()
 
-    set_tests_properties(test-${tgt} PROPERTIES LABELS "${test_labels}")
+    if (NOT name MATCHES ".*timing.*")
+        set_tests_properties(test-${tgt} PROPERTIES LABELS "${test_labels}")
+    endif ()
 endforeach ()
