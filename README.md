@@ -31,6 +31,35 @@ The library is available on PyPI and can be installed using pip:
 pip install acquire-zarr
 ```
 
+## Local Development Quickstart
+
+The included `justfile` provides recipes for common development tasks. [Install
+`uv`](https://docs.astral.sh/uv/getting-started/installation/), if you don't
+have it already, and then [Install `just`](https://github.com/casey/just) with
+your package manager of choice (e.g. `brew install just`).
+
+```bash
+# setup everything and install python bindings (using python 3.13, optional)
+just install -p 3.13
+# run python tests
+just test
+```
+
+Run `just` without arguments to see all available recipes:
+
+```
+Available recipes:
+    clean          # Clean build artifacts (keeps vcpkg)
+    clean-all      # Clean everything including vcpkg
+    cmake-build    # Requires cmake installed (e.g., `brew install cmake` or `uv tool install cmake`)
+    install *args  # (args are passed to uv sync, e.g.: `just install -p 3.12`)
+    setup-vcpkg    # Setup vcpkg (clone and bootstrap if needed)
+    test *args     # (args are passed to pytest, e.g.: `just test -k test_function`)
+    test-cpp *args # (args are passed to ctest, e.g.: `just test-cpp -R unit`)
+    update-vcpkg   # Update vcpkg to latest
+    uv-sync *args  # Run uv sync (includes testing dependencies)
+```
+
 ## Building
 
 ### Installing dependencies

@@ -31,11 +31,11 @@ testing = [
     "s3fs",
     "scikit-image",
     "tifffile",
-    "zarr>=3.0.0",
+    "zarr>=3.0.0; python_version >= '3.11'",
 ]
 
 [tool.black]
-target-version = ['py39', 'py310', 'py311', 'py312']
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
 line-length = 79
 
 [tool.isort]
