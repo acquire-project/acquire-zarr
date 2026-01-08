@@ -285,13 +285,11 @@ std::shared_ptr<zarr::ArrayConfig>
 make_array_config(const ZarrArraySettings* settings,
                   const std::string& store_root,
                   const std::string& parent_path,
-                  const std::optional<std::string>& array_key,
-                  const std::optional<std::string>& bucket_name,
-                  std::string& error)
+                  std::optional<std::string> array_key,
+                  const std::optional<std::string>& bucket_name, std::string& error)
 {
     // remove leading/trailing slashes and whitespace
-    std::string key = zarr::regularize_key(
-        array_key ? *array_key : settings->output_key);
+    std::string key = zarr::regularize_key(settings->output_key);
     if (array_key) {
         key = zarr::regularize_key(*array_key);
     }
