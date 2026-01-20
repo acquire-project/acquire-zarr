@@ -187,9 +187,12 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
 {
     nlohmann::json multiscales;
     const auto ndims = config_->dimensions->ndims();
+    // For 2D arrays, skip the phantom singleton dimension in metadata
+    const size_t start_dim = config_->dimensions->is_2d() ? 1 : 0;
+    const size_t visible_ndims = ndims - start_dim;
 
     auto& axes = multiscales[0]["axes"];
-    for (auto i = 0; i < ndims; ++i) {
+    for (auto i = start_dim; i < ndims; ++i) {
         const auto& dim = config_->dimensions->at(i);
         const auto type = dimension_type_to_string(dim.type);
         const std::string unit = dim.unit.has_value() ? *dim.unit : "";
@@ -206,10 +209,10 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
     }
 
     // spatial multiscale metadata
-    std::vector<double> scales(ndims);
-    for (auto i = 0; i < ndims; ++i) {
+    std::vector<double> scales(visible_ndims);
+    for (auto i = start_dim; i < ndims; ++i) {
         const auto& dim = config_->dimensions->at(i);
-        scales[i] = dim.scale;
+        scales[i - start_dim] = dim.scale;
     }
 
     multiscales[0]["datasets"] = {
@@ -231,7 +234,7 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
     for (auto i = 1; i < arrays_.size(); ++i) {
         const auto& config = downsampler_->writer_configurations().at(i);
 
-        for (auto j = 0; j < ndims; ++j) {
+        for (auto j = start_dim; j < ndims; ++j) {
             const auto& base_dim = base_dims->at(j);
             const auto& down_dim = config->dimensions->at(j);
             if (base_dim.type != ZarrDimensionType_Space) {
@@ -243,7 +246,7 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
             const auto ratio = (base_size + down_size - 1) / down_size;
 
             // scale by next power of 2
-            scales[j] = base_dim.scale * std::bit_ceil(ratio);
+            scales[j - start_dim] = base_dim.scale * std::bit_ceil(ratio);
         }
 
         multiscales[0]["datasets"].push_back({

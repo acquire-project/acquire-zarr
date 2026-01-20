@@ -1653,3 +1653,47 @@ def test_with_ragged_final_shard(store_path: Path):
     dataset = zarr.open(settings.store_path)
 
     np.testing.assert_array_equal(data, dataset["0"])
+
+
+@pytest.mark.parametrize("output_key", ["", "custom_array"])
+def test_single_2d_image(store_path: Path, output_key: str):
+    settings = StreamSettings(
+        store_path="test_2d.zarr",
+        arrays=[
+            ArraySettings(
+                output_key=output_key,
+                dimensions=[
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=64,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    data = np.random.randint(0, 65535, (64, 128), dtype=np.uint16)
+    stream.append(data)
+    stream.close()
+    del stream
+    array = zarr.open_array(f"{settings.store_path}/{output_key or '0'}")
+    assert data.shape == array.shape
+    np.testing.assert_array_equal(data, array)
+
+    # ensure ome-metadata is also correct if no output_key is specified
+    if not output_key:
+        group = zarr.open_group(settings.store_path)
+        assert "ome" in group.attrs
+        assert len(group.attrs["ome"]["multiscales"][0]["axes"]) == 2

@@ -199,6 +199,17 @@ class ArrayDimensions
      */
     uint64_t transpose_frame_id(uint64_t frame_id) const;
 
+    /**
+     * @brief Check if this is a 2D array (user provided only Y, X dimensions).
+     *
+     * Internally, 2D arrays have a phantom singleton dimension prepended to
+     * allow reuse of the 3D+ code paths. This method returns true if the
+     * original user input was 2D, which affects metadata and path generation.
+     *
+     * @return True if the user-visible array is 2D.
+     */
+    bool is_2d() const;
+
   private:
     struct TranspositionMap
     {
@@ -219,6 +230,8 @@ class ArrayDimensions
 
     std::vector<ZarrDimension> dims_; // Dimensions in storage order
     std::optional<TranspositionMap> transpose_map_;
+
+    bool is_2d_; // True if user provided only 2 dimensions (Y, X)
 
     ZarrDataType dtype_;
 

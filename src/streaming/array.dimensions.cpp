@@ -137,13 +137,20 @@ ArrayDimensions::ArrayDimensions(
   std::vector<ZarrDimension>&& dims,
   ZarrDataType dtype,
   const std::vector<size_t>& target_dim_order)
-  : dtype_(dtype)
+  : is_2d_(dims.size() == 2)
+  , dtype_(dtype)
   , chunks_per_shard_(1)
   , number_of_shards_(1)
   , bytes_per_chunk_(zarr::bytes_of_type(dtype))
   , number_of_chunks_in_memory_(1)
 {
-    EXPECT(dims.size() > 2, "Array must have at least three dimensions.");
+    EXPECT(dims.size() > 1, "Array must have at least two dimensions.");
+
+    // For 2D arrays, prepend a phantom singleton dimension to reuse 3D+ logic
+    if (is_2d_) {
+        ZarrDimension phantom("_singleton", ZarrDimensionType_Other, 1, 1, 1);
+        dims.insert(dims.begin(), std::move(phantom));
+    }
 
     const auto n = dims.size();
 
@@ -521,4 +528,10 @@ ArrayDimensions::transpose_frame_id(uint64_t frame_id) const
     }
 
     return map.frame_id_lookup[frame_id];
+}
+
+bool
+ArrayDimensions::is_2d() const
+{
+    return is_2d_;
 }
