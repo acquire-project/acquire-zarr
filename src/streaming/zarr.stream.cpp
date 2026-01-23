@@ -154,7 +154,7 @@ validate_custom_metadata(std::string_view metadata)
 std::optional<zarr::BloscCompressionParams>
 make_compression_params(const ZarrCompressionSettings* settings)
 {
-    if (!settings) {
+    if (!settings || settings->compressor == ZarrCompressor_None) {
         return std::nullopt;
     }
 
