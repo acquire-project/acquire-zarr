@@ -34,10 +34,14 @@ std::vector expected_paths{
 };
 
 constexpr ZarrDataType dtype = ZarrDataType_uint16;
-const std::vector<uint16_t> frame_data(array_width * array_height, 1);
-const size_t bytes_of_frame = frame_data.size() * sizeof(frame_data[0]);
+constexpr size_t npx_frame = array_width * array_height;
+const std::vector<uint16_t> frame_data(npx_frame, 1);
+constexpr size_t bytes_of_frame = npx_frame * sizeof(frame_data[0]);
 
 constexpr uint32_t frames_to_acquire = array_planes;
+constexpr size_t expected_shard_size = bytes_of_frame * chunk_planes + // data
+                                       2 * sizeof(uint64_t) + // table
+                                       sizeof(uint32_t); // checksum
 
 bool
 s3_get_credentials()
@@ -76,13 +80,13 @@ s3_get_credentials()
 }
 
 bool
-fs_object_exists(const std::string& object_name)
+fs_file_exists(const std::string& object_name)
 {
     return fs::is_regular_file(object_name);
 }
 
 size_t
-fs_get_object_size(const std::string& object_name)
+fs_get_file_size(const std::string& object_name)
 {
     return fs::file_size(object_name);
 }
@@ -323,8 +327,10 @@ do_stream(ZarrStream* stream)
                       ", bytes out: ",
                       bytes_out);
 
-            return bytes_out;
+            return 0;
         }
+        ++count;
+
         for (auto i = 1; i < frames_to_acquire; ++i) {
             if (ZarrStream_append(stream,
                                   data,
@@ -355,13 +361,52 @@ bool
 verify_fs(const ZarrStreamSettings& settings)
 {
     const auto array_path = fs::path(test_path_fs) / output_key;
-    const auto data_file_path = array_path / "c" / "0" / "0" / "0";
-    if (!fs::is_regular_file(data_file_path)) {
+    const auto data_file_path = (array_path / "c" / "0" / "0" / "0").string();
+
+    // should have flushed
+    if (!fs_file_exists(data_file_path)) {
         LOG_ERROR("Data file path ",
-                  data_file_path.string(),
+                  data_file_path,
                   " does not exist or is not a file.");
         return false;
     }
+
+    // should be the right size
+    if (size_t object_size = fs_get_file_size(data_file_path);
+        object_size != expected_shard_size) {
+        LOG_ERROR("Expected file size of ",
+                  expected_shard_size,
+                  ", got ",
+                  object_size);
+        return false;
+    }
+
+    // should have the correct contents
+    const auto data = fs_get_object_contents_as_bytes(data_file_path);
+    const std::span data_u16 = { reinterpret_cast<const uint16_t*>(data.data()),
+                                 2 * npx_frame };
+    for (auto i = 0; i < npx_frame; ++i) {
+        if (data_u16[i] != 0) {
+            LOG_ERROR("Expected data at index ",
+                      i,
+                      " to be zero, got ",
+                      data_u16[i]);
+            return false;
+        }
+    }
+    for (auto i = npx_frame; i < 2 * npx_frame; ++i) {
+        if (data_u16[i] != frame_data[i - npx_frame]) {
+            LOG_ERROR("Expected data at index ",
+                      i,
+                      " to be ",
+                      frame_data[i - npx_frame],
+                      ", got ",
+                      data_u16[i]);
+            return false;
+        }
+    }
+
+    return true;
 
     return true;
 }
@@ -369,13 +414,50 @@ verify_fs(const ZarrStreamSettings& settings)
 bool
 verify_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
 {
-    const std::string array_path = test_path_fs + "/" + output_key;
+    const std::string array_path = store_path + "/" + output_key;
     const auto data_file_path = array_path + "/c/0/0/0";
+
+    // should have flushed
     if (!s3_object_exists(data_file_path, client)) {
         LOG_ERROR("Data file path ",
                   data_file_path,
                   " does not exist or is not an object.");
         return false;
+    }
+
+    // should be the right size
+    if (size_t object_size = s3_get_object_size(data_file_path, client);
+        object_size != expected_shard_size) {
+        LOG_ERROR("Expected object size of ",
+                  expected_shard_size,
+                  ", got ",
+                  object_size);
+        return false;
+    }
+
+    // should have the correct contents
+    const auto data = s3_get_object_contents_as_bytes(data_file_path, client);
+    const std::span data_u16 = { reinterpret_cast<const uint16_t*>(data.data()),
+                                 2 * npx_frame };
+    for (auto i = 0; i < npx_frame; ++i) {
+        if (data_u16[i] != 0) {
+            LOG_ERROR("Expected data at index ",
+                      i,
+                      " to be zero, got ",
+                      data_u16[i]);
+            return false;
+        }
+    }
+    for (auto i = npx_frame; i < 2 * npx_frame; ++i) {
+        if (data_u16[i] != frame_data[i - npx_frame]) {
+            LOG_ERROR("Expected data at index ",
+                      i,
+                      " to be ",
+                      frame_data[i - npx_frame],
+                      ", got ",
+                      data_u16[i]);
+            return false;
+        }
     }
 
     return true;
