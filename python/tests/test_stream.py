@@ -264,28 +264,6 @@ def create_hcs_settings():
     return plate
 
 
-def validate_v2_metadata(store_path: Path):
-    assert (store_path / ".zattrs").is_file()
-    with open(store_path / ".zattrs", "r") as fh:
-        data = json.load(fh)
-        axes = data["multiscales"][0]["axes"]
-        assert axes[0]["name"] == "t"
-        assert axes[0]["type"] == "time"
-
-        assert axes[1]["name"] == "y"
-        assert axes[1]["type"] == "space"
-
-        assert axes[2]["name"] == "x"
-        assert axes[2]["type"] == "space"
-
-    assert (store_path / ".zgroup").is_file()
-    with open(store_path / ".zgroup", "r") as fh:
-        data = json.load(fh)
-        assert data["zarr_format"] == 2
-
-    assert not (store_path / "acquire.json").is_file()
-
-
 def validate_v3_metadata(store_path: Path):
     assert (store_path / "zarr.json").is_file()
     with open(store_path / "zarr.json", "r") as fh:
