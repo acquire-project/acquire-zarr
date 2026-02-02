@@ -377,6 +377,7 @@ def test_stream_data_to_filesystem(
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    data_file_path = store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
@@ -388,21 +389,13 @@ def test_stream_data_to_filesystem(
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size <= shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size <= shard_size_bytes
     else:
         assert len(metadata.codecs[0].codecs) == 1
 
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size == shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
@@ -1499,7 +1492,6 @@ def test_pure_hcs_acquisition(store_path: Path):
     expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1"}
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
-
 
     stream = ZarrStream(settings)
     assert stream
