@@ -859,7 +859,6 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
            "Cannot append data: array at '",
            key,
            "' not found");
-    EXPECT(data_ != nullptr, "Cannot append data: data pointer is null");
 
     if (nbytes == 0) {
         return 0;
@@ -881,8 +880,10 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer.assign_at(frame_buffer_offset,
-                                   { data + bytes_written, bytes_to_copy });
+            const auto subspan = data ?
+                std::span{ data + bytes_written, bytes_to_copy } :
+                std::span{static_cast<const uint8_t*>(nullptr), bytes_to_copy};
+            frame_buffer.assign_at(frame_buffer_offset, subspan);
             frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
