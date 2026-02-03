@@ -456,14 +456,15 @@ def test_stream_data_to_s3(
         "]", ""
     )
     settings.s3 = s3_settings
-    settings.data_type = np.uint16
+
     if compression_codec is not None:
-        settings.compression = CompressionSettings(
+        settings.arrays[0].compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
             codec=compression_codec,
             level=1,
             shuffle=1,
         )
+    settings.arrays[0].data_type = np.uint16
 
     stream = ZarrStream(settings)
     assert stream
