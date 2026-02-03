@@ -1076,7 +1076,7 @@ class PyZarrStream
         open_(settings);
     }
 
-    void append(py::array image_data, std::optional<std::string> key)
+    void append(std::optional<py::array> image_data, std::optional<std::string> key, std::optional<py::int_> n_bytes)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
@@ -1084,23 +1084,45 @@ class PyZarrStream
             throw py::error_already_set();
         }
 
+        if (!image_data.has_value()) {
+            if (!n_bytes.has_value()) {
+                PyErr_SetString(PyExc_RuntimeError,
+                    "n_bytes must be specified when data is None");
+                throw py::error_already_set();
+            }
+
+            const auto bytes_in = static_cast<size_t>(n_bytes.value());
+            size_t bytes_out;
+            const char* key_str = key.has_value() ? key->c_str() : nullptr;
+
+            const auto status = ZarrStream_append(stream_.get(), nullptr, bytes_in, &bytes_out, key_str);
+            if (status != ZarrStatusCode_Success || bytes_in != bytes_out) {
+                std::string err = "Failed to append data to Zarr stream: " +
+                                  std::string(Zarr_get_status_message(status));
+                PyErr_SetString(PyExc_RuntimeError, err.c_str());
+                throw py::error_already_set();
+            }
+
+            return;
+        }
+
         // if the array is already contiguous, we can just write it out
-        if (image_data.flags() & py::array::c_style) {
-            write_contiguous_data(image_data, key);
+        if (image_data->flags() & py::array::c_style) {
+            write_contiguous_data(*image_data, key);
             return;
         }
 
         // just make a copy of smaller (2-dim or less) arrays
-        if (image_data.ndim() <= 2) {
+        if (image_data->ndim() <= 2) {
             py::module np = py::module::import("numpy");
             py::array contiguous_data =
-              np.attr("ascontiguousarray")(image_data);
+              np.attr("ascontiguousarray")(*image_data);
             write_contiguous_data(contiguous_data, key);
             return;
         }
 
         // iterate through frames
-        iterate_and_append(image_data, 0, std::vector<py::ssize_t>(), key);
+        iterate_and_append(*image_data, 0, std::vector<py::ssize_t>(), key);
     }
 
     // iterate over the indices of the array until we get down to 2 dimensions,
@@ -2192,7 +2214,8 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("append",
            &PyZarrStream::append,
            py::arg("data"),
-           py::arg("key") = std::nullopt)
+           py::arg("key") = std::nullopt,
+           py::arg("n_bytes") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
            py::arg("custom_metadata"),
