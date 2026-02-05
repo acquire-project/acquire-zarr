@@ -414,7 +414,7 @@ def test_stream_data_to_filesystem(
         ),
     ],
 )
-def test_append_none(
+def test_skip(
         settings: StreamSettings,
         store_path: Path,
         compression_codec: Optional[CompressionCodec],
@@ -446,34 +446,18 @@ def test_append_none(
     for i in range(half_data.shape[0]):
         half_data[i, :, :] = i
 
-    # time.sleep(10)
-    stream.append(None, n_bytes=half_data.nbytes)
+    stream.skip(half_data.nbytes)
     stream.append(half_data)
 
     stream.close()  # close the stream, flush the files
-
-    chunk_size_bytes = half_data.dtype.itemsize
-    for dim in dim_settings:
-        chunk_size_bytes *= dim.chunk_size_px
-
-    shard_size_bytes = chunk_size_bytes
-    table_size_bytes = 16  # 2 * sizeof(uint64_t)
-    for dim in dim_settings:
-        shard_size_bytes *= dim.shard_size_chunks
-        table_size_bytes *= dim.shard_size_chunks
-    shard_size_bytes = (
-            shard_size_bytes + table_size_bytes + 4
-    )  # 4 bytes for crc32c checksum
-
     group = zarr.open(settings.store_path, mode="r")
     array = group["0"]
 
     assert array.shape == (2 * dim_settings[0].chunk_size_px, dim_settings[1].array_size_px, dim_settings[2].array_size_px)
-    for i in range(array.shape[0]):
-        if i < dim_settings[0].chunk_size_px:
-            assert np.array_equal(array[i, :, :], np.zeros(array[i, :, :].shape))
-        else:
-            assert np.array_equal(array[i, :, :], half_data[i - dim_settings[0].chunk_size_px, :, :])
+
+    # zeros
+    assert np.array_equal(array[:dim_settings[0].chunk_size_px], np.zeros(half_data.shape))
+    assert np.array_equal(array[dim_settings[0].chunk_size_px:], half_data)
 
 
 @pytest.mark.parametrize(
