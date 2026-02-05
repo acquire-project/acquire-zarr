@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - File handles are now managed by a pool to centrally limit the number of open files (#161)
+- Simple (non-NGFF) arrays can now be configured at the root of a store path (#193) 
 
 ### Fixed
 

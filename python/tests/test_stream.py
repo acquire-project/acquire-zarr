@@ -323,10 +323,8 @@ def test_create_stream(
     # check that the stream created the zarr store
     assert store_path.is_dir()
 
-    validate_v3_metadata(store_path)
-
     # no data written, so no array metadata
-    assert not (store_path / "meta" / "0.array.json").exists()
+    assert not (store_path / "zarr.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -391,8 +389,7 @@ def test_stream_data_to_filesystem(
         shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
 
-    group = zarr.open(settings.store_path, mode="r")
-    array = group["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert array.shape == data.shape
     for i in range(array.shape[0]):
@@ -411,19 +408,19 @@ def test_stream_data_to_filesystem(
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
         assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                store_path / "test.zarr" / "c" / "0" / "0" / "0"
         ).is_file()
         assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                       store_path / "test.zarr" / "c" / "0" / "0" / "0"
                ).stat().st_size <= shard_size_bytes
     else:
         assert len(metadata.codecs[0].codecs) == 1
 
         assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                store_path / "test.zarr" / "c" / "0" / "0" / "0"
         ).is_file()
         assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
+                       store_path / "test.zarr" / "c" / "0" / "0" / "0"
                ).stat().st_size == shard_size_bytes
 
 
@@ -491,8 +488,7 @@ def test_stream_data_to_s3(
             "client_kwargs": {"endpoint_url": s3_settings.endpoint},
         },
     )
-    group = zarr.group(store=store)
-    array = group["0"]
+    array = zarr.open(store=store, mode="r")
 
     assert array.shape == data.shape
     for i in range(array.shape[0]):
@@ -646,8 +642,7 @@ def test_write_transposed_array(
 
     stream.close()  # close the stream, flush the files
 
-    group = zarr.open(settings.store_path, mode="r")
-    array = group["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
@@ -706,7 +701,7 @@ def test_column_ragged_sharding(
 
     stream.close()  # close the stream, flush the files
 
-    array = zarr.open(settings.store_path, mode="r")["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
@@ -731,7 +726,7 @@ def test_custom_dimension_units_and_scales(store_path: Path):
                         kind=DimensionType.SPACE,
                         unit="micrometer",
                         scale=0.9,
-                        array_size_px=1080,
+                        array_size_px=64,
                         chunk_size_px=64,
                         shard_size_chunks=2,
                     ),
@@ -740,12 +735,13 @@ def test_custom_dimension_units_and_scales(store_path: Path):
                         kind=DimensionType.SPACE,
                         unit="nanometer",
                         scale=1.1,
-                        array_size_px=1080,
+                        array_size_px=64,
                         chunk_size_px=64,
                         shard_size_chunks=2,
                     ),
                 ],
                 data_type=np.int32,
+                downsampling_method=DownsamplingMethod.MEAN
             )
         ]
     )
@@ -1651,6 +1647,6 @@ def test_with_ragged_final_shard(store_path: Path):
 
     del stream
 
-    dataset = zarr.open(settings.store_path)
+    array = zarr.open(settings.store_path)
 
-    np.testing.assert_array_equal(data, dataset["0"])
+    np.testing.assert_array_equal(data, array)

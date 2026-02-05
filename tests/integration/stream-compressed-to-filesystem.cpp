@@ -50,7 +50,6 @@ const size_t nbytes_px = sizeof(uint16_t);
 const uint32_t frames_to_acquire =
   array_planes * array_channels * array_timepoints;
 const size_t bytes_of_frame = array_width * array_height * nbytes_px;
-} // namespace/s
 
 ZarrStream*
 setup()
@@ -125,101 +124,6 @@ setup()
     ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     return stream;
-}
-
-void
-verify_group_metadata(const nlohmann::json& meta)
-{
-    auto zarr_format = meta["zarr_format"].get<int>();
-    EXPECT_EQ(int, zarr_format, 3);
-
-    auto node_type = meta["node_type"].get<std::string>();
-    EXPECT_STR_EQ(node_type.c_str(), "group");
-
-    EXPECT(meta["consolidated_metadata"].is_null(),
-           "Expected consolidated_metadata to be null");
-
-    // OME metadata
-    const auto ome = meta["attributes"]["ome"];
-    const auto multiscales = ome["multiscales"][0];
-    const auto ngff_version = ome["version"].get<std::string>();
-    EXPECT(ngff_version == "0.5",
-           "Expected version to be '0.5', but got '",
-           ngff_version,
-           "'");
-
-    const auto axes = multiscales["axes"];
-    EXPECT_EQ(size_t, axes.size(), 5);
-    std::string name, type, unit;
-
-    name = axes[0]["name"];
-    type = axes[0]["type"];
-    EXPECT(name == "t", "Expected name to be 't', but got '", name, "'");
-    EXPECT(type == "time", "Expected type to be 'time', but got '", type, "'");
-    EXPECT(!axes[0].contains("unit"),
-           "Expected unit to be missing, got ",
-           axes[0]["unit"].get<std::string>());
-
-    name = axes[1]["name"];
-    type = axes[1]["type"];
-    EXPECT(name == "c", "Expected name to be 'c', but got '", name, "'");
-    EXPECT(
-      type == "channel", "Expected type to be 'channel', but got '", type, "'");
-    EXPECT(!axes[1].contains("unit"),
-           "Expected unit to be missing, got ",
-           axes[1]["unit"].get<std::string>());
-
-    name = axes[2]["name"];
-    type = axes[2]["type"];
-    unit = axes[2]["unit"];
-    EXPECT(name == "z", "Expected name to be 'z', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "millimeter",
-           "Expected unit to be 'millimeter', but got '",
-           unit,
-           "'");
-
-    name = axes[3]["name"];
-    type = axes[3]["type"];
-    unit = axes[3]["unit"];
-    EXPECT(name == "y", "Expected name to be 'y', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
-
-    name = axes[4]["name"];
-    type = axes[4]["type"];
-    unit = axes[4]["unit"];
-    EXPECT(name == "x", "Expected name to be 'x', but got '", name, "'");
-    EXPECT(
-      type == "space", "Expected type to be 'space', but got '", type, "'");
-    EXPECT(unit == "micrometer",
-           "Expected unit to be 'micrometer', but got '",
-           unit,
-           "'");
-
-    const auto datasets = multiscales["datasets"][0];
-    const std::string path = datasets["path"].get<std::string>();
-    EXPECT(path == "0", "Expected path to be '0', but got '", path, "'");
-
-    const auto coordinate_transformations =
-      datasets["coordinateTransformations"][0];
-
-    type = coordinate_transformations["type"].get<std::string>();
-    EXPECT(
-      type == "scale", "Expected type to be 'scale', but got '", type, "'");
-
-    const auto scale = coordinate_transformations["scale"];
-    EXPECT_EQ(size_t, scale.size(), 5);
-    EXPECT_EQ(double, scale[0].get<double>(), 1.0);
-    EXPECT_EQ(double, scale[1].get<double>(), 1.0);
-    EXPECT_EQ(double, scale[2].get<double>(), 1.4);
-    EXPECT_EQ(double, scale[3].get<double>(), 0.9);
-    EXPECT_EQ(double, scale[4].get<double>(), 0.9);
 }
 
 void
@@ -317,7 +221,7 @@ verify_file_data()
                                       chunk_size +
                                     index_size + checksum_size;
 
-    fs::path data_root = fs::path(test_path) / "0";
+    fs::path data_root = fs::path(test_path) ;
 
     CHECK(fs::is_directory(data_root));
     for (auto t = 0; t < shards_in_t; ++t) {
@@ -371,19 +275,7 @@ verify()
     CHECK(std::filesystem::is_directory(test_path));
 
     {
-        fs::path group_metadata_path = fs::path(test_path) / "zarr.json";
-        EXPECT(fs::is_regular_file(group_metadata_path),
-               "Expected file '",
-               group_metadata_path,
-               "' to exist");
-        std::ifstream f = std::ifstream(group_metadata_path);
-        nlohmann::json group_metadata = nlohmann::json::parse(f);
-
-        verify_group_metadata(group_metadata);
-    }
-
-    {
-        fs::path array_metadata_path = fs::path(test_path) / "0" / "zarr.json";
+        fs::path array_metadata_path = fs::path(test_path)  / "zarr.json";
         EXPECT(fs::is_regular_file(array_metadata_path),
                "Expected file '",
                array_metadata_path,
@@ -396,6 +288,7 @@ verify()
 
     verify_file_data();
 }
+} // namespace
 
 int
 main()

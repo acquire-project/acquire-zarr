@@ -95,7 +95,7 @@ main()
         constexpr size_t expected_chunk_size = width * height * planes;
         const size_t table_size = 2 * 16 * sizeof(uint64_t) + 4;
 
-        const fs::path first_shard(TEST ".zarr/0/c/0/0/0/0/0");
+        const fs::path first_shard(TEST ".zarr/c/0/0/0/0/0");
         EXPECT(fs::is_regular_file(first_shard),
                "Expected shard file does not exist: ",
                first_shard.string());
@@ -110,7 +110,7 @@ main()
                " bytes, got ",
                fs::file_size(first_shard));
 
-        const fs::path last_shard(TEST ".zarr/0/c/1/0/0/0/0");
+        const fs::path last_shard(TEST ".zarr/c/1/0/0/0/0");
         EXPECT(fs::is_regular_file(last_shard),
                "Expected shard file does not exist: ",
                last_shard.string());
