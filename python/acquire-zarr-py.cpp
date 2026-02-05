@@ -924,10 +924,10 @@ class PyZarrStreamSettings
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
 
-    const std::optional<PyZarrS3Settings>& s3() const { return s3_settings_; }
+    const std::optional<PyZarrS3Settings>& s3() const { return py_s3_settings_; }
     void set_s3(const std::optional<PyZarrS3Settings>& settings)
     {
-        s3_settings_ = settings;
+        py_s3_settings_ = settings;
     }
 
     unsigned int max_threads() const { return max_threads_; }
@@ -961,8 +961,9 @@ class PyZarrStreamSettings
         settings_.max_threads = max_threads_;
         settings_.overwrite = static_cast<int>(overwrite_);
 
-        if (s3_settings_) {
-            *(settings_.s3_settings) = *(s3_settings_->settings());
+        if (py_s3_settings_) {
+            s3_settings_ = *py_s3_settings_->settings();
+            settings_.s3_settings = &s3_settings_;
         }
 
         // construct array lifetime props and set up arrays
@@ -1051,12 +1052,14 @@ class PyZarrStreamSettings
 
   private:
     std::string store_path_;
-    mutable std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
+    mutable std::optional<PyZarrS3Settings> py_s3_settings_{ std::nullopt };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
 
     std::vector<PyZarrArraySettings> arrays_;
     std::vector<PyZarrPlate> plates_;
+
+    mutable ZarrS3Settings s3_settings_;
 
     mutable std::vector<ArrayLifetimeProps> array_lifetimes_;
     mutable std::vector<PlateLifetimeProps> plate_lifetimes_;
