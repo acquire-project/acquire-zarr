@@ -4,12 +4,12 @@
 #include <blosc.h>
 
 zarr::LockedBuffer::LockedBuffer(std::vector<uint8_t>&& data)
-  : data_(std::move(data))
+    : data_(std::move(data))
 {
 }
 
 zarr::LockedBuffer::LockedBuffer(zarr::LockedBuffer&& other) noexcept
-  : data_(std::move(other.data_))
+    : data_(std::move(other.data_))
 {
 }
 
@@ -54,7 +54,12 @@ void
 zarr::LockedBuffer::assign(ConstByteSpan data)
 {
     std::unique_lock lock(mutex_);
-    data_.assign(data.begin(), data.end());
+    if (data.data() == nullptr) {
+        data_.resize(data.size());
+        std::fill_n(data_.begin(), data.size(), 0);
+    } else {
+        data_.assign(data.begin(), data.end());
+    }
 }
 
 void
@@ -71,7 +76,13 @@ zarr::LockedBuffer::assign_at(size_t offset, ConstByteSpan data)
     if (offset + data.size() > data_.size()) {
         data_.resize(offset + data.size());
     }
-    std::copy(data.begin(), data.end(), data_.begin() + offset);
+
+    if (data.data() == nullptr) {
+        // fill zeros
+        std::fill_n(data_.begin() + offset, data.size(), 0);
+    } else {
+        std::copy(data.begin(), data.end(), data_.begin() + offset);
+    }
 }
 
 void
@@ -109,15 +120,15 @@ zarr::LockedBuffer::compress(const zarr::BloscCompressionParams& params,
 
     std::vector<uint8_t> compressed_data(data_.size() + BLOSC_MAX_OVERHEAD);
     const auto n_bytes_compressed = blosc_compress_ctx(params.clevel,
-                                                       params.shuffle,
-                                                       type_size,
-                                                       data_.size(),
-                                                       data_.data(),
-                                                       compressed_data.data(),
-                                                       compressed_data.size(),
-                                                       params.codec_id.c_str(),
-                                                       0,
-                                                       1);
+        params.shuffle,
+        type_size,
+        data_.size(),
+        data_.data(),
+        compressed_data.data(),
+        compressed_data.size(),
+        params.codec_id.c_str(),
+        0,
+        1);
 
     if (n_bytes_compressed <= 0) {
         LOG_ERROR("blosc_compress_ctx failed with code ", n_bytes_compressed);

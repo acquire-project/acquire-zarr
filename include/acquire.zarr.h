@@ -275,8 +275,10 @@ extern "C"
      * to the store. It will return when all data has been written. Multiple
      * frames can be appended in a single call.
      * @param[in, out] stream The Zarr stream struct.
-     * @param[in] data The data to append.
-     * @param[in] bytes_in The number of bytes in @p data. This can be any
+     * @param[in] data The data to append. If @p data is NULL, append
+     * @p bytes_in zeros instead.
+     * @param[in] bytes_in The number of bytes to append, pointed to by @p data,
+     * or the number of zeros to fill if @p data is NULL. This can be any
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
      * @param[out] bytes_out The number of bytes written to the stream.
