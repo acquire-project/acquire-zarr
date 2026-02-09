@@ -133,16 +133,20 @@ extern "C"
 
     /**
      * @brief Properties of a Zarr array.
-     * @note The dimensions array may be allocated with ZarrArraySettings_create_dimension_array
-     * and freed with ZarrArraySettings_destroy_dimension_array. The order in which you
-     * set the dimension properties in the array should match the order of the dimensions
-     * during acquisition from slowest to fastest changing, for example, [Z, Y, X] for a 3D dataset.
-     * @note To write a transposed target storage order (e.g., for OME-NGFF compliance, which
-     * currently requires TCZYX order), set storage_dimension_order to a permutation array
-     * specifying the output order. Each element is the index of the acquisition dimension
-     * that should appear at that storage position. For example, if acquisition dimensions are
-     * [t, z, c, y, x] and you want storage order [t, c, z, y, x], use [0, 2, 1, 3, 4].
-     * If storage_dimension_order is NULL, dimensions will be stored in the order provided.
+     * @note The dimensions array may be allocated with
+     * ZarrArraySettings_create_dimension_array and freed with
+     * ZarrArraySettings_destroy_dimension_array. The order in which you set the
+     * dimension properties in the array should match the order of the
+     * dimensions during acquisition from slowest to fastest changing, for
+     * example, [Z, Y, X] for a 3D dataset.
+     * @note To write a transposed target storage order (e.g., for OME-NGFF
+     * compliance, which currently requires TCZYX order), set
+     * storage_dimension_order to a permutation array specifying the output
+     * order. Each element is the index of the acquisition dimension that should
+     * appear at that storage position. For example, if acquisition dimensions
+     * are [t, z, c, y, x] and you want storage order [t, c, z, y, x], use [0,
+     * 2, 1, 3, 4]. If storage_dimension_order is NULL, dimensions will be
+     * stored in the order provided.
      */
     typedef struct
     {
@@ -217,8 +221,9 @@ extern "C"
 
     /**
      * @brief Settings for high-content screening (HCS) datasets.
-     * @note The plates array may be allocated with ZarrHCSSettings_create_plate_array
-     * and freed with ZarrHCSSettings_destroy_plate_array.
+     * @note The plates array may be allocated with
+     * ZarrHCSSettings_create_plate_array and freed with
+     * ZarrHCSSettings_destroy_plate_array.
      */
     typedef struct
     {

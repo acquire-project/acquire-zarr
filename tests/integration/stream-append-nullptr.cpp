@@ -20,18 +20,16 @@ const std::string output_key = "array";
 const auto test_path_fs = (fs::temp_directory_path() / store_path).string();
 
 std::string s3_endpoint, s3_bucket_name, s3_access_key_id, s3_secret_access_key,
-            s3_region;
+  s3_region;
 ZarrS3Settings s3_settings{};
 
 constexpr unsigned int array_width = 64, array_height = 48, array_planes = 2;
 constexpr unsigned int chunk_width = 64, chunk_height = 48, chunk_planes = 2;
 constexpr unsigned int shard_width = 1, shard_height = 1, shard_planes = 1;
 
-std::vector expected_paths{
-    store_path + "/zarr.json",
-    store_path + "/" + output_key + "/zarr.json",
-    store_path + "/" + output_key + "/c/0/0/0"
-};
+std::vector expected_paths{ store_path + "/zarr.json",
+                            store_path + "/" + output_key + "/zarr.json",
+                            store_path + "/" + output_key + "/c/0/0/0" };
 
 constexpr ZarrDataType dtype = ZarrDataType_uint16;
 constexpr size_t npx_frame = array_width * array_height;
@@ -40,7 +38,7 @@ constexpr size_t bytes_of_frame = npx_frame * sizeof(frame_data[0]);
 
 constexpr uint32_t frames_to_acquire = array_planes;
 constexpr size_t expected_shard_size = bytes_of_frame * chunk_planes + // data
-                                       2 * sizeof(uint64_t) + // table
+                                       2 * sizeof(uint64_t) +          // table
                                        sizeof(uint32_t); // checksum
 
 bool
@@ -156,11 +154,11 @@ s3_get_object_contents_as_string(const std::string& object_name,
     minio::s3::GetObjectArgs go_args;
     go_args.bucket = s3_bucket_name;
     go_args.object = object_name;
-    go_args.datafunc = [&ss
-        ](const minio::http::DataFunctionArgs& args) -> bool {
-            ss << args.datachunk;
-            return true;
-        };
+    go_args.datafunc =
+      [&ss](const minio::http::DataFunctionArgs& args) -> bool {
+        ss << args.datachunk;
+        return true;
+    };
 
     // Call get object.
     minio::s3::GetObjectResponse resp = client.GetObject(go_args);
@@ -177,15 +175,13 @@ s3_get_object_contents_as_bytes(const std::string& object_name,
     minio::s3::GetObjectArgs go_args;
     go_args.bucket = s3_bucket_name;
     go_args.object = object_name;
-    go_args.datafunc = [&data](
-        const minio::http::DataFunctionArgs& args) -> bool {
-            const auto* chunk_data = reinterpret_cast<const uint8_t*>(args.
-                datachunk.data());
-            data.insert(data.end(),
-                        chunk_data,
-                        chunk_data + args.datachunk.size());
-            return true;
-        };
+    go_args.datafunc =
+      [&data](const minio::http::DataFunctionArgs& args) -> bool {
+        const auto* chunk_data =
+          reinterpret_cast<const uint8_t*>(args.datachunk.data());
+        data.insert(data.end(), chunk_data, chunk_data + args.datachunk.size());
+        return true;
+    };
 
     minio::s3::GetObjectResponse resp = client.GetObject(go_args);
 
@@ -209,22 +205,20 @@ s3_remove_items(const std::vector<std::string>& item_keys,
     auto it = objects.begin();
 
     args.func = [&objects = objects,
-            &i = it](minio::s3::DeleteObject& obj) -> bool {
-            if (i == objects.end())
-                return false;
-            obj = *i;
-            i++;
-            return true;
-        };
+                 &i = it](minio::s3::DeleteObject& obj) -> bool {
+        if (i == objects.end())
+            return false;
+        obj = *i;
+        i++;
+        return true;
+    };
 
     minio::s3::RemoveObjectsResult result = client.RemoveObjects(args);
     for (; result; result++) {
         minio::s3::DeleteError err = *result;
         if (!err) {
-            LOG_ERROR("Failed to delete object ",
-                      err.object_name,
-                      ": ",
-                      err.message);
+            LOG_ERROR(
+              "Failed to delete object ", err.object_name, ": ", err.message);
             return false;
         }
     }
@@ -316,11 +310,8 @@ do_stream(ZarrStream* stream)
     try {
         size_t bytes_out;
         // append nullptr, i.e., "stream" an empty frame
-        if (ZarrStream_append(stream,
-                              nullptr,
-                              bytes_of_frame,
-                              &bytes_out,
-                              output_key.c_str());
+        if (ZarrStream_append(
+              stream, nullptr, bytes_of_frame, &bytes_out, output_key.c_str());
             bytes_out != bytes_of_frame) {
             LOG_ERROR("Failed to append nullptr. Bytes in: ",
                       bytes_of_frame,
@@ -332,11 +323,8 @@ do_stream(ZarrStream* stream)
         ++count;
 
         for (auto i = 1; i < frames_to_acquire; ++i) {
-            if (ZarrStream_append(stream,
-                                  data,
-                                  bytes_of_frame,
-                                  &bytes_out,
-                                  output_key.c_str());
+            if (ZarrStream_append(
+                  stream, data, bytes_of_frame, &bytes_out, output_key.c_str());
                 bytes_out != bytes_of_frame) {
                 LOG_ERROR("Failed to append frame. ",
                           i,
@@ -374,10 +362,8 @@ verify_fs(const ZarrStreamSettings& settings)
     // should be the right size
     if (size_t object_size = fs_get_file_size(data_file_path);
         object_size != expected_shard_size) {
-        LOG_ERROR("Expected file size of ",
-                  expected_shard_size,
-                  ", got ",
-                  object_size);
+        LOG_ERROR(
+          "Expected file size of ", expected_shard_size, ", got ", object_size);
         return false;
     }
 
@@ -387,10 +373,8 @@ verify_fs(const ZarrStreamSettings& settings)
                                  2 * npx_frame };
     for (auto i = 0; i < npx_frame; ++i) {
         if (data_u16[i] != 0) {
-            LOG_ERROR("Expected data at index ",
-                      i,
-                      " to be zero, got ",
-                      data_u16[i]);
+            LOG_ERROR(
+              "Expected data at index ", i, " to be zero, got ", data_u16[i]);
             return false;
         }
     }
@@ -441,10 +425,8 @@ verify_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
                                  2 * npx_frame };
     for (auto i = 0; i < npx_frame; ++i) {
         if (data_u16[i] != 0) {
-            LOG_ERROR("Expected data at index ",
-                      i,
-                      " to be zero, got ",
-                      data_u16[i]);
+            LOG_ERROR(
+              "Expected data at index ", i, " to be zero, got ", data_u16[i]);
             return false;
         }
     }

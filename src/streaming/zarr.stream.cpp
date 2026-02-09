@@ -286,7 +286,8 @@ make_array_config(const ZarrArraySettings* settings,
                   const std::string& store_root,
                   const std::string& parent_path,
                   std::optional<std::string> array_key,
-                  const std::optional<std::string>& bucket_name, std::string& error)
+                  const std::optional<std::string>& bucket_name,
+                  std::string& error)
 {
     // remove leading/trailing slashes and whitespace
     std::string key = zarr::regularize_key(settings->output_key);
@@ -880,9 +881,10 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            const auto subspan = data ?
-                std::span{ data + bytes_written, bytes_to_copy } :
-                std::span{static_cast<const uint8_t*>(nullptr), bytes_to_copy};
+            const auto subspan =
+              data ? std::span{ data + bytes_written, bytes_to_copy }
+                   : std::span{ static_cast<const uint8_t*>(nullptr),
+                                bytes_to_copy };
             frame_buffer.assign_at(frame_buffer_offset, subspan);
             frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
@@ -1055,8 +1057,12 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
     std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays(
       settings->array_count);
     for (auto i = 0; i < settings->array_count; ++i) {
-        auto config = make_array_config(
-          settings->arrays + i, store_path, "", std::nullopt, std::nullopt, error_);
+        auto config = make_array_config(settings->arrays + i,
+                                        store_path,
+                                        "",
+                                        std::nullopt,
+                                        std::nullopt,
+                                        error_);
         if (!config) {
             return false;
         }
@@ -1136,7 +1142,8 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
                                                     store_path,
                                                     parent_path,
                                                     field.path,
-                                                    std::nullopt, error_);
+                                                    std::nullopt,
+                                                    error_);
                     if (config == nullptr) {
                         return false;
                     }
@@ -1165,7 +1172,7 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
     }
 
     auto config = make_array_config(
-        settings, store_path_, parent_path, std::nullopt, bucket_name, error_);
+      settings, store_path_, parent_path, std::nullopt, bucket_name, error_);
     if (config == nullptr) {
         return false;
     }

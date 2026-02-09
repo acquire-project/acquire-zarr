@@ -103,114 +103,107 @@ main()
     const unsigned int nbytes_px = zarr::bytes_of_type(dtype);
 
     // try {
-        auto thread_pool = std::make_shared<zarr::ThreadPool>(
-          std::thread::hardware_concurrency(),
-          [](const std::string& err) { LOG_ERROR("Error: ", err); });
+    auto thread_pool = std::make_shared<zarr::ThreadPool>(
+      std::thread::hardware_concurrency(),
+      [](const std::string& err) { LOG_ERROR("Error: ", err); });
 
-        std::vector<ZarrDimension> dims;
-        dims.emplace_back("t",
-                          ZarrDimensionType_Time,
-                          array_timepoints,
-                          chunk_timepoints,
-                          shard_timepoints);
-        dims.emplace_back("c",
-                          ZarrDimensionType_Channel,
-                          array_channels,
-                          chunk_channels,
-                          shard_channels);
-        dims.emplace_back("z",
-                          ZarrDimensionType_Space,
-                          array_planes,
-                          chunk_planes,
-                          shard_planes);
-        dims.emplace_back("y",
-                          ZarrDimensionType_Space,
-                          array_height,
-                          chunk_height,
-                          shard_height);
-        dims.emplace_back(
-          "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
+    std::vector<ZarrDimension> dims;
+    dims.emplace_back("t",
+                      ZarrDimensionType_Time,
+                      array_timepoints,
+                      chunk_timepoints,
+                      shard_timepoints);
+    dims.emplace_back("c",
+                      ZarrDimensionType_Channel,
+                      array_channels,
+                      chunk_channels,
+                      shard_channels);
+    dims.emplace_back(
+      "z", ZarrDimensionType_Space, array_planes, chunk_planes, shard_planes);
+    dims.emplace_back(
+      "y", ZarrDimensionType_Space, array_height, chunk_height, shard_height);
+    dims.emplace_back(
+      "x", ZarrDimensionType_Space, array_width, chunk_width, shard_width);
 
-        auto config = std::make_shared<zarr::ArrayConfig>(
-          base_dir.string(),
-          "",
-          std::nullopt,
-          std::nullopt,
-          std::make_shared<ArrayDimensions>(std::move(dims), dtype),
-          dtype,
-          std::nullopt,
-          level_of_detail);
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      base_dir.string(),
+      "",
+      std::nullopt,
+      std::nullopt,
+      std::make_shared<ArrayDimensions>(std::move(dims), dtype),
+      dtype,
+      std::nullopt,
+      level_of_detail);
 
-        {
-            auto writer = std::make_unique<zarr::Array>(
-              config,
-              thread_pool,
-              std::make_shared<zarr::FileHandlePool>(),
-              nullptr);
+    {
+        auto writer = std::make_unique<zarr::Array>(
+          config,
+          thread_pool,
+          std::make_shared<zarr::FileHandlePool>(),
+          nullptr);
 
-            const size_t frame_size = array_width * array_height * nbytes_px;
-            zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
+        const size_t frame_size = array_width * array_height * nbytes_px;
+        zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
 
-            for (auto i = 0; i < n_frames; ++i) { // 2 time points
-                CHECK(writer->write_frame(data));
-            }
-
-            CHECK(finalize_array(std::move(writer)));
+        for (auto i = 0; i < n_frames; ++i) { // 2 time points
+            CHECK(writer->write_frame(data));
         }
 
-        check_json();
+        CHECK(finalize_array(std::move(writer)));
+    }
 
-        const auto chunk_size = chunk_width * chunk_height * chunk_planes *
-                                chunk_channels * chunk_timepoints * nbytes_px;
-        const auto index_size = chunks_per_shard *
-                                sizeof(uint64_t) * // indices are 64 bits
-                                2;                 // 2 indices per chunk
-        const auto checksum_size = 4;              // CRC32 checksum is 4 bytes
-        const auto expected_file_size =
-          chunks_per_shard * chunk_size + index_size + checksum_size;
+    check_json();
 
-        const fs::path data_root = base_dir;
-        CHECK(fs::is_directory(data_root));
-        for (auto t = 0; t < shards_in_t; ++t) {
-            const auto t_dir = data_root / "c" / std::to_string(t);
-            CHECK(fs::is_directory(t_dir));
+    const auto chunk_size = chunk_width * chunk_height * chunk_planes *
+                            chunk_channels * chunk_timepoints * nbytes_px;
+    const auto index_size = chunks_per_shard *
+                            sizeof(uint64_t) * // indices are 64 bits
+                            2;                 // 2 indices per chunk
+    const auto checksum_size = 4;              // CRC32 checksum is 4 bytes
+    const auto expected_file_size =
+      chunks_per_shard * chunk_size + index_size + checksum_size;
 
-            for (auto c = 0; c < shards_in_c; ++c) {
-                const auto c_dir = t_dir / std::to_string(c);
-                CHECK(fs::is_directory(c_dir));
+    const fs::path data_root = base_dir;
+    CHECK(fs::is_directory(data_root));
+    for (auto t = 0; t < shards_in_t; ++t) {
+        const auto t_dir = data_root / "c" / std::to_string(t);
+        CHECK(fs::is_directory(t_dir));
 
-                for (auto z = 0; z < shards_in_z; ++z) {
-                    const auto z_dir = c_dir / std::to_string(z);
-                    CHECK(fs::is_directory(z_dir));
+        for (auto c = 0; c < shards_in_c; ++c) {
+            const auto c_dir = t_dir / std::to_string(c);
+            CHECK(fs::is_directory(c_dir));
 
-                    for (auto y = 0; y < shards_in_y; ++y) {
-                        const auto y_dir = z_dir / std::to_string(y);
-                        CHECK(fs::is_directory(y_dir));
+            for (auto z = 0; z < shards_in_z; ++z) {
+                const auto z_dir = c_dir / std::to_string(z);
+                CHECK(fs::is_directory(z_dir));
 
-                        for (auto x = 0; x < shards_in_x; ++x) {
-                            const auto x_file = y_dir / std::to_string(x);
-                            CHECK(fs::is_regular_file(x_file));
-                            const auto file_size = fs::file_size(x_file);
-                            EXPECT_EQ(int, file_size, expected_file_size);
-                        }
+                for (auto y = 0; y < shards_in_y; ++y) {
+                    const auto y_dir = z_dir / std::to_string(y);
+                    CHECK(fs::is_directory(y_dir));
 
-                        CHECK(!fs::is_regular_file(
-                          y_dir / std::to_string(shards_in_x)));
+                    for (auto x = 0; x < shards_in_x; ++x) {
+                        const auto x_file = y_dir / std::to_string(x);
+                        CHECK(fs::is_regular_file(x_file));
+                        const auto file_size = fs::file_size(x_file);
+                        EXPECT_EQ(int, file_size, expected_file_size);
                     }
 
-                    CHECK(
-                      !fs::is_directory(z_dir / std::to_string(shards_in_y)));
+                    CHECK(!fs::is_regular_file(y_dir /
+                                               std::to_string(shards_in_x)));
                 }
 
-                CHECK(!fs::is_directory(c_dir / std::to_string(shards_in_z)));
+                CHECK(!fs::is_directory(z_dir / std::to_string(shards_in_y)));
             }
 
-            CHECK(!fs::is_directory(t_dir / std::to_string(shards_in_c)));
+            CHECK(!fs::is_directory(c_dir / std::to_string(shards_in_z)));
         }
 
-        CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
+        CHECK(!fs::is_directory(t_dir / std::to_string(shards_in_c)));
+    }
 
-        retval = 0;
+    CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
+
+    retval = 0;
     // } catch (const std::exception& exc) {
     //     LOG_ERROR("Exception: ", exc.what());
     // }

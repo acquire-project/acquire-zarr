@@ -121,7 +121,8 @@ bool
 flush_file(void* handle)
 {
     CHECK(handle);
-    if (const auto* fd = static_cast<HANDLE*>(handle); *fd != INVALID_HANDLE_VALUE) {
+    if (const auto* fd = static_cast<HANDLE*>(handle);
+        *fd != INVALID_HANDLE_VALUE) {
         return FlushFileBuffers(*fd);
     }
     return true;

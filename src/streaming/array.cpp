@@ -482,7 +482,8 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
         // Allocate buffer for transposed frame
         transposed_frame.resize(frame.size());
 
-        // Transpose: input is acq_rows × acq_cols, output is acq_cols × acq_rows
+        // Transpose: input is acq_rows × acq_cols, output is acq_cols ×
+        // acq_rows
         transpose_frame(frame.data(),
                         transposed_frame.data(),
                         acq_rows,
@@ -516,7 +517,8 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
     // dropped frames
     const auto acquisition_frame_id = frames_written_;
 
-    // Transpose frame_id from acquisition order to prescribed storage_dimension_order
+    // Transpose frame_id from acquisition order to prescribed
+    // storage_dimension_order
     const auto frame_id = dimensions->transpose_frame_id(acquisition_frame_id);
 
     // offset among the chunks in the lattice

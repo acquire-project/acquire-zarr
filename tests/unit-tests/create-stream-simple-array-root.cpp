@@ -11,7 +11,7 @@ void
 configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-        ZarrArraySettings_create_dimension_array(settings, 3));
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -94,9 +94,7 @@ single_simple_array_at_root_empty_key()
 bool
 multiple_arrays_with_simple_array_at_root()
 {
-    ZarrStreamSettings settings = {
-        TEST ".zarr"
-    };
+    ZarrStreamSettings settings = { TEST ".zarr" };
 
     ZarrStreamSettings_create_arrays(&settings, 2);
 
@@ -124,19 +122,19 @@ main()
     try {
         if (!single_simple_array_at_root_null_key()) {
             LOG_ERROR(
-                "Failed to configure single simple array at root with null key");
+              "Failed to configure single simple array at root with null key");
             retval = 1;
         }
 
         if (!single_simple_array_at_root_empty_key()) {
             LOG_ERROR(
-                "Failed to configure single simple array at root with empty key");
+              "Failed to configure single simple array at root with empty key");
             retval = 1;
         }
 
         if (!multiple_arrays_with_simple_array_at_root()) {
-            LOG_ERROR(
-                "Erroneously successful configuration of multiple arrays with simple array at root");
+            LOG_ERROR("Erroneously successful configuration of multiple arrays "
+                      "with simple array at root");
             retval = 1;
         }
     } catch (const std::exception& exception) {
