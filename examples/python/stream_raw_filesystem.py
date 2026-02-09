@@ -1,8 +1,12 @@
 # Stream to filesystem without compression
 import numpy as np
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DataType
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DataType,
 )
 
 
@@ -10,34 +14,34 @@ def make_sample_data():
     """Generate sample data with moving diagonal pattern"""
     width, height = 64, 48
     frames = []
-    
+
     for t in range(50):
         frame = np.zeros((height, width), dtype=np.uint16)
-        
+
         for y in range(height):
             for x in range(width):
                 # Create a diagonal pattern that moves with time
                 diagonal = (x + y + t * 8) % 32
-                
+
                 # Create intensity variation
                 if diagonal < 16:
                     intensity = diagonal * 4096  # Ramp up
                 else:
                     intensity = (31 - diagonal) * 4096  # Ramp down
-                
+
                 # Add circular features
                 center_x, center_y = width // 2, height // 2
                 dx, dy = x - center_x, y - center_y
-                radius = int(np.sqrt(dx*dx + dy*dy))
-                
+                radius = int(np.sqrt(dx * dx + dy * dy))
+
                 # Modulate with concentric circles
                 if radius % 16 < 8:
                     intensity = int(intensity * 0.7)
-                
+
                 frame[y, x] = intensity
-        
+
         frames.append(frame)
-    
+
     return np.array(frames)
 
 

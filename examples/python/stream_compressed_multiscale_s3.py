@@ -5,8 +5,16 @@ import numpy as np
 # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
 # BEFORE importing acquire_zarr
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DownsamplingMethod, S3Settings, Compressor, CompressionCodec, CompressionSettings
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DownsamplingMethod,
+    S3Settings,
+    Compressor,
+    CompressionCodec,
+    CompressionSettings,
 )
 
 
@@ -51,8 +59,7 @@ def main():
 
     # Configure S3
     settings.s3 = S3Settings(
-        endpoint="http://127.0.0.1:9000",
-        bucket_name="my-bucket"
+        endpoint="http://127.0.0.1:9000", bucket_name="my-bucket"
     )
 
     # Configure 4D array (t, z, y, x) with multiscale and Zstd compression

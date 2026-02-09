@@ -2,8 +2,15 @@
 import numpy as np
 
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DownsamplingMethod, Compressor, CompressionCodec, CompressionSettings
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DownsamplingMethod,
+    Compressor,
+    CompressionCodec,
+    CompressionSettings,
 )
 
 from typing import Tuple
@@ -15,16 +22,9 @@ def make_sample_data(shape: Tuple[int, ...], dtype: np.dtype) -> np.ndarray:
     typemax = np.iinfo(dtype).max if is_int else np.finfo(dtype).max
 
     if is_int:
-        return np.random.randint(
-            typemin, typemax,
-            shape,
-            dtype=dtype
-        )
+        return np.random.randint(typemin, typemax, shape, dtype=dtype)
     elif np.issubdtype(dtype, np.floating):
-        return np.random.uniform(
-            typemin, typemax,
-            shape
-        ).astype(dtype)
+        return np.random.uniform(typemin, typemax, shape).astype(dtype)
     else:
         raise ValueError(f"Unsupported data type: {dtype}")
 
@@ -111,7 +111,7 @@ def main():
                     ),
                 ],
                 data_type=np.float32,
-                downsampling_method=DownsamplingMethod.MEAN
+                downsampling_method=DownsamplingMethod.MEAN,
             ),
             ArraySettings(
                 output_key="labels",
@@ -139,18 +139,20 @@ def main():
                     ),
                 ],
                 data_type=np.uint8,
-                downsampling_method=DownsamplingMethod.MAX
-            )
+                downsampling_method=DownsamplingMethod.MAX,
+            ),
         ],
         store_path="output_multiarray.zarr",
-        overwrite=True
+        overwrite=True,
     )
 
     # Create stream
     stream = ZarrStream(settings)
 
     # Write sample data to each array
-    stream.append(make_sample_data((10, 8, 6, 48, 64), np.uint16), "path/to/uint16_array")
+    stream.append(
+        make_sample_data((10, 8, 6, 48, 64), np.uint16), "path/to/uint16_array"
+    )
     stream.append(make_sample_data((6, 48, 64), np.float32), "a/float32/array")
     stream.append(make_sample_data((6, 48, 64), np.uint8), "labels")
 
