@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main() {
+int
+main()
+{
     // Configure S3
     // Ensure that you have set your S3 credentials in the environment variables
     // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
@@ -29,37 +31,33 @@ int main() {
     // Set up dimensions (t, z, y, x)
     ZarrArraySettings_create_dimension_array(settings.arrays, 4);
 
-    settings.arrays->dimensions[0] = (ZarrDimensionProperties){
-        .name = "t",
-        .type = ZarrDimensionType_Time,
-        .array_size_px = 0,  // Unlimited
-        .chunk_size_px = 5,
-        .shard_size_chunks = 2
-    };
+    settings.arrays->dimensions[0] =
+      (ZarrDimensionProperties){ .name = "t",
+                                 .type = ZarrDimensionType_Time,
+                                 .array_size_px = 0, // Unlimited
+                                 .chunk_size_px = 5,
+                                 .shard_size_chunks = 2 };
 
-    settings.arrays->dimensions[1] = (ZarrDimensionProperties){
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 10,
-        .chunk_size_px = 2,
-        .shard_size_chunks = 1
-    };
+    settings.arrays->dimensions[1] =
+      (ZarrDimensionProperties){ .name = "z",
+                                 .type = ZarrDimensionType_Space,
+                                 .array_size_px = 10,
+                                 .chunk_size_px = 2,
+                                 .shard_size_chunks = 1 };
 
-    settings.arrays->dimensions[2] = (ZarrDimensionProperties){
-        .name = "y",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 48,
-        .chunk_size_px = 16,
-        .shard_size_chunks = 1
-    };
+    settings.arrays->dimensions[2] =
+      (ZarrDimensionProperties){ .name = "y",
+                                 .type = ZarrDimensionType_Space,
+                                 .array_size_px = 48,
+                                 .chunk_size_px = 16,
+                                 .shard_size_chunks = 1 };
 
-    settings.arrays->dimensions[3] = (ZarrDimensionProperties){
-        .name = "x",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 64,
-        .chunk_size_px = 16,
-        .shard_size_chunks = 2
-    };
+    settings.arrays->dimensions[3] =
+      (ZarrDimensionProperties){ .name = "x",
+                                 .type = ZarrDimensionType_Space,
+                                 .array_size_px = 64,
+                                 .chunk_size_px = 16,
+                                 .shard_size_chunks = 2 };
 
     // Create stream
     ZarrStream* stream = ZarrStream_create(&settings);
@@ -92,7 +90,8 @@ int main() {
                             NULL);
 
         if (status != ZarrStatusCode_Success) {
-            fprintf(stderr, "Failed to append frame: %s\n",
+            fprintf(stderr,
+                    "Failed to append frame: %s\n",
                     Zarr_get_status_message(status));
             break;
         }
