@@ -11,7 +11,7 @@ void
 configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-        ZarrArraySettings_create_dimension_array(settings, 3));
+          ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -48,8 +48,7 @@ verify_file_data(const ZarrStreamSettings& settings)
     const size_t row_size = settings.arrays->dimensions[2].array_size_px,
                  num_rows = settings.arrays->dimensions[1].array_size_px;
 
-    fs::path shard_path =
-        fs::path(settings.store_path) / "c" / "0" / "0" / "0";
+    fs::path shard_path = fs::path(settings.store_path) / "c" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the first chunk file
@@ -197,7 +196,7 @@ main()
             std::fill(data.begin(), data.end(), row);
             for (auto col_group = 0; col_group < 4; ++col_group) {
                 const auto bytes_written =
-                    stream->append(nullptr, data.data(), data.size());
+                  stream->append(nullptr, data.data(), data.size());
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
@@ -208,13 +207,11 @@ main()
         // append more than one frame, then fill in the rest
         const auto bytes_to_write = 48 * 64 + 7;
         auto bytes_written =
-            stream->append(nullptr, data.data(), bytes_to_write);
+          stream->append(nullptr, data.data(), bytes_to_write);
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
         bytes_written = stream->append(
-            nullptr,
-            data.data() + bytes_to_write,
-            data.size() - bytes_to_write);
+          nullptr, data.data() + bytes_to_write, data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
         // cleanup

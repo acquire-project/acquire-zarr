@@ -15,7 +15,8 @@ const size_t frames_per_append = 3;
 const fs::path test_path = "multi-frame-test.zarr";
 
 ZarrStream*
-setup() {
+setup()
+{
     const auto test_path_str = test_path.string();
     const auto test_path_cstr = test_path_str.c_str();
 
@@ -26,10 +27,8 @@ setup() {
     }
     LOG_DEBUG("Creating Zarr store at: ", test_path_str);
 
-    ZarrArraySettings array = {
-        .data_type = ZarrDataType_uint16
-    };
-    ZarrStreamSettings settings = {  
+    ZarrArraySettings array = { .data_type = ZarrDataType_uint16 };
+    ZarrStreamSettings settings = {
         .store_path = test_path_cstr,
         .arrays = &array,
         .array_count = 1,
@@ -70,25 +69,27 @@ setup() {
 }
 
 void
-verify_data() {
+verify_data()
+{
     LOG_DEBUG("Verifying data at ", test_path);
     // Basic structure verification
     CHECK(fs::exists(test_path));
     CHECK(fs::exists(test_path / "zarr.json")); // Check group metadata exists
-    
+
     // Verify the array metadata and final number of frames
-    const fs::path array_metadata_path = test_path  / "zarr.json";
+    const fs::path array_metadata_path = test_path / "zarr.json";
     CHECK(fs::exists(array_metadata_path));
     CHECK(fs::file_size(array_metadata_path) > 0);
 
     // Read and parse the array metadata
     std::ifstream f(array_metadata_path);
     nlohmann::json array_metadata = nlohmann::json::parse(f);
-    
+
     // Verify the shape - first dimension should match our frames
     const auto& shape = array_metadata["shape"];
     EXPECT_EQ(size_t, shape.size(), 3); // [t, y, x]
-    EXPECT_EQ(size_t, shape[0].get<size_t>(), frames_to_acquire); // time dimension
+    EXPECT_EQ(
+      size_t, shape[0].get<size_t>(), frames_to_acquire); // time dimension
     EXPECT_EQ(size_t, shape[1].get<size_t>(), array_height);
     EXPECT_EQ(size_t, shape[2].get<size_t>(), array_width);
 }
@@ -109,23 +110,26 @@ main()
     LOG_DEBUG("ZarrStream created successfully");
     const size_t frame_size = array_width * array_height * sizeof(uint16_t);
     const size_t multi_frame_size = frame_size * frames_per_append;
-    
-    std::vector<uint16_t> multi_frame_data(array_width * array_height * frames_per_append);
+
+    std::vector<uint16_t> multi_frame_data(array_width * array_height *
+                                           frames_per_append);
     int retval = 1;
 
     try {
         // Test: Append multiple complete frames
         size_t bytes_out;
         for (auto i = 0; i < frames_to_acquire; i += frames_per_append) {
-            LOG_DEBUG("Appending frames ", i, " to ", i + frames_per_append - 1);
-            
+            LOG_DEBUG(
+              "Appending frames ", i, " to ", i + frames_per_append - 1);
+
             // Fill multi-frame buffer with test pattern
             for (size_t f = 0; f < frames_per_append; ++f) {
                 const auto frame_offset = f * array_width * array_height;
                 const auto frame_value = static_cast<uint16_t>(i + f);
                 std::fill(multi_frame_data.begin() + frame_offset,
-                         multi_frame_data.begin() + frame_offset + (array_width * array_height),
-                         frame_value);
+                          multi_frame_data.begin() + frame_offset +
+                            (array_width * array_height),
+                          frame_value);
             }
 
             ZarrStatusCode status = ZarrStream_append(stream,
@@ -164,4 +168,4 @@ main()
     }
 
     return retval;
-} 
+}

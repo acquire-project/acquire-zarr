@@ -158,12 +158,12 @@ def create_hcs_settings():
         column_name="5",
         images=[
             FieldOfView(
-                path="fov1", # Will be at test_plate/C/5/fov1
+                path="fov1",  # Will be at test_plate/C/5/fov1
                 acquisition_id=0,
                 array_settings=c5_fov1_array,
             ),
             FieldOfView(
-                path="fov2", # Will be at test_plate/C/5/fov2
+                path="fov2",  # Will be at test_plate/C/5/fov2
                 acquisition_id=1,
                 array_settings=c5_fov2_array,
             ),
@@ -217,7 +217,7 @@ def create_hcs_settings():
         column_name="7",
         images=[
             FieldOfView(
-                path="fov1", # Will be at test_plate/D/7/fov1
+                path="fov1",  # Will be at test_plate/D/7/fov1
                 acquisition_id=0,
                 array_settings=d7_fov1_array,
             ),
@@ -306,19 +306,11 @@ def test_create_stream(
 
 
 @pytest.mark.parametrize(
-    (
-        "compression_codec",
-    ),
+    ("compression_codec",),
     [
-        (
-            None,
-        ),
-        (
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            CompressionCodec.BLOSC_ZSTD,
-        ),
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
     ],
 )
 def test_stream_data_to_filesystem(
@@ -396,25 +388,17 @@ def test_stream_data_to_filesystem(
 
 
 @pytest.mark.parametrize(
-    (
-        "compression_codec",
-    ),
+    ("compression_codec",),
     [
-        (
-            None,
-        ),
-        (
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            CompressionCodec.BLOSC_ZSTD,
-        ),
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
     ],
 )
 def test_skip(
-        settings: StreamSettings,
-        store_path: Path,
-        compression_codec: Optional[CompressionCodec],
+    settings: StreamSettings,
+    store_path: Path,
+    compression_codec: Optional[CompressionCodec],
 ):
     settings.store_path = str(store_path / "test.zarr")
     array_settings = settings.arrays[0]
@@ -449,27 +433,25 @@ def test_skip(
     stream.close()  # close the stream, flush the files
     array = zarr.open(settings.store_path, mode="r")
 
-    assert array.shape == (2 * dim_settings[0].chunk_size_px, dim_settings[1].array_size_px, dim_settings[2].array_size_px)
+    assert array.shape == (
+        2 * dim_settings[0].chunk_size_px,
+        dim_settings[1].array_size_px,
+        dim_settings[2].array_size_px,
+    )
 
     # zeros
-    assert np.array_equal(array[:dim_settings[0].chunk_size_px], np.zeros(half_data.shape))
-    assert np.array_equal(array[dim_settings[0].chunk_size_px:], half_data)
+    assert np.array_equal(
+        array[: dim_settings[0].chunk_size_px], np.zeros(half_data.shape)
+    )
+    assert np.array_equal(array[dim_settings[0].chunk_size_px :], half_data)
 
 
 @pytest.mark.parametrize(
-    (
-        "compression_codec",
-    ),
+    ("compression_codec",),
     [
-        (
-            None,
-        ),
-        (
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            CompressionCodec.BLOSC_ZSTD,
-        ),
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
     ],
 )
 def test_stream_data_to_s3(
@@ -773,7 +755,7 @@ def test_custom_dimension_units_and_scales(store_path: Path):
                     ),
                 ],
                 data_type=np.int32,
-                downsampling_method=DownsamplingMethod.MEAN
+                downsampling_method=DownsamplingMethod.MEAN,
             )
         ]
     )
@@ -1547,7 +1529,11 @@ def test_pure_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
-    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1"}
+    expected_keys = {
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/D/7/fov1",
+    }
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
 
@@ -1616,7 +1602,12 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
-    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1", "test_plate/C/5/labels"}
+    expected_keys = {
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/D/7/fov1",
+        "test_plate/C/5/labels",
+    }
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
 
@@ -1657,15 +1648,42 @@ def test_with_ragged_final_shard(store_path: Path):
         arrays=[
             ArraySettings(
                 dimensions=[
-                    Dimension(name="t", array_size_px=0, chunk_size_px=1, shard_size_chunks=16, kind=DimensionType.TIME),
-                    Dimension(name="c", array_size_px=1, chunk_size_px=1, shard_size_chunks=1, kind=DimensionType.CHANNEL),
-                    Dimension(name="z", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
-                    Dimension(name="y", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
-                    Dimension(name="x", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
+                    Dimension(
+                        name="t",
+                        array_size_px=0,
+                        chunk_size_px=1,
+                        shard_size_chunks=16,
+                        kind=DimensionType.TIME,
+                    ),
+                    Dimension(
+                        name="c",
+                        array_size_px=1,
+                        chunk_size_px=1,
+                        shard_size_chunks=1,
+                        kind=DimensionType.CHANNEL,
+                    ),
+                    Dimension(
+                        name="z",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
                 ],
                 data_type=np.uint8,
             )
-        ]
+        ],
     )
     stream = ZarrStream(settings)
 

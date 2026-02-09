@@ -161,10 +161,8 @@ remove_items(minio::s3::Client& client,
     for (; result; result++) {
         minio::s3::DeleteError err = *result;
         if (!err) {
-            LOG_ERROR("Failed to delete object ",
-                      err.object_name,
-                      ": ",
-                      err.message);
+            LOG_ERROR(
+              "Failed to delete object ", err.object_name, ": ", err.message);
             return false;
         }
     }

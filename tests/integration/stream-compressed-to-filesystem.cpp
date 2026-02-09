@@ -221,7 +221,7 @@ verify_file_data()
                                       chunk_size +
                                     index_size + checksum_size;
 
-    fs::path data_root = fs::path(test_path) ;
+    fs::path data_root = fs::path(test_path);
 
     CHECK(fs::is_directory(data_root));
     for (auto t = 0; t < shards_in_t; ++t) {
@@ -275,7 +275,7 @@ verify()
     CHECK(std::filesystem::is_directory(test_path));
 
     {
-        fs::path array_metadata_path = fs::path(test_path)  / "zarr.json";
+        fs::path array_metadata_path = fs::path(test_path) / "zarr.json";
         EXPECT(fs::is_regular_file(array_metadata_path),
                "Expected file '",
                array_metadata_path,

@@ -66,7 +66,8 @@ class Logger
 
     static void format_arg_(std::ostream& ss) {}; // base case
     template<typename T, typename... Args>
-    static void format_arg_(std::ostream& ss, T&& arg, Args&&... args) {
+    static void format_arg_(std::ostream& ss, T&& arg, Args&&... args)
+    {
         ss << std::forward<T>(arg);
         format_arg_(ss, std::forward<Args>(args)...);
     }

@@ -9,11 +9,11 @@
 namespace zarr {
 class LockedBuffer
 {
-private:
+  private:
     mutable std::mutex mutex_;
     std::vector<uint8_t> data_;
 
-public:
+  public:
     LockedBuffer() = default;
     LockedBuffer(std::vector<uint8_t>&& data);
 
@@ -88,9 +88,11 @@ public:
     std::vector<uint8_t> take();
 
     /**
-     * @brief Compress the buffer in place using Blosc with the given parameters.
+     * @brief Compress the buffer in place using Blosc with the given
+     * parameters.
      * @param params Compression parameters.
-     * @param type_size Size of the data type being compressed (e.g., 1 for uint8, 2 for uint16).
+     * @param type_size Size of the data type being compressed (e.g., 1 for
+     * uint8, 2 for uint16).
      * @return true if compression was successful, false otherwise.
      */
     [[nodiscard]] bool compress(const zarr::BloscCompressionParams& params,

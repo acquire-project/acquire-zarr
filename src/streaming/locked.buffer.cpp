@@ -4,12 +4,12 @@
 #include <blosc.h>
 
 zarr::LockedBuffer::LockedBuffer(std::vector<uint8_t>&& data)
-    : data_(std::move(data))
+  : data_(std::move(data))
 {
 }
 
 zarr::LockedBuffer::LockedBuffer(zarr::LockedBuffer&& other) noexcept
-    : data_(std::move(other.data_))
+  : data_(std::move(other.data_))
 {
 }
 
@@ -120,15 +120,15 @@ zarr::LockedBuffer::compress(const zarr::BloscCompressionParams& params,
 
     std::vector<uint8_t> compressed_data(data_.size() + BLOSC_MAX_OVERHEAD);
     const auto n_bytes_compressed = blosc_compress_ctx(params.clevel,
-        params.shuffle,
-        type_size,
-        data_.size(),
-        data_.data(),
-        compressed_data.data(),
-        compressed_data.size(),
-        params.codec_id.c_str(),
-        0,
-        1);
+                                                       params.shuffle,
+                                                       type_size,
+                                                       data_.size(),
+                                                       data_.data(),
+                                                       compressed_data.data(),
+                                                       compressed_data.size(),
+                                                       params.codec_id.c_str(),
+                                                       0,
+                                                       1);
 
     if (n_bytes_compressed <= 0) {
         LOG_ERROR("blosc_compress_ctx failed with code ", n_bytes_compressed);
