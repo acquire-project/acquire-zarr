@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for transposing acquisition dimensions into different storage dimensions (#173)
+- New Python API function to allow users to skip ahead in the stream by some number of bytes (#193)
 
 ### Changed
 
@@ -20,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - HCS well images are now written as multiscales groups (#176)
 - FOV array settings output key must be null so it cannot conflict with FOV path (#180)
+- Supplying compression settings with `Compressor.NONE` now means "do not compress" (#187)
+- S3 lifetime and tests in Python (#193)
 
 ### Removed
 

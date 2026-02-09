@@ -9,11 +9,11 @@
 namespace zarr {
 class LockedBuffer
 {
-  private:
+private:
     mutable std::mutex mutex_;
     std::vector<uint8_t> data_;
 
-  public:
+public:
     LockedBuffer() = default;
     LockedBuffer(std::vector<uint8_t>&& data);
 
@@ -65,8 +65,8 @@ class LockedBuffer
     /**
      * @brief Assign new data to the buffer at offset @p offset, replacing
      * existing data.
-     * @param offset
-     * @param data
+     * @param offset Starting position in the buffer.
+     * @param data Data to copy into the buffer. If the underlying
      */
     void assign_at(size_t offset, ConstByteSpan data);
 

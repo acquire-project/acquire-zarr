@@ -625,7 +625,6 @@ extern "C"
                                      const char* key)
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
-        EXPECT_VALID_ARGUMENT(data, "Null pointer: data");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
         // TODO (aliddell): check key first, return a specialized error code if

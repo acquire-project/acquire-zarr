@@ -859,7 +859,6 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
            "Cannot append data: array at '",
            key,
            "' not found");
-    EXPECT(data_ != nullptr, "Cannot append data: data pointer is null");
 
     if (nbytes == 0) {
         return 0;
@@ -869,7 +868,7 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
     auto& frame_buffer = output.frame_buffer;
     auto& frame_buffer_offset = output.frame_buffer_offset;
 
-    auto* data = static_cast<const uint8_t*>(data_);
+    auto* data = data_ ? static_cast<const uint8_t*>(data_) : nullptr;
 
     const size_t bytes_of_frame = frame_buffer.size();
     size_t bytes_written = 0; // bytes written out of the input data
@@ -881,8 +880,10 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
-            frame_buffer.assign_at(frame_buffer_offset,
-                                   { data + bytes_written, bytes_to_copy });
+            const auto subspan = data ?
+                std::span{ data + bytes_written, bytes_to_copy } :
+                std::span{static_cast<const uint8_t*>(nullptr), bytes_to_copy};
+            frame_buffer.assign_at(frame_buffer_offset, subspan);
             frame_buffer_offset += bytes_to_copy;
             bytes_written += bytes_to_copy;
 
@@ -901,7 +902,7 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
                     LOG_DEBUG("Stopping frame processing");
                     break;
                 }
-                data += bytes_to_copy;
+                data = data ? data + bytes_to_copy : data;
                 frame_buffer_offset = 0;
             }
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
@@ -925,7 +926,7 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
             }
 
             bytes_written += bytes_of_frame;
-            data += bytes_of_frame;
+            data = data ? data + bytes_of_frame : data;
         }
     }
 

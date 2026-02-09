@@ -264,28 +264,6 @@ def create_hcs_settings():
     return plate
 
 
-def validate_v2_metadata(store_path: Path):
-    assert (store_path / ".zattrs").is_file()
-    with open(store_path / ".zattrs", "r") as fh:
-        data = json.load(fh)
-        axes = data["multiscales"][0]["axes"]
-        assert axes[0]["name"] == "t"
-        assert axes[0]["type"] == "time"
-
-        assert axes[1]["name"] == "y"
-        assert axes[1]["type"] == "space"
-
-        assert axes[2]["name"] == "x"
-        assert axes[2]["type"] == "space"
-
-    assert (store_path / ".zgroup").is_file()
-    with open(store_path / ".zgroup", "r") as fh:
-        data = json.load(fh)
-        assert data["zarr_format"] == 2
-
-    assert not (store_path / "acquire.json").is_file()
-
-
 def validate_v3_metadata(store_path: Path):
     assert (store_path / "zarr.json").is_file()
     with open(store_path / "zarr.json", "r") as fh:
@@ -396,6 +374,7 @@ def test_stream_data_to_filesystem(
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    data_file_path = store_path / "test.zarr" / "c" / "0" / "0" / "0"
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
@@ -407,21 +386,74 @@ def test_stream_data_to_filesystem(
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
-        assert (
-                store_path / "test.zarr" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "c" / "0" / "0" / "0"
-               ).stat().st_size <= shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size <= shard_size_bytes
     else:
         assert len(metadata.codecs[0].codecs) == 1
 
-        assert (
-                store_path / "test.zarr" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "c" / "0" / "0" / "0"
-               ).stat().st_size == shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size == shard_size_bytes
+
+
+@pytest.mark.parametrize(
+    (
+        "compression_codec",
+    ),
+    [
+        (
+            None,
+        ),
+        (
+            CompressionCodec.BLOSC_LZ4,
+        ),
+        (
+            CompressionCodec.BLOSC_ZSTD,
+        ),
+    ],
+)
+def test_skip(
+        settings: StreamSettings,
+        store_path: Path,
+        compression_codec: Optional[CompressionCodec],
+):
+    settings.store_path = str(store_path / "test.zarr")
+    array_settings = settings.arrays[0]
+    dim_settings = array_settings.dimensions
+
+    if compression_codec is not None:
+        array_settings.compression = CompressionSettings(
+            compressor=Compressor.BLOSC1,
+            codec=compression_codec,
+            level=1,
+            shuffle=1,
+        )
+    array_settings.data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    half_data = np.zeros(
+        (
+            dim_settings[0].chunk_size_px,
+            dim_settings[1].array_size_px,
+            dim_settings[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+    for i in range(half_data.shape[0]):
+        half_data[i, :, :] = i
+
+    stream.skip(half_data.nbytes)
+    stream.append(half_data)
+
+    stream.close()  # close the stream, flush the files
+    array = zarr.open(settings.store_path, mode="r")
+
+    assert array.shape == (2 * dim_settings[0].chunk_size_px, dim_settings[1].array_size_px, dim_settings[2].array_size_px)
+
+    # zeros
+    assert np.array_equal(array[:dim_settings[0].chunk_size_px], np.zeros(half_data.shape))
+    assert np.array_equal(array[dim_settings[0].chunk_size_px:], half_data)
 
 
 @pytest.mark.parametrize(
@@ -1518,7 +1550,6 @@ def test_pure_hcs_acquisition(store_path: Path):
     expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1"}
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
-
 
     stream = ZarrStream(settings)
     assert stream
