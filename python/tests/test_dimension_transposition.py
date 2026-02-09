@@ -124,15 +124,14 @@ def test_dimension_transposition(
     stream.close()
 
     # Verify metadata has axes in prescribed order
-    group_metadata = json.loads(Path(store_path / "zarr.json").read_text())
-    axes = group_metadata["attributes"]["ome"]["multiscales"][0]["axes"]
-    axis_names = [ax["name"] for ax in axes]
+    array_metadata = json.loads(Path(store_path / "zarr.json").read_text())
+    axis_names = array_metadata["dimension_names"]
     assert axis_names == output_dims, (
         f"Expected metadata axes in {output_dims} order, got {axis_names}"
     )
 
     # Verify data is stored in prescribed order
-    written_data = np.asarray(zarr.open_array(store_path / "0"))
+    written_data = np.asarray(zarr.open_array(store_path))
     assert written_data.shape == output_shape, (
         f"Expected written data with shape {output_shape}, got {written_data.shape}"
     )
@@ -193,7 +192,7 @@ def test_swap_xy(store_path: Path):
     stream.append(frame)
     stream.close()
 
-    data = np.asarray(zarr.open_array(store_path / "0"))
+    data = np.asarray(zarr.open_array(store_path))
     assert data.shape == (1, x_size, y_size)
 
     expected = np.array([list(range(y_size))] * x_size, dtype=np.uint8)

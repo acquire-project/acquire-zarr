@@ -7,13 +7,14 @@
 
 namespace fs = std::filesystem;
 
-static const size_t array_width = 64;
-static const size_t array_height = 48;
-static const size_t frames_to_acquire = 12;
-static const size_t frames_per_append = 3;
-static const fs::path test_path = "multi-frame-test.zarr";
+namespace {
+const size_t array_width = 64;
+const size_t array_height = 48;
+const size_t frames_to_acquire = 12;
+const size_t frames_per_append = 3;
+const fs::path test_path = "multi-frame-test.zarr";
 
-static ZarrStream*
+ZarrStream*
 setup() {
     const auto test_path_str = test_path.string();
     const auto test_path_cstr = test_path_str.c_str();
@@ -68,7 +69,7 @@ setup() {
     return stream;
 }
 
-static void
+void
 verify_data() {
     LOG_DEBUG("Verifying data at ", test_path);
     // Basic structure verification
@@ -76,7 +77,7 @@ verify_data() {
     CHECK(fs::exists(test_path / "zarr.json")); // Check group metadata exists
     
     // Verify the array metadata and final number of frames
-    const fs::path array_metadata_path = test_path / "0" / "zarr.json";
+    const fs::path array_metadata_path = test_path  / "zarr.json";
     CHECK(fs::exists(array_metadata_path));
     CHECK(fs::file_size(array_metadata_path) > 0);
 
@@ -91,6 +92,7 @@ verify_data() {
     EXPECT_EQ(size_t, shape[1].get<size_t>(), array_height);
     EXPECT_EQ(size_t, shape[2].get<size_t>(), array_width);
 }
+} // namespace
 
 int
 main()

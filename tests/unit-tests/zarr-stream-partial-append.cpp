@@ -11,7 +11,7 @@ void
 configure_stream_dimensions(ZarrArraySettings* settings)
 {
     CHECK(ZarrStatusCode_Success ==
-          ZarrArraySettings_create_dimension_array(settings, 3));
+        ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
     *dim = ZarrDimensionProperties{
@@ -49,7 +49,7 @@ verify_file_data(const ZarrStreamSettings& settings)
                  num_rows = settings.arrays->dimensions[1].array_size_px;
 
     fs::path shard_path =
-      fs::path(settings.store_path) / "0" / "c" / "0" / "0" / "0";
+        fs::path(settings.store_path) / "c" / "0" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the first chunk file
@@ -79,7 +79,7 @@ verify_file_data(const ZarrStreamSettings& settings)
         }
     }
 
-    shard_path = fs::path(settings.store_path) / "0" / "c" / "1" / "0" / "0";
+    shard_path = fs::path(settings.store_path) / "c" / "1" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
@@ -113,7 +113,7 @@ verify_file_data(const ZarrStreamSettings& settings)
     // starting at 96 and ending at 191
     uint8_t px_value = 96;
 
-    shard_path = fs::path(settings.store_path) / "0" / "c" / "2" / "0" / "0";
+    shard_path = fs::path(settings.store_path) / "c" / "2" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
@@ -139,7 +139,7 @@ verify_file_data(const ZarrStreamSettings& settings)
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 
-    shard_path = fs::path(settings.store_path) / "0" / "c" / "3" / "0" / "0";
+    shard_path = fs::path(settings.store_path) / "c" / "3" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
 
     // Open and read the next chunk file
@@ -192,11 +192,12 @@ main()
 
         // append partial frames
         std::vector<uint8_t> data(16, 0);
-        for (auto row = 0; row < 96; ++row) { // 2 frames worth of data
+        for (auto row = 0; row < 96; ++row) {
+            // 2 frames worth of data
             std::fill(data.begin(), data.end(), row);
             for (auto col_group = 0; col_group < 4; ++col_group) {
                 const auto bytes_written =
-                  stream->append(nullptr, data.data(), data.size());
+                    stream->append(nullptr, data.data(), data.size());
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
@@ -207,11 +208,13 @@ main()
         // append more than one frame, then fill in the rest
         const auto bytes_to_write = 48 * 64 + 7;
         auto bytes_written =
-          stream->append(nullptr, data.data(), bytes_to_write);
+            stream->append(nullptr, data.data(), bytes_to_write);
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
         bytes_written = stream->append(
-          nullptr, data.data() + bytes_to_write, data.size() - bytes_to_write);
+            nullptr,
+            data.data() + bytes_to_write,
+            data.size() - bytes_to_write);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
         // cleanup

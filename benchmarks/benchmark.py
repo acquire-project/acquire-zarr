@@ -272,7 +272,7 @@ def compare(
 
     # use the exact same metadata that was used for the acquire-zarr test
     # to ensure we're using the same chunks and codecs, etc...
-    az = zarr.open(az_path)["0"]
+    az = zarr.open(az_path)
     az_metadata = az.metadata.to_dict()
     del az
 
@@ -295,7 +295,7 @@ def compare(
     # Data comparison (optional)
     comparison_result = None
     if do_compare:
-        az = zarr.open(az_path)["0"]
+        az = zarr.open(az_path)
         print("\nComparing the written data:", end=" ")
         try:
             ts = zarr.open(ts_path)
