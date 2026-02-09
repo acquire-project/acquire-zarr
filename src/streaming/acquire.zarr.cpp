@@ -322,7 +322,7 @@ extern "C"
     {
         EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
         EXPECT_VALID_ARGUMENT(
-          dimension_count >= 3, "Invalid dimension count: ", dimension_count);
+          dimension_count >= 2, "Invalid dimension count: ", dimension_count);
 
         ZarrDimensionProperties* dimensions = nullptr;
 

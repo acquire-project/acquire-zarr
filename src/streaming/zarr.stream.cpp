@@ -389,11 +389,11 @@ validate_array_settings(const ZarrArraySettings* settings,
         return false;
     }
 
-    // we must have at least 3 dimensions
+    // we must have at least 2 dimensions
     const size_t ndims = settings->dimension_count;
-    if (ndims < 3) {
+    if (ndims < 2) {
         error = "Invalid number of dimensions: " + std::to_string(ndims) +
-                ". Must be at least 3";
+                ". Must be at least 2";
         return false;
     }
 

@@ -89,7 +89,12 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
         std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
     }
 
-    data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    // For 2D arrays, don't include append_chunk_index in the path
+    if (config_->dimensions->is_2d()) {
+        data_root_ = node_path_() + "/c";
+    } else {
+        data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    }
 }
 
 size_t
@@ -164,19 +169,26 @@ zarr::Array::make_metadata_()
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
     const auto& dims = config_->dimensions;
 
-    size_t append_size = frames_written_;
-    for (auto i = dims->ndims() - 3; i > 0; --i) {
-        const auto& dim = dims->at(i);
-        const auto& array_size_px = dim.array_size_px;
-        CHECK(array_size_px);
-        append_size = (append_size + array_size_px - 1) / array_size_px;
-    }
-    array_shape.push_back(append_size);
+    // For 2D arrays, skip the phantom singleton dimension in metadata
+    const size_t start_dim = dims->is_2d() ? 1 : 0;
 
-    const auto& final_dim = dims->final_dim();
-    chunk_shape.push_back(final_dim.chunk_size_px);
-    shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
-    for (auto i = 1; i < dims->ndims(); ++i) {
+    if (!dims->is_2d()) {
+        // Compute append dimension size for 3D+ arrays
+        size_t append_size = frames_written_;
+        for (auto i = dims->ndims() - 3; i > 0; --i) {
+            const auto& dim = dims->at(i);
+            const auto& array_size_px = dim.array_size_px;
+            CHECK(array_size_px);
+            append_size = (append_size + array_size_px - 1) / array_size_px;
+        }
+        array_shape.push_back(append_size);
+
+        const auto& final_dim = dims->final_dim();
+        chunk_shape.push_back(final_dim.chunk_size_px);
+        shard_shape.push_back(final_dim.shard_size_chunks * chunk_shape.back());
+    }
+
+    for (auto i = start_dim == 0 ? 1 : start_dim; i < dims->ndims(); ++i) {
         const auto& dim = dims->at(i);
         array_shape.push_back(dim.array_size_px);
         chunk_shape.push_back(dim.chunk_size_px);
@@ -207,9 +219,11 @@ zarr::Array::make_metadata_()
     metadata["data_type"] = sample_type_to_dtype(config_->dtype);
     metadata["storage_transformers"] = json::array();
 
-    std::vector<std::string> dimension_names(dims->ndims());
-    for (auto i = 0; i < dimension_names.size(); ++i) {
-        dimension_names[i] = dims->at(i).name;
+    // Skip phantom dimension (index 0) for 2D arrays in dimension names
+    const size_t name_start = dims->is_2d() ? 1 : 0;
+    std::vector<std::string> dimension_names(dims->ndims() - name_start);
+    for (auto i = name_start; i < dims->ndims(); ++i) {
+        dimension_names[i - name_start] = dims->at(i).name;
     }
     metadata["dimension_names"] = dimension_names;
 
@@ -910,7 +924,12 @@ zarr::Array::rollover_()
 
     close_sinks_();
     ++append_chunk_index_;
-    data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    // For 2D arrays, don't include append_chunk_index in the path
+    if (config_->dimensions->is_2d()) {
+        data_root_ = node_path_() + "/c";
+    } else {
+        data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
+    }
 }
 
 void
