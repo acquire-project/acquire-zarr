@@ -1603,7 +1603,11 @@ ZarrStream_s::process_frame_queue_()
         } else {
             auto& output_node = it->second;
 
-            if (output_node.array->write_frame(frame) != frame.size()) {
+            size_t n_bytes;
+            if (const auto result =
+                  output_node.array->write_data(frame, n_bytes);
+                result != zarr::WriteResult::Ok) {
+                // TODO (aliddell): retry on WriteResult::PartialWrite
                 set_error_("Failed to write frame to writer for key: " +
                            output_key);
                 std::unique_lock lock(frame_queue_mutex_);

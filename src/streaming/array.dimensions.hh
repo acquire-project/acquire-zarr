@@ -52,11 +52,11 @@ class ArrayDimensions
     size_t ndims() const;
 
     /**
-     * @brief Compute the maximum allowable frames for the array described by
-     * these dimensions. If 0, this value is unbounded.
-     * @return The maximum allowable frame count that these dimensions specify.
+     * @brief Compute the maximum allowable number of bytes for the array
+     * described by these dimensions. If 0, this value is unbounded.
+     * @return The maximum allowable byte count that these dimensions specify.
      */
-    uint64_t max_frames() const;
+    uint64_t max_byte_count() const;
 
     const ZarrDimension& operator[](size_t idx) const;
     const ZarrDimension& at(size_t idx) const { return operator[](idx); }

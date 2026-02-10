@@ -21,25 +21,23 @@ class Array : public ArrayBase
 
     size_t memory_usage() const noexcept override;
 
-    [[nodiscard]] size_t write_frame(LockedBuffer&) override;
+    [[nodiscard]] WriteResult write_data(LockedBuffer&,
+                                         size_t& bytes_written) override;
 
   protected:
-    /// Buffering
     std::vector<LockedBuffer> chunk_buffers_;
 
-    /// Filesystem
     std::vector<std::string> data_paths_;
     std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
-    /// Bookkeeping
-    const uint64_t max_frames_;
-    uint64_t bytes_to_flush_;
-    uint64_t frames_written_;
+    const uint64_t max_bytes_;       // max number of bytes that can be written
+    const uint64_t bytes_per_frame_; // number of bytes per frame
+    uint64_t total_bytes_written_;   // total bytes written to the array
+    uint64_t bytes_to_flush_; // bytes written to the array since last flush
     uint32_t append_chunk_index_;
     std::string data_root_;
     bool is_closing_;
 
-    /// Sharding
     uint32_t current_layer_;
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
@@ -64,6 +62,8 @@ class Array : public ArrayBase
     [[nodiscard]] bool compress_and_flush_data_();
     void rollover_();
     void close_sinks_();
+
+    size_t frames_written_() const;
 
     friend class MultiscaleArray;
 };

@@ -39,6 +39,8 @@ zarr::MultiscaleArray::MultiscaleArray(
     if (config_->dimensions) {
         CHECK(create_arrays_());
     }
+
+    EXPECT(!arrays_.empty(), "No Arrays created!");
 }
 
 size_t
@@ -52,28 +54,20 @@ zarr::MultiscaleArray::memory_usage() const noexcept
     return total;
 }
 
-size_t
-zarr::MultiscaleArray::write_frame(LockedBuffer& data)
+zarr::WriteResult
+zarr::MultiscaleArray::write_data(LockedBuffer& data, size_t& bytes_written)
 {
-    if (arrays_.empty()) {
-        LOG_WARNING("Attempt to write to group with no arrays");
-        return 0;
-    }
+    bytes_written = 0;
 
-    const auto n_bytes = arrays_[0]->write_frame(data);
-    EXPECT(n_bytes == bytes_per_frame_,
-           "Expected to write ",
-           bytes_per_frame_,
-           " bytes, wrote ",
-           n_bytes);
-
-    if (n_bytes != data.size()) {
-        LOG_ERROR("Incomplete write to full-resolution array");
-        return n_bytes;
+    size_t n_bytes;
+    if (const auto result = arrays_[0]->write_data(data, n_bytes);
+        result != WriteResult::Ok) {
+        LOG_ERROR("Failed to write data to full-resolution array.");
+        return result;
     }
 
     write_multiscale_frames_(data);
-    return n_bytes;
+    return WriteResult::Ok;
 }
 
 std::vector<std::string>
@@ -278,19 +272,28 @@ zarr::MultiscaleArray::make_base_array_config_() const
                                          0);
 }
 
-void
-zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
+zarr::WriteResult
+zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data) const
 {
     if (!downsampler_) {
-        return; // no downsampler, nothing to do
+        return WriteResult::Ok; // no downsampler, nothing to do
     }
 
     downsampler_->add_frame(data);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
-        LockedBuffer downsampled_frame;
-        if (downsampler_->take_frame(i, downsampled_frame)) {
-            const auto n_bytes = arrays_[i]->write_frame(downsampled_frame);
+        if (LockedBuffer downsampled_frame;
+            downsampler_->take_frame(i, downsampled_frame)) {
+
+            size_t n_bytes;
+            if (const auto result =
+                  arrays_[i]->write_data(downsampled_frame, n_bytes);
+                result != WriteResult::Ok) {
+                LOG_ERROR("Failed to write frame to LOD ", i);
+                return result;
+            }
+
+            // TODO (aliddell: retry on partial write)
             EXPECT(n_bytes == downsampled_frame.size(),
                    "Expected to write ",
                    downsampled_frame.size(),
@@ -300,4 +303,6 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data)
                    n_bytes);
         }
     }
+
+    return WriteResult::Ok;
 }

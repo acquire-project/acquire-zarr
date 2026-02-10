@@ -20,15 +20,8 @@ class MultiscaleArray : public ArrayBase
 
     size_t memory_usage() const noexcept override;
 
-    /**
-     * @brief Write a frame to the group.
-     * @note This function splits the incoming frame into tiles and writes them
-     * to the chunk buffers. If we are writing multiscale frames, the function
-     * calls write_multiscale_frames_() to write the scaled frames.
-     * @param data The frame data to write.
-     * @return The number of bytes written of the full-resolution frame.
-     */
-    [[nodiscard]] size_t write_frame(LockedBuffer& data) override;
+    [[nodiscard]] WriteResult write_data(LockedBuffer& data,
+                                         size_t& bytes_written) override;
 
   protected:
     std::unique_ptr<Downsampler> downsampler_;
@@ -63,10 +56,12 @@ class MultiscaleArray : public ArrayBase
     std::shared_ptr<zarr::ArrayConfig> make_base_array_config_() const;
 
     /**
-     * @brief Add @p data to downsampler and write downsampled frames to lower-
-     * resolution arrays.
+     * @brief Add @p data to downsampler and write downsampled frames to
+     * lower-resolution arrays.
      * @param data The frame data to write.
+     * @return WriteResult::Ok if all levels are written successfully. otherwise
+     * the WriteResult associated with the failure.
      */
-    void write_multiscale_frames_(LockedBuffer& data);
+    WriteResult write_multiscale_frames_(LockedBuffer& data) const;
 };
 } // namespace zarr

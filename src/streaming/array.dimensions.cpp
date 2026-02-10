@@ -137,10 +137,10 @@ ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
                                  ZarrDataType dtype,
                                  const std::vector<size_t>& target_dim_order)
   : dtype_(dtype)
-  , chunks_per_shard_(1)
-  , number_of_shards_(1)
   , bytes_per_chunk_(zarr::bytes_of_type(dtype))
   , number_of_chunks_in_memory_(1)
+  , chunks_per_shard_(1)
+  , number_of_shards_(1)
 {
     EXPECT(dims.size() > 2, "Array must have at least three dimensions.");
 
@@ -187,18 +187,14 @@ ArrayDimensions::ndims() const
 }
 
 uint64_t
-ArrayDimensions::max_frames() const
+ArrayDimensions::max_byte_count() const
 {
-    uint64_t max_frames = dims_.front().array_size_px;
-    if (max_frames == 0) {
-        return 0;
+    uint64_t max_bytes = zarr::bytes_of_type(dtype_);
+    for (const auto& dim : dims_) {
+        max_bytes *= dim.array_size_px;
     }
 
-    for (auto i = 1; i < dims_.size() - 2; ++i) {
-        max_frames *= dims_[i].array_size_px;
-    }
-
-    return max_frames;
+    return max_bytes;
 }
 
 const ZarrDimension&
