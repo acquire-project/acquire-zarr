@@ -32,8 +32,9 @@ class Array : public ArrayBase
     std::unordered_map<std::string, std::unique_ptr<Sink>> data_sinks_;
 
     /// Bookkeeping
+    const uint64_t max_frames_;
     uint64_t bytes_to_flush_;
-    uint32_t frames_written_;
+    uint64_t frames_written_;
     uint32_t append_chunk_index_;
     std::string data_root_;
     bool is_closing_;

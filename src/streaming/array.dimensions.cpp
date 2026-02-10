@@ -186,6 +186,21 @@ ArrayDimensions::ndims() const
     return dims_.size();
 }
 
+uint64_t
+ArrayDimensions::max_frames() const
+{
+    uint64_t max_frames = dims_.front().array_size_px;
+    if (max_frames == 0) {
+        return 0;
+    }
+
+    for (auto i = 1; i < dims_.size() - 2; ++i) {
+        max_frames *= dims_[i].array_size_px;
+    }
+
+    return max_frames;
+}
+
 const ZarrDimension&
 ArrayDimensions::operator[](size_t idx) const
 {

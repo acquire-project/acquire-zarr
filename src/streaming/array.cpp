@@ -67,11 +67,12 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+  , max_frames_(config->dimensions->max_frames())
   , bytes_to_flush_{ 0 }
   , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
-  , current_layer_{ 0 }
   , is_closing_{ false }
+  , current_layer_{ 0 }
 {
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
