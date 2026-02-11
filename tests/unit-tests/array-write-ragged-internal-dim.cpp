@@ -141,7 +141,7 @@ main()
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
                 size_t bytes_out;
-                CHECK(writer->write_data(data, bytes_out) ==
+                CHECK(writer->write_frame(data, bytes_out) ==
                       zarr::WriteResult::Ok);
                 CHECK(bytes_out == data.size());
             }

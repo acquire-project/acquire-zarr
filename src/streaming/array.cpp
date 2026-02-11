@@ -106,11 +106,23 @@ zarr::Array::memory_usage() const noexcept
 }
 
 zarr::WriteResult
-zarr::Array::write_data(LockedBuffer& data, size_t& bytes_written)
+zarr::Array::write_frame(LockedBuffer& data, size_t& bytes_written)
 {
     bytes_written = 0;
 
     const auto nbytes_data = data.size();
+    const auto nbytes_frame =
+      bytes_of_frame(*config_->dimensions, config_->dtype);
+
+    if (nbytes_frame != nbytes_data) {
+        LOG_ERROR("Frame size mismatch: expected ",
+                  nbytes_frame,
+                  ", got ",
+                  nbytes_data,
+                  ". Skipping");
+        return WriteResult::FrameSizeMismatch;
+    }
+
     if (max_bytes_ > 0 && nbytes_data + total_bytes_written_ > max_bytes_) {
         LOG_ERROR("Unable to write. Data would exceed bounds of array.");
         return WriteResult::OutOfBounds;
@@ -125,12 +137,8 @@ zarr::Array::write_data(LockedBuffer& data, size_t& bytes_written)
     bytes_written = write_frame_to_chunks_(data);
     CHECK(bytes_written <= nbytes_data);
 
-    LOG_DEBUG("Wrote ",
-              bytes_written,
-              " bytes of frame ",
-              frames_written_(),
-              " to LOD ",
-              config_->level_of_detail);
+    LOG_DEBUG(
+      "Wrote ", bytes_written, " bytes to LOD ", config_->level_of_detail);
     bytes_to_flush_ += bytes_written;
     total_bytes_written_ += bytes_written;
 

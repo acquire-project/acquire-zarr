@@ -55,8 +55,9 @@ struct ArrayConfig
 enum class WriteResult
 {
     Ok,
-    PartialWrite, // incomplete write
-    OutOfBounds,  // append exceeded declared array_size_px
+    PartialWrite,      // incomplete write
+    OutOfBounds,       // append exceeded declared array_size_px
+    FrameSizeMismatch, // data size is not equal to the expected frame size
 };
 
 class ArrayBase
@@ -91,8 +92,8 @@ class ArrayBase
      * @p data would exceed the declared array bounds. No data is written in the
      * OutOfBounds case.
      */
-    [[nodiscard]] virtual WriteResult write_data(LockedBuffer& data,
-                                                 size_t& bytes_written) = 0;
+    [[nodiscard]] virtual WriteResult write_frame(LockedBuffer& data,
+                                                  size_t& bytes_written) = 0;
 
   protected:
     std::shared_ptr<ArrayConfig> config_;

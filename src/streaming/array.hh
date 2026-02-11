@@ -21,8 +21,8 @@ class Array : public ArrayBase
 
     size_t memory_usage() const noexcept override;
 
-    [[nodiscard]] WriteResult write_data(LockedBuffer&,
-                                         size_t& bytes_written) override;
+    [[nodiscard]] WriteResult write_frame(LockedBuffer&,
+                                          size_t& bytes_written) override;
 
   protected:
     std::vector<LockedBuffer> chunk_buffers_;

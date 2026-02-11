@@ -55,12 +55,12 @@ zarr::MultiscaleArray::memory_usage() const noexcept
 }
 
 zarr::WriteResult
-zarr::MultiscaleArray::write_data(LockedBuffer& data, size_t& bytes_written)
+zarr::MultiscaleArray::write_frame(LockedBuffer& data, size_t& bytes_written)
 {
     bytes_written = 0;
 
     size_t n_bytes;
-    if (const auto result = arrays_[0]->write_data(data, n_bytes);
+    if (const auto result = arrays_[0]->write_frame(data, n_bytes);
         result != WriteResult::Ok) {
         LOG_ERROR("Failed to write data to full-resolution array.");
         return result;
@@ -287,7 +287,7 @@ zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data) const
 
             size_t n_bytes;
             if (const auto result =
-                  arrays_[i]->write_data(downsampled_frame, n_bytes);
+                  arrays_[i]->write_frame(downsampled_frame, n_bytes);
                 result != WriteResult::Ok) {
                 LOG_ERROR("Failed to write frame to LOD ", i);
                 return result;

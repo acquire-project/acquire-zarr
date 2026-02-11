@@ -20,8 +20,8 @@ class MultiscaleArray : public ArrayBase
 
     size_t memory_usage() const noexcept override;
 
-    [[nodiscard]] WriteResult write_data(LockedBuffer& data,
-                                         size_t& bytes_written) override;
+    [[nodiscard]] WriteResult write_frame(LockedBuffer& data,
+                                          size_t& bytes_written) override;
 
   protected:
     std::unique_ptr<Downsampler> downsampler_;
