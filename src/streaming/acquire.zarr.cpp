@@ -627,17 +627,15 @@ extern "C"
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
-        // TODO (aliddell): check key first, return a specialized error code if
-        // it is invalid
-
+        ZarrStatusCode result;
         try {
-            *bytes_out = stream->append(key, data, bytes_in);
+            result = stream->append(key, data, bytes_in, *bytes_out);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
-            return ZarrStatusCode_InternalError;
+            result = ZarrStatusCode_InternalError;
         }
 
-        return ZarrStatusCode_Success;
+        return result;
     }
 
     ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,
