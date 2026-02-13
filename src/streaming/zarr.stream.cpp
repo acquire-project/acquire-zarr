@@ -873,8 +873,18 @@ ZarrStream::append(const char* key_,
         return ZarrStatusCode_Success;
     }
 
-    auto& output = it->second;
     auto& output = array_it->second;
+    if (output.max_bytes > 0 &&
+        output.bytes_written + bytes_in > output.max_bytes) {
+        LOG_ERROR("Incoming byte count ",
+                  bytes_in,
+                  " will overflow array (bytes written: ",
+                  output.bytes_written,
+                  ", maximum bytes: ",
+                  output.max_bytes,
+                  ")");
+        return ZarrStatusCode_WriteOutOfBounds;
+    }
     auto& frame_buffer = output.frame_buffer;
     auto& frame_buffer_offset = output.frame_buffer_offset;
 
@@ -939,6 +949,7 @@ ZarrStream::append(const char* key_,
             data = data ? data + bytes_of_frame : data;
         }
     }
+    output.bytes_written += bytes_out;
 
     CHECK(bytes_out <= bytes_in);
     if (bytes_out < bytes_in) {
@@ -1189,8 +1200,11 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         return false;
     }
 
-    ZarrOutputArray output_node{ .output_key = config->node_key,
-                                 .frame_buffer_offset = 0 };
+    ZarrOutputArray output_node{
+        .output_key = config->node_key,
+        .frame_buffer_offset = 0,
+        .bytes_written = 0,
+    };
     try {
         output_node.array = zarr::make_array(config,
                                              thread_pool_,
@@ -1205,6 +1219,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         set_error_("Failed to create output node: " + error_);
         return false;
     }
+
+    output_node.max_bytes = output_node.array->max_bytes();
 
     // initialize frame buffer
     const auto& dims = config->dimensions;

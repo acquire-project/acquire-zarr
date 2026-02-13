@@ -12,18 +12,22 @@ extern "C"
 
     typedef enum
     {
-        ZarrStatusCode_Success = 0,
-        ZarrStatusCode_InvalidArgument,
-        ZarrStatusCode_Overflow,
-        ZarrStatusCode_InvalidIndex,
-        ZarrStatusCode_NotYetImplemented,
-        ZarrStatusCode_InternalError,
-        ZarrStatusCode_OutOfMemory,
-        ZarrStatusCode_IOError,
-        ZarrStatusCode_CompressionError,
-        ZarrStatusCode_InvalidSettings,
-        ZarrStatusCode_WillNotOverwrite,
-        ZarrStatusCodeCount,
+        ZarrStatusCode_Success = 0,       // Success
+        ZarrStatusCode_InvalidArgument,   // Invalid argument
+        ZarrStatusCode_Overflow,          // Buffer overflow
+        ZarrStatusCode_InvalidIndex,      // Invalid index
+        ZarrStatusCode_NotYetImplemented, // Not yet implemented
+        ZarrStatusCode_InternalError,     // Internal error
+        ZarrStatusCode_OutOfMemory,       // Out of memory
+        ZarrStatusCode_IOError,           // I/O error
+        ZarrStatusCode_CompressionError,  // Error compressing
+        ZarrStatusCode_InvalidSettings,   // Invalid settings
+        ZarrStatusCode_WillNotOverwrite,  // Refusing to overwrite existing data
+        ZarrStatusCode_PartialWrite,      // Data partially written
+        ZarrStatusCode_WriteOutOfBounds,  // Attempted write beyond array
+                                          // boundary
+        ZarrStatusCode_KeyNotFound,       // Array key not found
+        ZarrStatusCodeCount,              // Status unknown
     } ZarrStatusCode;
 
     typedef enum

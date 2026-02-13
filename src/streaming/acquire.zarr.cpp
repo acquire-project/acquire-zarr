@@ -153,11 +153,17 @@ extern "C"
             case ZarrStatusCode_IOError:
                 return "I/O error";
             case ZarrStatusCode_CompressionError:
-                return "Compression error";
+                return "Error compressing";
             case ZarrStatusCode_InvalidSettings:
                 return "Invalid settings";
             case ZarrStatusCode_WillNotOverwrite:
-                return "Will not overwrite existing data";
+                return "Refusing to overwrite existing data";
+            case ZarrStatusCode_PartialWrite:
+                return "Data partially written";
+            case ZarrStatusCode_WriteOutOfBounds:
+                return "Attempted write beyond array boundary";
+            case ZarrStatusCode_KeyNotFound:
+                return "Array key not found";
             default:
                 return "Unknown error";
         }
