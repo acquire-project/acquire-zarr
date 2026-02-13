@@ -1191,9 +1191,10 @@ class PyZarrStream
         return frame.cast<py::array>();
     }
 
-    void write_contiguous_data(py::array frame, std::optional<std::string> key)
+    void write_contiguous_data(py::array frame,
+                               const std::optional<std::string>& key) const
     {
-        // double check the frame is C-contiguous
+        // double-check the frame is C-contiguous
         py::array contiguous_data;
         if (!(frame.flags() & py::array::c_style)) {
             py::module np = py::module::import("numpy");
@@ -1202,27 +1203,49 @@ class PyZarrStream
             contiguous_data = frame;
         }
 
-        auto buf = contiguous_data.request();
-        auto* ptr = (uint8_t*)buf.ptr;
+        const auto buf = contiguous_data.request();
+        const auto* ptr = static_cast<uint8_t*>(buf.ptr);
 
         py::gil_scoped_release release;
 
         const char* key_str = key.has_value() ? key->c_str() : nullptr;
-        size_t bytes_out, bytes_in = buf.itemsize * buf.size;
-        auto status =
+        const size_t bytes_in = buf.itemsize * buf.size;
+
+        size_t bytes_out;
+        const auto status =
           ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, key_str);
 
         py::gil_scoped_acquire acquire;
 
-        if (status != ZarrStatusCode_Success) {
-            std::string err = "Failed to append data to Zarr stream: " +
-                              std::string(Zarr_get_status_message(status));
-            PyErr_SetString(PyExc_RuntimeError, err.c_str());
-            throw py::error_already_set();
-        } else if (bytes_out != bytes_in) {
-            std::string err = "Expected to write " + std::to_string(bytes_in) +
-                              " bytes, wrote " + std::to_string(bytes_out) +
-                              ".";
+        const std::string array_key =
+          key_str ? "'" + std::string(key_str) + "'" : "(NULL)";
+        std::string err;
+        switch (status) {
+            case ZarrStatusCode_Success:
+                if (bytes_out != bytes_in) {
+                    err = "Expected to write " + std::to_string(bytes_in) +
+                          " bytes to array " + array_key + ", wrote " +
+                          std::to_string(bytes_out) + ".";
+                }
+                break;
+            case ZarrStatusCode_KeyNotFound:
+                err = "Array key " + array_key + " not found";
+                break;
+            case ZarrStatusCode_WriteOutOfBounds:
+                err = "Attempted out of bounds write to array " + array_key;
+                break;
+            case ZarrStatusCode_PartialWrite:
+                err = "Partial write to array " + array_key + ": wrote " +
+                      std::to_string(bytes_out) +
+                      " bytes of contiguous region of " +
+                      std::to_string(bytes_in) + " bytes";
+                break;
+            default:
+                err = "Failed to append data to Zarr stream: " +
+                      std::string(Zarr_get_status_message(status));
+        }
+
+        if (!err.empty()) {
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }

@@ -67,11 +67,13 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
   : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+  , max_bytes_(config->dimensions->max_byte_count())
+  , bytes_per_frame_(bytes_of_frame(*config->dimensions, config->dtype))
+  , total_bytes_written_{ 0 }
   , bytes_to_flush_{ 0 }
-  , frames_written_{ 0 }
   , append_chunk_index_{ 0 }
-  , current_layer_{ 0 }
   , is_closing_{ false }
+  , current_layer_{ 0 }
 {
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
@@ -103,9 +105,11 @@ zarr::Array::memory_usage() const noexcept
     return total;
 }
 
-size_t
-zarr::Array::write_frame(LockedBuffer& data)
+zarr::WriteResult
+zarr::Array::write_frame(LockedBuffer& data, size_t& bytes_written)
 {
+    bytes_written = 0;
+
     const auto nbytes_data = data.size();
     const auto nbytes_frame =
       bytes_of_frame(*config_->dimensions, config_->dtype);
@@ -116,7 +120,13 @@ zarr::Array::write_frame(LockedBuffer& data)
                   ", got ",
                   nbytes_data,
                   ". Skipping");
-        return 0;
+        return WriteResult::FrameSizeMismatch;
+    }
+
+    // check that we can append
+    if (max_bytes_ > 0 && total_bytes_written_ + nbytes_data > max_bytes_) {
+        LOG_ERROR("Unable to write. Data would exceed bounds of array.");
+        return WriteResult::OutOfBounds;
     }
 
     if (bytes_to_flush_ == 0) { // first frame, we need to init the buffers
@@ -125,17 +135,13 @@ zarr::Array::write_frame(LockedBuffer& data)
 
     // split the incoming frame into tiles and write them to the chunk
     // buffers
-    const auto bytes_written = write_frame_to_chunks_(data);
-    EXPECT(bytes_written == nbytes_data, "Failed to write frame to chunks");
+    bytes_written = write_frame_to_chunks_(data);
+    CHECK(bytes_written <= nbytes_data);
 
-    LOG_DEBUG("Wrote ",
-              bytes_written,
-              " bytes of frame ",
-              frames_written_,
-              " to LOD ",
-              config_->level_of_detail);
+    LOG_DEBUG(
+      "Wrote ", bytes_written, " bytes to LOD ", config_->level_of_detail);
     bytes_to_flush_ += bytes_written;
-    ++frames_written_;
+    total_bytes_written_ += bytes_written;
 
     if (should_flush_()) {
         CHECK(compress_and_flush_data_());
@@ -147,7 +153,14 @@ zarr::Array::write_frame(LockedBuffer& data)
         bytes_to_flush_ = 0;
     }
 
-    return bytes_written;
+    return bytes_written == data.size() ? WriteResult::Ok
+                                        : WriteResult::PartialWrite;
+}
+
+size_t
+zarr::Array::max_bytes() const
+{
+    return max_bytes_;
 }
 
 std::vector<std::string>
@@ -164,7 +177,7 @@ zarr::Array::make_metadata_()
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
     const auto& dims = config_->dimensions;
 
-    size_t append_size = frames_written_;
+    size_t append_size = frames_written_();
     for (auto i = dims->ndims() - 3; i > 0; --i) {
         const auto& dim = dims->at(i);
         const auto& array_size_px = dim.array_size_px;
@@ -278,7 +291,7 @@ zarr::Array::close_()
         }
         close_sinks_();
 
-        if (frames_written_ > 0) {
+        if (frames_written_() > 0) {
             CHECK(write_metadata_());
             for (auto& [key, sink] : metadata_sinks_) {
                 EXPECT(zarr::finalize_sink(std::move(sink)),
@@ -515,7 +528,7 @@ zarr::Array::write_frame_to_chunks_(LockedBuffer& data)
 
     // don't take the frame id from the incoming frame, as the camera may have
     // dropped frames
-    const auto acquisition_frame_id = frames_written_;
+    const auto acquisition_frame_id = frames_written_();
 
     // Transpose frame_id from acquisition order to prescribed
     // storage_dimension_order
@@ -887,7 +900,7 @@ zarr::Array::should_flush_() const
     }
 
     CHECK(frames_before_flush > 0);
-    return frames_written_ % frames_before_flush == 0;
+    return frames_written_() % frames_before_flush == 0;
 }
 
 bool
@@ -902,7 +915,7 @@ zarr::Array::should_rollover_() const
     }
 
     CHECK(frames_before_flush > 0);
-    return frames_written_ % frames_before_flush == 0;
+    return frames_written_() % frames_before_flush == 0;
 }
 
 void
@@ -925,4 +938,10 @@ zarr::Array::close_sinks_()
           finalize_sink(std::move(sink)), "Failed to finalize sink at ", path);
     }
     data_sinks_.clear();
+}
+
+size_t
+zarr::Array::frames_written_() const
+{
+    return total_bytes_written_ / bytes_per_frame_;
 }

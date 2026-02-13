@@ -195,8 +195,10 @@ main()
             // 2 frames worth of data
             std::fill(data.begin(), data.end(), row);
             for (auto col_group = 0; col_group < 4; ++col_group) {
-                const auto bytes_written =
-                  stream->append(nullptr, data.data(), data.size());
+                size_t bytes_written;
+                const auto result =
+                  stream->append(nullptr, data.data(), data.size(), bytes_written);
+                CHECK(result == ZarrStatusCode_Success);
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
@@ -206,12 +208,17 @@ main()
 
         // append more than one frame, then fill in the rest
         const auto bytes_to_write = 48 * 64 + 7;
-        auto bytes_written =
-          stream->append(nullptr, data.data(), bytes_to_write);
+        size_t bytes_written;
+        auto result =
+          stream->append(nullptr, data.data(), bytes_to_write, bytes_written);
+        CHECK(result == ZarrStatusCode_Success);
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
-        bytes_written = stream->append(
-          nullptr, data.data() + bytes_to_write, data.size() - bytes_to_write);
+        result = stream->append(nullptr,
+                                       data.data() + bytes_to_write,
+                                       data.size() - bytes_to_write,
+                                       bytes_written);
+        CHECK(result == ZarrStatusCode_Success);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 
         // cleanup
