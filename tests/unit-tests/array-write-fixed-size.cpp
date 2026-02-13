@@ -85,7 +85,6 @@ try_append_beyond_bounds(zarr::Array& array)
     }
 
     // try to append beyond the bounds of the array
-
     if (const auto result = array.write_frame(frame, bytes_out);
         result != zarr::WriteResult::OutOfBounds) {
         LOG_ERROR("Unexpected write result: ", result_to_str(result));

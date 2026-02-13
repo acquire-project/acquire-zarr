@@ -23,6 +23,7 @@ class Array : public ArrayBase
 
     [[nodiscard]] WriteResult write_frame(LockedBuffer&,
                                           size_t& bytes_written) override;
+    size_t max_bytes() const override;
 
   protected:
     std::vector<LockedBuffer> chunk_buffers_;

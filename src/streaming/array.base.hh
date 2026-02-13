@@ -95,6 +95,12 @@ class ArrayBase
     [[nodiscard]] virtual WriteResult write_frame(LockedBuffer& data,
                                                   size_t& bytes_written) = 0;
 
+    /**
+     * @brief Query the maximum number of bytes we can append to this array.
+     * @return The maximum number of bytes we can append to this array.
+     */
+    [[nodiscard]] virtual size_t max_bytes() const = 0;
+
   protected:
     std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;

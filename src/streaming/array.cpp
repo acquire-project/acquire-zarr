@@ -123,7 +123,8 @@ zarr::Array::write_frame(LockedBuffer& data, size_t& bytes_written)
         return WriteResult::FrameSizeMismatch;
     }
 
-    if (max_bytes_ > 0 && nbytes_data + total_bytes_written_ > max_bytes_) {
+    // check that we can append
+    if (max_bytes_ > 0 && total_bytes_written_ + nbytes_data > max_bytes_) {
         LOG_ERROR("Unable to write. Data would exceed bounds of array.");
         return WriteResult::OutOfBounds;
     }
@@ -154,6 +155,12 @@ zarr::Array::write_frame(LockedBuffer& data, size_t& bytes_written)
 
     return bytes_written == data.size() ? WriteResult::Ok
                                         : WriteResult::PartialWrite;
+}
+
+size_t
+zarr::Array::max_bytes() const
+{
+    return max_bytes_;
 }
 
 std::vector<std::string>

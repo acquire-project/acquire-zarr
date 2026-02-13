@@ -22,6 +22,7 @@ class MultiscaleArray : public ArrayBase
 
     [[nodiscard]] WriteResult write_frame(LockedBuffer& data,
                                           size_t& bytes_written) override;
+    size_t max_bytes() const override;
 
   protected:
     std::unique_ptr<Downsampler> downsampler_;

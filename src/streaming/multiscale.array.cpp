@@ -70,6 +70,12 @@ zarr::MultiscaleArray::write_frame(LockedBuffer& data, size_t& bytes_written)
     return WriteResult::Ok;
 }
 
+size_t
+zarr::MultiscaleArray::max_bytes() const
+{
+    return arrays_[0]->max_bytes();
+}
+
 std::vector<std::string>
 zarr::MultiscaleArray::metadata_keys_() const
 {
