@@ -282,6 +282,7 @@ extern "C"
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
      * @param[out] bytes_out The number of bytes written to the stream.
+     * @param[in] key Optional key to the array to append to.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
