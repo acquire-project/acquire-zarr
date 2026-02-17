@@ -140,7 +140,10 @@ main()
             zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
-                CHECK(writer->write_frame(data));
+                size_t bytes_out;
+                CHECK(writer->write_frame(data, bytes_out) ==
+                      zarr::WriteResult::Ok);
+                CHECK(bytes_out == data.size());
             }
 
             CHECK(finalize_array(std::move(writer)));

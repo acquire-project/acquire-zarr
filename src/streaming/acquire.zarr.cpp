@@ -153,11 +153,17 @@ extern "C"
             case ZarrStatusCode_IOError:
                 return "I/O error";
             case ZarrStatusCode_CompressionError:
-                return "Compression error";
+                return "Error compressing";
             case ZarrStatusCode_InvalidSettings:
                 return "Invalid settings";
             case ZarrStatusCode_WillNotOverwrite:
-                return "Will not overwrite existing data";
+                return "Refusing to overwrite existing data";
+            case ZarrStatusCode_PartialWrite:
+                return "Data partially written";
+            case ZarrStatusCode_WriteOutOfBounds:
+                return "Attempted write beyond array boundary";
+            case ZarrStatusCode_KeyNotFound:
+                return "Array key not found";
             default:
                 return "Unknown error";
         }
@@ -627,17 +633,15 @@ extern "C"
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
         EXPECT_VALID_ARGUMENT(bytes_out, "Null pointer: bytes_out");
 
-        // TODO (aliddell): check key first, return a specialized error code if
-        // it is invalid
-
+        ZarrStatusCode result;
         try {
-            *bytes_out = stream->append(key, data, bytes_in);
+            result = stream->append(key, data, bytes_in, *bytes_out);
         } catch (const std::exception& e) {
             LOG_ERROR("Error appending data: ", e.what());
-            return ZarrStatusCode_InternalError;
+            result = ZarrStatusCode_InternalError;
         }
 
-        return ZarrStatusCode_Success;
+        return result;
     }
 
     ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,

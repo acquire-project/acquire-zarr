@@ -1699,3 +1699,59 @@ def test_with_ragged_final_shard(store_path: Path):
     array = zarr.open(settings.store_path)
 
     np.testing.assert_array_equal(data, array)
+
+def test_append_throws_on_overflow(
+        store_path: Path, request: pytest.FixtureRequest
+):
+    set_log_level(LogLevel.DEBUG)
+    settings = StreamSettings(
+        store_path=str(store_path / f"{request.node.name}.zarr"),
+        arrays=[
+            ArraySettings(
+                output_key="",
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=6,  # fixed size on append dimension
+                        chunk_size_px=2,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=16,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=16,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=np.uint16,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    data = np.random.randint(
+        0,
+        65535,
+        (
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+
+    stream.append(data)  # ok
+    with pytest.raises(RuntimeError) as e:
+        one_more_byte = np.random.randint(0, 65535,(1, 1, 1), dtype=np.uint16)
+        stream.append(one_more_byte)
+
+        assert e

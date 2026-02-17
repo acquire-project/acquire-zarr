@@ -842,10 +842,18 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
     EXPECT(init_frame_queue_(), error_);
 }
 
-size_t
-ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
+ZarrStatusCode
+ZarrStream::append(const char* key_,
+                   const void* data_,
+                   size_t bytes_in,
+                   size_t& bytes_out)
 {
-    EXPECT(error_.empty(), "Cannot append data: ", error_.c_str());
+    if (!error_.empty()) {
+        LOG_ERROR("Cannot append data: ", error_);
+        return ZarrStatusCode_InternalError;
+    }
+
+    bytes_out = 0; // bytes written out of the input data
 
     // if the key is null and we have only one output array, use that
     std::string key;
@@ -855,39 +863,49 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
         key = zarr::regularize_key(key_);
     }
 
-    auto it = output_arrays_.find(key);
-    EXPECT(it != output_arrays_.end(),
-           "Cannot append data: array at '",
-           key,
-           "' not found");
-
-    if (nbytes == 0) {
-        return 0;
+    const auto array_it = output_arrays_.find(key);
+    if (array_it == output_arrays_.end()) {
+        return ZarrStatusCode_KeyNotFound;
     }
 
-    auto& output = it->second;
+    if (bytes_in == 0) {
+        LOG_INFO("Skipping append to array '", key, "': no data");
+        return ZarrStatusCode_Success;
+    }
+
+    auto& output = array_it->second;
+    if (output.max_bytes > 0 &&
+        output.bytes_written + bytes_in > output.max_bytes) {
+        LOG_ERROR("Incoming byte count ",
+                  bytes_in,
+                  " will overflow array (bytes written: ",
+                  output.bytes_written,
+                  ", maximum bytes: ",
+                  output.max_bytes,
+                  ")");
+        return ZarrStatusCode_WriteOutOfBounds;
+    }
     auto& frame_buffer = output.frame_buffer;
     auto& frame_buffer_offset = output.frame_buffer_offset;
 
     auto* data = data_ ? static_cast<const uint8_t*>(data_) : nullptr;
 
     const size_t bytes_of_frame = frame_buffer.size();
-    size_t bytes_written = 0; // bytes written out of the input data
 
-    while (bytes_written < nbytes) {
-        const size_t bytes_remaining = nbytes - bytes_written;
+    while (bytes_out < bytes_in) {
+        const size_t bytes_remaining = bytes_in - bytes_out;
 
         if (frame_buffer_offset > 0) { // add to / finish a partial frame
             const size_t bytes_to_copy =
               std::min(bytes_of_frame - frame_buffer_offset, bytes_remaining);
 
             const auto subspan =
-              data ? std::span{ data + bytes_written, bytes_to_copy }
+              data ? std::span{ data + bytes_out, bytes_to_copy }
                    : std::span{ static_cast<const uint8_t*>(nullptr),
                                 bytes_to_copy };
             frame_buffer.assign_at(frame_buffer_offset, subspan);
             frame_buffer_offset += bytes_to_copy;
-            bytes_written += bytes_to_copy;
+            bytes_out += bytes_to_copy;
 
             // ready to enqueue the frame buffer
             if (frame_buffer_offset == bytes_of_frame) {
@@ -910,7 +928,7 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
         } else if (bytes_remaining < bytes_of_frame) { // begin partial frame
             frame_buffer.assign_at(0, { data, bytes_remaining });
             frame_buffer_offset = bytes_remaining;
-            bytes_written += bytes_remaining;
+            bytes_out += bytes_remaining;
         } else { // at least one full frame
             zarr::LockedBuffer frame;
             frame.assign({ data, bytes_of_frame });
@@ -927,12 +945,17 @@ ZarrStream::append(const char* key_, const void* data_, size_t nbytes)
                 break;
             }
 
-            bytes_written += bytes_of_frame;
+            bytes_out += bytes_of_frame;
             data = data ? data + bytes_of_frame : data;
         }
     }
+    output.bytes_written += bytes_out;
 
-    return bytes_written;
+    CHECK(bytes_out <= bytes_in);
+    if (bytes_out < bytes_in) {
+        return ZarrStatusCode_PartialWrite;
+    }
+    return ZarrStatusCode_Success;
 }
 
 ZarrStatusCode
@@ -1177,8 +1200,11 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         return false;
     }
 
-    ZarrOutputArray output_node{ .output_key = config->node_key,
-                                 .frame_buffer_offset = 0 };
+    ZarrOutputArray output_node{
+        .output_key = config->node_key,
+        .frame_buffer_offset = 0,
+        .bytes_written = 0,
+    };
     try {
         output_node.array = zarr::make_array(config,
                                              thread_pool_,
@@ -1193,6 +1219,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         set_error_("Failed to create output node: " + error_);
         return false;
     }
+
+    output_node.max_bytes = output_node.array->max_bytes();
 
     // initialize frame buffer
     const auto& dims = config->dimensions;
@@ -1603,7 +1631,11 @@ ZarrStream_s::process_frame_queue_()
         } else {
             auto& output_node = it->second;
 
-            if (output_node.array->write_frame(frame) != frame.size()) {
+            size_t n_bytes;
+            if (const auto result =
+                  output_node.array->write_frame(frame, n_bytes);
+                result != zarr::WriteResult::Ok) {
+                // TODO (aliddell): retry on WriteResult::PartialWrite
                 set_error_("Failed to write frame to writer for key: " +
                            output_key);
                 std::unique_lock lock(frame_queue_mutex_);

@@ -52,6 +52,14 @@ struct ArrayConfig
     uint16_t level_of_detail;
 };
 
+enum class WriteResult
+{
+    Ok,
+    PartialWrite,      // incomplete write
+    OutOfBounds,       // append exceeded declared array_size_px
+    FrameSizeMismatch, // data size is not equal to the expected frame size
+};
+
 class ArrayBase
 {
   public:
@@ -74,11 +82,24 @@ class ArrayBase
     [[nodiscard]] virtual bool close_() = 0;
 
     /**
-     * @brief Write a frame of data to the node.
+     * @brief Write a buffer of data to the node.
      * @param data The data to write.
-     * @return The number of bytes successfully written.
+     * @param bytes_written Set to the number of bytes written on success, or 0
+     * on failure. Implementations MUST set this before returning.
+     * @return WriteResult::Ok on success, WriteResult::PartialWrite if @p data
+     * does not constitute a complete chunk, or WriteResult::OutOfBounds if
+     * writing
+     * @p data would exceed the declared array bounds. No data is written in the
+     * OutOfBounds case.
      */
-    [[nodiscard]] virtual size_t write_frame(LockedBuffer& data) = 0;
+    [[nodiscard]] virtual WriteResult write_frame(LockedBuffer& data,
+                                                  size_t& bytes_written) = 0;
+
+    /**
+     * @brief Query the maximum number of bytes we can append to this array.
+     * @return The maximum number of bytes we can append to this array.
+     */
+    [[nodiscard]] virtual size_t max_bytes() const = 0;
 
   protected:
     std::shared_ptr<ArrayConfig> config_;

@@ -23,6 +23,7 @@ set(tests
         array-write-even
         array-write-ragged-append-dim
         array-write-ragged-internal-dim
+        array-write-fixed-size
         zarr-stream-partial-append
         frame-queue
         downsampler
