@@ -17,6 +17,8 @@ add_library(${tgt}
         frame.queue.cpp
         downsampler.hh
         downsampler.cpp
+        resource.pool.hh
+        resource.pool.cpp
         zarr.stream.hh
         zarr.stream.cpp
         zarr.common.hh
