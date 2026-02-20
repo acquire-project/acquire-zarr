@@ -829,7 +829,8 @@ dimension_type_to_string(ZarrDimensionType type)
 
 /* ZarrStream_s implementation */
 
-ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
+ZarrStream::ZarrStream_s(ZarrStreamSettings_s* settings,
+                         ZarrResourcePool_s* pool)
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -1030,7 +1031,7 @@ ZarrStream_s::is_s3_acquisition_() const
 }
 
 bool
-ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::validate_settings_(const ZarrStreamSettings_s* settings)
 {
     if (!settings) {
         error_ = "Null pointer: settings";

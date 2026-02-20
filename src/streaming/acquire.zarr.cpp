@@ -599,13 +599,33 @@ extern "C"
         settings->plate_count = 0;
     }
 
-    ZarrStream_s* ZarrStream_create(struct ZarrStreamSettings_s* settings)
+    ZarrResourcePool* ZarrResourcePool_create(const unsigned int max_threads)
     {
+        ZarrResourcePool* pool = nullptr;
 
+        try {
+            pool = new ZarrResourcePool(max_threads);
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for Zarr resource pool");
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error creating Zarr resource pool: ", e.what());
+        }
+
+        return pool;
+    }
+
+    void ZarrResourcePool_destroy(const ZarrResourcePool* pool)
+    {
+        delete pool;
+    }
+
+    ZarrStream_s* ZarrStream_create(ZarrStreamSettings_s* settings,
+                                    ZarrResourcePool* pool)
+    {
         ZarrStream_s* stream = nullptr;
 
         try {
-            stream = new ZarrStream_s(settings);
+            stream = new ZarrStream_s(settings, pool);
         } catch (const std::bad_alloc&) {
             LOG_ERROR("Failed to allocate memory for Zarr stream");
         } catch (const std::exception& e) {

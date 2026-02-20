@@ -25,18 +25,19 @@ extern "C"
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
         ZarrVersion version;         /**< The version of the Zarr format to use.
                                         Reserved for Zarr v4. */
-        unsigned int max_threads; /**< The maximum number of threads to use in
-                                     the stream. Set to 0 to use the supported
-                                     number of concurrent threads. */
+        unsigned int max_threads; /**< DEPRECATED. The maximum number of threads
+                                     to use in the stream. Set to 0 to use the
+                                     supported number of concurrent threads. */
         bool overwrite; /**< Remove everything in store_path if true. */
-        ZarrArraySettings*
-          arrays; /**< The settings for the Zarr arrays being streamed. */
+        ZarrArraySettings* arrays; /**< The settings for the Zarr arrays being
+                                      streamed. */
         size_t array_count; /**< The number of arrays in the Zarr stream. */
         ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
-                                               non-NULL, the stream will be
-                                               configured for HCS data. */
+                                          non-NULL, the stream will be
+                                          configured for HCS data. */
     } ZarrStreamSettings;
 
+    typedef struct ZarrResourcePool_s ZarrResourcePool;
     typedef struct ZarrStream_s ZarrStream;
 
     /**
@@ -255,11 +256,41 @@ extern "C"
     void ZarrHCSSettings_destroy_plate_array(ZarrHCSSettings* settings);
 
     /**
-     * @brief Create a Zarr stream.
+     * @brief Create a resource pool for sharing resources across multiple Zarr
+     * streams.
+     * @details A resource pool allows multiple streams to share memory buffers,
+     * thread pools, and connection pools for improved efficiency. The pool uses
+     * reference counting - it will remain valid as long as any streams created
+     * with it are still alive.
+     * @param max_threads The maximum number of threads to use for compression
+     * and I/O operations. Set to 0 to use the number of supported concurrent
+     * threads.
+     * @return A pointer to the resource pool, or NULL on failure.
+     */
+    ZarrResourcePool* ZarrResourcePool_create(unsigned int max_threads);
+
+    /**
+     * @brief Destroy a resource pool.
+     * @details Decrements the reference count of the pool. The pool will only
+     * be destroyed when all streams using it have been destroyed. It is safe
+     * to call this function immediately after creating streams with the pool.
+     * @param pool The resource pool to destroy.
+     */
+    void ZarrResourcePool_destroy(const ZarrResourcePool* pool);
+
+    /**
+     * @brief Create a Zarr stream with an optional shared resource pool.
+     * @details If a resource pool is provided, the stream will share memory
+     * buffers, thread pools, and connection pools with other streams created
+     * from the same pool. The resource pool must remain valid until this
+     * stream is destroyed.
      * @param[in, out] settings The settings for the Zarr stream.
+     * @param[in] pool Optional resource pool for sharing resources. If NULL,
+     * the stream will create its own resources.
      * @return A pointer to the Zarr stream struct, or NULL on failure.
      */
-    ZarrStream* ZarrStream_create(ZarrStreamSettings* settings);
+    ZarrStream* ZarrStream_create(ZarrStreamSettings* settings,
+                                  ZarrResourcePool* pool = NULL);
 
     /**
      * @brief Destroy a Zarr stream.

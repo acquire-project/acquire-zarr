@@ -9,6 +9,7 @@
 #include "locked.buffer.hh"
 #include "multiscale.array.hh"
 #include "plate.hh"
+#include "resource.pool.hh"
 #include "s3.connection.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -27,7 +28,7 @@
 struct ZarrStream_s
 {
   public:
-    ZarrStream_s(struct ZarrStreamSettings_s* settings);
+    ZarrStream_s(ZarrStreamSettings_s* settings, ZarrResourcePool_s* pool);
 
     /**
      * @brief Append data to the stream with a specific key.
@@ -104,8 +105,7 @@ struct ZarrStream_s
      * @param settings Struct containing settings to validate.
      * @return true if settings are valid, false otherwise.
      */
-    [[nodiscard]] bool validate_settings_(
-      const struct ZarrStreamSettings_s* settings);
+    [[nodiscard]] bool validate_settings_(const ZarrStreamSettings_s* settings);
 
     /**
      * @brief Configure the stream for an array.
