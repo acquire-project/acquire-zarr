@@ -15,6 +15,8 @@ class ResourcePool
     explicit ResourcePool(size_t max_threads);
 
     const std::optional<std::string>& error() const;
+    uint64_t active_file_handles() const;
+    uint64_t active_s3_connections() const;
     uint64_t memory_usage() const;
 
     std::shared_ptr<ThreadPool> thread_pool() const;
@@ -42,16 +44,16 @@ class ResourcePool
 
     std::shared_ptr<ThreadPool> thread_pool_;
 
-    std::mutex files_mutex_;
+    mutable std::mutex files_mutex_;
     std::condition_variable files_cv_;
     std::unordered_map<std::string, std::weak_ptr<FileHandle>> files_;
 
-    std::mutex s3_connections_mutex_;
+    mutable std::mutex s3_connections_mutex_;
     std::condition_variable s3_connections_cv_;
     std::unordered_map<std::string, std::weak_ptr<S3Connection>>
       s3_connections_;
 
-    std::mutex buffers_mutex_;
+    mutable std::mutex buffers_mutex_;
     std::condition_variable buffers_cv_;
     std::vector<BufferContainer> buffers_;
 

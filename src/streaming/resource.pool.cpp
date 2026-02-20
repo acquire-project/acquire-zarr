@@ -35,8 +35,23 @@ zarr::ResourcePool::ResourcePool::error() const
 }
 
 uint64_t
+zarr::ResourcePool::active_file_handles() const
+{
+    std::unique_lock lock(files_mutex_);
+    return files_.size();
+}
+
+uint64_t
+zarr::ResourcePool::active_s3_connections() const
+{
+    std::unique_lock lock(s3_connections_mutex_);
+    return s3_connections_.size();
+}
+
+uint64_t
 zarr::ResourcePool::memory_usage() const
 {
+    std::unique_lock lock(buffers_mutex_);
     return active_memory_bytes_;
 }
 

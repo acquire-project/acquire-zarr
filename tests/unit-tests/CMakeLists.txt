@@ -29,6 +29,7 @@ set(tests
         downsampler
         downsampler-odd-z
         plate
+        resource-pool-get-file-handle
 )
 
 foreach (name ${tests})
