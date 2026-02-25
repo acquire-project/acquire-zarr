@@ -2,7 +2,7 @@
 #include "s3.connection.hh"
 #include "zarr.common.hh"
 #include "acquire.zarr.h"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 
 #include <cstdlib>
 #include <filesystem>

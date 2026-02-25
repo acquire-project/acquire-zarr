@@ -1,5 +1,5 @@
 #include "array.hh"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 #include "zarr.common.hh"
 
 #include <nlohmann/json.hpp>

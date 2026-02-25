@@ -1,5 +1,5 @@
 #include "resource.pool.hh"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 
 #include <filesystem>
 
@@ -12,7 +12,8 @@ destroy_flags(void*);
 namespace fs = std::filesystem;
 
 namespace {
-const std::string file_path = TEST;
+const std::string file_path = (fs::temp_directory_path() / TEST).string();
+
 void
 get_file_handle(zarr::ResourcePool& pool, const std::string& path)
 {
@@ -21,16 +22,24 @@ get_file_handle(zarr::ResourcePool& pool, const std::string& path)
            "Expected 0 active handles initially, got ",
            active_handle_count);
 
-    void* flags = make_flags();
-    const auto handle = pool.get_file_handle(file_path, flags);
+    {
+        void* flags = make_flags();
+        const auto handle = pool.get_file_handle(file_path, flags);
 
-    CHECK(handle != nullptr);
+        CHECK(handle != nullptr);
+        active_handle_count = pool.active_file_handles();
+
+        EXPECT(active_handle_count == 1,
+               "Expected 1 active handle after construction, got ",
+               active_handle_count);
+        destroy_flags(flags);
+    }
+
+    // handle should be destroyed by now
     active_handle_count = pool.active_file_handles();
-
-    EXPECT(active_handle_count == 1,
-           "Expected 1 active handle after construction, got ",
+    EXPECT(active_handle_count == 0,
+           "Expected 0 active handles after destruct, got ",
            active_handle_count);
-    destroy_flags(flags);
 }
 } // namespace
 
@@ -42,6 +51,8 @@ main()
     try {
         zarr::ResourcePool pool(0);
         get_file_handle(pool, file_path);
+
+        EXPECT(fs::exists(file_path), "File at ", file_path, " does not exist");
 
         retval = 0;
     } catch (const std::exception& exc) {

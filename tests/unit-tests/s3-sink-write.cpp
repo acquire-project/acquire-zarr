@@ -1,42 +1,16 @@
 #include "s3.sink.hh"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 
 #include <miniocpp/client.h>
 
 #include <cstdlib>
 
-namespace {
-bool
-get_settings(zarr::S3Settings& settings)
-{
-    char* env = nullptr;
-    if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
-        LOG_ERROR("ZARR_S3_ENDPOINT not set.");
-        return false;
-    }
-    settings.endpoint = env;
-
-    if (!(env = std::getenv("ZARR_S3_BUCKET_NAME"))) {
-        LOG_ERROR("ZARR_S3_BUCKET_NAME not set.");
-        return false;
-    }
-    settings.bucket_name = env;
-
-    env = std::getenv("ZARR_S3_REGION");
-    if (env) {
-        settings.region = env;
-    }
-
-    return true;
-}
-} // namespace
-
 int
 main()
 {
     zarr::S3Settings settings;
-    if (!get_settings(settings)) {
-        LOG_WARNING("Failed to get credentials. Skipping test.");
+    if (!testing::get_s3_settings(settings)) {
+        LOG_INFO("Failed to get credentials. Skipping test.");
         return 0;
     }
 

@@ -1,5 +1,5 @@
 #include "downsampler.hh"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 
 #include <cstdlib>
 #include <memory>

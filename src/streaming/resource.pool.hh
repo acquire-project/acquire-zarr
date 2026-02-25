@@ -15,9 +15,9 @@ class ResourcePool
     explicit ResourcePool(size_t max_threads);
 
     const std::optional<std::string>& error() const;
-    uint64_t active_file_handles() const;
-    uint64_t active_s3_connections() const;
-    uint64_t memory_usage() const;
+    uint64_t active_file_handles();
+    uint64_t active_s3_connections();
+    uint64_t memory_usage();
 
     std::shared_ptr<ThreadPool> thread_pool() const;
 

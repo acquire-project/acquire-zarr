@@ -30,11 +30,13 @@ set(tests
         downsampler-odd-z
         plate
         resource-pool-get-file-handle
+        resource-pool-get-buffer
+        resource-pool-get-s3-connection
 )
 
 foreach (name ${tests})
     set(tgt "${project}-unit-test-${name}")
-    add_executable(${tgt} ${name}.cpp unit.test.macros.hh)
+    add_executable(${tgt} ${name}.cpp unit-test-utils.cpp)
     target_compile_definitions(${tgt} PUBLIC "TEST=\"${tgt}\"")
     set_target_properties(${tgt} PROPERTIES
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"

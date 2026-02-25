@@ -1,6 +1,7 @@
 #pragma once
 
 #include "logger.hh"
+#include "s3.connection.hh"
 
 #define EXPECT(e, ...)                                                         \
     do {                                                                       \
@@ -39,3 +40,8 @@
                a_,                                                             \
                b_);                                                            \
     } while (0)
+
+namespace testing {
+bool
+get_s3_settings(zarr::S3Settings& settings);
+} // namespace testing

@@ -479,7 +479,7 @@ int
 main()
 {
     if (!get_credentials()) {
-        LOG_WARNING("Failed to get credentials. Skipping test.");
+        LOG_INFO("Failed to get credentials. Skipping test.");
         return 0;
     }
 

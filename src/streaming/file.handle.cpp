@@ -31,6 +31,12 @@ zarr::FileHandle::get() const
     return handle_;
 }
 
+void
+zarr::FileHandle::FlushDeleter::operator()(const FileHandle* handle) const
+{
+    flush_file(handle->get());
+}
+
 zarr::FileHandlePool::FileHandlePool()
   : max_active_handles_(get_max_active_handles())
   , n_active_handles_(0)

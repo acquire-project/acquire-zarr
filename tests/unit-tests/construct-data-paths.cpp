@@ -1,4 +1,4 @@
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 #include "sink.hh"
 #include "array.dimensions.hh"
 

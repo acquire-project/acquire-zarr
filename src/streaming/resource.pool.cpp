@@ -22,6 +22,7 @@ join(const zarr::S3Settings& s3_settings, const std::string& object_key)
 zarr::ResourcePool::ResourcePool(size_t max_threads)
   : max_active_files_(get_max_active_handles())
   , max_memory_bytes_(8ULL << 30) // 8 GiB (TODO (aliddell): make configurable)
+  , active_memory_bytes_(0)
 {
     thread_pool_ = std::make_shared<ThreadPool>(
       max_threads, [this](const std::string& err) { set_error_(err); });
@@ -35,22 +36,28 @@ zarr::ResourcePool::ResourcePool::error() const
 }
 
 uint64_t
-zarr::ResourcePool::active_file_handles() const
+zarr::ResourcePool::active_file_handles()
 {
+    cull_unused_files_();
+
     std::unique_lock lock(files_mutex_);
     return files_.size();
 }
 
 uint64_t
-zarr::ResourcePool::active_s3_connections() const
+zarr::ResourcePool::active_s3_connections()
 {
+    cull_unused_s3_connections_();
+
     std::unique_lock lock(s3_connections_mutex_);
     return s3_connections_.size();
 }
 
 uint64_t
-zarr::ResourcePool::memory_usage() const
+zarr::ResourcePool::memory_usage()
 {
+    cull_unused_buffers_();
+
     std::unique_lock lock(buffers_mutex_);
     return active_memory_bytes_;
 }
@@ -75,7 +82,9 @@ zarr::ResourcePool::get_file_handle(const std::string& path, void* flags)
     std::shared_ptr<FileHandle> conn;
     if (const auto file_it = files_.find(path);
         file_it == files_.end() || file_it->second.expired()) {
-        conn = std::make_shared<FileHandle>(path, flags);
+        // flush and close on destruct
+        conn = std::shared_ptr<FileHandle>(new FileHandle(path, flags),
+                                           FileHandle::FlushDeleter());
         files_.emplace(path, conn);
     } else {
         conn = file_it->second.lock();
@@ -113,8 +122,9 @@ zarr::ResourcePool::get_data_buffer(uint64_t bytes)
     }
     active_memory_bytes_ += bytes;
 
-    buffers_.emplace_back(std::make_shared<DataBuffer>(bytes, 0), bytes);
-    return buffers_.back().data.lock();
+    auto buffer = std::make_shared<DataBuffer>(bytes, 0);
+    buffers_.emplace_back(buffer, bytes);
+    return buffer;
 }
 
 void

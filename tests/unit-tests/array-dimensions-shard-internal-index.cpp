@@ -1,5 +1,5 @@
 #include "array.dimensions.hh"
-#include "unit.test.macros.hh"
+#include "unit-test-utils.hh"
 
 #include <stdexcept>
 

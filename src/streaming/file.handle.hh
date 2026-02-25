@@ -31,7 +31,12 @@ class FileHandle
      * @brief Get the underlying platform-specific file handle.
      * @return A pointer to the platform-specific file handle.
      */
-    void* get() const;
+    [[nodiscard]] void* get() const;
+
+    struct FlushDeleter
+    {
+        void operator()(const FileHandle* handle) const;
+    };
 
   private:
     void* handle_; /**< Platform-specific file handle. */
