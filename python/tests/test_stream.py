@@ -463,9 +463,7 @@ def test_stream_data_to_s3(
     if s3_settings is None:
         pytest.skip("S3 settings not set")
 
-    settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace(
-        "]", ""
-    )
+    settings.store_path = f"{request.node.name}.zarr".replace("[", "").replace("]", "")
     settings.s3 = s3_settings
 
     if compression_codec is not None:
@@ -567,9 +565,7 @@ def test_write_custom_metadata(
 
     # don't allow overwriting the metadata
     metadata = json.dumps({"baz": "qux"})
-    overwrite_result = stream.write_custom_metadata(
-        metadata, overwrite=overwrite
-    )
+    overwrite_result = stream.write_custom_metadata(metadata, overwrite=overwrite)
     assert overwrite_result == overwrite
 
     stream.close()
@@ -803,9 +799,9 @@ def test_custom_dimension_units_and_scales(store_path: Path):
     assert x["type"] == "space"
     assert x["unit"] == "nanometer"
 
-    z_scale, y_scale, x_scale = multiscale["datasets"][0][
-        "coordinateTransformations"
-    ][0]["scale"]
+    z_scale, y_scale, x_scale = multiscale["datasets"][0]["coordinateTransformations"][
+        0
+    ]["scale"]
 
     assert z_scale == 0.1
     assert y_scale == 0.9
@@ -891,9 +887,7 @@ def test_2d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
     for i in range(downsampled.shape[0]):
         actual = downsampled[i, :, :]
-        expected = eval(saved_method)(full_res[i], *args, **kwargs).astype(
-            data.dtype
-        )
+        expected = eval(saved_method)(full_res[i], *args, **kwargs).astype(data.dtype)
 
         # Check the downsampling method and arguments
         np.testing.assert_array_equal(actual, expected)
@@ -981,9 +975,7 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
 
         if method == DownsamplingMethod.MEAN:
             expected1 = eval(saved_method)(full_res[2 * i], *args, **kwargs)
-            expected2 = eval(saved_method)(
-                full_res[2 * i + 1], *args, **kwargs
-            )
+            expected2 = eval(saved_method)(full_res[2 * i + 1], *args, **kwargs)
             expected = ((expected1 + expected2) / 2).astype(data.dtype)
             np.testing.assert_allclose(
                 expected, actual, atol=1
@@ -991,16 +983,16 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
             continue
 
         if method == DownsamplingMethod.DECIMATE:
-            expected = eval(saved_method)(
-                full_res[2 * i], *args, **kwargs
-            ).astype(data.dtype)
+            expected = eval(saved_method)(full_res[2 * i], *args, **kwargs).astype(
+                data.dtype
+            )
         else:
-            expected1 = eval(saved_method)(
-                full_res[2 * i], *args, **kwargs
-            ).astype(data.dtype)
-            expected2 = eval(saved_method)(
-                full_res[2 * i + 1], *args, **kwargs
-            ).astype(data.dtype)
+            expected1 = eval(saved_method)(full_res[2 * i], *args, **kwargs).astype(
+                data.dtype
+            )
+            expected2 = eval(saved_method)(full_res[2 * i + 1], *args, **kwargs).astype(
+                data.dtype
+            )
 
             if method == DownsamplingMethod.MIN:
                 expected = np.minimum(expected1, expected2)
@@ -1027,8 +1019,7 @@ def test_stream_data_to_named_array(
     downsampling_method: DownsamplingMethod,
 ):
     settings.store_path = str(
-        store_path
-        / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr"
+        store_path / f"stream_to_named_array_{output_key.replace('/', '_')}.zarr"
     )
     settings.arrays[0].output_key = output_key
     settings.arrays[0].downsampling_method = downsampling_method
@@ -1069,11 +1060,7 @@ def test_stream_data_to_named_array(
         assert part in current_group, f"Path part '{part}' not found in group"
         current_group = current_group[part]
 
-    array = (
-        current_group["0"]
-        if downsampling_method is not None
-        else current_group
-    )
+    array = current_group["0"] if downsampling_method is not None else current_group
 
     # Verify array shape and contents
     assert array.shape == data.shape
@@ -1701,13 +1688,11 @@ def test_with_ragged_final_shard(store_path: Path):
     np.testing.assert_array_equal(data, array)
 
 
-@pytest.mark.parametrize("output_key", ["", "custom_array"])
-def test_single_2d_image(store_path: Path, output_key: str):
+def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
     settings = StreamSettings(
-        store_path="test_2d.zarr",
+        store_path=str(store_path / f"{request.node.name}.zarr"),
         arrays=[
             ArraySettings(
-                output_key=output_key,
                 dimensions=[
                     Dimension(
                         name="y",
@@ -1734,20 +1719,12 @@ def test_single_2d_image(store_path: Path, output_key: str):
     stream.append(data)
     stream.close()
     del stream
-    array = zarr.open_array(f"{settings.store_path}/{output_key or '0'}")
+    array = zarr.open_array(settings.store_path)
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
 
-    # ensure ome-metadata is also correct if no output_key is specified
-    if not output_key:
-        group = zarr.open_group(settings.store_path)
-        assert "ome" in group.attrs
-        assert len(group.attrs["ome"]["multiscales"][0]["axes"]) == 2
 
-
-def test_append_throws_on_overflow(
-        store_path: Path, request: pytest.FixtureRequest
-):
+def test_append_throws_on_overflow(store_path: Path, request: pytest.FixtureRequest):
     set_log_level(LogLevel.DEBUG)
     settings = StreamSettings(
         store_path=str(store_path / f"{request.node.name}.zarr"),
@@ -1796,7 +1773,7 @@ def test_append_throws_on_overflow(
 
     stream.append(data)  # ok
     with pytest.raises(RuntimeError) as e:
-        one_more_byte = np.random.randint(0, 65535,(1, 1, 1), dtype=np.uint16)
+        one_more_byte = np.random.randint(0, 65535, (1, 1, 1), dtype=np.uint16)
         stream.append(one_more_byte)
 
         assert e

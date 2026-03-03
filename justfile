@@ -18,9 +18,9 @@ _default:
 # (args are passed to uv sync, e.g.: `just install -p 3.12`)
 install *args: _setup-submodules setup-vcpkg (uv-sync args)
 
-# Run uv sync (includes testing dependencies)
+# Run uv sync (includes testing dependencies, forces C extension rebuild)
 uv-sync *args: _ensure-uv
-    uv sync --extra testing {{args}}
+    uv sync --extra testing --reinstall-package acquire-zarr {{args}}
 
 # Run Python tests
 # (args are passed to pytest, e.g.: `just test -k test_function`)
