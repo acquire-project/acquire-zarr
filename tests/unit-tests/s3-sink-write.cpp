@@ -57,8 +57,7 @@ main()
             char str[] = "Hello, Acquire!";
             auto sink = std::make_unique<zarr::S3Sink>(
               settings.bucket_name, object_name, pool);
-            std::span data{ reinterpret_cast<uint8_t*>(str),
-                            sizeof(str) - 1 };
+            std::span data{ reinterpret_cast<uint8_t*>(str), sizeof(str) - 1 };
             CHECK(sink->write(0, data));
             CHECK(zarr::finalize_sink(std::move(sink)));
         }

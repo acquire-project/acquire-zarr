@@ -1,6 +1,7 @@
 #pragma once
 
-typedef enum {
+typedef enum
+{
     LogLevel_Debug,
     LogLevel_Info,
     LogLevel_Warning,

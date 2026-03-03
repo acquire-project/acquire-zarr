@@ -158,12 +158,12 @@ def create_hcs_settings():
         column_name="5",
         images=[
             FieldOfView(
-                path="fov1", # Will be at test_plate/C/5/fov1
+                path="fov1",  # Will be at test_plate/C/5/fov1
                 acquisition_id=0,
                 array_settings=c5_fov1_array,
             ),
             FieldOfView(
-                path="fov2", # Will be at test_plate/C/5/fov2
+                path="fov2",  # Will be at test_plate/C/5/fov2
                 acquisition_id=1,
                 array_settings=c5_fov2_array,
             ),
@@ -217,7 +217,7 @@ def create_hcs_settings():
         column_name="7",
         images=[
             FieldOfView(
-                path="fov1", # Will be at test_plate/D/7/fov1
+                path="fov1",  # Will be at test_plate/D/7/fov1
                 acquisition_id=0,
                 array_settings=d7_fov1_array,
             ),
@@ -264,28 +264,6 @@ def create_hcs_settings():
     return plate
 
 
-def validate_v2_metadata(store_path: Path):
-    assert (store_path / ".zattrs").is_file()
-    with open(store_path / ".zattrs", "r") as fh:
-        data = json.load(fh)
-        axes = data["multiscales"][0]["axes"]
-        assert axes[0]["name"] == "t"
-        assert axes[0]["type"] == "time"
-
-        assert axes[1]["name"] == "y"
-        assert axes[1]["type"] == "space"
-
-        assert axes[2]["name"] == "x"
-        assert axes[2]["type"] == "space"
-
-    assert (store_path / ".zgroup").is_file()
-    with open(store_path / ".zgroup", "r") as fh:
-        data = json.load(fh)
-        assert data["zarr_format"] == 2
-
-    assert not (store_path / "acquire.json").is_file()
-
-
 def validate_v3_metadata(store_path: Path):
     assert (store_path / "zarr.json").is_file()
     with open(store_path / "zarr.json", "r") as fh:
@@ -323,26 +301,16 @@ def test_create_stream(
     # check that the stream created the zarr store
     assert store_path.is_dir()
 
-    validate_v3_metadata(store_path)
-
     # no data written, so no array metadata
-    assert not (store_path / "meta" / "0.array.json").exists()
+    assert not (store_path / "zarr.json").exists()
 
 
 @pytest.mark.parametrize(
-    (
-        "compression_codec",
-    ),
+    ("compression_codec",),
     [
-        (
-            None,
-        ),
-        (
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            CompressionCodec.BLOSC_ZSTD,
-        ),
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
     ],
 )
 def test_stream_data_to_filesystem(
@@ -391,14 +359,14 @@ def test_stream_data_to_filesystem(
         shard_size_bytes + table_size_bytes + 4
     )  # 4 bytes for crc32c checksum
 
-    group = zarr.open(settings.store_path, mode="r")
-    array = group["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert array.shape == data.shape
     for i in range(array.shape[0]):
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    data_file_path = store_path / "test.zarr" / "c" / "0" / "0" / "0"
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
@@ -410,37 +378,80 @@ def test_stream_data_to_filesystem(
         assert blosc_codec.clevel == 1
         assert blosc_codec.shuffle == zblosc.BloscShuffle.shuffle
 
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size <= shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size <= shard_size_bytes
     else:
         assert len(metadata.codecs[0].codecs) == 1
 
-        assert (
-                store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-        ).is_file()
-        assert (
-                       store_path / "test.zarr" / "0" / "c" / "0" / "0" / "0"
-               ).stat().st_size == shard_size_bytes
+        assert data_file_path.is_file()
+        assert data_file_path.stat().st_size == shard_size_bytes
 
 
 @pytest.mark.parametrize(
-    (
-        "compression_codec",
-    ),
+    ("compression_codec",),
     [
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
+    ],
+)
+def test_skip(
+    settings: StreamSettings,
+    store_path: Path,
+    compression_codec: Optional[CompressionCodec],
+):
+    settings.store_path = str(store_path / "test.zarr")
+    array_settings = settings.arrays[0]
+    dim_settings = array_settings.dimensions
+
+    if compression_codec is not None:
+        array_settings.compression = CompressionSettings(
+            compressor=Compressor.BLOSC1,
+            codec=compression_codec,
+            level=1,
+            shuffle=1,
+        )
+    array_settings.data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    half_data = np.zeros(
         (
-            None,
+            dim_settings[0].chunk_size_px,
+            dim_settings[1].array_size_px,
+            dim_settings[2].array_size_px,
         ),
-        (
-            CompressionCodec.BLOSC_LZ4,
-        ),
-        (
-            CompressionCodec.BLOSC_ZSTD,
-        ),
+        dtype=np.uint16,
+    )
+    for i in range(half_data.shape[0]):
+        half_data[i, :, :] = i
+
+    stream.skip(half_data.nbytes)
+    stream.append(half_data)
+
+    stream.close()  # close the stream, flush the files
+    array = zarr.open(settings.store_path, mode="r")
+
+    assert array.shape == (
+        2 * dim_settings[0].chunk_size_px,
+        dim_settings[1].array_size_px,
+        dim_settings[2].array_size_px,
+    )
+
+    # zeros
+    assert np.array_equal(
+        array[: dim_settings[0].chunk_size_px], np.zeros(half_data.shape)
+    )
+    assert np.array_equal(array[dim_settings[0].chunk_size_px :], half_data)
+
+
+@pytest.mark.parametrize(
+    ("compression_codec",),
+    [
+        (None,),
+        (CompressionCodec.BLOSC_LZ4,),
+        (CompressionCodec.BLOSC_ZSTD,),
     ],
 )
 def test_stream_data_to_s3(
@@ -456,14 +467,15 @@ def test_stream_data_to_s3(
         "]", ""
     )
     settings.s3 = s3_settings
-    settings.data_type = np.uint16
+
     if compression_codec is not None:
-        settings.compression = CompressionSettings(
+        settings.arrays[0].compression = CompressionSettings(
             compressor=Compressor.BLOSC1,
             codec=compression_codec,
             level=1,
             shuffle=1,
         )
+    settings.arrays[0].data_type = np.uint16
 
     stream = ZarrStream(settings)
     assert stream
@@ -490,8 +502,7 @@ def test_stream_data_to_s3(
             "client_kwargs": {"endpoint_url": s3_settings.endpoint},
         },
     )
-    group = zarr.group(store=store)
-    array = group["0"]
+    array = zarr.open(store=store, mode="r")
 
     assert array.shape == data.shape
     for i in range(array.shape[0]):
@@ -645,8 +656,7 @@ def test_write_transposed_array(
 
     stream.close()  # close the stream, flush the files
 
-    group = zarr.open(settings.store_path, mode="r")
-    array = group["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
@@ -705,7 +715,7 @@ def test_column_ragged_sharding(
 
     stream.close()  # close the stream, flush the files
 
-    array = zarr.open(settings.store_path, mode="r")["0"]
+    array = zarr.open(settings.store_path, mode="r")
 
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
@@ -730,7 +740,7 @@ def test_custom_dimension_units_and_scales(store_path: Path):
                         kind=DimensionType.SPACE,
                         unit="micrometer",
                         scale=0.9,
-                        array_size_px=1080,
+                        array_size_px=64,
                         chunk_size_px=64,
                         shard_size_chunks=2,
                     ),
@@ -739,12 +749,13 @@ def test_custom_dimension_units_and_scales(store_path: Path):
                         kind=DimensionType.SPACE,
                         unit="nanometer",
                         scale=1.1,
-                        array_size_px=1080,
+                        array_size_px=64,
                         chunk_size_px=64,
                         shard_size_chunks=2,
                     ),
                 ],
                 data_type=np.int32,
+                downsampling_method=DownsamplingMethod.MEAN,
             )
         ]
     )
@@ -1518,10 +1529,13 @@ def test_pure_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
-    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1"}
+    expected_keys = {
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/D/7/fov1",
+    }
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
-
 
     stream = ZarrStream(settings)
     assert stream
@@ -1588,7 +1602,12 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
         hcs_plates=[plate],
     )
 
-    expected_keys = {"test_plate/C/5/fov1", "test_plate/C/5/fov2", "test_plate/D/7/fov1", "test_plate/C/5/labels"}
+    expected_keys = {
+        "test_plate/C/5/fov1",
+        "test_plate/C/5/fov2",
+        "test_plate/D/7/fov1",
+        "test_plate/C/5/labels",
+    }
     actual_keys = set(settings.get_array_keys())
     assert expected_keys == actual_keys
 
@@ -1629,15 +1648,42 @@ def test_with_ragged_final_shard(store_path: Path):
         arrays=[
             ArraySettings(
                 dimensions=[
-                    Dimension(name="t", array_size_px=0, chunk_size_px=1, shard_size_chunks=16, kind=DimensionType.TIME),
-                    Dimension(name="c", array_size_px=1, chunk_size_px=1, shard_size_chunks=1, kind=DimensionType.CHANNEL),
-                    Dimension(name="z", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
-                    Dimension(name="y", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
-                    Dimension(name="x", array_size_px=125, chunk_size_px=125, shard_size_chunks=1),
+                    Dimension(
+                        name="t",
+                        array_size_px=0,
+                        chunk_size_px=1,
+                        shard_size_chunks=16,
+                        kind=DimensionType.TIME,
+                    ),
+                    Dimension(
+                        name="c",
+                        array_size_px=1,
+                        chunk_size_px=1,
+                        shard_size_chunks=1,
+                        kind=DimensionType.CHANNEL,
+                    ),
+                    Dimension(
+                        name="z",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        array_size_px=125,
+                        chunk_size_px=125,
+                        shard_size_chunks=1,
+                    ),
                 ],
                 data_type=np.uint8,
             )
-        ]
+        ],
     )
     stream = ZarrStream(settings)
 
@@ -1650,9 +1696,9 @@ def test_with_ragged_final_shard(store_path: Path):
 
     del stream
 
-    dataset = zarr.open(settings.store_path)
+    array = zarr.open(settings.store_path)
 
-    np.testing.assert_array_equal(data, dataset["0"])
+    np.testing.assert_array_equal(data, array)
 
 
 @pytest.mark.parametrize("output_key", ["", "custom_array"])
@@ -1697,3 +1743,60 @@ def test_single_2d_image(store_path: Path, output_key: str):
         group = zarr.open_group(settings.store_path)
         assert "ome" in group.attrs
         assert len(group.attrs["ome"]["multiscales"][0]["axes"]) == 2
+
+
+def test_append_throws_on_overflow(
+        store_path: Path, request: pytest.FixtureRequest
+):
+    set_log_level(LogLevel.DEBUG)
+    settings = StreamSettings(
+        store_path=str(store_path / f"{request.node.name}.zarr"),
+        arrays=[
+            ArraySettings(
+                output_key="",
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=6,  # fixed size on append dimension
+                        chunk_size_px=2,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=16,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=16,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=np.uint16,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    data = np.random.randint(
+        0,
+        65535,
+        (
+            settings.arrays[0].dimensions[0].array_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+
+    stream.append(data)  # ok
+    with pytest.raises(RuntimeError) as e:
+        one_more_byte = np.random.randint(0, 65535,(1, 1, 1), dtype=np.uint16)
+        stream.append(one_more_byte)
+
+        assert e

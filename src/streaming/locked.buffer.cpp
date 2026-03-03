@@ -54,7 +54,12 @@ void
 zarr::LockedBuffer::assign(ConstByteSpan data)
 {
     std::unique_lock lock(mutex_);
-    data_.assign(data.begin(), data.end());
+    if (data.data() == nullptr) {
+        data_.resize(data.size());
+        std::fill_n(data_.begin(), data.size(), 0);
+    } else {
+        data_.assign(data.begin(), data.end());
+    }
 }
 
 void
@@ -71,7 +76,13 @@ zarr::LockedBuffer::assign_at(size_t offset, ConstByteSpan data)
     if (offset + data.size() > data_.size()) {
         data_.resize(offset + data.size());
     }
-    std::copy(data.begin(), data.end(), data_.begin() + offset);
+
+    if (data.data() == nullptr) {
+        // fill zeros
+        std::fill_n(data_.begin() + offset, data.size(), 0);
+    } else {
+        std::copy(data.begin(), data.end(), data_.begin() + offset);
+    }
 }
 
 void

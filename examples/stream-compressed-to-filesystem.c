@@ -96,7 +96,7 @@ main()
 
                 // Add some circular features
                 int dx = x - centerX;
-                int radius = (int)sqrt(dx*dx + dy*dy);
+                int radius = (int)sqrt(dx * dx + dy * dy);
 
                 // Modulate the pattern with concentric circles
                 if (radius % 16 < 8) {

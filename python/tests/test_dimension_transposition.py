@@ -57,7 +57,11 @@ DIMS = {
         (["t", "c", "z", "y", "x"], None, None),
         (["t", "c", "z", "y", "x"], ["t", "c", "z", "y", "x"], None),
         (["t", "z", "c", "y", "x"], ["t", "c", "z", "y", "x"], None),
-        (["t", "z", "c", "y", "x"], ["t", "c", "z", "y", "x"], 5),  # unbounded dim 0
+        (
+            ["t", "z", "c", "y", "x"],
+            ["t", "c", "z", "y", "x"],
+            5,
+        ),  # unbounded dim 0
     ],
 )
 def test_dimension_transposition(
@@ -112,9 +116,9 @@ def test_dimension_transposition(
     output_shape = tuple(_get_size(n) for n in output_dims)
     n_frames = np.prod(input_shape[:-2])
     if output_dims and output_dims != input_dims:
-        assert input_shape != output_shape, (
-            "Input and output shapes should differ for this test case"
-        )
+        assert (
+            input_shape != output_shape
+        ), "Input and output shapes should differ for this test case"
 
     # Write frames with sequential values (0, 1, 2, ...)
     # Frames are written in input dimension order
@@ -124,18 +128,17 @@ def test_dimension_transposition(
     stream.close()
 
     # Verify metadata has axes in prescribed order
-    group_metadata = json.loads(Path(store_path / "zarr.json").read_text())
-    axes = group_metadata["attributes"]["ome"]["multiscales"][0]["axes"]
-    axis_names = [ax["name"] for ax in axes]
-    assert axis_names == output_dims, (
-        f"Expected metadata axes in {output_dims} order, got {axis_names}"
-    )
+    array_metadata = json.loads(Path(store_path / "zarr.json").read_text())
+    axis_names = array_metadata["dimension_names"]
+    assert (
+        axis_names == output_dims
+    ), f"Expected metadata axes in {output_dims} order, got {axis_names}"
 
     # Verify data is stored in prescribed order
-    written_data = np.asarray(zarr.open_array(store_path / "0"))
-    assert written_data.shape == output_shape, (
-        f"Expected written data with shape {output_shape}, got {written_data.shape}"
-    )
+    written_data = np.asarray(zarr.open_array(store_path))
+    assert (
+        written_data.shape == output_shape
+    ), f"Expected written data with shape {output_shape}, got {written_data.shape}"
 
     # Each frame was written with np.full(), so all pixels have the same value.
     # Extract one value per plane to get the frame numbers as stored.
@@ -174,7 +177,8 @@ def test_transpose_raises_error(
     """Test that transposing dimension 0 away raises an error."""
     with pytest.raises(TypeError, match=error_msg):
         ArraySettings(
-            dimensions=[DIMS[name] for name in dims_in], storage_dimension_order=dims_out
+            dimensions=[DIMS[name] for name in dims_in],
+            storage_dimension_order=dims_out,
         )
 
 
@@ -184,7 +188,9 @@ def test_swap_xy(store_path: Path):
     y_size = DIMS["y"].array_size_px
     x_size = DIMS["x"].array_size_px
 
-    array = ArraySettings(dimensions=dims, storage_dimension_order=["t", "x", "y"])
+    array = ArraySettings(
+        dimensions=dims, storage_dimension_order=["t", "x", "y"]
+    )
     settings = StreamSettings(store_path=str(store_path), arrays=[array])
     stream = ZarrStream(settings)
 
@@ -193,7 +199,7 @@ def test_swap_xy(store_path: Path):
     stream.append(frame)
     stream.close()
 
-    data = np.asarray(zarr.open_array(store_path / "0"))
+    data = np.asarray(zarr.open_array(store_path))
     assert data.shape == (1, x_size, y_size)
 
     expected = np.array([list(range(y_size))] * x_size, dtype=np.uint8)

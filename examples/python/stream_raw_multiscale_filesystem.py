@@ -1,19 +1,19 @@
 # Stream to filesystem with multiscale, no compression
 import numpy as np
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DownsamplingMethod
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DownsamplingMethod,
 )
 
 
 def make_sample_data():
     """Generate sample data matching the 5D structure (t, c, z, y, x)"""
     # Shape: (10 timepoints, 8 channels, 6 z-slices, 48 height, 64 width)
-    return np.random.randint(
-        0, 65535,
-        (10, 8, 6, 48, 64),
-        dtype=np.uint16
-    )
+    return np.random.randint(0, 65535, (10, 8, 6, 48, 64), dtype=np.uint16)
 
 
 def main():
@@ -60,7 +60,7 @@ def main():
                 ),
             ],
             data_type=np.uint16,
-            downsampling_method=DownsamplingMethod.MEAN
+            downsampling_method=DownsamplingMethod.MEAN,
         )
     ]
 

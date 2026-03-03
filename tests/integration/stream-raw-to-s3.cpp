@@ -161,17 +161,14 @@ remove_items(minio::s3::Client& client,
     for (; result; result++) {
         minio::s3::DeleteError err = *result;
         if (!err) {
-            LOG_ERROR("Failed to delete object ",
-                      err.object_name,
-                      ": ",
-                      err.message);
+            LOG_ERROR(
+              "Failed to delete object ", err.object_name, ": ", err.message);
             return false;
         }
     }
 
     return true;
 }
-} // namespace
 
 ZarrStream*
 setup()
@@ -422,18 +419,7 @@ verify_and_cleanup()
                                           s3_secret_access_key);
     minio::s3::Client client(url, &provider);
 
-    const std::string group_metadata_path = TEST "/zarr.json";
-    const std::string array_metadata_path = TEST "/0/zarr.json";
-
-    {
-        EXPECT(object_exists(client, group_metadata_path),
-               "Object does not exist: ",
-               group_metadata_path);
-        std::string contents = get_object_contents(client, group_metadata_path);
-        nlohmann::json group_metadata = nlohmann::json::parse(contents);
-
-        verify_group_metadata(group_metadata);
-    }
+    const std::string array_metadata_path = TEST "/zarr.json";
 
     {
         EXPECT(object_exists(client, array_metadata_path),
@@ -445,7 +431,7 @@ verify_and_cleanup()
         verify_array_metadata(array_metadata);
     }
 
-    CHECK(remove_items(client, { group_metadata_path, array_metadata_path }));
+    CHECK(remove_items(client, { array_metadata_path }));
 
     const auto chunk_size = chunk_width * chunk_height * chunk_planes *
                             chunk_channels * chunk_timepoints * nbytes_px;
@@ -460,7 +446,7 @@ verify_and_cleanup()
 
     // verify and clean up data files
     std::vector<std::string> data_files;
-    std::string data_root = TEST "/0";
+    const std::string data_root = TEST;
 
     for (auto t = 0; t < shards_in_t; ++t) {
         const auto t_dir = data_root + "/c/" + std::to_string(t);
@@ -487,6 +473,7 @@ verify_and_cleanup()
         }
     }
 }
+} // namespace
 
 int
 main()

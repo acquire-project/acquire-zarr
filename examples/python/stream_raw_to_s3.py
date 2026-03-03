@@ -5,16 +5,19 @@ import numpy as np
 # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN
 # BEFORE importing acquire_zarr
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DataType, S3Settings
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DataType,
+    S3Settings,
 )
 
 
 def make_sample_data():
     return np.random.randint(
-        0, 65535,
-        (5, 2, 48, 64),  # Shape matches chunk sizes
-        dtype=np.uint16
+        0, 65535, (5, 2, 48, 64), dtype=np.uint16  # Shape matches chunk sizes
     )
 
 
@@ -25,7 +28,7 @@ def main():
     settings.s3 = S3Settings(
         endpoint="http://localhost:9000",
         bucket_name="my-bucket",
-        region="us-east-2"
+        region="us-east-2",
     )
 
     # Configure 4D array (t, z, y, x)
@@ -61,7 +64,7 @@ def main():
                     shard_size_chunks=2,
                 ),
             ],
-            data_type= DataType.UINT16,
+            data_type=DataType.UINT16,
         )
     ]
 

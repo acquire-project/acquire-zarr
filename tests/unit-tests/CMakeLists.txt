@@ -3,6 +3,7 @@ set(project acquire-zarr)
 set(tests
         create-stream
         create-stream-with-metadata
+        create-stream-simple-array-root
         array-dimensions-chunk-lattice-index
         array-dimensions-tile-group-offset
         array-dimensions-chunk-internal-offset
@@ -22,6 +23,7 @@ set(tests
         array-write-even
         array-write-ragged-append-dim
         array-write-ragged-internal-dim
+        array-write-fixed-size
         zarr-stream-partial-append
         frame-queue
         downsampler

@@ -77,8 +77,8 @@ ArrayDimensions::compute_transposition(
     // the inner dimensions since dim 0 cannot be transposed away.
     const bool dim0_unbounded = (map.acquisition_dims[0].array_size_px == 0);
     const size_t start_dim = dim0_unbounded ? 1 : 0;
-    const size_t frame_dims = n - 2;  // Total frame-addressable dimensions
-    const size_t lookup_dims = frame_dims - start_dim;  // Dims in lookup table
+    const size_t frame_dims = n - 2; // Total frame-addressable dimensions
+    const size_t lookup_dims = frame_dims - start_dim; // Dims in lookup table
 
     uint64_t lookup_size = 1;
     for (size_t i = start_dim; i < n - 2; ++i) {
@@ -133,16 +133,15 @@ ArrayDimensions::compute_transposition(
     return { std::move(storage_dims), std::move(map) };
 }
 
-ArrayDimensions::ArrayDimensions(
-  std::vector<ZarrDimension>&& dims,
-  ZarrDataType dtype,
-  const std::vector<size_t>& target_dim_order)
+ArrayDimensions::ArrayDimensions(std::vector<ZarrDimension>&& dims,
+                                 ZarrDataType dtype,
+                                 const std::vector<size_t>& target_dim_order)
   : is_2d_(dims.size() == 2)
   , dtype_(dtype)
-  , chunks_per_shard_(1)
-  , number_of_shards_(1)
   , bytes_per_chunk_(zarr::bytes_of_type(dtype))
   , number_of_chunks_in_memory_(1)
+  , chunks_per_shard_(1)
+  , number_of_shards_(1)
 {
     EXPECT(dims.size() > 1, "Array must have at least two dimensions.");
 
@@ -192,6 +191,17 @@ size_t
 ArrayDimensions::ndims() const
 {
     return dims_.size();
+}
+
+uint64_t
+ArrayDimensions::max_byte_count() const
+{
+    uint64_t max_bytes = zarr::bytes_of_type(dtype_);
+    for (const auto& dim : dims_) {
+        max_bytes *= dim.array_size_px;
+    }
+
+    return max_bytes;
 }
 
 const ZarrDimension&
@@ -479,8 +489,8 @@ ArrayDimensions::needs_xy_transposition() const
 
     const auto n = ndims();
     // Check if the last two spatial dimensions (height and width) are swapped.
-    // If acq[n-2] maps to storage_order[n-1] and acq[n-1] maps to storage_order[n-2],
-    // then height and width are swapped (Y↔X).
+    // If acq[n-2] maps to storage_order[n-1] and acq[n-1] maps to
+    // storage_order[n-2], then height and width are swapped (Y↔X).
     return transpose_map_->acq_to_storage[n - 2] == n - 1 &&
            transpose_map_->acq_to_storage[n - 1] == n - 2;
 }

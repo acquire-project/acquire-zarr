@@ -540,6 +540,7 @@ class PyZarrArraySettings
     {
         return compression_settings_;
     }
+
     void set_compression(
       const std::optional<PyZarrCompressionSettings>& settings)
     {
@@ -550,7 +551,9 @@ class PyZarrArraySettings
     {
         return dims_;
     }
+
     std::vector<PyZarrDimensionProperties>& dimensions() { return dims_; }
+
     void set_dimensions(const std::vector<PyZarrDimensionProperties>& dims)
     {
         dims_ = dims;
@@ -563,6 +566,7 @@ class PyZarrArraySettings
     {
         return downsampling_method_;
     }
+
     void set_downsampling_method(std::optional<ZarrDownsamplingMethod> method)
     {
         downsampling_method_ = method;
@@ -572,6 +576,7 @@ class PyZarrArraySettings
     {
         return storage_dimension_order_;
     }
+
     void set_storage_dimension_order(const std::vector<std::string>& order)
     {
         // Validate that dimension 0 is not transposed away
@@ -581,13 +586,14 @@ class PyZarrArraySettings
                 throw py::type_error(
                   "Transposing dimension 0 ('" + first_dim_name +
                   "') away from position 0 is not currently supported. "
-                  "The first dimension must remain first in storage_dimension_order.");
+                  "The first dimension must remain first in "
+                  "storage_dimension_order.");
             }
 
             // Validate that the last two acquisition dimensions remain in the
-            // last two positions (they can swap with each other, but cannot move elsewhere).
-            // This is required because frames arrive as 2D arrays with the shape of
-            // the last two acquisition dimensions.
+            // last two positions (they can swap with each other, but cannot
+            // move elsewhere). This is required because frames arrive as 2D
+            // arrays with the shape of the last two acquisition dimensions.
             const auto n = dims_.size();
             if (order.size() == n && n >= 2) {
                 const auto& last_acq_name = dims_[n - 1].name();
@@ -603,8 +609,10 @@ class PyZarrArraySettings
                     throw py::type_error(
                       "The last two dimensions in acquisition order ('" +
                       second_last_acq_name + "', '" + last_acq_name +
-                      "') must remain in the last two positions in storage_dimension_order. "
-                      "They may swap with each other, but cannot be reordered with "
+                      "') must remain in the last two positions in "
+                      "storage_dimension_order. "
+                      "They may swap with each other, but cannot be reordered "
+                      "with "
                       "other dimensions.");
                 }
             }
@@ -655,7 +663,8 @@ class PyZarrArraySettings
 
         // Convert dimension order names to indices
         if (!storage_dimension_order_.empty()) {
-            lt_props.storage_dimension_order.reserve(storage_dimension_order_.size());
+            lt_props.storage_dimension_order.reserve(
+              storage_dimension_order_.size());
             for (const auto& name : storage_dimension_order_) {
                 // Find this name in dims_ and get its index
                 bool found = false;
@@ -696,6 +705,7 @@ class PyZarrFieldOfView
     void set_path(const std::string& path) { path_ = path; }
 
     std::optional<uint32_t> acquisition_id() const { return acquisition_id_; }
+
     void set_acquisition_id(const std::optional<uint32_t>& id)
     {
         acquisition_id_ = id;
@@ -705,6 +715,7 @@ class PyZarrFieldOfView
     {
         return array_settings_;
     }
+
     void set_array_settings(const PyZarrArraySettings& settings)
     {
         array_settings_ = settings;
@@ -740,6 +751,7 @@ class PyZarrWell
 
     const std::vector<PyZarrFieldOfView>& images() const { return images_; }
     std::vector<PyZarrFieldOfView>& images() { return images_; }
+
     void set_images(const std::vector<PyZarrFieldOfView>& dims)
     {
         images_ = dims;
@@ -781,12 +793,14 @@ class PyZarrAcquisition
     void set_name(const std::optional<std::string>& name) { name_ = name; }
 
     std::optional<std::string> description() const { return description_; }
+
     void set_description(const std::optional<std::string>& description)
     {
         description_ = description;
     }
 
     std::optional<uint64_t> start_time() const { return start_time_; }
+
     void set_start_time(const std::optional<uint64_t>& time)
     {
         start_time_ = time;
@@ -839,6 +853,7 @@ class PyZarrPlate
 
     const std::vector<std::string>& row_names() const { return row_names_; }
     std::vector<std::string>& row_names() { return row_names_; }
+
     void set_row_names(const std::vector<std::string>& names)
     {
         row_names_ = names;
@@ -848,7 +863,9 @@ class PyZarrPlate
     {
         return column_names_;
     }
+
     std::vector<std::string>& column_names() { return column_names_; }
+
     void set_column_names(const std::vector<std::string>& names)
     {
         column_names_ = names;
@@ -862,7 +879,9 @@ class PyZarrPlate
     {
         return acquisitions_;
     }
+
     std::vector<PyZarrAcquisition>& acquisitions() { return acquisitions_; }
+
     void set_acquisitions(const std::vector<PyZarrAcquisition>& acqs)
     {
         acquisitions_ = acqs;
@@ -924,13 +943,18 @@ class PyZarrStreamSettings
     const std::string& store_path() const { return store_path_; }
     void set_store_path(const std::string& path) { store_path_ = path; }
 
-    const std::optional<PyZarrS3Settings>& s3() const { return s3_settings_; }
+    const std::optional<PyZarrS3Settings>& s3() const
+    {
+        return py_s3_settings_;
+    }
+
     void set_s3(const std::optional<PyZarrS3Settings>& settings)
     {
-        s3_settings_ = settings;
+        py_s3_settings_ = settings;
     }
 
     unsigned int max_threads() const { return max_threads_; }
+
     void set_max_threads(unsigned int max_threads)
     {
         max_threads_ = max_threads;
@@ -941,6 +965,7 @@ class PyZarrStreamSettings
 
     const std::vector<PyZarrArraySettings>& arrays() const { return arrays_; }
     std::vector<PyZarrArraySettings>& arrays() { return arrays_; }
+
     void set_arrays(const std::vector<PyZarrArraySettings>& arrays)
     {
         arrays_ = arrays;
@@ -948,6 +973,7 @@ class PyZarrStreamSettings
 
     const std::vector<PyZarrPlate>& plates() const { return plates_; }
     std::vector<PyZarrPlate>& plates() { return plates_; }
+
     void set_plates(const std::vector<PyZarrPlate>& plates)
     {
         plates_ = plates;
@@ -961,8 +987,9 @@ class PyZarrStreamSettings
         settings_.max_threads = max_threads_;
         settings_.overwrite = static_cast<int>(overwrite_);
 
-        if (s3_settings_) {
-            *(settings_.s3_settings) = *(s3_settings_->settings());
+        if (py_s3_settings_) {
+            s3_settings_ = *py_s3_settings_->settings();
+            settings_.s3_settings = &s3_settings_;
         }
 
         // construct array lifetime props and set up arrays
@@ -1051,12 +1078,14 @@ class PyZarrStreamSettings
 
   private:
     std::string store_path_;
-    mutable std::optional<PyZarrS3Settings> s3_settings_{ std::nullopt };
+    mutable std::optional<PyZarrS3Settings> py_s3_settings_{ std::nullopt };
     unsigned int max_threads_{ std::thread::hardware_concurrency() };
     bool overwrite_{ false };
 
     std::vector<PyZarrArraySettings> arrays_;
     std::vector<PyZarrPlate> plates_;
+
+    mutable ZarrS3Settings s3_settings_;
 
     mutable std::vector<ArrayLifetimeProps> array_lifetimes_;
     mutable std::vector<PlateLifetimeProps> plate_lifetimes_;
@@ -1076,14 +1105,13 @@ class PyZarrStream
         open_(settings);
     }
 
-    void append(py::array image_data, std::optional<std::string> key)
+    void append(py::array image_data, const std::optional<std::string>& key)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
                             "Stream not open for appending.");
             throw py::error_already_set();
         }
-
         // if the array is already contiguous, we can just write it out
         if (image_data.flags() & py::array::c_style) {
             write_contiguous_data(image_data, key);
@@ -1101,6 +1129,20 @@ class PyZarrStream
 
         // iterate through frames
         iterate_and_append(image_data, 0, std::vector<py::ssize_t>(), key);
+    }
+
+    void skip(size_t bytes_in, const std::optional<std::string>& key) const
+    {
+        size_t bytes_out;
+        const char* key_str = key.has_value() ? key->c_str() : nullptr;
+        const auto status = ZarrStream_append(
+          stream_.get(), nullptr, bytes_in, &bytes_out, key_str);
+        if (status != ZarrStatusCode_Success || bytes_in != bytes_out) {
+            const std::string err =
+              "Failed to skip: " + std::string(Zarr_get_status_message(status));
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
     }
 
     // iterate over the indices of the array until we get down to 2 dimensions,
@@ -1149,9 +1191,10 @@ class PyZarrStream
         return frame.cast<py::array>();
     }
 
-    void write_contiguous_data(py::array frame, std::optional<std::string> key)
+    void write_contiguous_data(py::array frame,
+                               const std::optional<std::string>& key) const
     {
-        // double check the frame is C-contiguous
+        // double-check the frame is C-contiguous
         py::array contiguous_data;
         if (!(frame.flags() & py::array::c_style)) {
             py::module np = py::module::import("numpy");
@@ -1160,27 +1203,49 @@ class PyZarrStream
             contiguous_data = frame;
         }
 
-        auto buf = contiguous_data.request();
-        auto* ptr = (uint8_t*)buf.ptr;
+        const auto buf = contiguous_data.request();
+        const auto* ptr = static_cast<uint8_t*>(buf.ptr);
 
         py::gil_scoped_release release;
 
         const char* key_str = key.has_value() ? key->c_str() : nullptr;
-        size_t bytes_out, bytes_in = buf.itemsize * buf.size;
-        auto status =
+        const size_t bytes_in = buf.itemsize * buf.size;
+
+        size_t bytes_out;
+        const auto status =
           ZarrStream_append(stream_.get(), ptr, bytes_in, &bytes_out, key_str);
 
         py::gil_scoped_acquire acquire;
 
-        if (status != ZarrStatusCode_Success) {
-            std::string err = "Failed to append data to Zarr stream: " +
-                              std::string(Zarr_get_status_message(status));
-            PyErr_SetString(PyExc_RuntimeError, err.c_str());
-            throw py::error_already_set();
-        } else if (bytes_out != bytes_in) {
-            std::string err = "Expected to write " + std::to_string(bytes_in) +
-                              " bytes, wrote " + std::to_string(bytes_out) +
-                              ".";
+        const std::string array_key =
+          key_str ? "'" + std::string(key_str) + "'" : "(NULL)";
+        std::string err;
+        switch (status) {
+            case ZarrStatusCode_Success:
+                if (bytes_out != bytes_in) {
+                    err = "Expected to write " + std::to_string(bytes_in) +
+                          " bytes to array " + array_key + ", wrote " +
+                          std::to_string(bytes_out) + ".";
+                }
+                break;
+            case ZarrStatusCode_KeyNotFound:
+                err = "Array key " + array_key + " not found";
+                break;
+            case ZarrStatusCode_WriteOutOfBounds:
+                err = "Attempted out of bounds write to array " + array_key;
+                break;
+            case ZarrStatusCode_PartialWrite:
+                err = "Partial write to array " + array_key + ": wrote " +
+                      std::to_string(bytes_out) +
+                      " bytes of contiguous region of " +
+                      std::to_string(bytes_in) + " bytes";
+                break;
+            default:
+                err = "Failed to append data to Zarr stream: " +
+                      std::string(Zarr_get_status_message(status));
+        }
+
+        if (!err.empty()) {
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }
@@ -2192,6 +2257,10 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("append",
            &PyZarrStream::append,
            py::arg("data"),
+           py::arg("key") = std::nullopt)
+      .def("skip",
+           &PyZarrStream::skip,
+           py::arg("n_bytes"),
            py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,

@@ -103,10 +103,7 @@ zarr::make_array(std::shared_ptr<ArrayConfig> config,
                  std::shared_ptr<S3ConnectionPool> s3_connection_pool,
                  bool is_hcs_array)
 {
-    // create a multiscale array at the dataset root (node_key is empty) or if
-    // we have a genuine multiscale dataset
-    const auto multiscale =
-      config->node_key.empty() || config->downsampling_method.has_value();
+    const auto multiscale = config->downsampling_method.has_value();
 
     std::unique_ptr<ArrayBase> array;
     if (multiscale || is_hcs_array) {

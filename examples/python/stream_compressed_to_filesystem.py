@@ -1,16 +1,24 @@
 # Stream to filesystem with LZ4 compression
 import numpy as np
 from acquire_zarr import (
-    ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType,
-    DataType, Compressor, CompressionCodec, CompressionSettings
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    DataType,
+    Compressor,
+    CompressionCodec,
+    CompressionSettings,
 )
 
 
 def make_sample_data():
     return np.random.randint(
-        0, 65535,
+        0,
+        65535,
         (5, 4, 2, 48, 64),  # Shape matches chunk sizes
-        dtype=np.uint16
+        dtype=np.uint16,
     )
 
 

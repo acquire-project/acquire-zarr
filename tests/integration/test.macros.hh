@@ -52,11 +52,7 @@
 #define SIZED(str) str, sizeof(str)
 #define DIM(name_, type_, array_size, chunk_size, shard_size, unit_, scale_)   \
     {                                                                          \
-        .name = (name_),                                                       \
-        .type = (type_),                                                       \
-        .array_size_px = (array_size),                                         \
-        .chunk_size_px = (chunk_size),                                         \
-        .shard_size_chunks = (shard_size),                                     \
-        .unit = (unit_),                                                       \
-        .scale = (scale_),                                                     \
+        .name = (name_), .type = (type_), .array_size_px = (array_size),       \
+        .chunk_size_px = (chunk_size), .shard_size_chunks = (shard_size),      \
+        .unit = (unit_), .scale = (scale_),                                    \
     }

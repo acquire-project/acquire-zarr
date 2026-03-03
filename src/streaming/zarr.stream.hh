@@ -33,10 +33,15 @@ struct ZarrStream_s
      * @brief Append data to the stream with a specific key.
      * @param key The key to associate with the data.
      * @param data_ Pointer to the data to append.
-     * @param nbytes The number of bytes to append.
-     * @return The number of bytes appended.
+     * @param bytes_in The number of bytes to append.
+     * @param bytes_out The number of bytes appended.
+     * @return ZarrStatusCode_Success on successful append, or an error code on
+     * failure.
      */
-    size_t append(const char* key, const void* data_, size_t nbytes);
+    ZarrStatusCode append(const char* key,
+                          const void* data_,
+                          size_t bytes_in,
+                          size_t& bytes_out);
 
     /**
      * @brief Write custom metadata to the stream.
@@ -61,6 +66,8 @@ struct ZarrStream_s
         zarr::LockedBuffer frame_buffer;
         size_t frame_buffer_offset;
         std::unique_ptr<zarr::ArrayBase> array;
+        size_t max_bytes;
+        size_t bytes_written;
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
