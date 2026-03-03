@@ -7,6 +7,30 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       }
+    },
+    {
+      "name": "debug",
+      "binaryDir": "${sourceDir}/cmake-build-debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "binaryDir": "${sourceDir}/cmake-build-release",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "binaryDir": "${sourceDir}/cmake-build-relwithdebinfo",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
     }
   ]
 }
