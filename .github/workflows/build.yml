@@ -102,8 +102,36 @@ jobs:
           - "windows-latest"
           - "macos-latest" # arm
           - "macos-15-intel" # x86_64
+          - "ubuntu-22.04"
+          - "ubuntu-22.04-arm"
         python:
-          - "3.13.3"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+        include:
+          - platform: "windows-latest"
+            arch: "x86_64"
+          - platform: "macos-latest"
+            arch: "aarch64"
+          - platform: "macos-15-intel"
+            arch: "x86_64"
+          - platform: "ubuntu-22.04"
+            arch: "x86_64"
+          - platform: "ubuntu-22.04-arm"
+            arch: "aarch64"
+          - python: "3.10"
+            cp_ver: cp310
+          - python: "3.11"
+            cp_ver: cp311
+          - python: "3.12"
+            cp_ver: cp312
+          - python: "3.13"
+            cp_ver: cp313
+          - python: "3.14"
+            cp_ver: cp314
+
 
     runs-on: ${{ matrix.platform }}
 
@@ -111,7 +139,7 @@ jobs:
       actions: write
 
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
     steps:
@@ -125,6 +153,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install vcpkg
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }} # vcpkg will be installed in the manylinux image for Ubuntu builds
         run: |
           git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
@@ -142,47 +171,14 @@ jobs:
           brew install libomp
 
       - name: Build
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
         run: python -m build -o dist
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.platform}} wheel
-          path: ${{github.workspace}}/dist/*.whl
-
-  build-wheel-ubuntu:
-    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
-    strategy:
-      matrix:
-        platform:
-          - "ubuntu-22.04"
-          - "ubuntu-22.04-arm"
-        python:
-          - "3.13.3"
-        include:
-          - platform: "ubuntu-22.04"
-            arch: "x86_64"
-          - platform: "ubuntu-22.04-arm"
-            arch: "aarch64"
-
-    runs-on: ${{ matrix.platform }}
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-build-wheel
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Build
-        uses: pypa/cibuildwheel@v3.0.1
+      - name: Build (manylinux)
+        if: startsWith(matrix.platform, 'ubuntu')
+        uses: pypa/cibuildwheel@v3.3.1
         env:
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: "${{ matrix.cp_ver }}-*"
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
@@ -198,14 +194,14 @@ jobs:
             PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-11/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-11/root/usr/bin/g++
-            Python3_EXECUTABLE=/opt/python/cp313-cp313/bin/python
-            Python3_INCLUDE_DIR=/opt/python/cp313-cp313/include/python3.13
-            Python3_LIBRARY=/opt/python/cp313-cp313/lib/libpython3.13.a
+            Python3_EXECUTABLE="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/bin/python"
+            Python3_INCLUDE_DIR="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/include/python${{ matrix.python }}"
+            Python3_LIBRARY="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/lib/libpython${{ matrix.python }}.a"
         with:
           output-dir: dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: Linux ${{ matrix.arch }} wheel
+          name: ${{matrix.platform}} ${{matrix.arch}} wheel (Python ${{ matrix.python }})
           path: ${{github.workspace}}/dist/*.whl
