@@ -43,8 +43,7 @@ class Array : public ArrayBase
     std::vector<size_t> shard_file_offsets_;
     std::vector<std::vector<uint64_t>> shard_tables_;
 
-    std::vector<std::string> metadata_keys_() const override;
-    bool make_metadata_() override;
+    bool make_metadata_(nlohmann::json& metadata) override;
     [[nodiscard]] bool close_() override;
     [[nodiscard]] bool close_impl_();
 

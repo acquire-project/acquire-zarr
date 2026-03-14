@@ -130,7 +130,8 @@ validate_compression_settings(const ZarrCompressionSettings* settings,
 }
 
 [[nodiscard]] bool
-validate_custom_metadata(std::string_view metadata)
+validate_custom_metadata(std::string_view metadata,
+                         nlohmann::json& metadata_json)
 {
     if (metadata.empty()) {
         return false;
@@ -147,6 +148,7 @@ validate_custom_metadata(std::string_view metadata)
         LOG_ERROR("Invalid JSON: '", metadata, "'");
         return false;
     }
+    metadata_json = std::move(val);
 
     return true;
 }
@@ -959,54 +961,40 @@ ZarrStream::append(const char* key_,
 }
 
 ZarrStatusCode
-ZarrStream_s::write_custom_metadata(std::string_view custom_metadata,
-                                    bool overwrite)
+ZarrStream_s::write_custom_metadata(const std::optional<std::string>& array_key,
+                                    const std::string_view metadata_key,
+                                    const std::string_view metadata)
 {
-    if (!validate_custom_metadata(custom_metadata)) {
-        LOG_ERROR("Invalid custom metadata: '", custom_metadata, "'");
+
+    std::string key;
+    if (array_key.has_value()) {
+        key = zarr::regularize_key(*array_key);
+    } else if (output_arrays_.size() == 1) {
+        key = output_arrays_.begin()->first;
+    } else {
+        LOG_ERROR(
+          "Array key is required when there are multiple output arrays");
         return ZarrStatusCode_InvalidArgument;
     }
+    const std::string meta_key = zarr::regularize_key(metadata_key);
 
-    // check if we have already written custom metadata
-    if (!custom_metadata_sink_) {
-        const std::string metadata_key = "acquire.json";
-        std::string base_path = store_path_;
-        if (base_path.starts_with("file://")) {
-            base_path = base_path.substr(7);
+    if (const auto it = output_arrays_.find(key); it == output_arrays_.end()) {
+        LOG_ERROR("Array key '", key, "' not found in output arrays");
+        return ZarrStatusCode_KeyNotFound;
+    } else {
+        nlohmann::json metadata_json;
+        if (!validate_custom_metadata(metadata, metadata_json)) {
+            LOG_ERROR("Invalid custom metadata: '", metadata, "'");
+            return ZarrStatusCode_InvalidArgument;
         }
-        const auto prefix = base_path.empty() ? "" : base_path + "/";
-        const auto sink_path = prefix + metadata_key;
 
-        if (is_s3_acquisition_()) {
-            custom_metadata_sink_ = zarr::make_s3_sink(
-              s3_settings_->bucket_name, sink_path, s3_connection_pool_);
-        } else {
-            custom_metadata_sink_ =
-              zarr::make_file_sink(sink_path, file_handle_pool_);
+        if (const auto& arr = it->second;
+            !arr.array->write_custom_metadata(meta_key, metadata_json)) {
+            LOG_ERROR("Error writing custom metadata for array '", key, "'");
+            return ZarrStatusCode_IOError;
         }
-    } else if (!overwrite) { // custom metadata already written, don't overwrite
-        LOG_ERROR("Custom metadata already written, use overwrite flag");
-        return ZarrStatusCode_WillNotOverwrite;
     }
 
-    if (!custom_metadata_sink_) {
-        LOG_ERROR("Custom metadata sink not found");
-        return ZarrStatusCode_InternalError;
-    }
-
-    const auto metadata_json = nlohmann::json::parse(custom_metadata,
-                                                     nullptr, // callback
-                                                     false, // allow exceptions
-                                                     true   // ignore comments
-    );
-
-    const auto metadata_str = metadata_json.dump(4);
-    std::span data{ reinterpret_cast<const uint8_t*>(metadata_str.data()),
-                    metadata_str.size() };
-    if (!custom_metadata_sink_->write(0, data)) {
-        LOG_ERROR("Error writing custom metadata");
-        return ZarrStatusCode_IOError;
-    }
     return ZarrStatusCode_Success;
 }
 
@@ -1699,12 +1687,6 @@ finalize_stream(struct ZarrStream_s* stream)
     // shut down the thread pool, let everything after this run in the main
     // thread
     stream->thread_pool_->await_stop();
-
-    if (stream->custom_metadata_sink_ &&
-        !zarr::finalize_sink(std::move(stream->custom_metadata_sink_))) {
-        LOG_ERROR(
-          "Error finalizing Zarr stream. Failed to write custom metadata");
-    }
 
     for (auto& [key, output] : stream->output_arrays_) {
         if (!zarr::finalize_array(std::move(output.array))) {

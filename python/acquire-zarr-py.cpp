@@ -1251,7 +1251,9 @@ class PyZarrStream
         }
     }
 
-    bool write_custom_metadata(py::str custom_metadata, bool overwrite)
+    bool write_custom_metadata(py::object metadata,
+                               const std::optional<std::string>& array_key,
+                               const std::optional<std::string>& metadata_key)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
@@ -1259,10 +1261,24 @@ class PyZarrStream
             throw py::error_already_set();
         }
 
+        std::string metadata_str;
+        if (py::isinstance<py::dict>(metadata)) {
+            py::module_ json = py::module_::import("json");
+            metadata_str = json.attr("dumps")(metadata).cast<std::string>();
+        } else if (py::isinstance<py::str>(metadata)) {
+            metadata_str = metadata.cast<std::string>();
+        } else {
+            PyErr_SetString(PyExc_TypeError, "metadata must be a str or dict");
+            throw py::error_already_set();
+        }
+
+        const char* array_cstr =
+          array_key.has_value() ? array_key->c_str() : nullptr;
+        const char* meta_cstr =
+          metadata_key.has_value() ? metadata_key->c_str() : nullptr;
+
         auto status = ZarrStream_write_custom_metadata(
-          stream_.get(),
-          custom_metadata.cast<std::string>().c_str(),
-          overwrite);
+          stream_.get(), array_cstr, meta_cstr, metadata_str.c_str());
 
         if (status == ZarrStatusCode_WillNotOverwrite) {
             return false; // Metadata already exists and overwrite is false
@@ -2264,8 +2280,9 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
-           py::arg("custom_metadata"),
-           py::arg("overwrite"))
+           py::arg("metadata"),
+           py::arg("array_key") = std::nullopt,
+           py::arg("metadata_key") = std::nullopt)
       .def("is_active", &PyZarrStream::is_active)
       .def("get_current_memory_usage",
            &PyZarrStream::get_current_memory_usage,

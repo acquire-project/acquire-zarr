@@ -168,17 +168,10 @@ zarr::Array::max_bytes() const
     return max_bytes_;
 }
 
-std::vector<std::string>
-zarr::Array::metadata_keys_() const
-{
-    return { "zarr.json" };
-}
-
 bool
-zarr::Array::make_metadata_()
+zarr::Array::make_metadata_(nlohmann::json& metadata)
 {
-    metadata_strings_.clear();
-
+    nlohmann::json meta_tmp;
     std::vector<size_t> array_shape, chunk_shape, shard_shape;
     const auto& dims = config_->dimensions;
 
@@ -208,29 +201,36 @@ zarr::Array::make_metadata_()
         shard_shape.push_back(dim.shard_size_chunks * chunk_shape.back());
     }
 
-    json metadata;
-    metadata["shape"] = array_shape;
-    metadata["chunk_grid"] = json::object({
+    meta_tmp["shape"] = array_shape;
+    meta_tmp["chunk_grid"] = json::object({
       { "name", "regular" },
       {
         "configuration",
         json::object({ { "chunk_shape", shard_shape } }),
       },
     });
-    metadata["chunk_key_encoding"] = json::object({
+    meta_tmp["chunk_key_encoding"] = json::object({
       { "name", "default" },
       {
         "configuration",
         json::object({ { "separator", "/" } }),
       },
     });
-    metadata["fill_value"] = 0;
-    metadata["attributes"] = json::object();
-    metadata["zarr_format"] = 3;
-    metadata["node_type"] = "array";
-    metadata["storage_transformers"] = json::array();
-    metadata["data_type"] = sample_type_to_dtype(config_->dtype);
-    metadata["storage_transformers"] = json::array();
+    meta_tmp["fill_value"] = 0;
+    meta_tmp["attributes"] = json::object();
+
+    if (!custom_metadata_.empty()) {
+        auto& attributes = meta_tmp["attributes"];
+        for (const auto& [key, value] : custom_metadata_) {
+            attributes[key] = value;
+        }
+    }
+
+    meta_tmp["zarr_format"] = 3;
+    meta_tmp["node_type"] = "array";
+    meta_tmp["storage_transformers"] = json::array();
+    meta_tmp["data_type"] = sample_type_to_dtype(config_->dtype);
+    meta_tmp["storage_transformers"] = json::array();
 
     // Skip phantom dimension (index 0) for 2D arrays in dimension names
     const size_t name_start = dims->is_2d() ? 1 : 0;
@@ -238,7 +238,7 @@ zarr::Array::make_metadata_()
     for (auto i = name_start; i < dims->ndims(); ++i) {
         dimension_names[i - name_start] = dims->at(i).name;
     }
-    metadata["dimension_names"] = dimension_names;
+    meta_tmp["dimension_names"] = dimension_names;
 
     auto codecs = json::array();
 
@@ -285,9 +285,8 @@ zarr::Array::make_metadata_()
 
     codecs.push_back(sharding_indexed);
 
-    metadata["codecs"] = codecs;
-
-    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+    meta_tmp["codecs"] = codecs;
+    metadata = std::move(meta_tmp);
 
     return true;
 }
@@ -305,15 +304,17 @@ zarr::Array::close_()
         }
         close_sinks_();
 
-        if (frames_written_() > 0) {
-            CHECK(write_metadata_());
-            for (auto& [key, sink] : metadata_sinks_) {
-                EXPECT(zarr::finalize_sink(std::move(sink)),
-                       "Failed to finalize metadata sink ",
-                       key);
+        if (frames_written_() > 0 || !custom_metadata_.empty()) {
+            if (!write_metadata_()) {
+                LOG_ERROR("Failed to write metadata on close");
+                return false;
+            }
+
+            if (!zarr::finalize_sink(std::move(metadata_sink_))) {
+                LOG_ERROR("Failed to finalize metadata sink");
+                return false;
             }
         }
-        metadata_sinks_.clear();
         retval = true;
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to finalize array writer: ", exc.what());

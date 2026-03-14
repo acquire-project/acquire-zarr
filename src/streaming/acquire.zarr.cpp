@@ -645,14 +645,23 @@ extern "C"
     }
 
     ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,
-                                                    const char* custom_metadata,
-                                                    bool overwrite)
+                                                    const char* array_key,
+                                                    const char* metadata_key,
+                                                    const char* metadata)
     {
         EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(metadata, "Null pointer: metadata");
+
+        std::optional<std::string> key = std::nullopt;
+        if (array_key) {
+            key = zarr::regularize_key(array_key);
+        }
+
+        const std::string meta_key = metadata_key ? metadata_key : "";
 
         ZarrStatusCode status;
         try {
-            status = stream->write_custom_metadata(custom_metadata, overwrite);
+            status = stream->write_custom_metadata(key, meta_key, metadata);
         } catch (const std::exception& e) {
             LOG_ERROR("Error writing metadata: ", e.what());
             status = ZarrStatusCode_InternalError;

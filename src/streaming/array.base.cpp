@@ -20,6 +20,41 @@ zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
            "Either S3 connection pool or file handle pool must be provided.");
 }
 
+bool
+zarr::ArrayBase::write_custom_metadata(const std::string& key,
+                                       const nlohmann::json& metadata)
+{
+    const std::vector<std::string> reserved_keys{ "ome" };
+
+    // write immediately under 'attributes'
+    if (key.empty()) {
+        // check every reserved key to avoid collisions with custom metadata
+        // keys
+        for (const auto& reserved_key : reserved_keys) {
+            if (metadata.contains(reserved_key)) {
+                LOG_ERROR("Key '", key, "' is reserved and cannot be used");
+                return false;
+            }
+        }
+
+        for (const auto& [key, value] : metadata.items()) {
+            custom_metadata_[key] = value;
+        }
+    } else {
+        if (const auto it =
+              std::find(reserved_keys.begin(), reserved_keys.end(), key);
+            it != reserved_keys.end()) {
+            LOG_ERROR("Key '", key, "' is reserved and cannot be used.");
+            return false;
+        }
+
+        // store custom metadata in memory until we write it out in close()
+        custom_metadata_[key] = metadata;
+    }
+
+    return true;
+}
+
 std::string
 zarr::ArrayBase::node_path_() const
 {
@@ -32,65 +67,50 @@ zarr::ArrayBase::node_path_() const
 }
 
 bool
-zarr::ArrayBase::make_metadata_sinks_()
+zarr::ArrayBase::make_metadata_sink_()
 {
     metadata_sinks_.clear();
 
     try {
-        const auto sink_keys = metadata_keys_();
-        for (const auto& key : sink_keys) {
-            const std::string path = node_path_() + "/" + key;
-            std::unique_ptr<Sink> sink =
-              config_->bucket_name
-                ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
-                : make_file_sink(path, file_handle_pool_);
-
-            if (sink == nullptr) {
-                LOG_ERROR("Failed to create metadata sink for ", key);
-                return false;
-            }
-            metadata_sinks_.emplace(key, std::move(sink));
+        const std::string path = node_path_() + "/" + metadata_path_;
+        auto sink =
+          config_->bucket_name
+            ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
+            : make_file_sink(path, file_handle_pool_);
+        if (!sink) {
+            LOG_ERROR("Failed to create metadata sink for path: ", path);
+            return false;
         }
+        metadata_sink_ = std::move(sink);
     } catch (const std::exception& exc) {
         LOG_ERROR("Failed to create metadata sinks: ", exc.what());
         return false;
     }
 
-    return true;
+    return metadata_sink_ != nullptr;
 }
 
 bool
 zarr::ArrayBase::write_metadata_()
 {
-    if (!make_metadata_()) {
+    nlohmann::json metadata;
+    if (!make_metadata_(metadata)) {
         LOG_ERROR("Failed to make metadata.");
         return false;
     }
 
-    if (!make_metadata_sinks_()) {
+    if (!make_metadata_sink_()) {
         LOG_ERROR("Failed to make metadata sinks.");
         return false;
     }
 
-    for (const auto& [key, metadata] : metadata_strings_) {
-        const auto it = metadata_sinks_.find(key);
-        if (it == metadata_sinks_.end()) {
-            LOG_ERROR("Metadata sink not found for key: ", key);
-            return false;
-        }
+    const std::string metadata_str = metadata.dump(4);
+    std::span data{ reinterpret_cast<const uint8_t*>(metadata_str.data()),
+                    metadata_str.size() };
 
-        auto& sink = it->second;
-        if (!sink) {
-            LOG_ERROR("Metadata sink is null for key: ", key);
-            return false;
-        }
-
-        std::span data{ reinterpret_cast<const uint8_t*>(metadata.data()),
-                        metadata.size() };
-        if (!sink->write(0, data)) {
-            LOG_ERROR("Failed to write metadata for key: ", key);
-            return false;
-        }
+    if (!metadata_sink_->write(0, data)) {
+        LOG_ERROR("Failed to write metadata for key: ", metadata_path_);
+        return false;
     }
 
     return true;

@@ -76,30 +76,28 @@ zarr::MultiscaleArray::max_bytes() const
     return arrays_[0]->max_bytes();
 }
 
-std::vector<std::string>
-zarr::MultiscaleArray::metadata_keys_() const
-{
-    return { "zarr.json" };
-}
-
 bool
-zarr::MultiscaleArray::make_metadata_()
+zarr::MultiscaleArray::make_metadata_(nlohmann::json& metadata)
 {
-    metadata_sinks_.clear();
-
-    nlohmann::json metadata = {
+    nlohmann::json meta_tmp = {
         { "zarr_format", 3 },
         { "consolidated_metadata", nullptr },
         { "node_type", "group" },
         { "attributes", nlohmann::json::object() },
     };
 
-    if (!arrays_.empty()) {
-        metadata["attributes"]["ome"] = get_ome_metadata_();
+    if (!custom_metadata_.empty()) {
+        auto& attributes = meta_tmp["attributes"];
+        for (const auto& [key, value] : custom_metadata_) {
+            attributes[key] = value;
+        }
     }
 
-    metadata_strings_.emplace("zarr.json", metadata.dump(4));
+    if (!arrays_.empty()) {
+        meta_tmp["attributes"]["ome"] = get_ome_metadata_();
+    }
 
+    metadata = std::move(meta_tmp);
     return true;
 }
 
@@ -118,14 +116,12 @@ zarr::MultiscaleArray::close_()
         return false;
     }
 
-    for (auto& [key, sink] : metadata_sinks_) {
-        EXPECT(zarr::finalize_sink(std::move(sink)),
-               "Failed to finalize metadata sink ",
-               key);
+    if (!zarr::finalize_sink(std::move(metadata_sink_))) {
+        LOG_ERROR("Failed to finalize metadata sink");
+        return false;
     }
 
     arrays_.clear();
-    metadata_sinks_.clear();
 
     return true;
 }

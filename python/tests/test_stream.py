@@ -44,7 +44,6 @@ from acquire_zarr import (
 @pytest.fixture(scope="function")
 def settings():
     s = StreamSettings()
-    s.custom_metadata = json.dumps({"foo": "bar"})
     s.arrays = [
         ArraySettings(
             dimensions=[
@@ -547,43 +546,72 @@ def test_set_log_level(level: LogLevel):
 
 
 @pytest.mark.parametrize(
-    ("overwrite",),
+    ("array_key", "metadata_key", "multiscale"),
     [
-        (False,),
-        (True,),
+        (None, None, False),
+        (None, "", False),
+        (None, "baz", False),
+        (None, "baz/qux", False),
+        ("test_array", None, False),
+        ("test_array", "", False),
+        ("test_array", "baz", False),
+        ("test_array", "baz/qux", False),
+        (None, None, True),
+        (None, "", True),
+        (None, "baz", True),
+        (None, "baz/qux", True),
+        ("test_array", None, True),
+        ("test_array", "", True),
+        ("test_array", "baz", True),
+        ("test_array", "baz/qux", True),
     ],
 )
 def test_write_custom_metadata(
     settings: StreamSettings,
     store_path: Path,
-    overwrite: bool,
+    array_key: str | None,
+    metadata_key: str | None,
+    multiscale: bool,
 ):
     settings.store_path = str(store_path / "test.zarr")
+
+    if array_key is not None:
+        settings.arrays[0].output_key = array_key
+    if multiscale:
+        settings.arrays[0].downsampling_method = DownsamplingMethod.MEAN
+
     stream = ZarrStream(settings)
     assert stream
 
-    metadata = json.dumps({"foo": "bar"})
-    assert stream.write_custom_metadata(metadata, True)
-
-    # don't allow overwriting the metadata
-    metadata = json.dumps({"baz": "qux"})
-    overwrite_result = stream.write_custom_metadata(
-        metadata, overwrite=overwrite
+    metadata_dict = {"foo": "bar"}
+    assert stream.write_custom_metadata(
+        metadata_dict, array_key=array_key, metadata_key=metadata_key
     )
-    assert overwrite_result == overwrite
 
     stream.close()
 
-    assert (Path(settings.store_path) / "acquire.json").is_file()
-    with open(Path(settings.store_path) / "acquire.json", "r") as fh:
+    base_path = Path(settings.store_path)
+    if array_key is not None:
+        metadata_path = base_path / array_key / "zarr.json"
+    else:
+        metadata_path = Path(settings.store_path) / "zarr.json"
+
+    assert metadata_path.is_file()
+    with open(metadata_path, "r") as fh:
         data = json.load(fh)
 
-    if overwrite:  # the metadata is overwritten
-        assert data["baz"] == "qux"
-        assert "foo" not in data
-    else:  # the originally written metadata is preserved
-        assert data["foo"] == "bar"
-        assert "baz" not in data
+    assert "attributes" in data
+    attributes = data["attributes"]
+
+    container = attributes
+    if metadata_key is not None and not len(metadata_key) == 0:
+        assert metadata_key in container
+        container = container[metadata_key]
+        assert len(container) == 1
+    else:
+        assert len(container) == 2 if multiscale else 1
+
+    assert container.get("foo") == "bar"
 
 
 def test_write_transposed_array(
@@ -1738,7 +1766,7 @@ def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
 
 
 def test_append_throws_on_overflow(
-        store_path: Path, request: pytest.FixtureRequest
+    store_path: Path, request: pytest.FixtureRequest
 ):
     set_log_level(LogLevel.DEBUG)
     settings = StreamSettings(
@@ -1788,7 +1816,7 @@ def test_append_throws_on_overflow(
 
     stream.append(data)  # ok
     with pytest.raises(RuntimeError) as e:
-        one_more_byte = np.random.randint(0, 65535,(1, 1, 1), dtype=np.uint16)
+        one_more_byte = np.random.randint(0, 65535, (1, 1, 1), dtype=np.uint16)
         stream.append(one_more_byte)
 
         assert e

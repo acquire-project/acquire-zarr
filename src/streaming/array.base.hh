@@ -9,6 +9,8 @@
 #include "thread.pool.hh"
 #include "zarr.types.h"
 
+#include <nlohmann/json.hpp>
+
 #include <string>
 
 namespace zarr {
@@ -70,6 +72,16 @@ class ArrayBase
     virtual ~ArrayBase() = default;
 
     /**
+     * @brief Write custom metadata to the array.
+     * @param key The key for the custom metadata, relative to 'attributes' in
+     * the array metadata.
+     * @param metadata The JSON value to write as custom metadata.
+     * @return True on success, false on failure.
+     */
+    bool write_custom_metadata(const std::string& key,
+                               const nlohmann::json& metadata);
+
+    /**
      * @brief Get the amount of memory currently used by this Array, in bytes.
      * @return Memory used by this object, in bytes.
      */
@@ -107,13 +119,17 @@ class ArrayBase
     std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
     std::shared_ptr<FileHandlePool> file_handle_pool_;
 
-    std::unordered_map<std::string, std::string> metadata_strings_;
+    // JSON metadata
+    const std::string metadata_path_{ "zarr.json" };
+    std::unordered_map<std::string, nlohmann::json> custom_metadata_;
+    std::unique_ptr<Sink> metadata_sink_;
+
+    // map of metadata path (relative to array root) to sink for that metadata
     std::unordered_map<std::string, std::unique_ptr<Sink>> metadata_sinks_;
 
     std::string node_path_() const;
-    [[nodiscard]] virtual bool make_metadata_() = 0;
-    virtual std::vector<std::string> metadata_keys_() const = 0;
-    [[nodiscard]] bool make_metadata_sinks_();
+    [[nodiscard]] virtual bool make_metadata_(nlohmann::json& metadata) = 0;
+    [[nodiscard]] bool make_metadata_sink_();
     [[nodiscard]] bool write_metadata_();
 
     friend bool finalize_array(std::unique_ptr<ArrayBase>&& array);

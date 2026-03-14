@@ -22,12 +22,19 @@ class CMakeBuild(build_ext):
 
         cfg = "Debug" if self.debug else "Release"
 
+        vcpkg_root = os.environ.get("VCPKG_ROOT")
+        if not vcpkg_root:
+            raise RuntimeError("VCPKG_ROOT environment variable is not set")
+
         cmake_args = [
-            "--preset=default",
+            f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_root}/scripts/buildsystems/vcpkg.cmake",
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DBUILD_PYTHON=ON",
             "-DBUILD_TESTING=OFF",
         ]
+
+        extra_args = os.environ.get("CMAKE_ARGS", "").split()
+        cmake_args += [arg for arg in extra_args if arg]  # Filter out empty strings
 
         if self.compiler.compiler_type == "msvc":
             cmake_args.append("-DVCPKG_TARGET_TRIPLET=x64-windows-static")
@@ -42,13 +49,14 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_dir)
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_dir)
 
-        if self.compiler.compiler_type == "msvc":
-            built_ext = str(Path(build_dir) / "python" / cfg  / "__init__*.pyd")
-        else:
-            built_ext = str(Path(build_dir) / "python"  / "__init__*.so")
-        matching_files = glob.glob(built_ext)
-        if not matching_files:
-            raise RuntimeError(f"Could not find any files matching {built_ext}")
+        py_build_dir = Path(build_dir) / "python"
+        patterns = ("__init__*.pyd", "__init__*.so")
+
+        matching_files = []
+        for pattern in patterns:
+            matching_files.extend(py_build_dir.glob(f"**/{pattern}"))
+            if matching_files:
+                break
 
         # Move the built extension to the correct location
         dst = self.get_ext_fullpath(ext.name)

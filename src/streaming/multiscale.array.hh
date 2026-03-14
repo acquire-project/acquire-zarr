@@ -30,8 +30,7 @@ class MultiscaleArray : public ArrayBase
 
     size_t bytes_per_frame_;
 
-    std::vector<std::string> metadata_keys_() const override;
-    bool make_metadata_() override;
+    bool make_metadata_(nlohmann::json& metadata) override;
     bool close_() override;
 
     /** @brief Create array writers. */

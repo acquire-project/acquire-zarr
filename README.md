@@ -355,6 +355,74 @@ The `overwrite` parameter controls whether existing data at the `store_path` is 
 When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
 When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.
 
+### Writing custom metadata
+
+Custom metadata can be written to any array in the stream using
+`ZarrStream_write_custom_metadata` (C) or `stream.write_custom_metadata`
+(Python). Metadata is written under the `attributes` key of the target array's
+`zarr.json` file, which is the standard location for user-defined metadata in
+Zarr v3.
+
+The function takes three parameters:
+
+- **`array_key`**: The key of the array to write metadata to, matching the
+  `output_key` set when configuring the array (see the array configuration
+  examples above). If `NULL` (C) or `None` (Python) and the stream has only one
+  array, that array is targeted automatically. Required when the stream has
+  multiple arrays.
+- **`metadata_key`**: An optional key under `attributes` to nest the metadata
+  under. If `NULL`/`None` or empty, metadata is written directly under
+  `attributes`. Supports path-style nesting, e.g. `"device/motor"`.
+- **`metadata`**: A JSON-formatted string containing the metadata to write.
+
+> [!NOTE]
+> The `ome` key under `attributes` is reserved for OME-NGFF metadata and
+> cannot be used as a `metadata_key`. Passing `"ome"` or, if no metadata key is
+> provided, if any child of the metadata object has a key of `"ome"`, the function
+> will return an error.
+
+In C:
+```c
+// Write directly under 'attributes'
+ZarrStream_write_custom_metadata(stream,
+                                 "my-array",   // array_key
+                                 NULL,          // metadata_key: write under 'attributes'
+                                 "{\"device\": \"motor-1\", \"position\": 42}");
+
+// Write under 'attributes/device'
+ZarrStream_write_custom_metadata(stream,
+                                 "my-array",
+                                 "device",
+                                 "{\"name\": \"motor-1\", \"position\": 42}");
+```
+
+In Python:
+```python
+import json
+
+# Write as a dict directly under 'attributes'
+stream.write_custom_metadata(
+    {"device": "motor-1", "position": 42},
+    array_key="my-array"
+)
+
+# Write as a string directly under 'attributes'
+stream.write_custom_metadata(
+    json.dumps({"device": "motor-1", "position": 42}),
+    array_key="my-array"
+)
+
+# Write under 'attributes/device'
+stream.write_custom_metadata(
+    {"name": "motor-1", "position": 42},
+    array_key="my-array",
+    metadata_key="device"
+)
+```
+
+Metadata can be written at any point while the stream is active and will be
+flushed to disk when the stream is closed.
+
 ### High-content screening workflows
 
 The library supports high-content screening (HCS) datasets following the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.

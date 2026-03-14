@@ -45,13 +45,15 @@ struct ZarrStream_s
 
     /**
      * @brief Write custom metadata to the stream.
-     * @param custom_metadata JSON-formatted custom metadata to write.
+     * @param metadata JSON-formatted custom metadata to write.
      * @param overwrite If true, overwrite any existing custom metadata.
      * Otherwise, fail if custom metadata has already been written.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode write_custom_metadata(std::string_view custom_metadata,
-                                         bool overwrite);
+    ZarrStatusCode write_custom_metadata(
+      const std::optional<std::string>& array_key,
+      const std::string_view metadata_key,
+      const std::string_view metadata);
 
     /**
      * @brief Get the current memory usage of the stream.
@@ -93,8 +95,6 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
-
-    std::unique_ptr<zarr::Sink> custom_metadata_sink_;
 
     bool is_s3_acquisition_() const;
 

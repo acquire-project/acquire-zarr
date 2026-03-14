@@ -291,18 +291,22 @@ extern "C"
                                      const char* key);
 
     /**
-     * @brief Write custom metadata to the Zarr stream.
+     * @brief Write custom metadata to an array.
      * @param stream The Zarr stream struct.
-     * @param custom_metadata JSON-formatted custom metadata to be written to
-     * the dataset.
-     * @param overwrite If true, overwrite any existing custom metadata.
-     * Otherwise, if custom_metadata is not empty and the stream has already
-     * written custom metadata, this function will return an error.
+     * @param array_key Optional of the array to write the metadata to. Metadata
+     * will be written to <array_key>/zarr.json. If array_key is empty or NULL,
+     * metadata will be written to the root zarr.json.
+     * @param metadata_key Key under 'attributes' to write the metadata to. If
+     * metadata_key is empty or NULL, metadata will be written directly under
+     * 'attributes'. Note: the 'ome' key and any children are disallowed.
+     * Passing 'ome' or a string beginning with 'ome/' will return an error.
+     * @param metadata JSON-formatted metadata to be written to the dataset.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
-                                                    const char* custom_metadata,
-                                                    bool overwrite);
+                                                    const char* array_key,
+                                                    const char* metadata_key,
+                                                    const char* metadata);
 
     /**
      * @brief Get the current memory usage of the Zarr stream.
