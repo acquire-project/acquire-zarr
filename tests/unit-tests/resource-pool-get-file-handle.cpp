@@ -24,7 +24,7 @@ get_file_handle(zarr::ResourcePool& pool, const std::string& path)
 
     {
         void* flags = make_flags();
-        const auto handle = pool.get_file_handle(file_path, flags);
+        const auto handle = pool.get_file_handle(path, flags);
 
         CHECK(handle != nullptr);
         active_handle_count = pool.active_file_handles();
@@ -60,7 +60,10 @@ main()
     }
 
     if (fs::exists(file_path)) {
-        fs::remove(file_path);
+        if (std::error_code ec; !fs::remove(file_path, ec)) {
+            LOG_ERROR("Error removing file ", file_path, ": ", ec.message());
+            retval = 1;
+        }
     }
 
     return retval;

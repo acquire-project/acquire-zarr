@@ -35,6 +35,7 @@ void
 zarr::FileHandle::FlushDeleter::operator()(const FileHandle* handle) const
 {
     flush_file(handle->get());
+    delete handle;
 }
 
 zarr::FileHandlePool::FileHandlePool()
