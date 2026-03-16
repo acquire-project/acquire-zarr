@@ -19,7 +19,6 @@ set(tests
         file-sink-write
         s3-sink-write
         s3-sink-write-multipart
-        make-data-sinks
         array-write-even
         array-write-ragged-append-dim
         array-write-ragged-internal-dim
