@@ -1,5 +1,6 @@
 install
 CMakeSettings.json
+CMakeUserPresets.json
 TestResults
 .DS_Store
 *.zip

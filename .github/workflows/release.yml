@@ -95,30 +95,42 @@ jobs:
           path: ${{github.workspace}}/*.zip
 
   build-wheel:
-    name: Build Python ${{ matrix.py_version }} wheel on ${{ matrix.platform }}
+    name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
     strategy:
       matrix:
         platform:
           - "windows-latest"
           - "macos-latest" # arm
           - "macos-15-intel" # x86_64
+          - "ubuntu-22.04"
+          - "ubuntu-22.04-arm"
         python:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13.3"
+          - "3.13"
+          - "3.14"
         include:
-          - python: "3.9"
-            py_version: "3.9"
+          - platform: "windows-latest"
+            arch: "x86_64"
+          - platform: "macos-latest"
+            arch: "aarch64"
+          - platform: "macos-15-intel"
+            arch: "x86_64"
+          - platform: "ubuntu-22.04"
+            arch: "x86_64"
+          - platform: "ubuntu-22.04-arm"
+            arch: "aarch64"
           - python: "3.10"
-            py_version: "3.10"
+            cp_ver: cp310
           - python: "3.11"
-            py_version: "3.11"
+            cp_ver: cp311
           - python: "3.12"
-            py_version: "3.12"
-          - python: "3.13.3"
-            py_version: "3.13" # without patch version
+            cp_ver: cp312
+          - python: "3.13"
+            cp_ver: cp313
+          - python: "3.14"
+            cp_ver: cp314
 
     runs-on: ${{ matrix.platform }}
 
@@ -140,6 +152,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install vcpkg
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }} # vcpkg will be installed in the manylinux image for Ubuntu builds
         run: |
           git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
           cd vcpkg && ./bootstrap-vcpkg.sh
@@ -148,75 +161,30 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
+      - name: Install dependencies
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build auditwheel
+
+      - name: macOS fixes
         if: startsWith(matrix.platform, 'macos')
         run: |
           brew install libomp
-
-      - name: Install Python dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest auditwheel
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            echo "ARCHFLAGS=-arch arm64" >> $GITHUB_ENV
+            echo "_PYTHON_HOST_PLATFORM=macosx-15.0-arm64" >> $GITHUB_ENV
+          else
+            echo "ARCHFLAGS=-arch x86_64" >> $GITHUB_ENV
+            echo "_PYTHON_HOST_PLATFORM=macosx-15.0-x86_64" >> $GITHUB_ENV
+          fi
 
       - name: Build
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
         run: python -m build -o dist
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }} ${{ matrix.python }} wheel
-          path: ${{ github.workspace }}/dist
-
-  build-wheel-ubuntu:
-    name: Build Python ${{ matrix.py_version }} wheel on ${{ matrix.platform }}
-    strategy:
-      matrix:
-        platform:
-          - "ubuntu-22.04"
-          - "ubuntu-22.04-arm"
-        python:
-          - "3.9"
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13.3"
-        include:
-          - platform: "ubuntu-22.04"
-            arch: "x86_64"
-          - platform: "ubuntu-22.04-arm"
-            arch: "aarch64"
-          - python: "3.9"
-            py_version: "3.9"
-            py_short: "cp39"
-          - python: "3.10"
-            py_version: "3.10"
-            py_short: "cp310"
-          - python: "3.11"
-            py_version: "3.11"
-            py_short: "cp311"
-          - python: "3.12"
-            py_version: "3.12"
-            py_short: "cp312"
-          - python: "3.13.3"
-            py_version: "3.13" # without patch version
-            py_short: "cp313"
-
-    runs-on: ${{ matrix.platform }}
-
-    permissions:
-      actions: write
-
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Build
-        uses: pypa/cibuildwheel@v3.0.1
+      - name: Build (manylinux)
+        if: startsWith(matrix.platform, 'ubuntu')
+        uses: pypa/cibuildwheel@v3.3.1
         env:
-          CIBW_BUILD: ${{ matrix.py_short }}-*
+          CIBW_BUILD: "${{ matrix.cp_ver }}-*"
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
@@ -224,7 +192,7 @@ jobs:
             yum install -y ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd &&
             source /opt/rh/gcc-toolset-11/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
-            cd vcpkg && 
+            cd vcpkg &&
             CMAKE_POLICY_VERSION_MINIMUM=3.5 ./bootstrap-vcpkg.sh &&
             ./vcpkg integrate install
           CIBW_ENVIRONMENT: >-
@@ -232,23 +200,22 @@ jobs:
             PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-11/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-11/root/usr/bin/g++
-            Python3_EXECUTABLE=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/bin/python
-            Python3_INCLUDE_DIR=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/include/python${{ matrix.py_version }}
-            Python3_LIBRARY=/opt/python/${{ matrix.py_short }}-${{ matrix.py_short }}/lib/libpython${{ matrix.py_version }}.a
+            Python3_EXECUTABLE="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/bin/python"
+            Python3_INCLUDE_DIR="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/include/python${{ matrix.python }}"
+            Python3_LIBRARY="/opt/python/${{ matrix.cp_ver }}-${{ matrix.cp_ver }}/lib/libpython${{ matrix.python }}.a"
         with:
           output-dir: dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: Linux ${{ matrix.arch }} ${{ matrix.py_version }} wheel
+          name: ${{matrix.platform}} ${{matrix.arch}} wheel (Python ${{ matrix.python }})
           path: ${{github.workspace}}/dist/*.whl
 
   release:
     needs:
       - build
       - build-wheel
-      - build-wheel-ubuntu
     name: "Release"
     runs-on: "ubuntu-latest"
 

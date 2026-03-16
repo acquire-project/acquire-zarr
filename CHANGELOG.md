@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - [2026-03-11](https://github.com/acquire-project/acquire-zarr/compare/v0.6.0...v0.7.0)
+
 ### Added
 
 - Support for transposing acquisition dimensions into different storage dimensions (#173)

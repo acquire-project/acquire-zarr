@@ -1700,6 +1700,43 @@ def test_with_ragged_final_shard(store_path: Path):
 
     np.testing.assert_array_equal(data, array)
 
+
+def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
+    settings = StreamSettings(
+        store_path=str(store_path / f"{request.node.name}.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=64,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    data = np.random.randint(0, 65535, (64, 128), dtype=np.uint16)
+    stream.append(data)
+    stream.close()
+    del stream
+    array = zarr.open_array(settings.store_path)
+    assert data.shape == array.shape
+    np.testing.assert_array_equal(data, array)
+
+
 def test_append_throws_on_overflow(
         store_path: Path, request: pytest.FixtureRequest
 ):
