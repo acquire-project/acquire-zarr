@@ -71,6 +71,8 @@ struct ZarrStream_s
         size_t bytes_written;
     };
 
+    std::shared_ptr<zarr::ResourcePool> resource_pool_;
+
     std::string error_; // error message. If nonempty, an error occurred.
 
     std::string store_path_;

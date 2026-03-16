@@ -834,6 +834,10 @@ ZarrStream::ZarrStream_s(ZarrStreamSettings_s* settings,
 {
     EXPECT(validate_settings_(settings), error_);
 
+    resource_pool_ =
+      pool ? pool->inner()
+           : std::make_shared<zarr::ResourcePool>(settings->max_threads);
+
     start_thread_pool_(settings->max_threads);
 
     // commit settings and create the output store

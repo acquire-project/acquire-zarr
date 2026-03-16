@@ -24,6 +24,9 @@ zarr::ResourcePool::ResourcePool(size_t max_threads)
   , max_memory_bytes_(8ULL << 30) // 8 GiB (TODO (aliddell): make configurable)
   , active_memory_bytes_(0)
 {
+    max_threads =
+      max_threads == 0 ? std::thread::hardware_concurrency() : max_threads;
+
     thread_pool_ = std::make_shared<ThreadPool>(
       max_threads, [this](const std::string& err) { set_error_(err); });
     EXPECT(thread_pool_, "Null pointer: thread pool");

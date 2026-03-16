@@ -58,7 +58,7 @@ main()
     };
 
     // Create stream
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, NULL);
     // Free Dimension array
     ZarrArraySettings_destroy_dimension_array(settings.arrays);
 

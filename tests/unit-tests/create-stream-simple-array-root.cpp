@@ -57,7 +57,7 @@ single_simple_array_at_root_null_key()
         .array_count = 1,
     };
 
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, nullptr);
     const bool retval = stream != nullptr; // configured correctly
     ZarrStream_destroy(stream);
 
@@ -80,7 +80,7 @@ single_simple_array_at_root_empty_key()
         .array_count = 1,
     };
 
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, nullptr);
     const bool retval = stream != nullptr; // configured correctly
     ZarrStream_destroy(stream);
 
@@ -104,7 +104,7 @@ multiple_arrays_with_simple_array_at_root()
     settings.arrays[1].output_key = "foo";
     configure_stream_dimensions(settings.arrays + 1);
 
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, nullptr);
     const bool retval = stream == nullptr; // impossible to configure this
     ZarrStream_destroy(stream);
 

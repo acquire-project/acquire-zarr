@@ -245,7 +245,7 @@ make_hcs_stream()
         EXPECT(expected_paths.contains(key), "Unexpected array path: ", key);
     }
 
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, nullptr);
 
     ZarrHCSPlate_destroy_well_array(&plate);
 

@@ -62,7 +62,7 @@ setup()
         .shard_size_chunks = 2,
     };
 
-    auto* stream = ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings, nullptr);
     ZarrArraySettings_destroy_dimension_array(settings.arrays);
     CHECK(stream != nullptr);
     return stream;

@@ -124,7 +124,7 @@ setup()
                "micrometer",
                0.9);
 
-    auto* stream = ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings, nullptr);
     ZarrArraySettings_destroy_dimension_array(settings.arrays);
 
     return stream;

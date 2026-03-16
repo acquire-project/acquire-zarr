@@ -161,7 +161,7 @@ main()
     };
 
     // Create stream
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, nullptr);
 
     if (!stream) {
         fprintf(stderr, "Failed to create stream\n");

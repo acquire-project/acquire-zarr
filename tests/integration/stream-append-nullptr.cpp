@@ -273,7 +273,7 @@ setup_fs(ZarrStreamSettings& settings)
     // setup test array
     setup_stream_array(settings);
 
-    return ZarrStream_create(&settings);
+    return ZarrStream_create(&settings, nullptr);
 }
 
 ZarrStream*
@@ -298,7 +298,7 @@ setup_s3(ZarrStreamSettings& settings)
     }
     settings.s3_settings = &s3_settings;
 
-    return ZarrStream_create(&settings);
+    return ZarrStream_create(&settings, nullptr);
 }
 
 size_t

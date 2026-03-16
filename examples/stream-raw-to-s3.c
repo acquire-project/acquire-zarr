@@ -60,7 +60,7 @@ main()
                                  .shard_size_chunks = 2 };
 
     // Create stream
-    ZarrStream* stream = ZarrStream_create(&settings);
+    ZarrStream* stream = ZarrStream_create(&settings, NULL);
     // Free Dimension array
     ZarrArraySettings_destroy_dimension_array(settings.arrays);
 

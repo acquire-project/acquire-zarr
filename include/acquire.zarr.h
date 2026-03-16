@@ -290,7 +290,7 @@ extern "C"
      * @return A pointer to the Zarr stream struct, or NULL on failure.
      */
     ZarrStream* ZarrStream_create(ZarrStreamSettings* settings,
-                                  ZarrResourcePool* pool = NULL);
+                                  ZarrResourcePool* pool);
 
     /**
      * @brief Destroy a Zarr stream.

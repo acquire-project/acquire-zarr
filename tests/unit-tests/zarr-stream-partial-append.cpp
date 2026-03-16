@@ -184,7 +184,7 @@ main()
     try {
         // allocate dimensions
         configure_stream_dimensions(settings.arrays);
-        stream = ZarrStream_create(&settings);
+        stream = ZarrStream_create(&settings, nullptr);
 
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));

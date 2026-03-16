@@ -54,7 +54,7 @@ create_stream_with_metadata()
           ZarrStreamSettings_create_arrays(&settings, 1));
     configure_stream_dimensions(settings.arrays);
 
-    auto* stream = ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings, nullptr);
     CHECK(stream);
 
     ZarrStreamSettings_destroy_arrays(&settings);
@@ -78,7 +78,7 @@ create_stream_no_metadata()
           ZarrStreamSettings_create_arrays(&settings, 1));
     configure_stream_dimensions(settings.arrays);
 
-    auto* stream = ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings, nullptr);
     ZarrStreamSettings_destroy_arrays(&settings);
 
     return stream;

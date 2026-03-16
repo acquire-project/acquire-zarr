@@ -98,7 +98,7 @@ setup()
     dim = settings.arrays[2].dimensions + 2;
     *dim = DIM("x", ZarrDimensionType_Space, 64, 16, 1, "micrometer", 1.0);
 
-    auto* stream = ZarrStream_create(&settings);
+    auto* stream = ZarrStream_create(&settings, nullptr);
     ZarrStreamSettings_destroy_arrays(&settings);
 
     return stream;

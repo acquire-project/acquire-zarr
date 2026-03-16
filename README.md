@@ -178,7 +178,7 @@ ZarrStreamSettings settings = (ZarrStreamSettings){
     .array_count = 1, // Number of arrays in the stream
 };
 
-ZarrStream* stream = ZarrStream_create(&settings);
+ZarrStream* stream = ZarrStream_create(&settings, nullptr);
 
 // You can now safely free the dimensions array
 ZarrArraySettings_destroy_dimension_array(&array);
@@ -591,7 +591,7 @@ ZarrStreamSettings settings = {
     .hcs_settings = &hcs_settings,
 };
 
-ZarrStream* stream = ZarrStream_create(&settings);
+ZarrStream* stream = ZarrStream_create(&settings, nullptr);
 
 // Write data
 uint16_t* frame_data = /* your image data */;

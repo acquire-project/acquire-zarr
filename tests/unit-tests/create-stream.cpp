@@ -51,12 +51,12 @@ main()
 
     try {
         // try to create a stream with no store path
-        stream = ZarrStream_create(&settings);
+        stream = ZarrStream_create(&settings, nullptr);
         CHECK(nullptr == stream);
 
         // try to create a stream with no dimensions
         settings.store_path = static_cast<const char*>(TEST ".zarr");
-        stream = ZarrStream_create(&settings);
+        stream = ZarrStream_create(&settings, nullptr);
         CHECK(nullptr == stream);
         CHECK(!fs::exists(settings.store_path));
 
@@ -64,7 +64,7 @@ main()
         CHECK(ZarrStatusCode_Success ==
               ZarrStreamSettings_create_arrays(&settings, 1));
         configure_stream_dimensions(settings.arrays);
-        stream = ZarrStream_create(&settings);
+        stream = ZarrStream_create(&settings, nullptr);
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));
 

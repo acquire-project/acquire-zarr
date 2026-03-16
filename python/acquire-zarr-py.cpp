@@ -1336,8 +1336,8 @@ class PyZarrStream
         }
 
         auto* stream_settings = settings.to_settings();
-        stream_ =
-          ZarrStreamPtr(ZarrStream_create(stream_settings), ZarrStreamDeleter);
+        stream_ = ZarrStreamPtr(ZarrStream_create(stream_settings, nullptr),
+                                ZarrStreamDeleter);
         if (!stream_) {
             PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
             throw py::error_already_set();
