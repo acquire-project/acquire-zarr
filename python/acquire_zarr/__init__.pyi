@@ -58,14 +58,33 @@ class Acquisition:
 class ArraySettings:
     """Settings for a single array in the Zarr stream.
 
+    The resulting Zarr hierarchy depends on ``output_key`` and
+    ``downsampling_method``:
+
+    - **No output_key, no downsampling**: A simple array is written directly
+      at ``store_path``.
+    - **output_key set, no downsampling**: A simple array is written at
+      ``store_path / output_key``. Intermediate group directories are created
+      but no OME-NGFF multiscales metadata is written.
+    - **downsampling_method set** (with or without output_key): An OME-NGFF
+      multiscales group is created at ``store_path / output_key`` (or at
+      ``store_path`` if ``output_key`` is empty), with the full-resolution
+      array at level ``0`` and additional downsampled levels. The number of
+      levels is currently determined automatically from the chunk and array
+      sizes.
+
     Attributes:
-      output_key: Key within the Zarr dataset where this array will be stored. For an Array belonging to a FieldOfView,
-        this MUST be None.
+      output_key: Path within the Zarr store where this array (or multiscales
+        group) will be written, relative to ``StreamSettings.store_path``. If
+        empty or omitted, the array is placed at the store root. For an Array
+        belonging to a FieldOfView, this MUST be None.
       dimensions: List of dimension properties defining the dataset structure.
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
       compression: Optional compression settings for chunks. If None, no compression is applied.
-      downsampling_method: Method used for generating optional multiscale levels (image pyramid).
+      downsampling_method: Method used for generating optional multiscale levels
+        (image pyramid). When set, the array is wrapped in an OME-NGFF
+        multiscales group. When None (default), a simple array node is written.
       storage_dimension_order: Order of dimensions for storage, which may different
         from the acquisition order defined in `dimensions`. Must be a list of dimension
         names corresponding to those in `dimensions`.
