@@ -60,6 +60,15 @@ Available recipes:
     uv-sync *args  # Run uv sync (includes testing dependencies)
 ```
 
+## Docker
+
+Build and run the tests in a container:
+
+```bash
+docker build -t acquire-zarr .
+docker run --rm acquire-zarr
+```
+
 ## Building
 
 ### Installing dependencies
