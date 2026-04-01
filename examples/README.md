@@ -44,7 +44,7 @@ On Windows, you will need to specify the target triplet with `-DVCPKG_TARGET_TRI
 ### Filesystem Storage
 
 - **zarrv3-raw-filesystem.c** - Basic Zarr v3 array writing to filesystem without compression
-- **zarrv3-compressed-filesystem.c** - Zarr v3 array with LZ4 compression to filesystem  
+- **zarrv3-compressed-filesystem.c** - Zarr v3 array with Blosc LZ4 compression to filesystem
 - **zarrv3-raw-multiscale-filesystem.c** - Multi-resolution Zarr v3 arrays to filesystem
 
 ### S3 Storage

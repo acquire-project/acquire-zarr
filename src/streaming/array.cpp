@@ -280,23 +280,14 @@ zarr::Array::make_metadata_()
                     { "name", "blosc" },
                     { "configuration", config },
                   });
-              } else if constexpr (std::is_same_v<T,
-                                                   zarr::ZstdCompressionParams>) {
+              } else {
+                  static_assert(std::is_same_v<T, zarr::ZstdCompressionParams>);
                   return json::object({
                     { "name", "zstd" },
                     { "configuration",
                       json::object({
                         { "level", params.level },
                         { "checksum", false },
-                      }) },
-                  });
-              } else {
-                  static_assert(std::is_same_v<T, zarr::Lz4CompressionParams>);
-                  return json::object({
-                    { "name", "lz4" },
-                    { "configuration",
-                      json::object({
-                        { "level", params.level },
                       }) },
                   });
               }

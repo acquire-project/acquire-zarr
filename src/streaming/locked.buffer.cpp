@@ -122,9 +122,3 @@ zarr::LockedBuffer::compress(const zarr::ZstdCompressionParams& params)
     return compress_in_place(data_, params);
 }
 
-bool
-zarr::LockedBuffer::compress(const zarr::Lz4CompressionParams& params)
-{
-    std::unique_lock lock(mutex_);
-    return compress_in_place(data_, params);
-}

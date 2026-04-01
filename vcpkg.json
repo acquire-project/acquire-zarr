@@ -19,10 +19,6 @@
     {
       "name": "zstd",
       "version>=": "1.5.5"
-    },
-    {
-      "name": "lz4",
-      "version>=": "1.9.4"
     }
   ]
 }

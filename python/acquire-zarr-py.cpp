@@ -306,8 +306,6 @@ compressor_to_str(ZarrCompressor c)
             return "BLOSC1";
         case ZarrCompressor_Zstd:
             return "ZSTD";
-        case ZarrCompressor_Lz4:
-            return "LZ4";
         default:
             return "UNKNOWN";
     }
@@ -325,8 +323,6 @@ compression_codec_to_str(ZarrCompressionCodec c)
             return "BLOSC_ZSTD";
         case ZarrCompressionCodec_Zstd:
             return "ZSTD";
-        case ZarrCompressionCodec_Lz4:
-            return "LZ4";
         default:
             return "UNKNOWN";
     }
@@ -1391,8 +1387,7 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::enum_<ZarrCompressor>(m, "Compressor")
       .value(compressor_to_str(ZarrCompressor_None), ZarrCompressor_None)
       .value(compressor_to_str(ZarrCompressor_Blosc1), ZarrCompressor_Blosc1)
-      .value(compressor_to_str(ZarrCompressor_Zstd), ZarrCompressor_Zstd)
-      .value(compressor_to_str(ZarrCompressor_Lz4), ZarrCompressor_Lz4);
+      .value(compressor_to_str(ZarrCompressor_Zstd), ZarrCompressor_Zstd);
 
     py::enum_<ZarrCompressionCodec>(m, "CompressionCodec")
       .value(compression_codec_to_str(ZarrCompressionCodec_None),
@@ -1402,9 +1397,7 @@ PYBIND11_MODULE(acquire_zarr, m)
       .value(compression_codec_to_str(ZarrCompressionCodec_BloscZstd),
              ZarrCompressionCodec_BloscZstd)
       .value(compression_codec_to_str(ZarrCompressionCodec_Zstd),
-             ZarrCompressionCodec_Zstd)
-      .value(compression_codec_to_str(ZarrCompressionCodec_Lz4),
-             ZarrCompressionCodec_Lz4);
+             ZarrCompressionCodec_Zstd);
 
     py::enum_<ZarrDimensionType>(m, "DimensionType")
       .value(dimension_type_to_str(ZarrDimensionType_Space),

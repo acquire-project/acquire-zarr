@@ -17,7 +17,6 @@ find_package(blosc CONFIG REQUIRED)
 #find_package(miniocpp CONFIG REQUIRED) # TODO (aliddell): uncomment when minio-cpp pushes a new release to vcpkg
 find_package(Crc32c CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
-find_package(lz4 CONFIG REQUIRED)
 find_package(OpenMP REQUIRED)
 
 set(CMAKE_C_STANDARD 11)

@@ -8,7 +8,6 @@
 #include <blosc.h>
 
 #include <bit> // bit_ceil
-#include <climits>
 #include <filesystem>
 #include <regex>
 #include <stack>
@@ -154,23 +153,6 @@ validate_compression_settings(const ZarrCompressionSettings* settings,
                 return false;
             }
             break;
-        case ZarrCompressor_Lz4:
-            if (settings->codec != ZarrCompressionCodec_Lz4) {
-                error = "Lz4 compressor requires Lz4 codec";
-                return false;
-            }
-            if (settings->level > 12) {
-                error =
-                  "Invalid compression level: " +
-                  std::to_string(settings->level) +
-                  ". LZ4 supports levels 0-12";
-                return false;
-            }
-            if (settings->shuffle != 0) {
-                error = "Shuffle is not supported with stock lz4 compression";
-                return false;
-            }
-            break;
         case ZarrCompressor_None:
             break;
         default:
@@ -219,8 +201,6 @@ make_compression_params(const ZarrCompressionSettings* settings)
               settings->shuffle);
         case ZarrCompressor_Zstd:
             return zarr::ZstdCompressionParams{ settings->level };
-        case ZarrCompressor_Lz4:
-            return zarr::Lz4CompressionParams{ settings->level };
         default:
             return std::nullopt;
     }
@@ -369,18 +349,6 @@ make_array_config(const ZarrArraySettings* settings,
 
     std::shared_ptr<ArrayDimensions> dimensions =
       make_array_dimensions(settings);
-
-    // LZ4 API uses int for sizes — reject chunks that would overflow
-    if (settings->compression_settings &&
-        settings->compression_settings->compressor == ZarrCompressor_Lz4) {
-        const size_t chunk_bytes = dimensions->bytes_per_chunk();
-        if (chunk_bytes > static_cast<size_t>(INT_MAX)) {
-            error = "Chunk size (" + std::to_string(chunk_bytes) +
-                    " bytes) exceeds LZ4 maximum (" +
-                    std::to_string(INT_MAX) + " bytes)";
-            return nullptr;
-        }
-    }
 
     std::optional<ZarrDownsamplingMethod> downsampling_method = std::nullopt;
     if (settings->multiscale) {

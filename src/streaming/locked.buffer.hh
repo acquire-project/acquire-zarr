@@ -103,9 +103,5 @@ class LockedBuffer
      */
     [[nodiscard]] bool compress(const zarr::ZstdCompressionParams& params);
 
-    /**
-     * @brief Compress the buffer in place using stock lz4.
-     */
-    [[nodiscard]] bool compress(const zarr::Lz4CompressionParams& params);
 };
 } // namespace zarr
