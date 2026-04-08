@@ -63,6 +63,12 @@ zarr::ThreadPool::await_stop() noexcept
     }
 }
 
+uint32_t
+zarr::ThreadPool::n_threads() const
+{
+    return threads_.size();
+}
+
 std::optional<zarr::ThreadPool::Task>
 zarr::ThreadPool::pop_from_job_queue_() noexcept
 {
@@ -100,10 +106,4 @@ zarr::ThreadPool::process_tasks_()
             }
         }
     }
-}
-
-uint32_t
-zarr::ThreadPool::n_threads() const
-{
-    return threads_.size();
 }

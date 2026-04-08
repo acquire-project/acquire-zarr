@@ -1450,6 +1450,7 @@ void
 ZarrStream_s::set_error_(const std::string& msg)
 {
     error_ = msg;
+    frame_queue_processing_done_ = true;
 }
 
 bool
@@ -1732,8 +1733,9 @@ ZarrStream_s::finalize_frame_queue_()
 
     // Wait for frame processing to complete
     std::unique_lock lock(frame_queue_mutex_);
-    frame_queue_finished_cv_.wait(lock,
-                                  [this] { return frame_queue_->empty(); });
+    frame_queue_finished_cv_.wait(lock, [this] {
+        return frame_queue_processing_done_.load() || frame_queue_->empty();
+    });
 }
 
 bool
