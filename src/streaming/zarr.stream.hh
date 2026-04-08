@@ -84,8 +84,9 @@ struct ZarrStream_s
     std::unordered_map<std::string, ZarrOutputArray> output_arrays_;
     std::vector<std::string> intermediate_group_paths_;
 
-    std::atomic<bool> process_frames_{ true };
     std::mutex frame_queue_mutex_;
+    std::atomic<bool> process_frames_{ true };
+    std::atomic<bool> frame_queue_processing_done_{ false };
     std::condition_variable frame_queue_not_full_cv_;  // Space is available
     std::condition_variable frame_queue_not_empty_cv_; // Data is available
     std::condition_variable frame_queue_empty_cv_;     // Queue is empty
