@@ -99,17 +99,6 @@ zarr::construct_data_paths(std::string_view base_path,
     return paths_out;
 }
 
-std::vector<std::string>
-zarr::get_parent_paths(const std::vector<std::string>& file_paths)
-{
-    std::unordered_set<std::string> unique_paths;
-    for (const auto& file_path : file_paths) {
-        unique_paths.emplace(fs::path(file_path).parent_path().string());
-    }
-
-    return { unique_paths.begin(), unique_paths.end() };
-}
-
 std::unique_ptr<zarr::Sink>
 zarr::make_file_sink(std::string_view file_path,
                      std::shared_ptr<FileHandlePool> file_handle_pool)

@@ -62,15 +62,6 @@ construct_data_paths(std::string_view base_path,
                      bool make_directories);
 
 /**
- * @brief Get unique paths to the parent directories of each file in @p
- * file_paths.
- * @param file_paths Collection of paths to files.
- * @return Collection of unique parent directories.
- */
-std::vector<std::string>
-get_parent_paths(const std::vector<std::string>& file_paths);
-
-/**
  * @brief Create a file sink from a path.
  * @param file_path The path to the file.
  * @param file_handle_pool Pointer to a pool of file handles.
