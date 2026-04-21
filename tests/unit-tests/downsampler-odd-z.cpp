@@ -88,7 +88,8 @@ main()
                                           dims,
                                           ZarrDataType_uint8,
                                           ZarrDownsamplingMethod_Mean,
-                                          0);
+                                          0,
+                                          true);
 
     try {
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);

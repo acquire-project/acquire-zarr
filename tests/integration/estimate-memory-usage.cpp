@@ -39,10 +39,7 @@ initialize_array(ZarrArraySettings& settings,
     }
 
     if (multiscale) {
-        settings.multiscale = true;
         settings.downsampling_method = ZarrDownsamplingMethod_Decimate;
-    } else {
-        settings.multiscale = false;
     }
 
     // allocate 4 dimensions

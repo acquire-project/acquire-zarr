@@ -58,20 +58,17 @@ class Acquisition:
 class ArraySettings:
     """Settings for a single array in the Zarr stream.
 
-    The resulting Zarr hierarchy depends on ``output_key`` and
-    ``downsampling_method``:
+    The resulting Zarr hierarchy depends on ``is_ngff`` and ``downsampling_method``:
 
-    - **No output_key, no downsampling**: A simple array is written directly
-      at ``store_path``.
-    - **output_key set, no downsampling**: A simple array is written at
-      ``store_path / output_key``. Intermediate group directories are created
-      but no OME-NGFF multiscales metadata is written.
-    - **downsampling_method set** (with or without output_key): An OME-NGFF
-      multiscales group is created at ``store_path / output_key`` (or at
-      ``store_path`` if ``output_key`` is empty), with the full-resolution
-      array at level ``0`` and additional downsampled levels. The number of
-      levels is currently determined automatically from the chunk and array
-      sizes.
+    - **is_ngff=False, no downsampling_method**: A simple array node is written.
+    - **is_ngff=True, no downsampling_method**: A single-level OME-NGFF multiscales
+      group is written with no image pyramid.
+    - **downsampling_method set**: An OME-NGFF multiscales group is written with
+      the full-resolution array at level ``0`` plus additional downsampled levels.
+      ``is_ngff`` is coerced to True.
+
+    Arrays belonging to a ``FieldOfView`` are always treated as NGFF regardless
+    of the value of ``is_ngff``.
 
     Attributes:
       output_key: Path within the Zarr store where this array (or multiscales
@@ -83,8 +80,9 @@ class ArraySettings:
       data_type: The pixel data type for the dataset.
       compression: Optional compression settings for chunks. If None, no compression is applied.
       downsampling_method: Method used for generating optional multiscale levels
-        (image pyramid). When set, the array is wrapped in an OME-NGFF
-        multiscales group. When None (default), a simple array node is written.
+        (image pyramid). When set, `is_ngff` is also coerced to True and the array
+        is wrapped in an OME-NGFF multiscales group. When None (default), no
+        image pyramid is generated.
       storage_dimension_order: Order of dimensions for storage, which may different
         from the acquisition order defined in `dimensions`. Must be a list of dimension
         names corresponding to those in `dimensions`.
@@ -95,6 +93,13 @@ class ArraySettings:
             - The first dimension *may not* be moved to a non-leading position.
             - The last two dimensions *may not* be moved out of the final two positions,
               but MAY be swapped with each other.
+      is_ngff: When True, the array is wrapped in an OME-NGFF multiscales group.
+        When False (default), a simple array node is written. Note that setting
+        `downsampling_method` will coerce this to True regardless, and
+        subsequently setting `is_ngff = False` will have no effect as long as
+        `downsampling_method` is set. Setting `is_ngff = True` without a
+        downsampling method produces a single-level OME-NGFF multiscales group
+        with no image pyramid.
     """
 
     output_key: str
@@ -103,6 +108,7 @@ class ArraySettings:
     compression: Optional[CompressionSettings]
     downsampling_method: Optional[DownsamplingMethod]
     storage_dimension_order: List[str]
+    is_ngff: bool
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
@@ -290,10 +296,10 @@ class DownsamplingMethod:
 
     DECIMATE: ClassVar[
         DownsamplingMethod
-    ]  # value = <DownsamplingMethod.DECIMATE: 0>
-    MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 1>
-    MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 2>
-    MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 3>
+    ]  # value = <DownsamplingMethod.DECIMATE: 1>
+    MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 2>
+    MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 3>
+    MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 4>
     __members__: ClassVar[
         dict[str, DownsamplingMethod]
     ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
@@ -319,8 +325,9 @@ class FieldOfView:
     Attributes:
         path: Path to this field of view within the plate structure.
         acquisition_id: Optional ID linking this field of view to a specific acquisition.
-        array_settings: Array configuration for this field of view's data
-            To prevent potential key inconsistency, array_settings.output_key MUST be None.
+        array_settings: Array configuration for this field of view's data.
+            ``output_key`` must be None to prevent key conflicts with the FOV path.
+            ``is_ngff`` is always coerced to True for HCS field of view arrays.
     """
 
     path: str

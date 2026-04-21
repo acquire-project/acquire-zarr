@@ -266,7 +266,7 @@ extern "C"
                 array_usage *= 2;
             }
 
-            if (array.multiscale) {
+            if (array.downsampling_method > ZarrDownsamplingMethod_None) {
                 // we can bound the memory usage of multiscale arrays by
                 // observing that each downsampled level is at most half the
                 // size of the previous level, so the total memory usage is at

@@ -116,27 +116,6 @@ zarr::ArrayBase::write_metadata_()
     return true;
 }
 
-std::unique_ptr<zarr::ArrayBase>
-zarr::make_array(std::shared_ptr<ArrayConfig> config,
-                 std::shared_ptr<ThreadPool> thread_pool,
-                 std::shared_ptr<FileHandlePool> file_handle_pool,
-                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
-                 bool is_hcs_array)
-{
-    const auto multiscale = config->downsampling_method.has_value();
-
-    std::unique_ptr<ArrayBase> array;
-    if (multiscale || is_hcs_array) {
-        array = std::make_unique<MultiscaleArray>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
-    } else {
-        array = std::make_unique<Array>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
-    }
-
-    return array;
-}
-
 bool
 zarr::finalize_array(std::unique_ptr<ArrayBase>&& array)
 {

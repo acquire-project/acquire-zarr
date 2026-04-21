@@ -322,3 +322,24 @@ def test_estimate_max_memory_usage():
     max_memory = stream.get_maximum_memory_usage()
 
     assert max_memory == expected_memory
+
+
+def test_is_ngff_coercion():
+    settings = aqz.ArraySettings()
+    assert settings.downsampling_method is None
+    assert settings.is_ngff is False
+
+    # set to true in the absence of downsampling_method
+    settings.is_ngff = True
+    assert settings.is_ngff is True
+
+    # set to false and add a downsampling_method
+    settings.is_ngff = False
+    assert settings.is_ngff is False
+    settings.downsampling_method = aqz.DownsamplingMethod.MEAN
+    assert settings.is_ngff is True
+
+    # try to set false with a configured downsampling method
+    settings.is_ngff = False
+    assert settings.is_ngff is True
+    assert settings.downsampling_method is not None

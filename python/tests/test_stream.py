@@ -1768,7 +1768,6 @@ def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
 def test_append_throws_on_overflow(
     store_path: Path, request: pytest.FixtureRequest
 ):
-    set_log_level(LogLevel.DEBUG)
     settings = StreamSettings(
         store_path=str(store_path / f"{request.node.name}.zarr"),
         arrays=[
@@ -1820,3 +1819,74 @@ def test_append_throws_on_overflow(
         stream.append(one_more_byte)
 
         assert e
+
+
+@pytest.mark.parametrize(
+    ("downsampling_method",),
+    [
+        (None,),
+        (DownsamplingMethod.DECIMATE,),
+        (DownsamplingMethod.MEAN,),
+        (DownsamplingMethod.MIN,),
+        (DownsamplingMethod.MAX,),
+    ],
+)
+def test_ngff_streams(
+    settings: StreamSettings,
+    store_path: Path,
+    downsampling_method: Optional[DownsamplingMethod],
+):
+    settings.store_path = str(store_path / "test.zarr")
+    settings.arrays[0].data_type = np.uint32
+    settings.arrays[0].is_ngff = True
+    settings.arrays[0].downsampling_method = downsampling_method
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    data = np.random.randint(
+        0,
+        2**32 - 1,
+        (
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+        ),
+        dtype=np.uint32,
+    )
+
+    stream.append(data)
+    stream.close()  # close the stream, flush the files
+
+    chunk_size_bytes = data.dtype.itemsize
+    for dim in settings.arrays[0].dimensions:
+        chunk_size_bytes *= dim.chunk_size_px
+
+    group = zarr.open(settings.store_path, mode="r")
+    assert isinstance(group, zarr.Group)
+
+    assert "ome" in group.metadata.attributes
+    assert "multiscales" in group.metadata.attributes["ome"]
+
+    multiscales = group.metadata.attributes["ome"]["multiscales"]
+    assert len(multiscales) == 1
+    multiscales = multiscales[0]
+
+    assert "0" in group
+
+    array = group["0"]
+    assert array.shape == data.shape
+    assert np.array_equal(array, data)
+
+    if downsampling_method:
+        assert len(multiscales["datasets"]) > 1
+
+        assert "1" in group
+
+        array = group["1"]
+        assert array.shape[0] == data.shape[0]
+        assert array.shape[1] == data.shape[1] // 2
+        assert array.shape[2] == data.shape[2] // 2
+    else:
+        assert len(multiscales["datasets"]) == 1
+        assert "1" not in group  # no pyramid created

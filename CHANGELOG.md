@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `is_ngff` flag on `ZarrArraySettings` to explicitly request OME-NGFF multiscales wrapping without downsampling (#213)
+- `ZarrDownsamplingMethod_None` sentinel value for explicitly representing "no downsampling" (#213)
+
+### Changed
+
+- `ZarrArraySettings.multiscale` has been replaced by `is_ngff`; setting a downsampling method continues to coerce `is_ngff` to true (#213)
+
 ## [0.7.0] - [2026-03-11](https://github.com/acquire-project/acquire-zarr/compare/v0.6.0...v0.7.0)
 
 ### Added

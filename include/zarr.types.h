@@ -89,11 +89,19 @@ extern "C"
 
     typedef enum
     {
-        ZarrDownsamplingMethod_Decimate = 0,
-        ZarrDownsamplingMethod_Mean,
-        ZarrDownsamplingMethod_Min,
-        ZarrDownsamplingMethod_Max,
-        ZarrDownsamplingMethodCount,
+        ZarrDownsamplingMethod_None = 0, /**< No downsampling. When used with
+                                          * is_ngff=true, produces a single-level
+                                          * OME-NGFF multiscales group. */
+        ZarrDownsamplingMethod_Decimate, /**< Decimate by taking the top-left
+                                          * pixel of each 2x2 (2D) or 2x2x2 (3D)
+                                          * region. */
+        ZarrDownsamplingMethod_Mean, /**< Average all pixels in each 2x2 (2D)
+                                      *   or 2x2x2 (3D) region. */
+        ZarrDownsamplingMethod_Min,  /**< Take the minimum pixel value in each
+                                      *   2x2 (2D) or 2x2x2 (3D) region. */
+        ZarrDownsamplingMethod_Max,  /**< Take the maximum pixel value in each
+                                      *   2x2 (2D) or 2x2x2 (3D) region. */
+        ZarrDownsamplingMethodCount, /**< Sentinel value, do not use. */
     } ZarrDownsamplingMethod;
 
     /**
@@ -161,9 +169,9 @@ extern "C"
         ZarrDimensionProperties* dimensions;
         size_t dimension_count;
         ZarrDataType data_type;
-        bool multiscale;
         ZarrDownsamplingMethod downsampling_method;
         const size_t* storage_dimension_order;
+        bool is_ngff;
     } ZarrArraySettings;
 
     /**
@@ -171,7 +179,7 @@ extern "C"
      * well.
      * @note @p array_settings->output_key must be @p NULL, because the path to
      * the array is fully specified by @p path. Validation will fail if it is
-     * non-@p NULL
+     * non-NULL
      */
     typedef struct
     {

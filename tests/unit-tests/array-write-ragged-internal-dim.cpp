@@ -127,7 +127,8 @@ main()
           std::make_shared<ArrayDimensions>(std::move(dims), dtype),
           dtype,
           std::nullopt,
-          5);
+          5,
+          false);
 
         {
             auto writer = std::make_unique<zarr::Array>(

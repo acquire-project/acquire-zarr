@@ -56,7 +56,7 @@ setup()
         .output_key = "path/to/array1",
         .compression_settings = nullptr,
         .data_type = ZarrDataType_uint8,
-        .multiscale = true,
+        .downsampling_method = ZarrDownsamplingMethod_Decimate,
     };
 
     // configure first array dimensions

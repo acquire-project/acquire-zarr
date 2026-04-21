@@ -13,7 +13,7 @@ main()
     ZarrArraySettings array = {
         .compression_settings = NULL,
         .data_type = ZarrDataType_uint16,
-        .multiscale = true,
+        .downsampling_method = ZarrDownsamplingMethod_Mean,
     };
     ZarrStreamSettings settings = {
         .store_path = "output_multiscale.zarr",

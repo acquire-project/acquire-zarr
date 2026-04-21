@@ -40,7 +40,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
         .shard_size_chunks = 1,
     };
 
-    settings->multiscale = false;
+    settings->is_ngff = false;
 }
 
 bool

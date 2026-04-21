@@ -353,18 +353,40 @@ make_array_config(const ZarrArraySettings* settings,
       make_array_dimensions(settings);
 
     std::optional<ZarrDownsamplingMethod> downsampling_method = std::nullopt;
-    if (settings->multiscale) {
+    if (settings->downsampling_method > ZarrDownsamplingMethod_None) {
         downsampling_method = settings->downsampling_method;
     }
 
-    return std::make_shared<zarr::ArrayConfig>(store_root,
-                                               key,
-                                               bucket_name,
-                                               compression_params,
-                                               dimensions,
-                                               settings->data_type,
-                                               downsampling_method,
-                                               0);
+    return std::make_shared<zarr::ArrayConfig>(
+      store_root,
+      key,
+      bucket_name,
+      compression_params,
+      dimensions,
+      settings->data_type,
+      downsampling_method,
+      0,
+      downsampling_method.has_value() || settings->is_ngff);
+}
+
+std::unique_ptr<zarr::ArrayBase>
+make_array(std::shared_ptr<zarr::ArrayConfig> config,
+           std::shared_ptr<zarr::ThreadPool> thread_pool,
+           std::shared_ptr<zarr::FileHandlePool> file_handle_pool,
+           std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool)
+{
+    const auto ngff = config->downsampling_method || config->is_ngff;
+
+    std::unique_ptr<zarr::ArrayBase> array;
+    if (ngff) {
+        array = std::make_unique<zarr::MultiscaleArray>(
+          config, thread_pool, file_handle_pool, s3_connection_pool);
+    } else {
+        array = std::make_unique<zarr::Array>(
+          config, thread_pool, file_handle_pool, s3_connection_pool);
+    }
+
+    return array;
 }
 
 [[nodiscard]] bool
@@ -461,9 +483,7 @@ validate_array_settings(const ZarrArraySettings* settings,
         }
     }
 
-    // we don't care about downsampling method if not multiscale
-    if (settings->multiscale &&
-        settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
         error = "Invalid downsampling method: " +
                 std::to_string(settings->downsampling_method);
         return false;
@@ -873,7 +893,7 @@ dimension_type_to_string(ZarrDimensionType type)
 
 /* ZarrStream_s implementation */
 
-ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
+ZarrStream::ZarrStream_s(ZarrStreamSettings_s* settings)
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -1060,7 +1080,7 @@ ZarrStream_s::is_s3_acquisition_() const
 }
 
 bool
-ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::validate_settings_(const ZarrStreamSettings_s* settings)
 {
     if (!settings) {
         error_ = "Null pointer: settings";
@@ -1215,16 +1235,19 @@ ZarrStream_s::validate_settings_(const struct ZarrStreamSettings_s* settings)
 }
 
 bool
-ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
-                               const std::string& parent_path,
-                               bool is_hcs_array)
+ZarrStream_s::configure_array_(ZarrArraySettings* settings,
+                               const std::string& parent_path)
 {
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
     }
 
-    auto config = make_array_config(
+    if (settings->downsampling_method > ZarrDownsamplingMethod_None) {
+        settings->is_ngff = true; // just in case
+    }
+
+    const auto config = make_array_config(
       settings, store_path_, parent_path, std::nullopt, bucket_name, error_);
     if (config == nullptr) {
         return false;
@@ -1236,11 +1259,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         .bytes_written = 0,
     };
     try {
-        output_node.array = zarr::make_array(config,
-                                             thread_pool_,
-                                             file_handle_pool_,
-                                             s3_connection_pool_,
-                                             is_hcs_array);
+        output_node.array = make_array(
+          config, thread_pool_, file_handle_pool_, s3_connection_pool_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1265,7 +1285,7 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
 }
 
 bool
-ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
+ZarrStream_s::commit_hcs_settings_(ZarrHCSSettings* hcs_settings)
 {
     if (hcs_settings == nullptr) {
         return true; // nothing to do
@@ -1345,10 +1365,10 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
 
                 if (image_in.array_settings) {
                     image_in.array_settings->output_key = image_in.path;
+                    image_in.array_settings->is_ngff = true; // just in case
                 }
 
-                if (!configure_array_(
-                      image_in.array_settings, well_key, true)) {
+                if (!configure_array_(image_in.array_settings, well_key)) {
                     set_error_("Failed to configure array for field of view " +
                                std::to_string(k) + " in well " +
                                std::to_string(j) + " in plate " +
@@ -1379,7 +1399,7 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
 }
 
 bool
-ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
+ZarrStream_s::commit_settings_(ZarrStreamSettings_s* settings)
 {
     store_path_ = zarr::trim(settings->store_path);
 
@@ -1394,10 +1414,11 @@ ZarrStream_s::commit_settings_(const struct ZarrStreamSettings_s* settings)
 
     // configure flat arrays
     for (auto i = 0; i < settings->array_count; ++i) {
-        const auto& array_settings = settings->arrays[i];
-        if (!configure_array_(&array_settings, "", false)) {
+        auto* array_settings = settings->arrays + i;
+        if (!configure_array_(array_settings, "")) {
             set_error_("Failed to configure array '" +
-                       std::string(array_settings.output_key) + "': " + error_);
+                       std::string(array_settings->output_key) +
+                       "': " + error_);
             return false;
         }
     }

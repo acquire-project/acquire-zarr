@@ -14,7 +14,8 @@ This library supports chunked, compressed, multiscale streaming to [Zarr][] [ver
 
 This code builds targets for Python and C.
 
-**For complete documentation, please visit the [Acquire documentation site](https://acquire-project.github.io/acquire-docs/).**
+**For complete documentation, please visit
+the [Acquire documentation site](https://acquire-project.github.io/acquire-docs/).**
 
 ## Installing
 
@@ -218,7 +219,7 @@ settings.arrays = [
     aqz.ArraySettings(
         output_key="array1",
         data_type=np.uint16,
-        dimensions = [
+        dimensions=[
             aqz.Dimension(
                 name="t",
                 kind=aqz.DimensionType.TIME,
@@ -265,15 +266,15 @@ stream.close()
 
 ### Understanding the output hierarchy
 
-The Zarr hierarchy produced by a stream depends on `output_key` and
+The Zarr hierarchy produced by a stream depends on `is_ngff` and
 `downsampling_method`:
 
-| `output_key` | `downsampling_method` | Result at `store_path` |
-|---|---|---|
-| `""` (empty) | `None` | Simple array at `store_path/` |
-| `"myarray"` | `None` | Simple array at `store_path/myarray/` |
-| `""` (empty) | set (e.g. `MEAN`) | OME-NGFF multiscales group at `store_path/`, array at `store_path/0/` |
-| `"myarray"` | set (e.g. `MEAN`) | OME-NGFF multiscales group at `store_path/myarray/`, array at `store_path/myarray/0/` |
+| `downsampling_method` | Array belongs to `FieldOfView` | `is_ngff` | Result                                                              |
+|-----------------------|--------------------------------|-----------|---------------------------------------------------------------------|
+| `None`                | No                             | `False`   | Simple array node                                                   |
+| `None`                | No                             | `True`    | Single-level OME-NGFF multiscales group, no image pyramid           |
+| `None`                | Yes                            | (coerced) | Single-level OME-NGFF multiscales group, no image pyramid           |
+| set (e.g. `MEAN`)     | Either                         | (coerced) | OME-NGFF multiscales group with image pyramid starting at level `0` |
 
 When `downsampling_method` is set, an OME-NGFF multiscales group is created
 at `store_path/output_key/` (or at `store_path/` if `output_key` is empty),
@@ -452,7 +453,8 @@ flushed to disk when the stream is closed.
 
 ### High-content screening workflows
 
-The library supports high-content screening (HCS) datasets following the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
+The library supports high-content screening (HCS) datasets following
+the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
 HCS data is organized into plates, wells, and fields of view, with automatic generation of appropriate metadata.
 
 Here's an example of creating an HCS dataset in Python:
@@ -475,10 +477,10 @@ well_a1 = aqz.Well(
     column_name="1",
     images=[
         aqz.FieldOfView(
-            path="fov1", # Relative to the well: plate/A/1/fov1
+            path="fov1",  # Relative to the well: plate/A/1/fov1
             acquisition_id=0,
             array_settings=aqz.ArraySettings(
-                output_key=None, # must be None for an FOV array; path is specified as a member of FieldOfView 
+                output_key=None,  # must be None for an FOV array; path is specified as a member of FieldOfView 
                 data_type=np.uint16,
                 dimensions=[
                     aqz.Dimension(
@@ -535,7 +537,7 @@ settings = aqz.StreamSettings(
 stream = aqz.ZarrStream(settings)
 
 # Write data to specific field of view
-frame_data = np.random.randint(0, 2**16, (3, 512, 512), dtype=np.uint16)
+frame_data = np.random.randint(0, 2 ** 16, (3, 512, 512), dtype=np.uint16)
 stream.append(frame_data, key="experiment_plate/A/1/fov1")
 
 # Close when done
@@ -571,7 +573,7 @@ settings = aqz.StreamSettings(
     store_path="mixed_experiment.zarr",
     overwrite=True,
     arrays=[labels_array],  # Flat arrays
-    hcs_plates=[plate]      # HCS structure
+    hcs_plates=[plate]  # HCS structure
 )
 
 stream = aqz.ZarrStream(settings)
@@ -701,7 +703,9 @@ ZarrHCSPlate_destroy_well_array(&plate);
 ZarrArraySettings_destroy_dimension_array(&fov_array);
 ```
 
-The resulting dataset will include proper OME-NGFF metadata for [plates](https://ngff.openmicroscopy.org/latest/#plate-md) and [wells](https://ngff.openmicroscopy.org/latest/#well-md).
+The resulting dataset will include proper OME-NGFF metadata
+for [plates](https://ngff.openmicroscopy.org/latest/#plate-md)
+and [wells](https://ngff.openmicroscopy.org/latest/#well-md).
 
 ### S3
 
@@ -767,7 +771,9 @@ manifests like so:
 ImportError: /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libstdc++.so.6: version `GLIBCXX_3.4.30` not found (required by /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libacquire_zarr.so)
 ```
 
-To resolve this, you can [install](https://stackoverflow.com/questions/48453497/anaconda-libstdc-so-6-version-glibcxx-3-4-20-not-found/73101774#73101774) the `libstdcxx-ng` package from conda-forge:
+To resolve this, you
+can [install](https://stackoverflow.com/questions/48453497/anaconda-libstdc-so-6-version-glibcxx-3-4-20-not-found/73101774#73101774)
+the `libstdcxx-ng` package from conda-forge:
 
 ```bash
 conda install -c conda-forge libstdcxx-ng
