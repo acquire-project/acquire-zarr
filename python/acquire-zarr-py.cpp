@@ -37,6 +37,7 @@ struct ArrayLifetimeProps
     bool has_compression{ false };
     ZarrDataType data_type;
     std::optional<ZarrDownsamplingMethod> downsampling_method;
+    uint32_t max_levels{ 0 };
 
     ZarrArraySettings* array_settings()
     {
@@ -78,6 +79,7 @@ struct ArrayLifetimeProps
         array_settings_.multiscale = downsampling_method.has_value();
         array_settings_.downsampling_method =
           downsampling_method.value_or(ZarrDownsamplingMethod_Mean);
+        array_settings_.max_levels = max_levels;
 
         if (!storage_dimension_order.empty()) {
             array_settings_.storage_dimension_order =
@@ -576,6 +578,9 @@ class PyZarrArraySettings
         downsampling_method_ = method;
     }
 
+    uint32_t max_levels() const { return max_levels_; }
+    void set_max_levels(uint32_t levels) { max_levels_ = levels; }
+
     const std::vector<std::string>& storage_dimension_order() const
     {
         return storage_dimension_order_;
@@ -630,6 +635,7 @@ class PyZarrArraySettings
         lt_props.output_key = output_key_;
         lt_props.data_type = data_type_;
         lt_props.downsampling_method = downsampling_method_;
+        lt_props.max_levels = max_levels_;
 
         // compression settings
         if (compression_settings_.has_value()) {
@@ -696,6 +702,7 @@ class PyZarrArraySettings
     std::vector<PyZarrDimensionProperties> dims_;
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     std::optional<ZarrDownsamplingMethod> downsampling_method_{ std::nullopt };
+    uint32_t max_levels_{ 0 };
     std::vector<std::string> storage_dimension_order_;
 };
 
@@ -1583,6 +1590,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                     std::optional<py::list> dimensions,
                     std::optional<py::object> data_type,
                     std::optional<ZarrDownsamplingMethod> downsampling_method,
+                    uint32_t max_levels,
                     std::optional<py::list> storage_dimension_order) {
             PyZarrArraySettings settings;
 
@@ -1621,6 +1629,7 @@ PYBIND11_MODULE(acquire_zarr, m)
             if (downsampling_method) {
                 settings.set_downsampling_method(*downsampling_method);
             }
+            settings.set_max_levels(max_levels);
             if (storage_dimension_order) {
                 auto& order_list = *storage_dimension_order;
                 std::vector<std::string> order_vec(order_list.size());
@@ -1638,6 +1647,7 @@ PYBIND11_MODULE(acquire_zarr, m)
         py::arg("dimensions") = std::nullopt,
         py::arg("data_type") = std::nullopt,
         py::arg("downsampling_method") = std::nullopt,
+        py::arg("max_levels") = 0,
         py::arg("storage_dimension_order") = std::nullopt)
       .def("__repr__",
            [](const PyZarrArraySettings& self) {
@@ -1752,6 +1762,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                   obj.cast<ZarrDownsamplingMethod>());
             }
         })
+      .def_property("max_levels",
+                    &PyZarrArraySettings::max_levels,
+                    &PyZarrArraySettings::set_max_levels)
       .def_property("storage_dimension_order",
                     &PyZarrArraySettings::storage_dimension_order,
                     &PyZarrArraySettings::set_storage_dimension_order);

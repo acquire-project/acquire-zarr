@@ -1170,12 +1170,13 @@ def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     assert "2" in group
     array = group["2"]
     assert array.shape == (250, 500, 500)
-    assert array.chunks == (250, 256, 256)
+    # chunk size is preserved even though z_array (250) < z_chunk (256)
+    assert array.chunks == (256, 256, 256)
 
     assert "3" in group
     array = group["3"]
     assert array.shape == (250, 250, 250)
-    assert array.chunks == (250, 250, 250)
+    assert array.chunks == (256, 256, 256)
 
     assert "4" not in group  # No further downsampling
 
@@ -1768,7 +1769,6 @@ def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
 def test_append_throws_on_overflow(
     store_path: Path, request: pytest.FixtureRequest
 ):
-    set_log_level(LogLevel.DEBUG)
     settings = StreamSettings(
         store_path=str(store_path / f"{request.node.name}.zarr"),
         arrays=[
@@ -1820,3 +1820,111 @@ def test_append_throws_on_overflow(
         stream.append(one_more_byte)
 
         assert e
+
+
+def test_multiscale_max_levels(store_path: Path):
+    """max_levels limits the number of downsampled pyramid levels.
+
+    128x128 with 32px chunks produces 2 natural downsampled levels (levels 1
+    and 2).  With max_levels=1 only level 1 should be written.
+    """
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=5,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+                downsampling_method=DownsamplingMethod.MEAN,
+                max_levels=1,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    stream.append(np.zeros((128, 128), dtype=np.uint16))
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")
+    assert "0" in group
+    assert "1" in group
+    assert "2" not in group  # capped by max_levels=1
+
+
+def test_multiscale_chunk_size_preserved(store_path: Path):
+    """Chunk size is preserved at downsampled levels even when smaller than the array.
+
+    Level 1 shrinks y from 48 to 24, which is less than chunk_y=32.  The
+    stored inner chunk shape must remain 32 (not clamped to 24).
+    """
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=4,
+                        chunk_size_px=4,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+                downsampling_method=DownsamplingMethod.MEAN,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    stream.append(np.zeros((4, 48, 64), dtype=np.uint16))
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")
+    assert "0" in group
+    assert "1" in group
+    assert "2" not in group  # only one natural XY level
+
+    lod0 = group["0"]
+    assert lod0.shape == (4, 48, 64)
+    assert lod0.chunks == (4, 32, 32)
+
+    lod1 = group["1"]
+    assert lod1.shape == (4, 24, 32)
+    # chunk_size_px=32 must be preserved even though y_array=24 < y_chunk=32
+    assert lod1.chunks == (4, 32, 32)
