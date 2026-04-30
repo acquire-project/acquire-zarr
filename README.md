@@ -279,7 +279,8 @@ When `downsampling_method` is set, an OME-NGFF multiscales group is created
 at `store_path/output_key/` (or at `store_path/` if `output_key` is empty),
 containing the full-resolution array at level `0` plus additional downsampled
 levels. The number of levels is determined automatically from the chunk and
-array sizes.
+array sizes. You can cap the pyramid depth with `max_levels` (`0` means no
+limit, which is the default).
 
 ### Organizing data within a Zarr container
 
