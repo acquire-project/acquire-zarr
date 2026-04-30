@@ -364,7 +364,8 @@ make_array_config(const ZarrArraySettings* settings,
                                                dimensions,
                                                settings->data_type,
                                                downsampling_method,
-                                               0);
+                                               0,
+                                               settings->max_levels);
 }
 
 [[nodiscard]] bool
