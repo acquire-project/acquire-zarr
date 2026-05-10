@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `max_levels` field on `ZarrArraySettings` (C API) and `ArraySettings` (Python) to cap the maximum number of
+  downsampled pyramid levels; `0` means no limit (default)
+- Stock Zstd compression codec support as a standalone codec without Blosc (#209)
+- Dockerfile for containerized builds (#207)
+
+### Changed
+
+- Chunk sizes at downsampled pyramid levels are now preserved rather than clamped to the array size; a chunk larger
+  than the array produces a single partial chunk, which is valid in Zarr v3
+- Custom metadata is now written under the `attributes` key in `zarr.json` for the target array or group rather than
+  a sidecar file (#201)
+- Documented `output_key` and `downsampling_method` behavior (#206)
+
+### Fixed
+
+- Frame-processing deadlock that could occur when an error was raised during processing (#216) (#221)
+
 ## [0.7.0] - [2026-03-11](https://github.com/acquire-project/acquire-zarr/compare/v0.6.0...v0.7.0)
 
 ### Added

@@ -70,8 +70,8 @@ class ArraySettings:
       multiscales group is created at ``store_path / output_key`` (or at
       ``store_path`` if ``output_key`` is empty), with the full-resolution
       array at level ``0`` and additional downsampled levels. The number of
-      levels is currently determined automatically from the chunk and array
-      sizes.
+      levels is determined automatically from the chunk and array sizes, and
+      can be capped with ``max_levels``.
 
     Attributes:
       output_key: Path within the Zarr store where this array (or multiscales
@@ -85,6 +85,10 @@ class ArraySettings:
       downsampling_method: Method used for generating optional multiscale levels
         (image pyramid). When set, the array is wrapped in an OME-NGFF
         multiscales group. When None (default), a simple array node is written.
+      max_levels: Maximum number of downsampled pyramid levels to generate when
+        ``downsampling_method`` is set. The number of levels is otherwise
+        determined automatically from the chunk and array sizes. Set to 0
+        (the default) for no limit.
       storage_dimension_order: Order of dimensions for storage, which may different
         from the acquisition order defined in `dimensions`. Must be a list of dimension
         names corresponding to those in `dimensions`.
@@ -102,6 +106,7 @@ class ArraySettings:
     data_type: Union[DataType, numpy.dtype]
     compression: Optional[CompressionSettings]
     downsampling_method: Optional[DownsamplingMethod]
+    max_levels: int
     storage_dimension_order: List[str]
 
     def __init__(self, **kwargs) -> None: ...

@@ -369,7 +369,7 @@ test_anisotropic_writer_configurations()
 
     // Check that spatial dimensions are downsampled
     {
-        const auto level = 1;
+        constexpr auto level = 1;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
@@ -384,7 +384,7 @@ test_anisotropic_writer_configurations()
     }
 
     {
-        const auto level = 2;
+        constexpr auto level = 2;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
@@ -392,22 +392,22 @@ test_anisotropic_writer_configurations()
         EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
-        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 512);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
         EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
     }
 
     {
-        const auto level = 3;
+        constexpr auto level = 3;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
         EXPECT_EQ(uint32_t, lvl_dims->at(2).array_size_px, 125);
-        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 125);
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
-        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 512);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
         EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
@@ -753,6 +753,62 @@ test_pattern_downsampling()
         });
     }
 }
+void
+test_max_levels()
+{
+    // Without max_levels, these dimensions would produce 3 downsampled levels
+    // (levels 1, 2, 3) plus the base (level 0) = 4 total.
+    std::vector<ZarrDimension> dimensions = {
+        { "t", ZarrDimensionType_Time, 100, 10, 1 },
+        { "y", ZarrDimensionType_Space, 512, 64, 1 },
+        { "x", ZarrDimensionType_Space, 512, 64, 1 },
+    };
+
+    auto dims = std::make_shared<ArrayDimensions>(
+      std::vector<ZarrDimension>(dimensions), ZarrDataType_uint16);
+
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0,
+                                          2 /* max_levels */);
+
+    zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
+    const auto& configs = downsampler.writer_configurations();
+
+    EXPECT(configs.size() == 3,
+           "Expected 3 writer configurations (levels 0-2), got ",
+           configs.size());
+
+    EXPECT(configs.count(0) > 0, "Level 0 configuration missing");
+    EXPECT(configs.count(1) > 0, "Level 1 configuration missing");
+    EXPECT(configs.count(2) > 0, "Level 2 configuration missing");
+    EXPECT(configs.count(3) == 0, "Level 3 should not exist with max_levels=2");
+
+    // max_levels=0 means no limit — verify all levels are produced
+    config = std::make_shared<zarr::ArrayConfig>("",
+                                                 "/0",
+                                                 std::nullopt,
+                                                 std::nullopt,
+                                                 dims,
+                                                 ZarrDataType_uint16,
+                                                 ZarrDownsamplingMethod_Mean,
+                                                 0,
+                                                 0 /* max_levels = no limit */);
+
+    zarr::Downsampler downsampler2(config, ZarrDownsamplingMethod_Mean);
+    const auto& configs2 = downsampler2.writer_configurations();
+
+    EXPECT(configs2.size() > 3,
+           "Expected more than 3 writer configurations without max_levels limit, "
+           "got ",
+           configs2.size());
+}
 } // namespace zarr::test
 
 int
@@ -770,6 +826,7 @@ main()
         test_min_max_downsampling();
         test_3d_min_max_downsampling();
         test_pattern_downsampling();
+        test_max_levels();
 
         retval = 0;
     } catch (const std::exception& e) {

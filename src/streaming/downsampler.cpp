@@ -12,8 +12,9 @@ downsample_dimension(const ZarrDimension& dim)
     const uint32_t array_size_px =
       (dim.array_size_px + (dim.array_size_px % 2)) / 2;
 
-    // the smallest this can be is 1
-    const uint32_t chunk_size_px = std::min(dim.chunk_size_px, array_size_px);
+    // chunk size is preserved regardless of array size: a chunk larger than
+    // the array produces a single partial chunk, which is valid in Zarr v3
+    const uint32_t chunk_size_px = dim.chunk_size_px;
 
     // the smallest this can be is also 1
     const uint32_t n_chunks =
@@ -514,12 +515,12 @@ zarr::Downsampler::make_writer_configurations_(
     const auto array_size_x = base_dims->width_dim().array_size_px;
     const auto chunk_size_x = base_dims->width_dim().chunk_size_px;
     const auto n_chunks_x = (array_size_x + chunk_size_x - 1) / chunk_size_x;
-    const auto n_levels_x = n_chunks_x > 1 ? std::bit_width(n_chunks_x - 1) : 0;
+    const uint32_t n_levels_x = n_chunks_x > 1 ? std::bit_width(n_chunks_x - 1) : 0;
 
     const auto array_size_y = base_dims->height_dim().array_size_px;
     const auto chunk_size_y = base_dims->height_dim().chunk_size_px;
     const auto n_chunks_y = (array_size_y + chunk_size_y - 1) / chunk_size_y;
-    const auto n_levels_y = n_chunks_y > 1 ? std::bit_width(n_chunks_y - 1) : 0;
+    const uint32_t n_levels_y = n_chunks_y > 1 ? std::bit_width(n_chunks_y - 1) : 0;
 
     // assume isotropic downsampling, so the number of levels is the same in
     // both
@@ -532,10 +533,14 @@ zarr::Downsampler::make_writer_configurations_(
         const auto chunk_size_z = base_dims->at(ndims - 3).chunk_size_px;
         const auto n_chunks_z =
           (array_size_z + chunk_size_z - 1) / chunk_size_z;
-        const auto n_divs_z =
+        const uint32_t n_divs_z =
           n_chunks_z > 1 ? std::bit_width(n_chunks_z - 1) : 0;
 
         n_levels = std::max(n_levels_xy, n_divs_z);
+    }
+
+    if (config->max_levels > 0) {
+        n_levels = std::min(n_levels, static_cast<uint32_t>(config->max_levels));
     }
 
     for (auto level = 1; level <= n_levels; ++level) {

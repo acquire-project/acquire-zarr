@@ -279,7 +279,8 @@ zarr::MultiscaleArray::make_base_array_config_() const
                                          config_->dimensions,
                                          config_->dtype,
                                          std::nullopt,
-                                         0);
+                                         0,
+                                         config_->max_levels);
 }
 
 zarr::WriteResult

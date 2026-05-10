@@ -24,7 +24,8 @@ struct ArrayConfig
                 std::shared_ptr<ArrayDimensions> dimensions,
                 ZarrDataType dtype,
                 std::optional<ZarrDownsamplingMethod> downsampling_method,
-                uint16_t level_of_detail)
+                uint16_t level_of_detail,
+                uint32_t max_levels = 0)
       : store_root(store_root)
       , node_key(group_key)
       , bucket_name(bucket_name)
@@ -33,6 +34,7 @@ struct ArrayConfig
       , dtype(dtype)
       , downsampling_method(downsampling_method)
       , level_of_detail(level_of_detail)
+      , max_levels(max_levels)
     {
         if (downsampling_method.has_value() &&
             *downsampling_method >= ZarrDownsamplingMethodCount) {
@@ -52,6 +54,7 @@ struct ArrayConfig
     ZarrDataType dtype;
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     uint16_t level_of_detail;
+    uint32_t max_levels{ 0 };
 };
 
 enum class WriteResult

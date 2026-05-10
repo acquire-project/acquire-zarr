@@ -26,7 +26,6 @@ setup()
         .max_threads = 0, // use all available threads
         .overwrite = true,
     };
-    ZarrDimensionProperties* dim;
 
     CHECK_OK(ZarrStreamSettings_create_arrays(&settings, 3));
 
@@ -39,19 +38,11 @@ setup()
 
     // configure labels array dimensions
     CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 5));
-    dim = settings.arrays[0].dimensions;
-    *dim = DIM("t", ZarrDimensionType_Time, 0, 3, 1, nullptr, 1.0);
-
-    dim = settings.arrays[0].dimensions + 1;
-    *dim = DIM("c", ZarrDimensionType_Channel, 3, 1, 3, nullptr, 1.0);
-
-    dim = settings.arrays[0].dimensions + 2;
-    *dim = DIM("z", ZarrDimensionType_Space, 4, 2, 2, "millimeter", 1.4);
-
-    dim = settings.arrays[0].dimensions + 3;
-    *dim = DIM("y", ZarrDimensionType_Space, 48, 16, 3, "micrometer", 0.9);
-
-    dim = settings.arrays[0].dimensions + 4;
+    ZarrDimensionProperties* dim = settings.arrays[0].dimensions;
+    *dim++ = DIM("t", ZarrDimensionType_Time, 0, 3, 1, nullptr, 1.0);
+    *dim++ = DIM("c", ZarrDimensionType_Channel, 3, 1, 3, nullptr, 1.0);
+    *dim++ = DIM("z", ZarrDimensionType_Space, 4, 2, 2, "millimeter", 1.4);
+    *dim++ = DIM("y", ZarrDimensionType_Space, 48, 16, 3, "micrometer", 0.9);
     *dim = DIM("x", ZarrDimensionType_Space, 64, 16, 2, "micrometer", 0.9);
 
     // create the first array
@@ -65,15 +56,9 @@ setup()
     // configure first array dimensions
     CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays + 1, 4));
     dim = settings.arrays[1].dimensions;
-    *dim = DIM("t", ZarrDimensionType_Time, 0, 5, 1, nullptr, 1.0);
-
-    dim = settings.arrays[1].dimensions + 1;
-    *dim = DIM("z", ZarrDimensionType_Space, 6, 3, 2, "millimeter", 1.0);
-
-    dim = settings.arrays[1].dimensions + 2;
-    *dim = DIM("y", ZarrDimensionType_Space, 48, 16, 1, "micrometer", 1.0);
-
-    dim = settings.arrays[1].dimensions + 3;
+    *dim++ = DIM("t", ZarrDimensionType_Time, 0, 5, 1, nullptr, 1.0);
+    *dim++ = DIM("z", ZarrDimensionType_Space, 6, 3, 2, "millimeter", 1.0);
+    *dim++ = DIM("y", ZarrDimensionType_Space, 48, 16, 1, "micrometer", 1.0);
     *dim = DIM("x", ZarrDimensionType_Space, 64, 16, 1, "micrometer", 1.0);
 
     // create the second array
@@ -93,12 +78,8 @@ setup()
     // configure second array dimensions
     CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays + 2, 3));
     dim = settings.arrays[2].dimensions;
-    *dim = DIM("z", ZarrDimensionType_Space, 0, 3, 1, nullptr, 1.0);
-
-    dim = settings.arrays[2].dimensions + 1;
-    *dim = DIM("y", ZarrDimensionType_Space, 48, 16, 1, "micrometer", 1.0);
-
-    dim = settings.arrays[2].dimensions + 2;
+    *dim++ = DIM("z", ZarrDimensionType_Space, 0, 3, 1, nullptr, 1.0);
+    *dim++ = DIM("y", ZarrDimensionType_Space, 48, 16, 1, "micrometer", 1.0);
     *dim = DIM("x", ZarrDimensionType_Space, 64, 16, 1, "micrometer", 1.0);
 
     auto* stream = ZarrStream_create(&settings);
@@ -155,7 +136,9 @@ verify_shape(const nlohmann::json& metadata,
     EXPECT_EQ(size_t, shape.size(), expected_shape.size());
 
     for (size_t i = 0; i < expected_shape.size(); ++i) {
-        EXPECT_EQ(int, shape[i].get<int>(), expected_shape[i]);
+        const auto& expected = expected_shape[i];
+        const auto& actual = shape[i].get<int>();
+        EXPECT_EQ(int, actual, expected);
     }
 }
 
@@ -807,9 +790,11 @@ verify_array1_lod2_metadata(const nlohmann::json& metadata)
 
     verify_shape(metadata, { 10, 3, 12, 16 });
     verify_dimension_names(metadata, { "t", "z", "y", "x" });
-    verify_chunk_grid(metadata, { 5, 3, 12, 16 });
+
+    // chunk size is larger than the array size
+    verify_chunk_grid(metadata, { 5, 3, 16, 16 });
     verify_chunk_key_encoding(metadata);
-    verify_codecs(metadata, { 5, 3, 12, 16 }, false);
+    verify_codecs(metadata, { 5, 3, 16, 16 }, false);
 }
 
 void

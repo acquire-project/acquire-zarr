@@ -223,15 +223,16 @@ verify_array_metadata(const nlohmann::json& meta, int level)
     const auto expected_array_timepoints =
       static_cast<uint32_t>(std::ceil(acquired_frames / array_channels));
 
-    const auto expected_chunk_height =
-      std::min(chunk_height, expected_array_height);
-    const auto expected_chunk_width =
-      std::min(chunk_width, expected_array_width);
+    // Chunk size is preserved regardless of array size (Zarr v3 partial chunks)
+    const auto n_chunks_y =
+      (expected_array_height + chunk_height - 1) / chunk_height;
+    const auto n_chunks_x =
+      (expected_array_width + chunk_width - 1) / chunk_width;
 
     const auto expected_shard_height =
-      std::min(expected_array_height, expected_chunk_height * shard_height);
+      chunk_height * std::min(n_chunks_y, (unsigned int)shard_height);
     const auto expected_shard_width =
-      std::min(expected_array_width, expected_chunk_width * shard_width);
+      chunk_width * std::min(n_chunks_x, (unsigned int)shard_width);
 
     const auto& shape = meta["shape"];
     EXPECT_EQ(size_t, shape.size(), 4);
@@ -261,8 +262,8 @@ verify_array_metadata(const nlohmann::json& meta, int level)
     EXPECT_EQ(size_t, shards.size(), 4);
     EXPECT_EQ(int, shards[0].get<int>(), chunk_timepoints);
     EXPECT_EQ(int, shards[1].get<int>(), chunk_channels);
-    EXPECT_EQ(int, shards[2].get<int>(), expected_chunk_height);
-    EXPECT_EQ(int, shards[3].get<int>(), expected_chunk_width);
+    EXPECT_EQ(int, shards[2].get<int>(), chunk_height);
+    EXPECT_EQ(int, shards[3].get<int>(), chunk_width);
 
     const auto& internal_codecs = sharding_codec["codecs"];
     EXPECT(internal_codecs.size() == 2,
@@ -300,16 +301,11 @@ verify_file_data(int level)
     const auto expected_array_timepoints =
       static_cast<uint32_t>(std::ceil(acquired_frames / array_channels));
 
-    const auto expected_chunk_height =
-      std::min(chunk_height, expected_array_height);
-    const auto expected_chunk_width =
-      std::min(chunk_width, expected_array_width);
-
+    // Chunk size is preserved regardless of array size (Zarr v3 partial chunks)
     const auto expected_chunks_in_x =
-      (expected_array_width + expected_chunk_width - 1) / expected_chunk_width;
+      (expected_array_width + chunk_width - 1) / chunk_width;
     const auto expected_chunks_in_y =
-      (expected_array_height + expected_chunk_height - 1) /
-      expected_chunk_height;
+      (expected_array_height + chunk_height - 1) / chunk_height;
     const auto expected_chunks_in_t =
       (expected_array_timepoints + chunk_timepoints - 1) / chunk_timepoints;
 
@@ -320,9 +316,8 @@ verify_file_data(int level)
     const unsigned int expected_shards_in_t =
       (expected_chunks_in_t + shard_timepoints - 1) / shard_timepoints;
 
-    const auto expected_chunk_size = expected_chunk_width *
-                                     expected_chunk_height * chunk_channels *
-                                     chunk_timepoints * nbytes_px;
+    const auto expected_chunk_size =
+      chunk_width * chunk_height * chunk_channels * chunk_timepoints * nbytes_px;
 
     const auto index_size = chunks_per_shard *
                             sizeof(uint64_t) * // indices are 64 bits
