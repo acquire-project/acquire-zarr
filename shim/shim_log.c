@@ -6,7 +6,7 @@
 #include <stdatomic.h>
 
 #ifndef ACQUIRE_ZARR_API_VERSION
-#define ACQUIRE_ZARR_API_VERSION "0.6.0"
+#define ACQUIRE_ZARR_API_VERSION "0.7.0"
 #endif
 
 static _Atomic int current_log_level = ZarrLogLevel_Info;
