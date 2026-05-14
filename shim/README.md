@@ -15,6 +15,9 @@ permanently.
 The shim builds inside a Docker container (CUDA toolkit required even for the
 CPU-only backend because chucky's CMake enables the CUDA language).
 
+> [!NOTE]
+> On Windows, Docker must be configured to use Linux containers. Right-click the Docker Desktop system tray icon and select "Switch to Linux containers..." if necessary.
+
 Build and run all tests (filesystem + S3 via MinIO):
 
 ```
