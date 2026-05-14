@@ -4,20 +4,33 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'CHANGELOG*'
+      - 'LICENSE*'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'CHANGELOG*'
+      - 'LICENSE*'
 
 env:
   BUILD_TYPE: Release
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  SCCACHE_GHA_ENABLED: "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  test:
-    name: Test on ${{ matrix.platform }}
+  # Tier 1 platforms: intel linux + windows + macos-latest (arm).
+  # macos-latest is in tier 1 temporarily while debugging vcpkg/openssl on
+  # macOS. Move back to tier 2 once consistently green.
+  test-tier1:
+    name: Test
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 25
     strategy:
@@ -25,19 +38,65 @@ jobs:
       matrix:
         platform:
           - "ubuntu-latest"
-          - "ubuntu-24.04-arm"
           - "windows-latest"
           - "macos-latest" # arm
-          - "macos-15-intel" # x86_64
         include:
           - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
-          - platform: "ubuntu-24.04-arm"
-            vcpkg_triplet: "arm64-linux"
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
           - platform: "macos-latest"
             vcpkg_triplet: "arm64-osx"
+    permissions:
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-cmake
+
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+
+      - uses: ./.github/actions/setup-sccache
+
+      - uses: ./.github/actions/setup-vcpkg
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: brew install libomp
+
+      - name: Configure CMake
+        run: |
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} ${{ env.SCCACHE_LAUNCHER }}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ${{ env.SCCACHE_LAUNCHER }}
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C ${{env.BUILD_TYPE}} -L acquire-zarr --output-on-failure
+
+  # Tier 2 platforms: arm linux + macos-15-intel. Runs only if tier 1 passes.
+  test-tier2:
+    name: Test
+    needs: test-tier1
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: true
+      matrix:
+        platform:
+          - "ubuntu-24.04-arm"
+          - "macos-15-intel" # x86_64
+        include:
+          - platform: "ubuntu-24.04-arm"
+            vcpkg_triplet: "arm64-linux"
           - platform: "macos-15-intel"
             vcpkg_triplet: "x64-osx"
     permissions:
@@ -49,38 +108,24 @@ jobs:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Install CMake 3.31
-        if: matrix.platform != 'ubuntu-24.04-arm'
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: "3.31.x"
+      - uses: ./.github/actions/setup-cmake
 
-      - name: Install CMake 3.31 for ARM
-        if: matrix.platform == 'ubuntu-24.04-arm'
-        run: |
-          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
-          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
-          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
-          echo "/opt/cmake/bin" >> $GITHUB_PATH
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - uses: ./.github/actions/setup-sccache
+
+      - uses: ./.github/actions/setup-vcpkg
 
       - name: Install OpenMP
         if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
+        run: brew install libomp
 
       - name: Configure CMake
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} ${{ env.SCCACHE_LAUNCHER }}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ${{ env.SCCACHE_LAUNCHER }}
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
@@ -107,44 +152,37 @@ jobs:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Install CMake 3.31
-        uses: jwlawson/actions-setup-cmake@v2
+      - uses: ./.github/actions/setup-cmake
+
+      - uses: ./.github/actions/setup-sccache
         with:
-          cmake-version: "3.31.x"
+          export-cmake-args: "true"
 
       - name: Install minio and mcli
         run: |
-          apt update && apt install -y tmux wget
           wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
           wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mcli
           chmod +x /usr/local/bin/minio
           chmod +x /usr/local/bin/mcli
 
-      - name: Start minio in tmux
+      - name: Start minio
         run: |
-          tmux new -d -s minio
-          tmux send-keys -t minio "MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD minio server /tmp/minio --console-address :9001" Enter
+          MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD \
+            minio server /tmp/minio --console-address :9001 \
+            > /tmp/minio.log 2>&1 &
           sleep 5
           mcli alias set $MINIO_ALIAS $MINIO_URL $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
           mcli admin user svcacct add --access-key $MINIO_ACCESS_KEY --secret-key $MINIO_SECRET_KEY $MINIO_ALIAS $MINIO_ROOT_USER
 
       - name: Create a bucket
-        run: |
-          mcli mb $MINIO_ALIAS/$MINIO_BUCKET
+        run: mcli mb $MINIO_ALIAS/$MINIO_BUCKET
 
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - uses: ./.github/actions/setup-vcpkg
 
       - name: Configure CMake
         run: |
-          cmake --preset=default
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          cmake --preset=default ${{ env.SCCACHE_LAUNCHER }}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ${{ env.SCCACHE_LAUNCHER }}
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
@@ -158,27 +196,95 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: ctest -C ${{env.BUILD_TYPE}} -L s3 --output-on-failure
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+        run: |
+          uv venv
+          uv pip install "pybind11[global]" ninja setuptools wheel numpy pytest pytest-timeout pytest-randomly
+        shell: bash
 
       - name: Build and install Python bindings
-        run: python -m pip install ".[testing]"
+        run: uv pip install --no-build-isolation ".[testing]"
+        shell: bash
 
       - name: Test Python
-        run: python -m pytest -v -k test_stream_data_to_s3
+        run: uv run --no-sync pytest -v -k test_stream_data_to_s3
+        shell: bash
 
 
-  test-python:
-    name: Test Python on ${{ matrix.platform }}
+  test-python-tier1:
+    name: Test Python
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         platform:
           - "ubuntu-latest"
-          - "ubuntu-24.04-arm"
           - "windows-latest"
-          - "macos-latest" # arm
+          - "macos-latest" # arm — temporarily here while debugging vcpkg/openssl on macOS
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-cmake
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13.3"
+
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+
+      - uses: ./.github/actions/setup-vcpkg
+
+      - name: Install OpenMP
+        if: startsWith(matrix.platform, 'macos')
+        run: brew install libomp
+
+      - uses: ./.github/actions/setup-sccache
+        with:
+          export-cmake-args: "true"
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install "pybind11[global]" ninja setuptools wheel numpy pytest pytest-timeout pytest-randomly
+        shell: bash
+
+      - name: Build and install Python bindings
+        run: uv pip install --no-build-isolation ".[testing]"
+        shell: bash
+
+      - name: Run tests (POSIX)
+        if: runner.os != 'Windows'
+        run: uv run --no-sync pytest -v --durations=10 --timeout=120 --timeout-method=signal -o faulthandler_timeout=120
+        shell: bash
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: uv run --no-sync pytest -v --durations=10 --timeout=120 --timeout-method=thread -o faulthandler_timeout=120
+        shell: bash
+
+  test-python-tier2:
+    name: Test Python
+    needs: test-python-tier1
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: true
+      matrix:
+        platform:
+          - "ubuntu-24.04-arm"
           - "macos-15-intel" # x86_64
 
     steps:
@@ -187,30 +293,43 @@ jobs:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-cmake
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13.3"
 
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+
+      - uses: ./.github/actions/setup-vcpkg
 
       - name: Install OpenMP
         if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
+        run: brew install libomp
+
+      - uses: ./.github/actions/setup-sccache
+        with:
+          export-cmake-args: "true"
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+        run: |
+          uv venv
+          uv pip install "pybind11[global]" ninja setuptools wheel numpy pytest pytest-timeout pytest-randomly
+        shell: bash
 
       - name: Build and install Python bindings
-        run: python -m pip install ".[testing]"
+        run: uv pip install --no-build-isolation ".[testing]"
+        shell: bash
 
-      - name: Run tests
-        run: python -m pytest -v
+      - name: Run tests (POSIX)
+        if: runner.os != 'Windows'
+        run: uv run --no-sync pytest -v --durations=10 --timeout=120 --timeout-method=signal -o faulthandler_timeout=120
+        shell: bash
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: uv run --no-sync pytest -v --durations=10 --timeout=120 --timeout-method=thread -o faulthandler_timeout=120
+        shell: bash

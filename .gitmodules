@@ -1,3 +1,6 @@
 [submodule "minio-cpp"]
 	path = minio-cpp
 	url = https://github.com/minio/minio-cpp
+[submodule "shim/chucky"]
+	path = shim/chucky
+	url = https://github.com/acquire-project/chucky

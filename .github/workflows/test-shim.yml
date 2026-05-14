@@ -1,0 +1,162 @@
+name: Shim Tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'CHANGELOG*'
+      - 'LICENSE*'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'CHANGELOG*'
+      - 'LICENSE*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Linux: docker + minio; this is the job that exercises S3.
+  test-linux:
+    name: Shim (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and test
+        working-directory: shim
+        run: docker compose run --rm test
+
+      - name: Cleanup
+        if: always()
+        working-directory: shim
+        run: docker compose down
+
+  # macOS: native via micromamba. Skips S3 (covered by linux job).
+  test-macos:
+    name: Shim (macos)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: ci
+          create-args: >-
+            cmake ninja sccache
+            aws-c-s3 blosc lz4-c zstd llvm-openmp snappy zlib
+            nlohmann_json
+          init-shell: bash
+          cache-environment: true
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Build
+        shell: micromamba-shell {0}
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        run: |
+          cmake -S shim -B shim/build -G Ninja \
+            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCHUCKY_ENABLE_GPU=OFF
+          cmake --build shim/build
+
+      - name: Test (non-S3)
+        shell: micromamba-shell {0}
+        working-directory: shim/build
+        run: ctest -L shim -LE s3 --output-on-failure
+
+  # Windows: native via micromamba + MSVC. Skips S3.
+  test-windows:
+    name: Shim (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: ci
+          create-args: >-
+            cmake ninja sccache
+            aws-c-s3 blosc lz4-c zstd snappy zlib
+            nlohmann_json
+          init-shell: bash
+          cache-environment: true
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Build
+        shell: bash
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        run: |
+          eval "$(micromamba shell hook --shell bash)"
+          micromamba activate ci
+          cmake -S shim -B shim/build -G Ninja \
+            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX/Library" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded \
+            -DCHUCKY_ENABLE_GPU=OFF
+          cmake --build shim/build
+
+      - name: Test (non-S3)
+        shell: bash
+        working-directory: shim/build
+        run: |
+          eval "$(micromamba shell hook --shell bash)"
+          micromamba activate ci
+          ctest -L shim -LE s3 --output-on-failure
+
+  # Linux + GPU: self-hosted runner with CUDA. docker compose brings up
+  # minio alongside a GPU-enabled test container (CDI passthrough).
+  test-gpu:
+    name: Shim (linux, gpu)
+    runs-on: [self-hosted, Linux, gpu]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build and test (GPU)
+        working-directory: shim
+        run: docker compose run --rm test-gpu
+
+      - name: Cleanup
+        if: always()
+        working-directory: shim
+        run: docker compose down

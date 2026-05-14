@@ -1,0 +1,29 @@
+[build-system]
+requires = [
+    "cmake",
+    "ninja",
+    "pybind11[global]",
+    "setuptools>=42",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acquire-zarr-gpu"
+version = "0.7.0"
+description = "Performant streaming to Zarr storage (GPU backend)"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=7",
+    "zarr>=3.0.0; python_version >= '3.11'",
+]
+
+[tool.setuptools]
+zip-safe = false
+packages = ["acquire_zarr"]
+package-dir = { "" = "../../python" }
+
+[tool.setuptools.package-data]
+acquire_zarr = ["*.pyi", "py.typed"]

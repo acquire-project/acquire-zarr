@@ -35,6 +35,76 @@ def get_cpu_config(system_info: dict) -> tuple:
     )
 
 
+def _load_results(input_dir):
+    """Scan `input_dir` for benchmark-*.json files. Returns {label: result}."""
+    # Permissive token match so locally generated files (e.g.
+    # benchmark-shim-cpu-local.json) load alongside CI files with a hex sha.
+    pattern = re.compile(r"benchmark-(.+)-([^-]+)\.json")
+    out = {}
+    for filepath in Path(input_dir).glob("benchmark-*.json"):
+        match = pattern.match(filepath.name)
+        if not match:
+            continue
+        with open(filepath) as f:
+            out[match.group(1)] = json.load(f)
+    return out
+
+
+def _plot_backends(results, output_prefix):
+    """Three az bars (baseline, shim-cpu, shim-gpu) + one tensorstore
+    reference line. Used when the benchmarks compare backends on a single
+    host rather than platforms."""
+    # Preferred display order; unknown labels sort to the end alphabetically.
+    order = {"baseline": 0, "shim-cpu": 1, "shim-gpu": 2}
+    labels = sorted(results, key=lambda k: (order.get(k, 99), k))
+
+    az = [results[k]["acquire_zarr"]["throughput_gib_per_s"] for k in labels]
+    ts = [results[k]["tensorstore"]["throughput_gib_per_s"] for k in labels]
+    ts_ref = float(np.median(ts))
+
+    params = results[labels[0]]["test_parameters"]
+    str_params = (
+        f"t_chunk={params['t_chunk_size']}, "
+        f"xy_chunk={params['xy_chunk_size']}, "
+        f"xy_shard={params['xy_shard_size']}, "
+        f"frames={params['frame_count']}"
+    )
+    sha = results[labels[0]].get("git_commit_hash") or "local"
+    sysinfo = results[labels[0]].get("system_info", {})
+    cpu_brand = sysinfo.get("cpu_brand", "")
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    x = np.arange(len(labels))
+    ax.bar(x, az, 0.55, label="acquire-zarr", color="tab:blue")
+    ax.axhline(
+        ts_ref,
+        color="tab:orange",
+        linestyle="--",
+        linewidth=2,
+        label=f"tensorstore (median = {ts_ref:.2f} GiB/s)",
+    )
+
+    ax.set_ylabel("Throughput (GiB/s)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    title = [f"Backend comparison (commit: {sha[:7]})"]
+    if cpu_brand:
+        title.append(cpu_brand)
+    title.append(str_params)
+    ax.set_title("\n".join(title), fontsize=10)
+    ax.legend()
+    ax.grid(axis="y", alpha=0.3)
+
+    for xi, v in zip(x, az):
+        ax.text(xi, v, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
+
+    plt.tight_layout()
+    output_file = f"{output_prefix}_backends.png"
+    plt.savefig(output_file, dpi=150)
+    print(f"Plot saved to {output_file}")
+    plt.close()
+
+
 @click.command()
 @click.option(
     "--input-dir",
@@ -49,8 +119,24 @@ def get_cpu_config(system_info: dict) -> tuple:
     default="benchmark_comparison",
     help="Output plot filename prefix",
 )
-def plot_benchmarks(input_dir, output_prefix):
-    """Plot throughput comparison across platforms from benchmark JSON files."""
+@click.option(
+    "--mode",
+    "-m",
+    type=click.Choice(["platforms", "backends"]),
+    default="platforms",
+    help="platforms: az+ts pair per platform (CI). "
+    "backends: one ts reference line + az bars per backend (local).",
+)
+def plot_benchmarks(input_dir, output_prefix, mode):
+    """Plot throughput comparison from benchmark JSON files."""
+
+    if mode == "backends":
+        results = _load_results(input_dir)
+        if not results:
+            print(f"No benchmark files found in {input_dir}")
+            return
+        _plot_backends(results, output_prefix)
+        return
 
     pattern = re.compile(r"benchmark-(.+)-([a-f0-9]+)\.json")
 

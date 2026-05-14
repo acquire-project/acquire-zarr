@@ -107,6 +107,17 @@ clean-all: clean
 _setup-submodules:
     git -C "{{ROOT}}" submodule update --init --recursive
 
+# Run in-docker benchmark: baseline + shim-cpu + shim-gpu vs tensorstore
+# (requires nvidia-container-toolkit; GPU run is skipped if no device visible)
+# JSON and plot land in ./bench-out/; zarr scratch is in ./bench-scratch/
+[unix]
+bench *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ROOT}}/bench-out" "{{ROOT}}/bench-scratch"
+    export BENCH_GIT_SHA=$(git -C "{{ROOT}}" rev-parse --short HEAD 2>/dev/null || echo local)
+    docker compose -f "{{ROOT}}/benchmarks/docker-compose.yml" run --rm --build benchmark {{args}}
+
 [unix]
 _ensure-uv:
     @command -v uv >/dev/null || { echo "This command requires uv: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }

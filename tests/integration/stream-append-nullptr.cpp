@@ -1,16 +1,13 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
+#include "s3-test-helpers.hh"
 
 #include <nlohmann/json.hpp>
-#include <miniocpp/client.h>
 
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <vector>
-
-#ifdef GetObject
-#undef GetObject
-#endif
 
 namespace fs = std::filesystem;
 
@@ -89,16 +86,6 @@ fs_get_file_size(const std::string& object_name)
     return fs::file_size(object_name);
 }
 
-std::string
-fs_get_object_contents_as_string(const std::string& object_name)
-{
-    std::stringstream ss;
-    const std::ifstream f(object_name);
-    ss << f.rdbuf();
-
-    return ss.str();
-}
-
 std::vector<uint8_t>
 fs_get_object_contents_as_bytes(const std::string& object_name)
 {
@@ -114,116 +101,6 @@ fs_get_object_contents_as_bytes(const std::string& object_name)
     CHECK(f.good());
 
     return bytes_out;
-}
-
-bool
-s3_object_exists(const std::string& object_name, minio::s3::Client& client)
-{
-    minio::s3::StatObjectArgs args;
-    args.bucket = s3_bucket_name;
-    args.object = object_name;
-
-    const minio::s3::StatObjectResponse response = client.StatObject(args);
-
-    return static_cast<bool>(response);
-}
-
-size_t
-s3_get_object_size(const std::string& object_name, minio::s3::Client& client)
-{
-    minio::s3::StatObjectArgs args;
-    args.bucket = s3_bucket_name;
-    args.object = object_name;
-
-    const minio::s3::StatObjectResponse response = client.StatObject(args);
-
-    if (!response) {
-        LOG_ERROR("Failed to get object size: ", object_name);
-        return 0;
-    }
-
-    return response.size;
-}
-
-std::string
-s3_get_object_contents_as_string(const std::string& object_name,
-                                 minio::s3::Client& client)
-{
-    std::stringstream ss;
-
-    minio::s3::GetObjectArgs go_args;
-    go_args.bucket = s3_bucket_name;
-    go_args.object = object_name;
-    go_args.datafunc =
-      [&ss](const minio::http::DataFunctionArgs& args) -> bool {
-        ss << args.datachunk;
-        return true;
-    };
-
-    // Call get object.
-    minio::s3::GetObjectResponse resp = client.GetObject(go_args);
-
-    return ss.str();
-}
-
-std::vector<uint8_t>
-s3_get_object_contents_as_bytes(const std::string& object_name,
-                                minio::s3::Client& client)
-{
-    std::vector<uint8_t> data;
-
-    minio::s3::GetObjectArgs go_args;
-    go_args.bucket = s3_bucket_name;
-    go_args.object = object_name;
-    go_args.datafunc =
-      [&data](const minio::http::DataFunctionArgs& args) -> bool {
-        const auto* chunk_data =
-          reinterpret_cast<const uint8_t*>(args.datachunk.data());
-        data.insert(data.end(), chunk_data, chunk_data + args.datachunk.size());
-        return true;
-    };
-
-    minio::s3::GetObjectResponse resp = client.GetObject(go_args);
-
-    return data;
-}
-
-bool
-s3_remove_items(const std::vector<std::string>& item_keys,
-                minio::s3::Client& client)
-{
-    std::list<minio::s3::DeleteObject> objects;
-    for (const auto& key : item_keys) {
-        minio::s3::DeleteObject object;
-        object.name = key;
-        objects.push_back(object);
-    }
-
-    minio::s3::RemoveObjectsArgs args;
-    args.bucket = s3_bucket_name;
-
-    auto it = objects.begin();
-
-    args.func = [&objects = objects,
-                 &i = it](minio::s3::DeleteObject& obj) -> bool {
-        if (i == objects.end())
-            return false;
-        obj = *i;
-        i++;
-        return true;
-    };
-
-    minio::s3::RemoveObjectsResult result = client.RemoveObjects(args);
-    for (; result; result++) {
-        minio::s3::DeleteError err = *result;
-        if (!err) {
-            LOG_ERROR(
-              "Failed to delete object ", err.object_name, ": ", err.message);
-            return false;
-        }
-    }
-
-    return true;
 }
 
 void
@@ -391,18 +268,16 @@ verify_fs(const ZarrStreamSettings& settings)
     }
 
     return true;
-
-    return true;
 }
 
 bool
-verify_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
+verify_s3(const ZarrStreamSettings& settings)
 {
     const std::string array_path = store_path + "/" + output_key;
     const auto data_file_path = array_path + "/c/0/0/0";
 
     // should have flushed
-    if (!s3_object_exists(data_file_path, client)) {
+    if (!s3::object_exists(data_file_path)) {
         LOG_ERROR("Data file path ",
                   data_file_path,
                   " does not exist or is not an object.");
@@ -410,7 +285,7 @@ verify_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
     }
 
     // should be the right size
-    if (size_t object_size = s3_get_object_size(data_file_path, client);
+    if (size_t object_size = s3::get_object_size(data_file_path);
         object_size != expected_shard_size) {
         LOG_ERROR("Expected object size of ",
                   expected_shard_size,
@@ -420,7 +295,7 @@ verify_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
     }
 
     // should have the correct contents
-    const auto data = s3_get_object_contents_as_bytes(data_file_path, client);
+    const auto data = s3::get_object_bytes(data_file_path);
     const std::span data_u16 = { reinterpret_cast<const uint16_t*>(data.data()),
                                  2 * npx_frame };
     for (auto i = 0; i < npx_frame; ++i) {
@@ -463,10 +338,10 @@ teardown_fs(const ZarrStreamSettings& settings)
 }
 
 void
-teardown_s3(const ZarrStreamSettings& settings, minio::s3::Client& client)
+teardown_s3(const ZarrStreamSettings& settings)
 {
     teardown_stream_array(settings);
-    s3_remove_items(expected_paths, client);
+    s3::remove_prefix(store_path);
 }
 } // namespace
 
@@ -478,29 +353,22 @@ main()
     {
         ZarrStreamSettings settings{};
         if (ZarrStream* stream = setup_s3(settings); stream != nullptr) {
-            minio::s3::BaseUrl url(s3_endpoint);
-            url.https = s3_endpoint.starts_with("https://");
-
-            minio::creds::StaticProvider provider(s3_access_key_id,
-                                                  s3_secret_access_key);
-            minio::s3::Client client(url, &provider);
-
             if (const size_t frames_out = do_stream(stream);
                 frames_out == frames_to_acquire) {
                 ZarrStream_destroy(stream);
 
-                if (!verify_s3(settings, client)) {
-                    teardown_s3(settings, client);
+                if (!verify_s3(settings)) {
+                    teardown_s3(settings);
                     return 1;
                 }
-                teardown_s3(settings, client);
+                teardown_s3(settings);
             } else {
                 LOG_ERROR("Actual frames streamed ",
                           frames_out,
                           " does not match expected frames streamed ",
                           frames_to_acquire);
                 ZarrStream_destroy(stream);
-                teardown_s3(settings, client);
+                teardown_s3(settings);
                 return 1;
             }
         }

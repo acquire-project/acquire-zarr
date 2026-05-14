@@ -1,0 +1,29 @@
+name: Set up sccache
+description: >-
+  Install sccache (best-effort; 504s on GitHub releases are tolerated) and
+  export compiler-launcher flags for downstream CMake / pip builds.
+
+inputs:
+  export-cmake-args:
+    description: >-
+      When "true", also export CMAKE_ARGS so pip-driven builds that read the
+      env (root setup.py and shim/python/setup.py) pick up the launcher.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up sccache
+      id: sccache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      continue-on-error: true
+
+    - name: Export sccache launcher
+      if: steps.sccache.outcome == 'success'
+      shell: bash
+      run: |
+        echo "SCCACHE_LAUNCHER=-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
+        if [ "${{ inputs.export-cmake-args }}" = "true" ]; then
+          echo "CMAKE_ARGS=-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
+        fi

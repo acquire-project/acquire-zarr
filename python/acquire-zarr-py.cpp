@@ -1,5 +1,8 @@
+#include <cstring>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <vector>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
@@ -8,6 +11,10 @@
 
 #include "acquire.zarr.h"
 
+#ifdef ACQUIRE_ZARR_WITH_CHUCKY_LOG
+#include "chucky_log.h"
+#endif
+
 #ifdef _DEBUG
 #include <crtdbg.h>
 #endif
@@ -15,9 +22,143 @@
 namespace py = pybind11;
 
 namespace {
-auto ZarrStreamDeleter = [](ZarrStream_s* stream) {
-    if (stream) {
-        ZarrStream_destroy(stream);
+
+#ifdef ACQUIRE_ZARR_WITH_CHUCKY_LOG
+// Chucky log events are produced on arbitrary threads (including IO workers
+// that run while the main thread has released the GIL). Delivering them
+// straight into Python from the producer thread is a deadlock risk: if the
+// Python handler blocks (e.g. on pytest's captured-stderr pipe) while the
+// main thread is waiting on an IO fence, the worker never retires its job
+// and nothing ever drains the pipe.
+//
+// Instead, producers push into a bounded ring under a brief mutex and never
+// touch Python. A drain runs on the Python thread (GIL held) from an RAII
+// guard placed at the top of each bound method, so events reach Python
+// along normal and exception-propagating return paths.
+
+struct LogEvent
+{
+    int py_level;
+    int line;
+    char file[128];
+    char msg[512];
+};
+
+constexpr size_t LOG_RING_CAPACITY = 1024;
+
+struct LogRing
+{
+    std::mutex mu;
+    LogEvent slots[LOG_RING_CAPACITY];
+    size_t head{ 0 };
+    size_t tail{ 0 };
+    size_t dropped{ 0 };
+};
+
+LogRing g_log_ring;
+
+int
+py_level_from_chucky(int lvl)
+{
+    switch (lvl) {
+        case CHUCKY_LOG_TRACE:
+        case CHUCKY_LOG_DEBUG:
+            return 10;
+        case CHUCKY_LOG_INFO:
+            return 20;
+        case CHUCKY_LOG_WARN:
+            return 30;
+        case CHUCKY_LOG_ERROR:
+            return 40;
+        case CHUCKY_LOG_FATAL:
+        default:
+            return 50;
+    }
+}
+
+// Producer: runs on arbitrary chucky threads. Must not touch Python.
+void
+chucky_log_to_ring(const chucky_log_event* ev, void* /*udata*/)
+{
+    std::lock_guard<std::mutex> lk(g_log_ring.mu);
+    if (g_log_ring.head - g_log_ring.tail >= LOG_RING_CAPACITY) {
+        ++g_log_ring.dropped;
+        return;
+    }
+    LogEvent& s = g_log_ring.slots[g_log_ring.head % LOG_RING_CAPACITY];
+    s.py_level = py_level_from_chucky(ev->level);
+    s.line = ev->line;
+    if (ev->file) {
+        std::strncpy(s.file, ev->file, sizeof(s.file) - 1);
+        s.file[sizeof(s.file) - 1] = '\0';
+    } else {
+        s.file[0] = '\0';
+    }
+    if (ev->msg) {
+        std::strncpy(s.msg, ev->msg, sizeof(s.msg) - 1);
+        s.msg[sizeof(s.msg) - 1] = '\0';
+    } else {
+        s.msg[0] = '\0';
+    }
+    ++g_log_ring.head;
+}
+
+// Consumer: runs on a Python thread with the GIL held. noexcept because it
+// is called from RAII destructors during exception unwind.
+void
+drain_log_ring() noexcept
+{
+    std::vector<LogEvent> batch;
+    size_t dropped = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_log_ring.mu);
+        size_t n = g_log_ring.head - g_log_ring.tail;
+        if (n == 0 && g_log_ring.dropped == 0) {
+            return;
+        }
+        batch.reserve(n);
+        for (size_t i = 0; i < n; ++i) {
+            batch.push_back(
+              g_log_ring.slots[(g_log_ring.tail + i) % LOG_RING_CAPACITY]);
+        }
+        g_log_ring.tail = g_log_ring.head;
+        dropped = g_log_ring.dropped;
+        g_log_ring.dropped = 0;
+    }
+
+    try {
+        static py::object logger =
+          py::module_::import("logging").attr("getLogger")("acquire_zarr");
+        for (const auto& e : batch) {
+            logger.attr("log")(
+              e.py_level, "%s:%d: %s", e.file, e.line, e.msg);
+        }
+        if (dropped > 0) {
+            logger.attr("warning")(
+              "acquire_zarr: dropped %zu log events (ring overflow)", dropped);
+        }
+    } catch (...) {
+        // Swallow: a logging failure must not abort stack unwind.
+    }
+}
+
+struct LogDrainGuard
+{
+    ~LogDrainGuard() { drain_log_ring(); }
+};
+
+#else
+struct LogDrainGuard
+{};
+#endif
+
+struct ZarrStreamDeleter
+{
+    void operator()(ZarrStream_s* stream) const
+    {
+        if (stream) {
+            ZarrStream_destroy(stream);
+        }
     }
 };
 
@@ -1118,6 +1259,7 @@ class PyZarrStream
 
     void append(py::array image_data, const std::optional<std::string>& key)
     {
+        LogDrainGuard _drain;
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
                             "Stream not open for appending.");
@@ -1144,6 +1286,7 @@ class PyZarrStream
 
     void skip(size_t bytes_in, const std::optional<std::string>& key) const
     {
+        LogDrainGuard _drain;
         size_t bytes_out;
         const char* key_str = key.has_value() ? key->c_str() : nullptr;
         const auto status = ZarrStream_append(
@@ -1266,6 +1409,7 @@ class PyZarrStream
                                const std::optional<std::string>& array_key,
                                const std::optional<std::string>& metadata_key)
     {
+        LogDrainGuard _drain;
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
                             "Cannot write metadata unless streaming.");
@@ -1305,6 +1449,7 @@ class PyZarrStream
 
     void close()
     {
+        LogDrainGuard _drain;
         if (!is_active()) {
             return;
         }
@@ -1321,6 +1466,7 @@ class PyZarrStream
 
     size_t get_current_memory_usage() const
     {
+        LogDrainGuard _drain;
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
                             "Stream not open for memory usage query.");
@@ -1343,7 +1489,7 @@ class PyZarrStream
 
   private:
     using ZarrStreamPtr =
-      std::unique_ptr<ZarrStream, decltype(ZarrStreamDeleter)>;
+      std::unique_ptr<ZarrStream, ZarrStreamDeleter>;
 
     ZarrStreamPtr stream_;
 
@@ -1356,13 +1502,14 @@ class PyZarrStream
     // once we have support for that in the C API
     void open_(const PyZarrStreamSettings& settings)
     {
+        LogDrainGuard _drain;
         if (is_active()) {
             return;
         }
 
         auto* stream_settings = settings.to_settings();
         stream_ =
-          ZarrStreamPtr(ZarrStream_create(stream_settings), ZarrStreamDeleter);
+          ZarrStreamPtr(ZarrStream_create(stream_settings));
         if (!stream_) {
             PyErr_SetString(PyExc_RuntimeError, "Failed to create Zarr stream");
             throw py::error_already_set();
@@ -2309,6 +2456,7 @@ PYBIND11_MODULE(acquire_zarr, m)
     m.def(
       "set_log_level",
       [](ZarrLogLevel level) {
+          LogDrainGuard _drain;
           auto status = Zarr_set_log_level(level);
           if (status != ZarrStatusCode_Success) {
               std::string err = "Failed to set log level: " +
@@ -2331,4 +2479,21 @@ PYBIND11_MODULE(acquire_zarr, m)
         std::cerr << "Warning: Failed to set initial log level: "
                   << Zarr_get_status_message(init_status) << std::endl;
     }
+
+#ifdef ACQUIRE_ZARR_WITH_CHUCKY_LOG
+    // Route chucky events into a bounded ring that Python drains under the
+    // GIL (see LogDrainGuard). The producer callback never calls into
+    // Python, avoiding deadlocks when the main thread is blocked on IO.
+    // Silence the default stderr sink; users control verbosity via
+    // logging.getLogger("acquire_zarr").setLevel(...).
+    {
+        auto logger =
+          py::module_::import("logging").attr("getLogger")("acquire_zarr");
+        logger.attr("addHandler")(
+          py::module_::import("logging").attr("NullHandler")());
+        logger.attr("propagate") = false;
+    }
+    chucky_log_add_callback(chucky_log_to_ring, nullptr, CHUCKY_LOG_TRACE);
+    chucky_log_set_quiet(1);
+#endif
 }

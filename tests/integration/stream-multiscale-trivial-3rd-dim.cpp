@@ -160,51 +160,13 @@ verify_multiscale_metadata()
         const auto scale = coordinate_transformations[0]["scale"];
         EXPECT_EQ(size_t, scale.size(), 5);
 
-        if (level == 0) {
-            EXPECT_EQ(double, scale[0].get<double>(), 1.0);
-            EXPECT_EQ(double, scale[1].get<double>(), 1.0);
-            EXPECT_EQ(double, scale[2].get<double>(), 1.36);
-            EXPECT_EQ(double, scale[3].get<double>(), 0.85);
-            EXPECT_EQ(double, scale[4].get<double>(), 0.85);
-        } else {
-            fs::path array_metadata_path =
-              fs::path(test_path) / std::to_string(level) / "zarr.json";
-            std::ifstream af = std::ifstream(array_metadata_path);
-            nlohmann::json array_metadata = nlohmann::json::parse(af);
-
-            const auto& shape = array_metadata["shape"];
-
-            // Calculate and verify the expected scale factors
-            // t and c dimensions should still be 1.0
-            EXPECT_EQ(double, scale[0].get<double>(), 1.0); // t dimension
-            EXPECT_EQ(double, scale[1].get<double>(), 1.0); // c dimension
-
-            // z dimension should be 1.36 since we have only 1 plane
-            EXPECT_EQ(double, scale[2].get<double>(), 1.36);
-
-            // y and x dimensions should match the ratio of original size to
-            // downsampled size
-            double expected_y_scale =
-              0.85 * (array_height / shape[3].get<int>());
-            double expected_x_scale =
-              0.85 * (array_width / shape[4].get<int>());
-
-            EXPECT(std::abs(scale[3].get<double>() - expected_y_scale) < 0.01,
-                   "For level ",
-                   level,
-                   ", expected y scale to be around ",
-                   expected_y_scale,
-                   ", but got ",
-                   scale[3].get<double>());
-
-            EXPECT(std::abs(scale[4].get<double>() - expected_x_scale) < 0.01,
-                   "For level ",
-                   level,
-                   ", expected x scale to be around ",
-                   expected_x_scale,
-                   ", but got ",
-                   scale[4].get<double>());
-        }
+        EXPECT_EQ(double, scale[0].get<double>(), 1.0); // t
+        EXPECT_EQ(double, scale[1].get<double>(), 1.0); // c
+        // z has only 1 plane (already at chunk size), never downsampled
+        EXPECT_EQ(double, scale[2].get<double>(), 1.36);
+        // y and x are downsampled 2x at each level
+        EXPECT_EQ(double, scale[3].get<double>(), std::pow(2, level) * 0.85);
+        EXPECT_EQ(double, scale[4].get<double>(), std::pow(2, level) * 0.85);
     }
 }
 

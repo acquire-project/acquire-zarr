@@ -67,7 +67,7 @@ def run_tensorstore_test(
     # Define a TensorStore spec for a Zarr v3 store.
     spec = {
         "driver": "zarr3",
-        "kvstore": {"driver": "file", "path": path},
+        "kvstore": {"driver": "file", "path": path, "file_io_sync": True},
         "metadata": metadata,
         "delete_existing": True,
         "create": True,
@@ -174,6 +174,10 @@ def run_acquire_zarr_test(
 
 def get_git_commit_hash():
     """Get the current git commit hash, or None if not in a git repo."""
+    env_sha = os.environ.get("BENCH_GIT_SHA")
+    if env_sha:
+        return env_sha
+
     # cache the current working directory
     cwd = os.getcwd()
 

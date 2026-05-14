@@ -5,6 +5,9 @@ on:
     branches:
       - "prep-for-*"
 
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
 jobs:
   build:
     name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
@@ -50,33 +53,17 @@ jobs:
         with:
           submodules: true
 
-      - name: Install CMake 3.31
-        if: matrix.platform != 'ubuntu-24.04-arm'
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: "3.31.x"
+      - uses: ./.github/actions/setup-cmake
 
-      - name: Install CMake 3.31 for ARM
-        if: matrix.platform == 'ubuntu-24.04-arm'
-        run: |
-          wget https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-aarch64.tar.gz
-          tar -xzf cmake-3.31.8-linux-aarch64.tar.gz
-          sudo mv cmake-3.31.8-linux-aarch64 /opt/cmake
-          echo "/opt/cmake/bin" >> $GITHUB_PATH
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - uses: ./.github/actions/setup-vcpkg
 
       - name: Install OpenMP
         if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
+        run: brew install libomp
 
       - name: CMake
         run: |
@@ -146,23 +133,22 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-cmake
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install vcpkg
-        if: ${{ !startsWith(matrix.platform, 'ubuntu') }} # vcpkg will be installed in the manylinux image for Ubuntu builds
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build auditwheel
+      # vcpkg is installed inside the manylinux image for ubuntu builds
+      # (see CIBW_BEFORE_BUILD below), so skip on ubuntu here.
+      - uses: ./.github/actions/setup-vcpkg
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
 
       - name: macOS fixes
         if: startsWith(matrix.platform, 'macos')
@@ -178,7 +164,8 @@ jobs:
 
       - name: Build
         if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
-        run: python -m build -o dist
+        run: uv build --wheel --out-dir dist
+        shell: bash
 
       - name: Build (manylinux)
         if: startsWith(matrix.platform, 'ubuntu')

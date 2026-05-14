@@ -1,0 +1,44 @@
+name: Set up cmake (cached pipx)
+description: >-
+  Install cmake (default `<4`) via pipx into a cached venv and put it on PATH.
+  Pinning to cmake 3.x avoids policy-floor issues with vcpkg's older ports
+  (snappy etc.) and keeps the toolchain ABI hash stable across the C++ and
+  Python jobs so vcpkg's x-gha binary cache is reusable across both.
+
+inputs:
+  version:
+    description: pip-style version constraint, e.g. "<4" or "==3.31.6"
+    required: false
+    default: "<4"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve pipx paths
+      id: pipx-paths
+      shell: bash
+      run: |
+        echo "home=$(pipx environment --value PIPX_HOME)" >> "$GITHUB_OUTPUT"
+        echo "bin=$(pipx environment --value PIPX_BIN_DIR)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache cmake venv
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.pipx-paths.outputs.home }}
+          ${{ steps.pipx-paths.outputs.bin }}
+        key: cmake-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}-pipx-v1
+
+    - name: Install cmake (cache miss)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: pipx install "cmake${{ inputs.version }}"
+
+    - name: Put pipx bin on PATH
+      shell: bash
+      run: echo "${{ steps.pipx-paths.outputs.bin }}" >> "$GITHUB_PATH"
+
+    - name: Verify
+      shell: bash
+      run: cmake --version

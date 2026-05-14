@@ -1,7 +1,14 @@
 build/
+**/build/
+build-*/
+**/build-*/
 vcpkg/
 .venv/
+.venv-*/
+**/.venv/
+**/.venv-*/
 dist/
+wheels/
 *.egg-info/
 __pycache__/
 .pytest_cache/
@@ -9,3 +16,5 @@ __pycache__/
 .ruff_cache/
 .claude/
 .git
+bench-out/
+bench-scratch/

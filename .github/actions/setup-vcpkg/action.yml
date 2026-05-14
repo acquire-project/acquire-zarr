@@ -1,0 +1,37 @@
+name: Set up vcpkg
+description: Bridge GHA cache env, restore vcpkg cache, and install vcpkg 2025.03.19.
+
+runs:
+  using: composite
+  steps:
+    - name: Export GitHub Actions cache env for vcpkg
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: Cache vcpkg bootstrap
+      uses: actions/cache@v4
+      with:
+        path: |
+          vcpkg
+          !vcpkg/downloads
+          !vcpkg/buildtrees
+          !vcpkg/packages
+          !vcpkg/installed
+        key: vcpkg-2025.03.19-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install vcpkg
+      shell: bash
+      run: |
+        if [ ! -d vcpkg ]; then
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+        fi
+        cd vcpkg
+        if [ ! -f ./vcpkg ] && [ ! -f ./vcpkg.exe ]; then
+          ./bootstrap-vcpkg.sh
+        fi
+        echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> $GITHUB_ENV
+        echo "${{ github.workspace }}/vcpkg" >> $GITHUB_PATH
+        ./vcpkg integrate install

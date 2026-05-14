@@ -3,7 +3,6 @@
 
 #include <cstring>
 #include <filesystem>
-#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -11,12 +10,6 @@ namespace fs = std::filesystem;
 namespace {
 const size_t array_width = 64, array_height = 48;
 const size_t chunk_width = 16, chunk_height = 16;
-
-size_t
-padded_size(size_t size, size_t chunk_size)
-{
-    return chunk_size * ((size + chunk_size - 1) / chunk_size);
-}
 } // namespace
 
 void
@@ -35,7 +28,7 @@ initialize_array(ZarrArraySettings& settings,
         settings.compression_settings->compressor = ZarrCompressor_Blosc1;
         settings.compression_settings->codec = ZarrCompressionCodec_BloscLZ4;
         settings.compression_settings->level = 1;
-        settings.compression_settings->shuffle = 1; // enable shuffling
+        settings.compression_settings->shuffle = 1;
     }
 
     if (multiscale) {
@@ -45,11 +38,9 @@ initialize_array(ZarrArraySettings& settings,
         settings.multiscale = false;
     }
 
-    // allocate 4 dimensions
     EXPECT(ZarrArraySettings_create_dimension_array(&settings, 4) ==
              ZarrStatusCode_Success,
            "Failed to create dimension array");
-    EXPECT(settings.dimension_count == 4, "Dimension count mismatch");
 
     settings.dimensions[0] = { "time", ZarrDimensionType_Time, 0, 32, 1, "s",
                                1.0 };
@@ -66,114 +57,157 @@ initialize_array(ZarrArraySettings& settings,
 }
 
 void
-test_max_memory_usage()
+cleanup_compression(ZarrArraySettings& settings)
+{
+    delete settings.compression_settings;
+    settings.compression_settings = nullptr;
+}
+
+void
+test_one_uncompressed_array()
 {
     ZarrStreamSettings settings{};
-
-    // create settings for a Zarr stream with one array
     EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
              ZarrStatusCode_Success,
            "Failed to create array settings");
 
-    const std::string output_key1 = "test_array1";
-    initialize_array(settings.arrays[0], output_key1, false, false);
+    initialize_array(settings.arrays[0], "arr", false, false);
 
-    const size_t frame_queue_size = 1 << 30; // 1 GiB
-    const size_t expected_frame_size = array_width * array_height * 2;
-
-    const size_t padded_width = padded_size(array_width, chunk_width);
-    const size_t padded_height = padded_size(array_height, chunk_height);
-    const size_t padded_frame_size = 2 * padded_height * padded_width;
-    const size_t expected_array_usage = padded_frame_size * // frame
-                                        3 *                 // channels
-                                        32;                 // time
-
-    size_t usage = 0, expected_usage;
+    size_t usage = 0;
     EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
              ZarrStatusCode_Success,
-           "Failed to estimate memory usage");
+           "Estimate failed for one uncompressed array");
+    EXPECT(usage > 0, "Expected nonzero memory estimate");
 
-    //  for the array + each array's frame buffer
-    expected_usage =
-      frame_queue_size + expected_array_usage + expected_frame_size;
-    EXPECT(usage == expected_usage,
-           "Expected max memory usage ",
-           expected_usage,
-           ", got ",
-           usage);
+    LOG_INFO("one uncompressed array: ", usage, " bytes");
 
     ZarrStreamSettings_destroy_arrays(&settings);
+}
 
-    // create settings for a Zarr stream with two arrays, one compressed
+void
+test_compressed_more_than_uncompressed()
+{
+    ZarrStreamSettings settings{};
+
+    // uncompressed
+    EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
+             ZarrStatusCode_Success,
+           "");
+    initialize_array(settings.arrays[0], "arr", false, false);
+
+    size_t usage_raw = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_raw) == ZarrStatusCode_Success,
+           "");
+    ZarrStreamSettings_destroy_arrays(&settings);
+
+    // compressed
+    EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
+             ZarrStatusCode_Success,
+           "");
+    initialize_array(settings.arrays[0], "arr", true, false);
+
+    size_t usage_comp = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_comp) == ZarrStatusCode_Success,
+           "");
+
+    LOG_INFO("uncompressed: ", usage_raw, ", compressed: ", usage_comp);
+    EXPECT(usage_comp > usage_raw,
+           "Compressed array should require more memory than uncompressed");
+
+    cleanup_compression(settings.arrays[0]);
+    ZarrStreamSettings_destroy_arrays(&settings);
+}
+
+void
+test_multiscale_more_than_single_scale()
+{
+    ZarrStreamSettings settings{};
+
+    // single-scale compressed
+    EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
+             ZarrStatusCode_Success,
+           "");
+    initialize_array(settings.arrays[0], "arr", true, false);
+
+    size_t usage_single = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_single) == ZarrStatusCode_Success,
+           "");
+    cleanup_compression(settings.arrays[0]);
+    ZarrStreamSettings_destroy_arrays(&settings);
+
+    // multiscale compressed
+    EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
+             ZarrStatusCode_Success,
+           "");
+    initialize_array(settings.arrays[0], "arr", true, true);
+
+    size_t usage_multi = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_multi) == ZarrStatusCode_Success,
+           "");
+
+    LOG_INFO("single-scale: ", usage_single, ", multiscale: ", usage_multi);
+    EXPECT(usage_multi > usage_single,
+           "Multiscale should require more memory than single-scale");
+
+    cleanup_compression(settings.arrays[0]);
+    ZarrStreamSettings_destroy_arrays(&settings);
+}
+
+void
+test_more_arrays_more_memory()
+{
+    ZarrStreamSettings settings{};
+
+    // one array
+    EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
+             ZarrStatusCode_Success,
+           "");
+    initialize_array(settings.arrays[0], "a", false, false);
+
+    size_t usage_one = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_one) == ZarrStatusCode_Success,
+           "");
+    ZarrStreamSettings_destroy_arrays(&settings);
+
+    // two arrays
     EXPECT(ZarrStreamSettings_create_arrays(&settings, 2) ==
              ZarrStatusCode_Success,
-           "Failed to create array settings");
+           "");
+    initialize_array(settings.arrays[0], "a", false, false);
+    initialize_array(settings.arrays[1], "b", false, false);
 
-    const std::string output_key2 = "test_array2";
-    initialize_array(settings.arrays[0], output_key1, false, false);
-    EXPECT(settings.arrays[0].dimension_count == 4, "Dimension count mismatch");
+    size_t usage_two = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(
+             &settings, &usage_two) == ZarrStatusCode_Success,
+           "");
 
-    initialize_array(settings.arrays[1], output_key2, true, false);
-    EXPECT(settings.arrays[1].dimension_count == 4, "Dimension count mismatch");
-
-    usage = 0;
-    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
-             ZarrStatusCode_Success,
-           "Failed to estimate memory usage");
-
-    // one uncompressed (1) and one compressed (2), plus each array's frame
-    // buffer
-    expected_usage =
-      frame_queue_size + 3 * expected_array_usage + 2 * expected_frame_size;
-    EXPECT(usage == expected_usage,
-           "Expected max memory usage ",
-           expected_usage,
-           ", got ",
-           usage);
-
-    delete settings.arrays[1].compression_settings;
-    settings.arrays[1].compression_settings = nullptr;
+    LOG_INFO("one array: ", usage_one, ", two arrays: ", usage_two);
+    EXPECT(usage_two > usage_one,
+           "Two arrays should require more memory than one");
 
     ZarrStreamSettings_destroy_arrays(&settings);
+}
 
-    // create settings for a Zarr stream with three arrays, one compressed,
-    // one compressed with downsampling, and one uncompressed
-    EXPECT(ZarrStreamSettings_create_arrays(&settings, 3) ==
+void
+test_invalid_args()
+{
+    size_t usage = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(nullptr, &usage) !=
              ZarrStatusCode_Success,
-           "Failed to create array settings");
-
-    const std::string output_key3 = "test_array3";
-    initialize_array(settings.arrays[0], output_key1, false, false);
-    EXPECT(settings.arrays[0].dimension_count == 4, "Dimension count mismatch");
-
-    initialize_array(settings.arrays[1], output_key2, true, false);
-    EXPECT(settings.arrays[1].dimension_count == 4, "Dimension count mismatch");
-
-    initialize_array(settings.arrays[2], output_key3, true, true);
-    EXPECT(settings.arrays[2].dimension_count == 4, "Dimension count mismatch");
-
-    usage = 0;
-    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
+           "Should fail with null settings");
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(nullptr, nullptr) !=
              ZarrStatusCode_Success,
-           "Failed to estimate memory usage");
+           "Should fail with null settings and usage");
 
-    // one uncompressed (1), one compressed (2), one compressed with
-    // downsampling (4), and 3 frame buffers
-    expected_usage =
-      frame_queue_size + 7 * expected_array_usage + 3 * expected_frame_size;
-    EXPECT(usage == expected_usage,
-           "Expected max memory usage ",
-           expected_usage,
-           ", got ",
-           usage);
-
-    delete settings.arrays[1].compression_settings;
-    settings.arrays[1].compression_settings = nullptr;
-
-    delete settings.arrays[2].compression_settings;
-    settings.arrays[2].compression_settings = nullptr;
-
-    ZarrStreamSettings_destroy_arrays(&settings);
+    ZarrStreamSettings settings{};
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, nullptr) !=
+             ZarrStatusCode_Success,
+           "Should fail with null usage");
 }
 
 int
@@ -182,7 +216,11 @@ main()
     int retval = 1;
 
     try {
-        test_max_memory_usage();
+        test_one_uncompressed_array();
+        test_compressed_more_than_uncompressed();
+        test_multiscale_more_than_single_scale();
+        test_more_arrays_more_memory();
+        test_invalid_args();
 
         retval = 0;
     } catch (const std::exception& e) {

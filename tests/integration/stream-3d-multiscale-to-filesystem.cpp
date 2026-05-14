@@ -1,3 +1,6 @@
+// BASELINE — acquire-zarr LOD geometry expectations.
+// See shim/tests/integration/stream-3d-multiscale-to-filesystem.cpp for the
+// chucky-flavoured version. Divergence documented in shim/plan.md #1.
 #include "acquire.zarr.h"
 #include "test.macros.hh"
 

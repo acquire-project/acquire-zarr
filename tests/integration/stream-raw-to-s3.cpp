@@ -1,8 +1,8 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
+#include "s3-test-helpers.hh"
 
 #include <nlohmann/json.hpp>
-#include <miniocpp/client.h>
 
 #include <vector>
 
@@ -79,92 +79,6 @@ get_credentials()
     env = std::getenv("ZARR_S3_REGION");
     if (env) {
         s3_region = env;
-    }
-
-    return true;
-}
-
-bool
-object_exists(minio::s3::Client& client, const std::string& object_name)
-{
-    minio::s3::StatObjectArgs args;
-    args.bucket = s3_bucket_name;
-    args.object = object_name;
-
-    minio::s3::StatObjectResponse response = client.StatObject(args);
-
-    return (bool)response;
-}
-
-size_t
-get_object_size(minio::s3::Client& client, const std::string& object_name)
-{
-    minio::s3::StatObjectArgs args;
-    args.bucket = s3_bucket_name;
-    args.object = object_name;
-
-    minio::s3::StatObjectResponse response = client.StatObject(args);
-
-    if (!response) {
-        LOG_ERROR("Failed to get object size: ", object_name);
-        return 0;
-    }
-
-    return response.size;
-}
-
-std::string
-get_object_contents(minio::s3::Client& client, const std::string& object_name)
-{
-    std::stringstream ss;
-
-    minio::s3::GetObjectArgs args;
-    args.bucket = s3_bucket_name;
-    args.object = object_name;
-    args.datafunc = [&ss](minio::http::DataFunctionArgs args) -> bool {
-        ss << args.datachunk;
-        return true;
-    };
-
-    // Call get object.
-    minio::s3::GetObjectResponse resp = client.GetObject(args);
-
-    return ss.str();
-}
-
-bool
-remove_items(minio::s3::Client& client,
-             const std::vector<std::string>& item_keys)
-{
-    std::list<minio::s3::DeleteObject> objects;
-    for (const auto& key : item_keys) {
-        minio::s3::DeleteObject object;
-        object.name = key;
-        objects.push_back(object);
-    }
-
-    minio::s3::RemoveObjectsArgs args;
-    args.bucket = s3_bucket_name;
-
-    auto it = objects.begin();
-
-    args.func = [&objects = objects,
-                 &i = it](minio::s3::DeleteObject& obj) -> bool {
-        if (i == objects.end())
-            return false;
-        obj = *i;
-        i++;
-        return true;
-    };
-
-    minio::s3::RemoveObjectsResult result = client.RemoveObjects(args);
-    for (; result; result++) {
-        minio::s3::DeleteError err = *result;
-        if (!err) {
-            LOG_ERROR(
-              "Failed to delete object ", err.object_name, ": ", err.message);
-            return false;
-        }
     }
 
     return true;
@@ -412,26 +326,17 @@ verify_array_metadata(const nlohmann::json& meta)
 void
 verify_and_cleanup()
 {
-    minio::s3::BaseUrl url(s3_endpoint);
-    url.https = s3_endpoint.starts_with("https://");
-
-    minio::creds::StaticProvider provider(s3_access_key_id,
-                                          s3_secret_access_key);
-    minio::s3::Client client(url, &provider);
-
     const std::string array_metadata_path = TEST "/zarr.json";
 
     {
-        EXPECT(object_exists(client, array_metadata_path),
+        EXPECT(s3::object_exists(array_metadata_path),
                "Object does not exist: ",
                array_metadata_path);
-        std::string contents = get_object_contents(client, array_metadata_path);
+        std::string contents = s3::get_object_contents(array_metadata_path);
         nlohmann::json array_metadata = nlohmann::json::parse(contents);
 
         verify_array_metadata(array_metadata);
     }
-
-    CHECK(remove_items(client, { array_metadata_path }));
 
     const auto chunk_size = chunk_width * chunk_height * chunk_planes *
                             chunk_channels * chunk_timepoints * nbytes_px;
@@ -444,8 +349,7 @@ verify_and_cleanup()
                                       chunk_size +
                                     index_size + checksum_size;
 
-    // verify and clean up data files
-    std::vector<std::string> data_files;
+    // verify data files
     const std::string data_root = TEST;
 
     for (auto t = 0; t < shards_in_t; ++t) {
@@ -462,16 +366,19 @@ verify_and_cleanup()
 
                     for (auto x = 0; x < shards_in_x; ++x) {
                         const auto x_file = y_dir + "/" + std::to_string(x);
-                        EXPECT(object_exists(client, x_file),
+                        EXPECT(s3::object_exists(x_file),
                                "Object does not exist: ",
                                x_file);
-                        const auto file_size = get_object_size(client, x_file);
+                        const auto file_size = s3::get_object_size(x_file);
                         EXPECT_EQ(size_t, file_size, expected_file_size);
                     }
                 }
             }
         }
     }
+
+    // cleanup
+    s3::remove_prefix(TEST);
 }
 } // namespace
 

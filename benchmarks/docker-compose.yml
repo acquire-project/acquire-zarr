@@ -1,0 +1,25 @@
+services:
+  benchmark:
+    build:
+      context: ..
+      dockerfile: benchmarks/Dockerfile
+    # Host bind mounts:
+    #   ../bench-out      -> /out   (JSON results + plot land here)
+    #   ../bench-scratch  -> /work  (zarr scratch; put on a fast SSD)
+    volumes:
+      - ../bench-out:/out
+      - ../bench-scratch:/work
+    # Put the zarr scratch on the real disk, not overlayfs.
+    working_dir: /work
+    # nvidia-container-toolkit device request; matches shim/docker-compose.yml.
+    # Drop this key if the host has no GPU — run_all.sh will skip shim-gpu.
+    devices:
+      - nvidia.com/gpu=all
+    environment:
+      BENCH_GIT_SHA: ${BENCH_GIT_SHA:-local}
+      T_CHUNK: ${T_CHUNK:-64}
+      XY_CHUNK: ${XY_CHUNK:-64}
+      XY_SHARD: ${XY_SHARD:-16}
+      FRAMES: ${FRAMES:-1024}
+      BASELINE_SPEC: ${BASELINE_SPEC:-acquire-zarr>=0.5.2}
+    init: true

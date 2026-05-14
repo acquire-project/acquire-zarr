@@ -10,6 +10,10 @@ TestResults
 .idea
 .vscode
 .vs
+.claude
+
+flake.nix
+flake.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -22,6 +26,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build*/
+bench-out/
 cmake-build*/
 _CPack_Packages/
 develop-eggs/

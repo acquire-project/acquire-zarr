@@ -39,15 +39,15 @@ make_mixed_stream()
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 480,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 240,
+        .shard_size_chunks = 2,
     };
     c5_fov1.dimensions[2] = {
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 640,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 320,
+        .shard_size_chunks = 2,
     };
 
     c5.images[0] = {
@@ -75,15 +75,15 @@ make_mixed_stream()
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 480,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 240,
+        .shard_size_chunks = 2,
     };
     c5_fov2.dimensions[2] = {
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 640,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 320,
+        .shard_size_chunks = 2,
     };
 
     c5.images[1] = {
@@ -229,15 +229,15 @@ make_mixed_stream()
         .name = "y",
         .type = ZarrDimensionType_Space,
         .array_size_px = 480,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 240,
+        .shard_size_chunks = 2,
     };
     label_array.dimensions[2] = {
         .name = "x",
         .type = ZarrDimensionType_Space,
         .array_size_px = 640,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
+        .chunk_size_px = 320,
+        .shard_size_chunks = 2,
     };
 
     ZarrStreamSettings settings = {

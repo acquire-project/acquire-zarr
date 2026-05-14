@@ -1,0 +1,11 @@
+{
+  "name": "acquire-zarr-shim",
+  "version-string": "0.0.0",
+  "builtin-baseline": "6f29f12e82a8293156836ad81cc9bf5af41fe836",
+  "dependencies": [
+    "aws-c-s3",
+    "blosc",
+    "lz4",
+    "zstd"
+  ]
+}

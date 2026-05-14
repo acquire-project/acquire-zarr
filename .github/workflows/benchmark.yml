@@ -3,35 +3,93 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+    paths-ignore:
+      - '**.md'
+      - 'CHANGELOG*'
+      - 'LICENSE*'
+  # Gate on Tests passing. For PRs, the Tests workflow must succeed first;
+  # we detect that via workflow_run. For direct pushes to main, the push
+  # trigger above fires immediately (Tests still runs in parallel).
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+  # Manual trigger: `gh workflow run benchmark.yml --ref <branch>` runs
+  # the benchmark against that branch's head (the default checkout
+  # behavior resolves to github.ref when no explicit ref is given).
+  # Pass `-f platforms=<substring>` / `-f backends=<substring>` to
+  # narrow the matrix; defaults to running every cell.
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Substring filter for matrix platforms (e.g. "ubuntu-latest"); blank = all'
+        required: false
+        default: ''
+      backends:
+        description: 'Substring filter for matrix backends ("baseline", "shim"); blank = all'
+        required: false
+        default: ''
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
+  # Build the matrix JSON at workflow-start time. Needed because
+  # matrix.* can't be referenced in the job-level if: expression, so
+  # the platform/backend filter has to happen before matrix expansion.
+  matrix-setup:
+    name: Compute matrix
+    runs-on: ubuntu-latest
+    # On push to main: always run. On workflow_run: only after a
+    # pull_request-triggered Tests run succeeds.
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request')
+    outputs:
+      include: ${{ steps.build.outputs.include }}
+    steps:
+      - id: build
+        shell: bash
+        env:
+          PLATFORMS_FILTER: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || '' }}
+          BACKENDS_FILTER: ${{ github.event_name == 'workflow_dispatch' && inputs.backends || '' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          platforms = [
+              ("windows-latest",   "x64-windows-static"),
+              ("ubuntu-latest",    "x64-linux"),
+              ("ubuntu-24.04-arm", "arm64-linux"),
+              ("macos-latest",     "arm64-osx"),
+              ("macos-15-intel",   "x64-osx"),
+          ]
+          backends = ["baseline", "shim"]
+          pf = os.environ.get("PLATFORMS_FILTER", "")
+          bf = os.environ.get("BACKENDS_FILTER", "")
+          include = [
+              {"platform": p, "backend": b, "vcpkg_triplet": tr}
+              for (p, tr) in platforms
+              if not pf or pf in p
+              for b in backends
+              if not bf or bf in b
+          ]
+          print(f"include={json.dumps(include)}")
+          PY
+          cat "$GITHUB_OUTPUT"
+
   run-benchmark:
-    name: Benchmark on ${{ matrix.platform }}
+    needs: matrix-setup
+    name: Benchmark on ${{ matrix.platform }} (${{ matrix.backend }})
+    if: needs.matrix-setup.outputs.include != '[]'
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - "windows-latest"
-          - "ubuntu-latest"
-          - "ubuntu-24.04-arm"
-          - "macos-latest" # arm
-          - "macos-15-intel" # x86_64
-        include:
-          - platform: "ubuntu-latest"
-            vcpkg_triplet: "x64-linux"
-          - platform: "windows-latest"
-            vcpkg_triplet: "x64-windows-static"
-          - platform: "macos-latest"
-            vcpkg_triplet: "arm64-osx"
-          - platform: "macos-15-intel"
-            vcpkg_triplet: "x64-osx"
-          - platform: "ubuntu-24.04-arm"
-            vcpkg_triplet: "arm64-linux"
+        include: ${{ fromJSON(needs.matrix-setup.outputs.include) }}
     permissions:
       actions: write
 
@@ -39,41 +97,56 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-          ref: ${{ github.event.pull_request.head.sha }}
+          # workflow_run events don't carry pull_request context, so fall
+          # back to workflow_run.head_sha (the PR head that triggered Tests).
+          ref: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-cmake
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13.3"
 
-      - name: Install vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
-          cd vcpkg && ./bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
-          echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
-          ./vcpkg integrate install
-        shell: bash
+      - name: Configure macOS SDK root
+        if: startsWith(matrix.platform, 'macos')
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+
+      - uses: ./.github/actions/setup-vcpkg
 
       - name: Install OpenMP
         if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
+        run: brew install libomp
+
+      - uses: ./.github/actions/setup-sccache
+        with:
+          export-cmake-args: "true"
 
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich psutil
+        run: |
+          uv venv
+          uv pip install "pybind11[global]" ninja setuptools wheel tensorstore click rich psutil
+        shell: bash
 
-      - name: Build and install Python bindings
-        run: python -m pip install ".[testing]"
+      - name: Build and install Python bindings (baseline)
+        if: matrix.backend == 'baseline'
+        run: uv pip install --no-build-isolation ".[testing]"
+        shell: bash
+
+      - name: Build and install Python bindings (shim)
+        if: matrix.backend == 'shim'
+        run: uv pip install --no-build-isolation "./shim/python[testing]"
+        shell: bash
 
       - name: Run benchmark
-        run: python benchmarks/benchmark.py --nocompare --output benchmark-${{ matrix.platform }}-${{ github.sha }}.json
+        run: uv run --no-sync python benchmarks/benchmark.py --nocompare --output benchmark-${{ matrix.platform }}-${{ matrix.backend }}-${{ github.sha }}.json
+        shell: bash
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-${{ matrix.platform }}-${{ github.sha }}
-          path: benchmark-${{ matrix.platform }}-${{ github.sha }}.json
+          name: benchmark-${{ matrix.platform }}-${{ matrix.backend }}-${{ github.sha }}
+          path: benchmark-${{ matrix.platform }}-${{ matrix.backend }}-${{ github.sha }}.json
 
   generate-plots:
     name: Generate benchmark plots
@@ -84,13 +157,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13.3"
 
       - name: Install plotting dependencies
-        run: pip install matplotlib click
+        run: |
+          uv venv
+          uv pip install matplotlib click
+        shell: bash
 
       - name: Download all benchmark artifacts
         uses: actions/download-artifact@v4
@@ -100,7 +176,8 @@ jobs:
           merge-multiple: true
 
       - name: Generate plots
-        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output-prefix benchmark_comparison
+        run: uv run --no-sync python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output-prefix benchmark_comparison
+        shell: bash
 
       - name: Upload plot
         uses: actions/upload-artifact@v4

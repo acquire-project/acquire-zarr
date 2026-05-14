@@ -1108,6 +1108,7 @@ def test_stream_data_to_named_array(
     assert np.array_equal(array, data)
 
 
+@pytest.mark.timeout(300)
 def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     settings.store_path = str(store_path / "anisotropic_downsampling.zarr")
     settings.arrays[0].data_type = np.uint8
@@ -1821,6 +1822,7 @@ def test_append_throws_on_overflow(
 
         assert e
 
+    stream.close()
 
 def test_multiscale_max_levels(store_path: Path):
     """max_levels limits the number of downsampled pyramid levels.
