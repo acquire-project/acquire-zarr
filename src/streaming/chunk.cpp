@@ -61,36 +61,25 @@ zarr::Chunk::compress_and_take_buffer(
   const std::optional<CompressionParams>& compression_params,
   std::vector<uint8_t>& data)
 {
-    if (!compression_params) {
-        std::unique_lock lock(mutex_);
-        data.resize(buffer_.size());
-        std::ranges::copy(buffer_.begin(), buffer_.end(), data.begin());
-
-        return true;
-    }
-
     std::unique_lock lock(mutex_);
-    if (is_compressed_) {
-        data.resize(buffer_.size());
-        std::ranges::copy(buffer_.begin(), buffer_.end(), data.begin());
 
-        return true;
+    if (compression_params && !is_compressed_) {
+        if (!std::visit(
+              [this]<typename ParamT>(const ParamT& params) {
+                  using T = std::decay_t<ParamT>;
+                  if constexpr (std::is_same_v<T, BloscCompressionParams>) {
+                      return compress_in_place(buffer_, params, bytes_per_px_);
+                  } else {
+                      return compress_in_place(buffer_, params);
+                  }
+              },
+              *compression_params)) {
+            return false;
+        }
+        is_compressed_ = true;
     }
 
-    if (!std::visit(
-          [this]<typename ParamT>(const ParamT& params) {
-              using T = std::decay_t<ParamT>;
-              if constexpr (std::is_same_v<T, BloscCompressionParams>) {
-                  return compress_in_place(buffer_, params, bytes_per_px_);
-              } else {
-                  return compress_in_place(buffer_, params);
-              }
-          },
-          *compression_params)) {
-        return false;
-    }
-
-    data.resize(buffer_.size());
-    std::ranges::copy(buffer_.begin(), buffer_.end(), data.begin());
-    return is_compressed_ = true;
+    // single-shot: move the buffer out, leaving the chunk empty
+    data = std::move(buffer_);
+    return true;
 }

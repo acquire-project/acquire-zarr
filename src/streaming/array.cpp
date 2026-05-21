@@ -758,7 +758,7 @@ zarr::Array::compress_and_flush_data_()
                 constexpr size_t n_retries = 3;
 
                 try {
-                    // reset chunk
+                    // reset chunk slot for the next layer
                     {
                         std::unique_lock lock(
                           chunk_mutexes_[chunk_idx - chunk_offset]);
@@ -769,20 +769,44 @@ zarr::Array::compress_and_flush_data_()
                         }
                     }
 
-                    bool success = false;
-                    for (auto retry = 0; retry < n_retries; ++retry) {
-                        if (shard->compress_and_write_chunk(
-                              internal_idx, chunk, params)) {
-                            success = true;
-                            break;
+                    auto try_write = [&](const auto& write_fn) {
+                        for (auto retry = 0; retry < n_retries; ++retry) {
+                            if (write_fn()) {
+                                return true;
+                            }
+                            std::this_thread::sleep_for(
+                              std::chrono::milliseconds(
+                                static_cast<int>(std::pow(10, retry))));
                         }
+                        return false;
+                    };
 
-                        std::this_thread::sleep_for(std::chrono::milliseconds(
-                          static_cast<int>(std::pow(10, retry))));
+                    bool success = false;
+                    bool compress_failed = false;
+
+                    if (!chunk->has_data()) {
+                        success = try_write(
+                          [&] { return shard->skip_chunk(internal_idx); });
+                    } else {
+                        std::vector<uint8_t> compressed;
+                        if (!chunk->compress_and_take_buffer(params,
+                                                             compressed)) {
+                            compress_failed = true;
+                        } else {
+                            success = try_write([&] {
+                                return shard->write_chunk(internal_idx,
+                                                          compressed);
+                            });
+                        }
                     }
 
                     if (success) {
                         result = ThreadPool::TaskResult::Success;
+                    } else if (compress_failed) {
+                        err = "Failed to compress chunk " +
+                              std::to_string(chunk_idx) + " of shard " +
+                              std::to_string(shard_idx);
+                        result = ThreadPool::TaskResult::Fatal;
                     } else {
                         err = "Failed to write chunk " +
                               std::to_string(chunk_idx) + " of shard " +

@@ -88,12 +88,13 @@ zarr::FrameQueue::size() const
 size_t
 zarr::FrameQueue::bytes_used() const
 {
+    std::unique_lock lock(mutex_);
+
     size_t total_bytes = 0;
 
-    size_t write = write_pos_.load(std::memory_order_relaxed);
-    size_t read = read_pos_.load(std::memory_order_relaxed);
+    const size_t write = write_pos_.load(std::memory_order_relaxed);
+    const size_t read = read_pos_.load(std::memory_order_relaxed);
 
-    // Iterate through occupied slots
     size_t pos = read;
     while (pos != write) {
         if (buffer_[pos].ready.load(std::memory_order_relaxed)) {

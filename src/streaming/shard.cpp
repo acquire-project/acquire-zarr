@@ -42,26 +42,13 @@ zarr::Shard::~Shard()
 }
 
 bool
-zarr::Shard::compress_and_write_chunk(
-  uint32_t internal_index,
-  std::shared_ptr<Chunk> chunk,
-  const std::optional<CompressionParams>& compression_params)
+zarr::Shard::write_chunk(uint32_t internal_index,
+                         const std::vector<uint8_t>& buffer)
 {
     EXPECT(internal_index < offsets_.size(),
            "Internal index ",
            internal_index,
            " out of bounds");
-
-    // don't bother writing out a bunch of zeros
-    if (!chunk->has_data()) {
-        return skip_chunk(internal_index);
-    }
-
-    std::vector<uint8_t> buffer;
-    if (!chunk->compress_and_take_buffer(compression_params, buffer)) {
-        LOG_ERROR("Failed to compress buffer");
-        return false;
-    }
 
     extents_[internal_index] = buffer.size();
 
@@ -69,12 +56,12 @@ zarr::Shard::compress_and_write_chunk(
     const uint64_t offset = offsets_[internal_index] = file_offset_;
 
     // if this write fails, the file offset will still be incremented by the
-    // size of this chunk, so we can come back later and retry it
+    // size of this chunk, so a subsequent retry writes to a new offset
     file_offset_ += buffer.size();
 
     lock.unlock();
     bool res = sink_->write(offset, buffer);
-    if (!res) { // TODO (aliddell): retry failed writes
+    if (!res) {
         LOG_ERROR("Failed to write chunk");
         return false;
     }

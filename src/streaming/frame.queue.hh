@@ -43,6 +43,6 @@ class FrameQueue
     std::atomic<size_t> write_pos_{ 0 };
     std::atomic<size_t> read_pos_{ 0 };
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
 };
 } // namespace zarr

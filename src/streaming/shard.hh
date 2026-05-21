@@ -35,10 +35,8 @@ class Shard
           std::shared_ptr<S3ConnectionPool> s3_connection_pool);
     ~Shard();
 
-    [[nodiscard]] bool compress_and_write_chunk(
-      uint32_t internal_index,
-      std::shared_ptr<Chunk> chunk,
-      const std::optional<CompressionParams>& compression_params);
+    [[nodiscard]] bool write_chunk(uint32_t internal_index,
+                                   const std::vector<uint8_t>& buffer);
     [[nodiscard]] bool skip_chunk(uint32_t internal_index);
 
     const std::string& path() const { return path_; }
