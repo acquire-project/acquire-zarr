@@ -747,6 +747,7 @@ zarr::Array::compress_and_flush_data_()
                         internal_idx,
                         chunk_idx,
                         chunk_offset,
+                        shard_idx,
                         bytes_per_chunk,
                         bytes_per_px,
                         chunk = std::move(chunk),
@@ -780,10 +781,15 @@ zarr::Array::compress_and_flush_data_()
                           static_cast<int>(std::pow(10, retry))));
                     }
 
-                    if (!success) {
-                        return ThreadPool::TaskResult::Retry;
+                    if (success) {
+                        result = ThreadPool::TaskResult::Success;
+                    } else {
+                        err = "Failed to write chunk " +
+                              std::to_string(chunk_idx) + " of shard " +
+                              std::to_string(shard_idx) + " after " +
+                              std::to_string(n_retries) + " attempts";
+                        result = ThreadPool::TaskResult::Fatal;
                     }
-                    result = ThreadPool::TaskResult::Success;
                 } catch (const std::exception& exc) {
                     err = std::string("Failed to write chunk: ") + exc.what();
                     result = ThreadPool::TaskResult::Fatal;
@@ -799,9 +805,11 @@ zarr::Array::compress_and_flush_data_()
             if (thread_pool_->n_threads() == 1 ||
                 !thread_pool_->push_job(job)) {
                 if (!thread_pool_->execute_job_with_retry(std::move(job), 2)) {
-                    LOG_ERROR("Failed to skip chunk ",
+                    LOG_ERROR("Failed to write chunk ",
+                              chunk_idx,
+                              ", (internal index ",
                               internal_idx,
-                              " of shard ",
+                              ") of shard ",
                               shard_idx);
                 }
             }

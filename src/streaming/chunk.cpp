@@ -27,24 +27,14 @@ zarr::Chunk::write_tile(uint64_t internal_offset, std::vector<uint8_t>&& tile)
            buffer_.size(),
            ".");
 
-    if (!has_data_) {
-        bool any_nonzero = false;
-
-        // check to see if any byte is nonzero
-        for (const auto& byte : tile) {
-            if (byte != 0) {
-                any_nonzero = true;
-                break;
-            }
-        }
-
-        if (!any_nonzero) {
-            return;
-        }
-
-        has_data_ = true;
+    const bool any_nonzero =
+      std::ranges::any_of(tile, [](uint8_t b) { return b != 0; });
+    if (!any_nonzero) {
+        return;
     }
 
+    std::unique_lock lock(mutex_);
+    has_data_ = true;
     memcpy(buffer_.data() + internal_offset, tile.data(), tile.size());
 }
 

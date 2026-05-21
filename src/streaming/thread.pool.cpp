@@ -161,13 +161,15 @@ zarr::ThreadPool::process_tasks_()
                     } else {
                         err_msg = "Max retries (" +
                                   std::to_string(max_retries) + ") exceeded";
-                        // roll down to TaskResult::Fatal case
+                        [[fallthrough]];
                     }
                 case TaskResult::Fatal:
+                    lock.lock();
                     error_messages_.push_back(err_msg);
-                    error_handler_(err_msg);
                     accepting_jobs = false; // drain and stop
+                    lock.unlock();
                     jobs_cv_.notify_all();
+                    error_handler_(err_msg);
                     break;
             }
         }
