@@ -152,7 +152,7 @@ zarr::ThreadPool::process_tasks_()
                     break;
                 case TaskResult::Retry:
                     if (const auto max_retries =
-                          job->max_retries ? *job->max_retries : 3;
+                          job->max_retries ? *job->max_retries : 1;
                         job->attempt < max_retries) {
                         ++job->attempt;
                         lock.lock();

@@ -1,8 +1,6 @@
 #include "definitions.hh"
 #include "file.handle.hh"
 
-#include <chrono>
-
 void*
 init_handle(const std::string& filename, const void* flags);
 
@@ -57,7 +55,8 @@ zarr::FileHandlePool::get_handle(const std::string& filename)
 {
     std::unique_lock lock(mutex_);
 
-    // block until we can serve from cache or space is available
+    // block until we can serve from cache or a slot frees up. eviction is
+    // handled by return_handle, which notifies after dropping a refcount.
     cv_.wait(lock, [&] {
         return cache_.contains(filename) || cache_space_available_;
     });

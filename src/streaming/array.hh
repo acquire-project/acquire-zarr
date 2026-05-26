@@ -28,7 +28,7 @@ class Array : public ArrayBase
 
   protected:
     std::vector<std::shared_ptr<Chunk>> chunks_;
-    std::vector<std::mutex> chunk_mutexes_;
+    mutable std::vector<std::mutex> chunk_mutexes_;
 
     std::vector<std::shared_ptr<Shard>> shards_;
     std::mutex shards_mutex_;
@@ -49,8 +49,6 @@ class Array : public ArrayBase
 
     uint64_t last_successful_frame_id_;
     uint32_t current_layer_;
-    std::vector<size_t> shard_file_offsets_;
-    std::vector<std::vector<uint64_t>> shard_tables_;
 
     bool make_metadata_(nlohmann::json& metadata) override;
     [[nodiscard]] bool close_() override;
@@ -66,7 +64,6 @@ class Array : public ArrayBase
 
     size_t write_frame_to_chunks_(std::vector<uint8_t>& frame);
 
-    [[nodiscard]] ByteVector consolidate_chunks_(uint32_t shard_index);
     [[nodiscard]] bool compress_and_flush_data_();
     void rollover_();
     void close_sinks_();

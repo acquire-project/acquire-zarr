@@ -110,18 +110,6 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
         chunk = std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
     }
 
-    const auto& dims = config_->dimensions;
-    const auto number_of_shards = dims->number_of_shards();
-    const auto chunks_per_shard = dims->chunks_per_shard();
-
-    shard_file_offsets_.resize(number_of_shards, 0);
-    shard_tables_.resize(number_of_shards);
-
-    for (auto& table : shard_tables_) {
-        table.resize(2 * chunks_per_shard);
-        std::ranges::fill(table, std::numeric_limits<uint64_t>::max());
-    }
-
     // For 2D arrays, don't include append_chunk_index in the path
     if (config_->dimensions->is_2d()) {
         data_root_ = node_path_() + "/c";
@@ -133,6 +121,8 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
 size_t
 zarr::Array::memory_usage() const noexcept
 {
+    // size_bytes() returns the const allocation budget of each chunk and is
+    // safe to read without locking.
     size_t total = 0;
     for (const auto& chunk : chunks_) {
         total += chunk->size_bytes();
@@ -608,64 +598,6 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
     return bytes_written;
 }
 
-ByteVector
-zarr::Array::consolidate_chunks_(uint32_t shard_index)
-{
-    const auto& dims = config_->dimensions;
-    CHECK(shard_index < dims->number_of_shards());
-
-    const auto chunks_per_shard = dims->chunks_per_shard();
-    const auto chunks_in_mem = dims->number_of_chunks_in_memory();
-    const auto n_layers = dims->chunk_layers_per_shard();
-
-    const auto chunks_per_layer = chunks_per_shard / n_layers;
-    const auto layer_offset = current_layer_ * chunks_per_layer;
-    const auto chunk_offset = current_layer_ * chunks_in_mem;
-
-    auto& shard_table = shard_tables_[shard_index];
-    const auto file_offset = shard_file_offsets_[shard_index];
-    shard_table[2 * layer_offset] = file_offset;
-
-    uint64_t last_chunk_offset = shard_table[2 * layer_offset];
-    uint64_t last_chunk_size = shard_table[2 * layer_offset + 1];
-    size_t shard_size = last_chunk_size;
-
-    for (auto i = 1; i < chunks_per_layer; ++i) {
-        const auto offset_idx = 2 * (layer_offset + i);
-        const auto size_idx = offset_idx + 1;
-        if (shard_table[size_idx] == std::numeric_limits<uint64_t>::max()) {
-            continue;
-        }
-
-        shard_table[offset_idx] = last_chunk_offset + last_chunk_size;
-        last_chunk_offset = shard_table[offset_idx];
-        last_chunk_size = shard_table[size_idx];
-        shard_size += last_chunk_size;
-    }
-
-    std::vector<uint8_t> shard_layer(shard_size);
-
-    const auto chunk_indices_this_layer =
-      dims->chunk_indices_for_shard_layer(shard_index, current_layer_);
-
-    size_t offset = 0;
-    for (const auto& idx : chunk_indices_this_layer) {
-        // this clears the chunk data out of the LockedBuffer
-        const auto& chunk = chunks_[idx - chunk_offset]->buffer();
-        std::copy(chunk.begin(), chunk.end(), shard_layer.begin() + offset);
-
-        offset += chunk.size();
-    }
-
-    EXPECT(offset == shard_size,
-           "Consolidated shard size does not match expected: ",
-           offset,
-           " != ",
-           shard_size);
-
-    return std::move(shard_layer);
-}
-
 bool
 zarr::Array::compress_and_flush_data_()
 {
@@ -762,6 +694,7 @@ zarr::Array::compress_and_flush_data_()
                     {
                         std::unique_lock lock(
                           chunk_mutexes_[chunk_idx - chunk_offset]);
+
                         if (!chunks_[chunk_idx - chunk_offset]) {
                             chunks_[chunk_idx - chunk_offset] =
                               std::make_shared<Chunk>(bytes_per_chunk,
@@ -781,38 +714,39 @@ zarr::Array::compress_and_flush_data_()
                         return false;
                     };
 
-                    bool success = false;
-                    bool compress_failed = false;
+                    auto retries_exhausted_msg = [&] {
+                        return "Failed to write chunk " +
+                               std::to_string(chunk_idx) + " of shard " +
+                               std::to_string(shard_idx) + " after " +
+                               std::to_string(n_retries) + " attempts";
+                    };
 
                     if (!chunk->has_data()) {
-                        success = try_write(
-                          [&] { return shard->skip_chunk(internal_idx); });
+                        if (try_write([&] {
+                                return shard->skip_chunk(internal_idx);
+                            })) {
+                            result = ThreadPool::TaskResult::Success;
+                        } else {
+                            err = retries_exhausted_msg();
+                            result = ThreadPool::TaskResult::Fatal;
+                        }
                     } else {
                         std::vector<uint8_t> compressed;
                         if (!chunk->compress_and_take_buffer(params,
                                                              compressed)) {
-                            compress_failed = true;
+                            err = "Failed to compress chunk " +
+                                  std::to_string(chunk_idx) + " of shard " +
+                                  std::to_string(shard_idx);
+                            result = ThreadPool::TaskResult::Fatal;
+                        } else if (try_write([&] {
+                                       return shard->write_chunk(internal_idx,
+                                                                 compressed);
+                                   })) {
+                            result = ThreadPool::TaskResult::Success;
                         } else {
-                            success = try_write([&] {
-                                return shard->write_chunk(internal_idx,
-                                                          compressed);
-                            });
+                            err = retries_exhausted_msg();
+                            result = ThreadPool::TaskResult::Fatal;
                         }
-                    }
-
-                    if (success) {
-                        result = ThreadPool::TaskResult::Success;
-                    } else if (compress_failed) {
-                        err = "Failed to compress chunk " +
-                              std::to_string(chunk_idx) + " of shard " +
-                              std::to_string(shard_idx);
-                        result = ThreadPool::TaskResult::Fatal;
-                    } else {
-                        err = "Failed to write chunk " +
-                              std::to_string(chunk_idx) + " of shard " +
-                              std::to_string(shard_idx) + " after " +
-                              std::to_string(n_retries) + " attempts";
-                        result = ThreadPool::TaskResult::Fatal;
                     }
                 } catch (const std::exception& exc) {
                     err = std::string("Failed to write chunk: ") + exc.what();
@@ -840,7 +774,6 @@ zarr::Array::compress_and_flush_data_()
         }
     }
 
-    // reset shard tables and file offsets
     if (should_rollover_()) {
         current_layer_ = 0;
     } else {

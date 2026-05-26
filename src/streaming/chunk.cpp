@@ -10,7 +10,6 @@ zarr::Chunk::Chunk(size_t size_bytes, size_t bytes_per_px)
   , bytes_per_px_(bytes_per_px)
   , buffer_(size_bytes_, 0)
   , has_data_(false)
-  , is_compressed_(false)
 {
     EXPECT(size_bytes_ > 0, "Empty chunk");
 }
@@ -27,14 +26,16 @@ zarr::Chunk::write_tile(uint64_t internal_offset, std::vector<uint8_t>&& tile)
            buffer_.size(),
            ".");
 
-    const bool any_nonzero =
-      std::ranges::any_of(tile, [](uint8_t b) { return b != 0; });
-    if (!any_nonzero) {
-        return;
+    if (!has_data_.load(std::memory_order_relaxed)) {
+        const bool any_nonzero =
+          std::ranges::any_of(tile, [](uint8_t b) { return b != 0; });
+        if (!any_nonzero) {
+            return;
+        }
     }
 
     std::unique_lock lock(mutex_);
-    has_data_ = true;
+    has_data_.store(true, std::memory_order_relaxed);
     memcpy(buffer_.data() + internal_offset, tile.data(), tile.size());
 }
 
@@ -47,7 +48,7 @@ zarr::Chunk::buffer()
 bool
 zarr::Chunk::has_data() const
 {
-    return has_data_;
+    return has_data_.load(std::memory_order_relaxed);
 }
 
 size_t
@@ -62,8 +63,11 @@ zarr::Chunk::compress_and_take_buffer(
   std::vector<uint8_t>& data)
 {
     std::unique_lock lock(mutex_);
+    if (buffer_.empty()) {
+        return false;
+    }
 
-    if (compression_params && !is_compressed_) {
+    if (compression_params) {
         if (!std::visit(
               [this]<typename ParamT>(const ParamT& params) {
                   using T = std::decay_t<ParamT>;
@@ -76,7 +80,6 @@ zarr::Chunk::compress_and_take_buffer(
               *compression_params)) {
             return false;
         }
-        is_compressed_ = true;
     }
 
     // single-shot: move the buffer out, leaving the chunk empty

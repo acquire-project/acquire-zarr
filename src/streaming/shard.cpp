@@ -5,11 +5,16 @@
 
 #include <cstring>
 
+namespace {
+// sentinel for "no chunk written at this index yet"
+constexpr uint64_t kUnwrittenSentinel = std::numeric_limits<uint64_t>::max();
+} // namespace
+
 zarr::Shard::Shard(const ShardConfig& config,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
                    std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : offsets_(config.chunks_per_shard, std::numeric_limits<uint64_t>::max())
-  , extents_(config.chunks_per_shard, std::numeric_limits<uint64_t>::max())
+  : offsets_(config.chunks_per_shard, kUnwrittenSentinel)
+  , extents_(config.chunks_per_shard, kUnwrittenSentinel)
   , table_flushed_(false)
   , unwritten_chunks_(config.chunks_per_shard)
   , file_offset_(0)
@@ -50,27 +55,36 @@ zarr::Shard::write_chunk(uint32_t internal_index,
            internal_index,
            " out of bounds");
 
-    extents_[internal_index] = buffer.size();
+    uint64_t &offset = offsets_[internal_index],
+             &extent = extents_[internal_index];
 
-    std::unique_lock lock(mutex_);
-    const uint64_t offset = offsets_[internal_index] = file_offset_;
+    // offset and extent have already been written, so this is a retry; double
+    // check that the chunk is at least the same size
+    if (offset < kUnwrittenSentinel) {
+        EXPECT(extent == buffer.size(),
+               "Retrying chunk write with different data");
+    } else {
+        // First attempt: claim the offset under the lock. The stores to
+        // extents_[i] and offsets_[i] are published to write_table_() via
+        // the seq_cst fetch_sub on unwritten_chunks_ below.
+        extent = buffer.size();
 
-    // if this write fails, the file offset will still be incremented by the
-    // size of this chunk, so a subsequent retry writes to a new offset
-    file_offset_ += buffer.size();
+        std::unique_lock lock(mutex_);
+        offset = file_offset_;
+        file_offset_ += buffer.size();
+    }
 
-    lock.unlock();
-    bool res = sink_->write(offset, buffer);
-    if (!res) {
+    if (!sink_->write(offset, buffer)) {
         LOG_ERROR("Failed to write chunk");
         return false;
     }
-    lock.lock();
 
     CHECK(unwritten_chunks_ > 0);
 
-    // fetch_sub returns the value immediately preceding mutation
+    // last writer in the shard publishes the table
+    bool res = true;
     if (unwritten_chunks_.fetch_sub(1) == 1) {
+        std::unique_lock lock(mutex_);
         res = write_table_();
     }
     cv_.notify_all();
@@ -81,16 +95,14 @@ zarr::Shard::write_chunk(uint32_t internal_index,
 bool
 zarr::Shard::skip_chunk(uint32_t internal_index)
 {
-    bool res = true;
+    offsets_[internal_index] = kUnwrittenSentinel;
+    extents_[internal_index] = kUnwrittenSentinel;
 
-    offsets_[internal_index] = std::numeric_limits<uint64_t>::max();
-    extents_[internal_index] = std::numeric_limits<uint64_t>::max();
-
-    std::unique_lock lock(mutex_);
     CHECK(unwritten_chunks_ > 0);
 
-    // fetch_sub returns the value immediately preceding mutation
+    bool res = true;
     if (unwritten_chunks_.fetch_sub(1) == 1) {
+        std::unique_lock lock(mutex_);
         res = write_table_();
     }
     cv_.notify_all();

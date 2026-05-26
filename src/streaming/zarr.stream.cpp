@@ -1617,7 +1617,7 @@ ZarrStream_s::init_frame_queue_()
             return zarr::ThreadPool::TaskResult::Success;
         };
 
-        EXPECT(thread_pool_->push_job(job, 8),
+        EXPECT(thread_pool_->push_job(job),
                "Failed to push frame processing job to thread pool.");
     } catch (const std::exception& e) {
         set_error_("Error creating frame queue: " + std::string(e.what()));

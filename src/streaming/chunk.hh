@@ -2,6 +2,7 @@
 
 #include "compression.params.hh"
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -30,7 +31,6 @@ class Chunk
     std::mutex mutex_;
     std::vector<uint8_t> buffer_;
 
-    bool has_data_;
-    bool is_compressed_;
+    std::atomic<bool> has_data_;
 };
 } // namespace zarr
