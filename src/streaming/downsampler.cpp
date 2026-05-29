@@ -309,6 +309,7 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
     const auto& base_dims = writer_configurations_[0]->dimensions;
     size_t frame_width = base_dims->width_dim().array_size_px;
     size_t frame_height = base_dims->height_dim().array_size_px;
+    ++level_frame_count_.at(0);
 
     ByteVector current_frame(frame.begin(), frame.end());
     ByteVector next_level_frame;

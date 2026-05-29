@@ -1039,6 +1039,87 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
         np.testing.assert_array_equal(actual, expected)
 
 
+# see acquire-project/acquire-zarr#226
+def test_odd_z_multi_channel_no_lod_bleed(store_path: Path):
+    T, C, Z, Y, X = 2, 2, 3, 8, 8
+    dtype = np.uint16
+
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=[
+            ArraySettings(
+                output_key="image",
+                data_type=dtype,
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=T,
+                        chunk_size_px=1,
+                        shard_size_chunks=T,
+                    ),
+                    Dimension(
+                        name="c",
+                        kind=DimensionType.CHANNEL,
+                        array_size_px=C,
+                        chunk_size_px=1,
+                        shard_size_chunks=C,
+                    ),
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=Z,
+                        chunk_size_px=1,
+                        shard_size_chunks=Z,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=Y,
+                        chunk_size_px=Y,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=X,
+                        chunk_size_px=X,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                downsampling_method=DownsamplingMethod.MEAN,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    channel_values = [100, 200]
+    for t in range(T):
+        for c in range(C):
+            block = np.full((1, 1, Z, Y, X), channel_values[c], dtype=dtype)
+            stream.append(block, key="image")
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")["image"]
+
+    full_res = np.asarray(group["0"])
+    assert full_res.shape == (T, C, Z, Y, X)
+    for t in range(T):
+        for c in range(C):
+            assert np.all(full_res[t, c] == channel_values[c])
+
+    lod1 = np.asarray(group["1"])
+    assert lod1.shape == (T, C, (Z + 1) // 2, Y, X)
+    for t in range(T):
+        for c in range(C):
+            assert np.all(lod1[t, c] == channel_values[c]), (
+                f"LOD1 bleed at t={t}, c={c}: "
+                f"got values {np.unique(lod1[t, c])}, "
+                f"expected {channel_values[c]}"
+            )
+
+
 @pytest.mark.parametrize(
     ("output_key", "downsampling_method"),
     [
