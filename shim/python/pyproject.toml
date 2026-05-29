@@ -9,7 +9,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "acquire-zarr-cpu"
+name = "acquire-zarr"
 version = "0.7.0"
 description = "Performant streaming to Zarr storage (CPU backend)"
 requires-python = ">=3.9"
