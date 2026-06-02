@@ -15,28 +15,46 @@ zarr::Chunk::Chunk(size_t size_bytes, size_t bytes_per_px)
 }
 
 void
-zarr::Chunk::write_tile(uint64_t internal_offset, std::vector<uint8_t>&& tile)
+zarr::Chunk::write_tile_rows(uint64_t internal_offset,
+                             const uint8_t* src,
+                             size_t src_row_stride,
+                             size_t copy_nbytes,
+                             size_t dst_row_stride,
+                             uint32_t n_rows)
 {
-    EXPECT(internal_offset + tile.size() <= buffer_.size(),
+    if (n_rows == 0 || copy_nbytes == 0) {
+        return;
+    }
+
+    const uint64_t span =
+      static_cast<uint64_t>(n_rows - 1) * dst_row_stride + copy_nbytes;
+    EXPECT(internal_offset + span <= buffer_.size(),
            "Cannot write ",
-           tile.size(),
+           span,
            " bytes at offset ",
            internal_offset,
            " to buffer of size ",
            buffer_.size(),
            ".");
 
-    if (!has_data_.load(std::memory_order_relaxed)) {
-        const bool any_nonzero =
-          std::ranges::any_of(tile, [](uint8_t b) { return b != 0; });
+    std::unique_lock lock(mutex_);
+    uint8_t* dst = buffer_.data() + internal_offset;
+    bool any_nonzero = has_data_.load(std::memory_order_relaxed);
+
+    for (uint32_t r = 0; r < n_rows; ++r) {
+        const uint8_t* s = src + static_cast<size_t>(r) * src_row_stride;
+        memcpy(dst + static_cast<size_t>(r) * dst_row_stride, s, copy_nbytes);
+        // Detect the chunk's first nonzero data to preserve the all-zero-chunk
+        // skip optimization; stop scanning once we know it has data.
         if (!any_nonzero) {
-            return;
+            any_nonzero = std::any_of(
+              s, s + copy_nbytes, [](uint8_t b) { return b != 0; });
         }
     }
 
-    std::unique_lock lock(mutex_);
-    has_data_.store(true, std::memory_order_relaxed);
-    memcpy(buffer_.data() + internal_offset, tile.data(), tile.size());
+    if (any_nonzero) {
+        has_data_.store(true, std::memory_order_relaxed);
+    }
 }
 
 const std::vector<uint8_t>&

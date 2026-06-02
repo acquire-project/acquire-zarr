@@ -533,14 +533,12 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
     size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
-    std::vector<std::vector<uint8_t>> tiles(n_tiles);
-    for (auto& tile : tiles) {
-        tile.resize(bytes_per_tile_row * tile_rows, 0);
-    }
+    const auto* data_ptr = frame.data();
+    const auto data_size = frame.size();
+    const auto src_row_stride = static_cast<size_t>(frame_cols) * bytes_per_px;
 
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile_idx = 0; tile_idx < n_tiles; ++tile_idx) {
-        auto& tile = tiles[tile_idx];
         auto& chunk = chunks_[tile_idx + group_offset];
         {
             std::unique_lock lock(chunk_mutexes_[tile_idx + group_offset]);
@@ -549,50 +547,40 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
             }
         }
 
-        const auto* data_ptr = frame.data();
-        const auto data_size = frame.size();
-
-        const auto tile_start = tile.data();
-
         const auto tile_idx_y = tile_idx / n_tiles_x;
         const auto tile_idx_x = tile_idx % n_tiles_x;
 
-        size_t tile_pos = 0;
-
-        for (auto k = 0; k < tile_rows; ++k) {
-            const auto frame_row = tile_idx_y * tile_rows + k;
-            if (frame_row < frame_rows) {
-                const auto frame_col = tile_idx_x * tile_cols;
-
-                const auto region_width =
-                  std::min(frame_col + tile_cols, frame_cols) - frame_col;
-
-                const auto region_start =
-                  bytes_per_px * (frame_row * frame_cols + frame_col);
-                const auto nbytes = region_width * bytes_per_px;
-
-                // copy region
-                EXPECT(region_start + nbytes <= data_size,
-                       "Buffer overflow in framme. Region start: ",
-                       region_start,
-                       " nbytes: ",
-                       nbytes,
-                       " data size: ",
-                       data_size);
-                EXPECT(tile_pos + nbytes <= tile.size(),
-                       "Buffer overflow in tile. Tile pos: ",
-                       tile_pos,
-                       " nbytes: ",
-                       nbytes,
-                       " bytes per tile: ",
-                       tile.size());
-                memcpy(tile_start + tile_pos, data_ptr + region_start, nbytes);
-                bytes_written += nbytes;
-            }
-            tile_pos += bytes_per_tile_row;
+        const uint32_t frame_row0 = tile_idx_y * tile_rows;
+        if (frame_row0 >= frame_rows) {
+            continue; // tile lies entirely below the frame: no data to copy
         }
+        const uint32_t n_rows =
+          std::min<uint32_t>(tile_rows, frame_rows - frame_row0);
 
-        chunk->write_tile(chunk_offset, std::move(tile));
+        const auto frame_col = tile_idx_x * tile_cols;
+        const auto region_width =
+          std::min(frame_col + tile_cols, frame_cols) - frame_col;
+        const auto copy_nbytes = static_cast<size_t>(region_width) * bytes_per_px;
+
+        const auto region_start =
+          bytes_per_px * (static_cast<size_t>(frame_row0) * frame_cols + frame_col);
+        EXPECT(region_start + static_cast<size_t>(n_rows - 1) * src_row_stride +
+                   copy_nbytes <=
+                 data_size,
+               "Buffer overflow in frame. region_start: ",
+               region_start,
+               ", data size: ",
+               data_size);
+
+        // Copy frame rows straight into the chunk buffer; no intermediate
+        // per-tile allocation, zero-fill, or second memcpy.
+        chunk->write_tile_rows(chunk_offset,
+                               data_ptr + region_start,
+                               src_row_stride,
+                               copy_nbytes,
+                               bytes_per_tile_row,
+                               n_rows);
+        bytes_written += copy_nbytes * n_rows;
     }
 
     return bytes_written;
