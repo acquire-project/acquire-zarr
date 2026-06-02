@@ -7,7 +7,8 @@
 
 #include <blosc.h>
 
-#include <bit> // bit_ceil
+#include <algorithm> // clamp
+#include <bit>        // bit_ceil
 #include <filesystem>
 #include <regex>
 #include <stack>
@@ -1596,10 +1597,14 @@ ZarrStream_s::init_frame_queue_()
         frame_size_bytes = std::max(frame_size_bytes, output->frame_size_bytes);
     }
 
-    // cap the frame buffer at 2 GiB, or 10 frames, whichever is larger
-    constexpr auto buffer_size_bytes = 2ULL << 30;
-    const auto frame_count =
-      std::max(10ULL, buffer_size_bytes / frame_size_bytes);
+    // Bound the frame queue so a fast producer decouples from the consumer
+    // without buffering the whole acquisition in RAM (otherwise peak RSS grows
+    // to ~the dataset size). Target 256 MiB, clamped to [16, 512] frames so
+    // tiny frames don't explode the slot count and huge frames still get
+    // enough buffering to absorb bursts.
+    constexpr uint64_t buffer_size_bytes = 256ULL << 20;
+    const auto frame_count = std::clamp<uint64_t>(
+      buffer_size_bytes / frame_size_bytes, 16ULL, 512ULL);
 
     try {
         frame_queue_ =
