@@ -86,6 +86,23 @@ init_handle(const std::string& filename, const void* flags)
     return fd;
 }
 
+namespace {
+// One manual-reset event per worker thread, reused across writes. The files
+// are opened FILE_FLAG_OVERLAPPED and we wait synchronously on each write, so
+// a fresh kernel event was being created and destroyed on every single chunk
+// write. Reusing a thread-local event removes that per-write syscall pair.
+struct ThreadEvent
+{
+    HANDLE handle{ CreateEventA(nullptr, TRUE, FALSE, nullptr) };
+    ~ThreadEvent()
+    {
+        if (handle) {
+            CloseHandle(handle);
+        }
+    }
+};
+} // namespace
+
 bool
 seek_and_write(void* handle, size_t offset, ConstByteSpan data)
 {
@@ -95,12 +112,21 @@ seek_and_write(void* handle, size_t offset, ConstByteSpan data)
     auto* cur = reinterpret_cast<const char*>(data.data());
     auto* end = cur + data.size();
 
+    thread_local ThreadEvent thread_event;
+    const HANDLE event = thread_event.handle;
+    if (event == nullptr) {
+        LOG_ERROR("Failed to create overlapped event: ",
+                  get_last_error_as_string());
+        return false;
+    }
+
     int retries = 0;
     OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    overlapped.hEvent = event;
 
     constexpr auto max_retries = 3;
     while (cur < end && retries < max_retries) {
+        ResetEvent(event); // clear state from the previous write
         DWORD written = 0;
         const auto remaining = static_cast<DWORD>(end - cur); // may truncate
         overlapped.Pointer = reinterpret_cast<void*>(offset);
@@ -108,14 +134,12 @@ seek_and_write(void* handle, size_t offset, ConstByteSpan data)
             GetLastError() != ERROR_IO_PENDING) {
             const auto err = get_last_error_as_string();
             LOG_ERROR("Failed to write to file: ", err);
-            CloseHandle(overlapped.hEvent);
             return false;
         }
 
         if (!GetOverlappedResult(*fd, &overlapped, &written, TRUE)) {
             LOG_ERROR("Failed to get overlapped result: ",
                       get_last_error_as_string());
-            CloseHandle(overlapped.hEvent);
             return false;
         }
         retries += written == 0 ? 1 : 0;
@@ -123,7 +147,6 @@ seek_and_write(void* handle, size_t offset, ConstByteSpan data)
         cur += written;
     }
 
-    CloseHandle(overlapped.hEvent);
     return retries < max_retries;
 }
 
@@ -143,7 +166,11 @@ destroy_handle(void* handle)
 {
     if (const auto* fd = static_cast<HANDLE*>(handle)) {
         if (*fd != INVALID_HANDLE_VALUE) {
-            FlushFileBuffers(*fd); // Ensure all buffers are flushed
+            // No FlushFileBuffers here: sinks are explicitly flushed at
+            // finalize (flush_file -> FlushFileBuffers), so forcing a physical
+            // disk sync on every handle eviction/close is redundant and very
+            // expensive. CloseHandle still flushes written data to the OS
+            // cache, so the store is correct/readable after close.
             CloseHandle(*fd);
         }
         delete fd;
