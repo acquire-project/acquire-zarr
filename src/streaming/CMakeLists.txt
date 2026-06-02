@@ -77,6 +77,20 @@ set_target_properties(${tgt} PROPERTIES
         POSITION_INDEPENDENT_CODE ON
 )
 
+# Performance: AVX2 baseline for the streaming hot path (tiling/downsample
+# loops). NB: requires an AVX2-capable CPU at runtime; gate for distribution
+# on pre-AVX2 targets. Blosc has its own runtime SIMD dispatch.
+target_enable_simd(${tgt})
+
+# Link-time optimization for Release builds of the hot-path library.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error LANGUAGES CXX)
+if (ipo_supported)
+    set_target_properties(${tgt} PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+else ()
+    message(STATUS "IPO/LTO not supported, skipping: ${ipo_error}")
+endif ()
+
 install(TARGETS ${tgt}
         EXPORT acquire-zarrTargets
         LIBRARY DESTINATION lib
