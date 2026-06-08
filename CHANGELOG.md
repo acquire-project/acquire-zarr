@@ -10,10 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bound the frame queue to 256 MiB; `append()` now applies backpressure instead of buffering unboundedly, cutting
-  peak memory ~3x at the cost of higher tail latency under sustained pressure
-- Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem)
-- Windows: reuse the per-handle `OVERLAPPED` event and drop the per-close `FlushFileBuffers`
-- Enable AVX2 and LTO for the streaming library
+  peak memory ~3x at the cost of higher tail latency under sustained pressure (#230)
+- Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem) (#230)
+- Windows: reuse the per-handle `OVERLAPPED` event and drop the per-close `FlushFileBuffers` (#230)
+- Enable AVX2 and LTO for the streaming library (#230)
 
 ## [0.8.0] - [2026-05-29](https://github.com/acquire-project/acquire-zarr/compare/v0.7.0...v0.8.0)
 
