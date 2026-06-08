@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Bound the frame queue to 256 MiB; `append()` now applies backpressure instead of buffering unboundedly, cutting
+  peak memory ~3x at the cost of higher tail latency under sustained pressure
+- Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem)
+- Windows: reuse the per-handle `OVERLAPPED` event and drop the per-close `FlushFileBuffers`
+- Enable AVX2 and LTO for the streaming library
+
 ## [0.8.0] - [2026-05-29](https://github.com/acquire-project/acquire-zarr/compare/v0.7.0...v0.8.0)
 
 ### Added
