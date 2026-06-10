@@ -366,6 +366,15 @@ zarr::Array::close_()
               lock, [this]() { return write_counter_.load() == 0; });
         }
 
+        // outstanding writes have drained; finalize any shards that were not
+        // already flushed by their last chunk writer (e.g. a partial trailing
+        // shard) so a flush failure is observed rather than swallowed in the
+        // shard destructor
+        if (!finalize_shards_()) {
+            LOG_ERROR("Failed to finalize shards on close");
+            return false;
+        }
+
         close_sinks_();
 
         if (frames_written_() > 0 || !custom_metadata_.empty()) {
@@ -812,6 +821,19 @@ zarr::Array::rollover_()
     } else {
         data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
     }
+}
+
+bool
+zarr::Array::finalize_shards_()
+{
+    std::unique_lock lock(shards_mutex_);
+    bool ok = true;
+    for (auto& shard : shards_) {
+        if (shard && !shard->finalize()) {
+            ok = false;
+        }
+    }
+    return ok;
 }
 
 void

@@ -615,13 +615,23 @@ extern "C"
         return stream;
     }
 
-    void ZarrStream_destroy(struct ZarrStream_s* stream)
+    ZarrStatusCode ZarrStream_close(struct ZarrStream_s* stream)
     {
-        if (!finalize_stream(stream)) {
-            return;
+        if (stream == nullptr) {
+            return ZarrStatusCode_Success;
         }
 
+        const bool ok = finalize_stream(stream);
         delete stream;
+
+        return ok ? ZarrStatusCode_Success : ZarrStatusCode_InternalError;
+    }
+
+    void ZarrStream_destroy(struct ZarrStream_s* stream)
+    {
+        // Ignore the status: callers that need to detect a failed flush should
+        // use ZarrStream_close instead.
+        (void)ZarrStream_close(stream);
     }
 
     ZarrStatusCode ZarrStream_append(struct ZarrStream_s* stream,

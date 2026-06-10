@@ -68,6 +68,10 @@ class Array : public ArrayBase
     void rollover_();
     void close_sinks_();
 
+    // Explicitly finalize all live shards, returning false if any flush failed.
+    // Only safe to call once outstanding writes have drained.
+    [[nodiscard]] bool finalize_shards_();
+
     size_t frames_written_() const;
 
     friend class MultiscaleArray;

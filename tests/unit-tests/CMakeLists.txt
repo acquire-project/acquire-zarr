@@ -16,6 +16,7 @@ set(tests
         s3-connection-put-object
         s3-connection-upload-multipart-object
         file-sink-write
+        shard-finalize
         s3-sink-write
         s3-sink-write-multipart
         array-write-even

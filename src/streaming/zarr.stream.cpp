@@ -1781,6 +1781,13 @@ finalize_stream(ZarrStream* stream)
     // thread
     stream->thread_pool_->await_stop();
 
+    // a worker job (e.g. a shard flush during streaming) may have failed
+    // asynchronously; surface it rather than reporting a clean close
+    if (!stream->error_.empty()) {
+        LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
+        return false;
+    }
+
     for (auto& [key, output] : stream->arrays_) {
         if (!zarr::finalize_array(std::move(output->array))) {
             LOG_ERROR(

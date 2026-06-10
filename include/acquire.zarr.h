@@ -262,9 +262,24 @@ extern "C"
     ZarrStream* ZarrStream_create(ZarrStreamSettings* settings);
 
     /**
+     * @brief Finalize and close a Zarr stream, reporting failures.
+     * @details This function waits for all pending writes to complete, flushes
+     * all data durably to storage, and frees the memory allocated for the Zarr
+     * stream. Unlike ZarrStream_destroy, it returns a status code so callers can
+     * detect a failed flush (e.g. an I/O error on a network filesystem) instead
+     * of silently producing a corrupt store. The stream is destroyed and the
+     * pointer is invalid after this call returns, regardless of the status.
+     * @param stream The Zarr stream struct to close.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_close(ZarrStream* stream);
+
+    /**
      * @brief Destroy a Zarr stream.
      * @details This function waits for all pending writes to complete and frees
-     * the memory allocated for the Zarr stream.
+     * the memory allocated for the Zarr stream. Any failure during finalization
+     * is logged but not reported; prefer ZarrStream_close if you need to detect
+     * a failed flush.
      * @param stream The Zarr stream struct to destroy.
      */
     void ZarrStream_destroy(ZarrStream* stream);
