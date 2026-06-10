@@ -115,7 +115,7 @@ zarr::FileHandlePool::evict_lru_()
     for (auto it = lru_order_.rbegin(); it != lru_order_.rend(); ++it) {
         if (auto cache_it = cache_.find(*it);
             cache_it != cache_.end() && cache_it->second.refcount == 0) {
-            cache_.erase(cache_it); // destroys FileHandle -> flush_file
+            cache_.erase(cache_it); // destroys FileHandle -> close
             lru_order_.erase(std::next(it).base());
             return;
         }

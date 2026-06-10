@@ -14,8 +14,6 @@ class Chunk
     Chunk(size_t size_bytes, size_t bytes_per_px);
     ~Chunk() = default;
 
-    void write_tile(uint64_t internal_offset, std::vector<uint8_t>&& tile);
-
     // Copy a frame's tile directly into the chunk buffer, row by row, without
     // an intermediate per-tile heap buffer. Row r of `copy_nbytes` bytes is
     // read from `src + r*src_row_stride` and written at
