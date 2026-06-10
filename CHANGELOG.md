@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ZarrStream_close` (C): finalizes and frees a stream, returning a status code so a failed flush can be detected;
+  `ZarrStream_destroy` remains as a void wrapper (#231)
+
 ### Changed
 
 - Bound the frame queue to 256 MiB; `append()` now applies backpressure instead of buffering unboundedly, cutting
@@ -14,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem) (#230)
 - Windows: reuse the per-handle `OVERLAPPED` event and drop the per-close `FlushFileBuffers` (#230)
 - Enable AVX2 and LTO for the streaming library (#230)
+
+### Fixed
+
+- Shard flush (`fsync`) failures are no longer swallowed in the `Shard` destructor; an I/O error now fails the
+  stream instead of silently producing corrupt shards. Python `close()` raises on a failed flush (#231)
 
 ## [0.8.0] - [2026-05-29](https://github.com/acquire-project/acquire-zarr/compare/v0.7.0...v0.8.0)
 
