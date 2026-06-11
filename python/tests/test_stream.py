@@ -385,6 +385,60 @@ def test_stream_data_to_filesystem(
         assert data_file_path.stat().st_size == shard_size_bytes
 
 
+def _make_data(settings: StreamSettings) -> np.ndarray:
+    return np.zeros(
+        (
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+
+
+def test_close_raises_on_write_failure(
+    settings: StreamSettings, store_path: Path
+):
+    """A failed write must surface as an exception from close(), not be
+    silently swallowed and leave a corrupt store (regression for #229)."""
+    settings.store_path = str(store_path / "test.zarr")
+    settings.arrays[0].data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Place a regular file where the chunk directory tree must be created, so
+    # writes fail with ENOTDIR. Unlike permission bits, this is enforced even
+    # when the test runs as root, keeping it deterministic in CI.
+    chunk_root = store_path / "test.zarr" / "c"
+    if chunk_root.is_dir():
+        shutil.rmtree(chunk_root)
+    elif chunk_root.exists():
+        chunk_root.unlink()
+    chunk_root.write_bytes(b"")
+
+    stream.append(_make_data(settings))
+
+    with pytest.raises(RuntimeError):
+        stream.close()
+
+
+def test_close_is_idempotent(settings: StreamSettings, store_path: Path):
+    """close() may be called more than once; the second call is a no-op and
+    must not double-free the underlying stream."""
+    settings.store_path = str(store_path / "test.zarr")
+    settings.arrays[0].data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    stream.append(_make_data(settings))
+
+    stream.close()
+    stream.close()  # safe no-op
+
+    array = zarr.open(settings.store_path, mode="r")
+    assert array.shape == _make_data(settings).shape
+
+
 @pytest.mark.parametrize(
     ("compression_codec",),
     [
