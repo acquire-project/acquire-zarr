@@ -77,6 +77,31 @@ test_partial_shard_finalizes_explicitly()
     EXPECT_EQ(size_t, fs::file_size(path), expected_shard_size(1));
 }
 
+// Once a shard is finalized, sink_ has been released. A retrying caller (e.g.
+// try_write in compress_and_flush_data_) must get the cached result back rather
+// than re-entering write_chunk/skip_chunk and null-dereferencing the sink.
+void
+test_write_after_finalize_is_safe()
+{
+    const auto path = (base_dir / "reentry").string();
+    const std::vector<uint8_t> buffer(bytes_per_chunk, 0xEF);
+
+    auto pool = std::make_shared<zarr::FileHandlePool>();
+    {
+        zarr::Shard shard(make_config(path), pool, nullptr);
+
+        CHECK(shard.write_chunk(0, buffer));
+        CHECK(shard.finalize()); // releases the sink
+
+        // re-entry returns the cached finalize result instead of crashing
+        CHECK(shard.write_chunk(1, buffer));
+        CHECK(shard.skip_chunk(1));
+    }
+
+    CHECK(fs::is_regular_file(path));
+    EXPECT_EQ(size_t, fs::file_size(path), expected_shard_size(1));
+}
+
 int
 main()
 {
@@ -88,6 +113,7 @@ main()
 
         test_complete_shard_finalizes_from_last_writer();
         test_partial_shard_finalizes_explicitly();
+        test_write_after_finalize_is_safe();
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
         retval = 1;

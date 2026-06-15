@@ -30,6 +30,7 @@ zarr::Shard::Shard(const ShardConfig& config,
     }
 
     make_sink_();
+    CHECK(sink_);
 }
 
 zarr::Shard::~Shard()
@@ -57,6 +58,16 @@ zarr::Shard::write_chunk(uint32_t internal_index,
            "Internal index ",
            internal_index,
            " out of bounds");
+
+    // re-entry after finalize_unlocked_ has released sink_ would null-deref
+    // below; return the cached result so a retrying caller exhausts into its
+    // Fatal path instead of crashing
+    {
+        std::unique_lock lock(mutex_);
+        if (finalized_) {
+            return finalize_ok_;
+        }
+    }
 
     uint64_t &offset = offsets_[internal_index],
              &extent = extents_[internal_index];
@@ -99,6 +110,13 @@ zarr::Shard::write_chunk(uint32_t internal_index,
 bool
 zarr::Shard::skip_chunk(uint32_t internal_index)
 {
+    {
+        std::unique_lock lock(mutex_);
+        if (finalized_) {
+            return finalize_ok_;
+        }
+    }
+
     offsets_[internal_index] = kUnwrittenSentinel;
     extents_[internal_index] = kUnwrittenSentinel;
 

@@ -630,7 +630,7 @@ zarr::Array::compress_and_flush_data_()
             write_counter_.fetch_add(1);
             write_counter_cv_.notify_all();
 
-            auto job = [this, shard, internal_idx](
+            auto job = [this, shard, internal_idx, shard_idx](
                          std::string& err) -> ThreadPool::TaskResult {
                 bool success = false;
                 ThreadPool::TaskResult result;
@@ -639,7 +639,10 @@ zarr::Array::compress_and_flush_data_()
                     success = shard->skip_chunk(internal_idx);
                     if (success) {
                         result = ThreadPool::TaskResult::Success;
-                    } else { // failed to write table
+                    } else { // failed to write table / flush shard
+                        err = "Failed to skip chunk " +
+                              std::to_string(internal_idx) + " of shard " +
+                              std::to_string(shard_idx);
                         result = ThreadPool::TaskResult::Fatal;
                     }
                 } catch (const std::exception& exc) {

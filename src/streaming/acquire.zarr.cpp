@@ -624,7 +624,7 @@ extern "C"
         const bool ok = finalize_stream(stream);
         delete stream;
 
-        return ok ? ZarrStatusCode_Success : ZarrStatusCode_InternalError;
+        return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;
     }
 
     void ZarrStream_destroy(struct ZarrStream_s* stream)

@@ -1313,8 +1313,13 @@ class PyZarrStream
         try {
             // release ownership so the deleter does not also destroy the
             // stream; ZarrStream_close finalizes, frees, and reports a failed
-            // flush (e.g. an I/O error on a network filesystem)
-            status = ZarrStream_close(stream_.release());
+            // flush (e.g. an I/O error on a network filesystem). It blocks on
+            // the queue drain + fsyncs, so drop the GIL while it runs.
+            ZarrStream* raw = stream_.release();
+            {
+                py::gil_scoped_release release;
+                status = ZarrStream_close(raw);
+            }
         } catch (const std::exception& exc) {
             std::string err =
               "Failed to close Zarr stream: " + std::string(exc.what());

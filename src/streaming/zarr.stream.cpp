@@ -1442,7 +1442,9 @@ ZarrStream_s::start_thread_pool_(uint32_t max_threads)
 void
 ZarrStream_s::set_error_(const std::string& msg)
 {
-    error_ = msg;
+    // never store an empty error: callers key "did something fail?" off a
+    // non-empty error_, so an empty message would read as a clean close
+    error_ = msg.empty() ? "Unspecified error during streaming" : msg;
     frame_queue_processing_done_ = true;
 }
 
