@@ -77,7 +77,24 @@ jobs:
         run: |
           brew install libomp
 
+      # windows-latest ships Visual Studio 18, which CMake 3.31 has no generator
+      # for; it falls back to NMake and fails. Set up the MSVC environment and
+      # use Ninja so the generator never depends on CMake knowing the VS version.
+      - name: Set up MSVC environment
+        if: startsWith(matrix.platform, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure CMake (Windows)
+        if: startsWith(matrix.platform, 'windows')
+        run: >
+          cmake --preset=default -G Ninja
+          -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
       - name: Configure CMake
+        if: ${{ !startsWith(matrix.platform, 'windows') }}
         run: |
           cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
           cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
@@ -205,6 +222,19 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: |
           brew install libomp
+
+      # see the C/C++ job: VS18 has no CMake 3.31 generator. Set up MSVC and
+      # tell scikit-build to drive the build with Ninja via CMAKE_GENERATOR.
+      - name: Set up MSVC environment
+        if: startsWith(matrix.platform, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Use Ninja generator on Windows
+        if: startsWith(matrix.platform, 'windows')
+        run: echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+        shell: bash
 
       - name: Install dependencies
         run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
