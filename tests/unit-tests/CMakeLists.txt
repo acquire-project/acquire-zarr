@@ -9,6 +9,7 @@ set(tests
         array-dimensions-chunk-internal-offset
         array-dimensions-shard-index-for-chunk
         array-dimensions-shard-internal-index
+        array-dimensions-courtesy-flush
         thread-pool-push-to-job-queue
         construct-data-paths
         s3-connection-bucket-exists

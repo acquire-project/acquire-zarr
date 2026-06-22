@@ -385,6 +385,116 @@ def test_stream_data_to_filesystem(
         assert data_file_path.stat().st_size == shard_size_bytes
 
 
+@pytest.mark.parametrize("ragged", [False, True])
+def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
+    """A large intermediate (z) dimension with an append chunk size of 1 must
+    flush and free chunk buffers one z band at a time instead of buffering the
+    entire inner volume.
+
+    Regression guard for the OOM reported in
+    czbiohub-sf/livescreen-acquisition#210 (z up to ~62.5k as an intermediate
+    axis). We verify both that data still round-trips and that live memory never
+    approaches the full inner volume (which the old code allocated up front).
+    """
+    Y, X, cz = 64, 64, 64
+    # 1024 (16 even bands) or 1000 (ragged trailing band) along z
+    Z = 1000 if ragged else 1024
+    dtype = np.uint16
+
+    # two full timepoints, then a partial one whose plane count is neither a
+    # full layer nor a multiple of cz, exercising the close-time flush of the
+    # trailing (partial) band and the entirely-empty bands after it
+    n_full_t = 2
+    partial_planes = (Z // 2) + 7
+    n_t = n_full_t + 1
+
+    arr = ArraySettings(
+        dimensions=[
+            Dimension(
+                name="t",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=Z,
+                chunk_size_px=cz,
+                # 16 chunks / shard of 3 => a trailing shard with missing chunks,
+                # exercising the padding-skip path at the last band of the layer
+                shard_size_chunks=3,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=Y,
+                chunk_size_px=Y,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=X,
+                chunk_size_px=X,
+                shard_size_chunks=1,
+            ),
+        ]
+    )
+    arr.data_type = dtype
+
+    s = StreamSettings()
+    s.store_path = str(store_path / "intermediate.zarr")
+    s.overwrite = True
+    s.arrays = [arr]
+
+    itemsize = np.dtype(dtype).itemsize
+    full_inner_volume = Z * Y * X * itemsize
+    band_bytes = cz * Y * X * itemsize
+    frame_bytes = Y * X * itemsize
+
+    # frame queue: 256 MiB budget clamped to [16, 512] frames (init_frame_queue_)
+    frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
+
+    # the advertised maximum reflects a single z band, not the whole volume
+    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    assert s.get_maximum_memory_usage() == expected_max
+
+    stream = ZarrStream(s)
+    assert stream
+
+    expected = np.zeros((n_t, Z, Y, X), dtype=dtype)
+    peak = 0
+
+    def write_t(t: int, n_planes: int):
+        nonlocal peak
+        for z in range(n_planes):
+            value = (t * Z + z) % np.iinfo(dtype).max
+            frame = np.full((Y, X), value, dtype=dtype)
+            expected[t, z] = frame
+            stream.append(frame)
+            peak = max(peak, stream.get_current_memory_usage())
+
+    for t in range(n_full_t):
+        write_t(t, Z)
+    write_t(n_full_t, partial_planes)  # trailing partial layer
+
+    stream.close()
+
+    # appending one z plane at a time keeps the frame queue tiny, so live memory
+    # is dominated by resident chunk buffers; band-by-band flushing keeps that
+    # well under the full inner volume the old code held resident.
+    assert peak < int(full_inner_volume * 0.75), (
+        f"peak memory {peak} not bounded below the full inner volume "
+        f"{full_inner_volume}"
+    )
+
+    array = zarr.open(s.store_path, mode="r")
+    assert array.shape == (n_t, Z, Y, X)
+    assert np.array_equal(array[:], expected)
+
+
 def _make_data(settings: StreamSettings) -> np.ndarray:
     return np.zeros(
         (

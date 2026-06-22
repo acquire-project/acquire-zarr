@@ -98,16 +98,38 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
   , is_closing_{ false }
   , last_successful_frame_id_{ 0 }
   , current_layer_{ 0 }
+  , flushed_band_count_{ 0 }
 {
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
 
-    const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
-    const size_t bytes_per_px = bytes_of_type(config_->dtype);
-
+    // Chunk buffers are allocated lazily on first write (write_frame_to_chunks_)
+    // and freed as each band/layer is flushed, so peak memory tracks the live
+    // working set rather than the full inner volume.
     chunks_.resize(n_chunks);
-    for (auto& chunk : chunks_) {
-        chunk = std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
+
+    // Incremental band flushing requires an append chunk of 1 (see
+    // ArrayDimensions::supports_dim1_banding); with a larger append chunk every
+    // inner chunk must stay resident until the append chunk completes. Warn when
+    // that working set is large so the resulting memory pressure is diagnosable.
+    const auto& dims = *config_->dimensions;
+    if (dims.final_dim().chunk_size_px > 1 && dims.ndims() >= 4) {
+        const size_t layer_bytes =
+          static_cast<size_t>(dims.number_of_chunks_in_memory()) *
+          dims.bytes_per_chunk();
+        constexpr size_t warn_threshold = size_t{ 1 } << 30; // 1 GiB
+        if (layer_bytes > warn_threshold) {
+            LOG_WARNING("Append dimension '",
+                        dims.final_dim().name,
+                        "' has chunk size ",
+                        dims.final_dim().chunk_size_px,
+                        " (> 1), so ~",
+                        layer_bytes >> 20,
+                        " MiB of chunk buffers must stay resident until each "
+                        "append chunk completes; set its chunk size to 1 to "
+                        "enable incremental flushing of large intermediate "
+                        "dimensions.");
+        }
     }
 
     // For 2D arrays, don't include append_chunk_index in the path
@@ -125,7 +147,9 @@ zarr::Array::memory_usage() const noexcept
     // safe to read without locking.
     size_t total = 0;
     for (const auto& chunk : chunks_) {
-        total += chunk->size_bytes();
+        if (chunk) { // slots are empty until lazily allocated on write
+            total += chunk->size_bytes();
+        }
     }
 
     return total;
@@ -187,7 +211,11 @@ zarr::Array::write_frame(std::vector<uint8_t>& frame,
               "; frames written: ",
               frames_written);
 
-    if (should_flush_()) {
+    if (config_->dimensions->supports_dim1_banding()) {
+        // flush completed dim-1 bands incrementally so peak memory stays bounded
+        // to one band rather than the whole inner volume
+        CHECK(flush_completed_bands_());
+    } else if (should_flush_()) {
         CHECK(compress_and_flush_data_());
 
         if (should_rollover_()) {
@@ -357,7 +385,13 @@ zarr::Array::close_()
     is_closing_ = true;
     try {
         if (bytes_to_flush_ > 0) {
-            CHECK(compress_and_flush_data_());
+            if (config_->dimensions->supports_dim1_banding()) {
+                // bands flushed mid-sweep are already on disk and freed; flush
+                // only the trailing (possibly partial) bands of the open layer
+                CHECK(flush_layer_remainder_());
+            } else {
+                CHECK(compress_and_flush_data_());
+            }
         }
 
         {
@@ -595,6 +629,146 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
     return bytes_written;
 }
 
+void
+zarr::Array::dispatch_skip_job_(std::shared_ptr<Shard> shard,
+                                uint32_t internal_idx,
+                                uint32_t shard_idx)
+{
+    write_counter_.fetch_add(1);
+    write_counter_cv_.notify_all();
+
+    auto job = [this, shard, internal_idx, shard_idx](
+                 std::string& err) -> ThreadPool::TaskResult {
+        ThreadPool::TaskResult result;
+
+        try {
+            if (shard->skip_chunk(internal_idx)) {
+                result = ThreadPool::TaskResult::Success;
+            } else { // failed to write table / flush shard
+                err = "Failed to skip chunk " + std::to_string(internal_idx) +
+                      " of shard " + std::to_string(shard_idx);
+                result = ThreadPool::TaskResult::Fatal;
+            }
+        } catch (const std::exception& exc) {
+            err = std::string("Failed skipping chunk: ") + exc.what();
+            result = ThreadPool::TaskResult::Fatal;
+        }
+
+        write_counter_.fetch_sub(1);
+        write_counter_cv_.notify_all();
+        return result;
+    };
+
+    // one thread is reserved for processing the frame queue and runs the
+    // entire lifetime of the stream
+    if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
+        if (!thread_pool_->execute_job(std::move(job))) {
+            LOG_ERROR(
+              "Failed to skip chunk ", internal_idx, " of shard ", shard_idx);
+        }
+    }
+}
+
+void
+zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
+                                 uint32_t chunk_idx,
+                                 uint32_t internal_idx,
+                                 uint32_t shard_idx,
+                                 uint32_t chunk_offset,
+                                 size_t bytes_per_chunk,
+                                 size_t bytes_per_px)
+{
+    std::shared_ptr<Chunk> chunk;
+    {
+        // take the chunk out of its slot, leaving it empty; the next layer
+        // reallocates lazily on write, so the buffer is reclaimed once this job
+        // finishes with it
+        std::unique_lock lock(chunk_mutexes_[chunk_idx - chunk_offset]);
+        chunk = std::move(chunks_[chunk_idx - chunk_offset]);
+    }
+
+    write_counter_.fetch_add(1);
+    write_counter_cv_.notify_all();
+
+    auto job = [this,
+                shard,
+                internal_idx,
+                chunk_idx,
+                shard_idx,
+                chunk = std::move(chunk),
+                params = config_->compression_params](
+                 std::string& err) -> ThreadPool::TaskResult {
+        ThreadPool::TaskResult result;
+
+        constexpr size_t n_retries = 3;
+
+        try {
+            auto try_write = [&](const auto& write_fn) {
+                for (auto retry = 0; retry < n_retries; ++retry) {
+                    if (write_fn()) {
+                        return true;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(
+                      static_cast<int>(std::pow(10, retry))));
+                }
+                return false;
+            };
+
+            auto retries_exhausted_msg = [&] {
+                return "Failed to write chunk " + std::to_string(chunk_idx) +
+                       " of shard " + std::to_string(shard_idx) + " after " +
+                       std::to_string(n_retries) + " attempts";
+            };
+
+            if (!chunk || !chunk->has_data()) {
+                if (try_write(
+                      [&] { return shard->skip_chunk(internal_idx); })) {
+                    result = ThreadPool::TaskResult::Success;
+                } else {
+                    err = retries_exhausted_msg();
+                    result = ThreadPool::TaskResult::Fatal;
+                }
+            } else {
+                std::vector<uint8_t> compressed;
+                if (!chunk->compress_and_take_buffer(params, compressed)) {
+                    err = "Failed to compress chunk " +
+                          std::to_string(chunk_idx) + " of shard " +
+                          std::to_string(shard_idx);
+                    result = ThreadPool::TaskResult::Fatal;
+                } else if (try_write([&] {
+                               return shard->write_chunk(internal_idx,
+                                                         compressed);
+                           })) {
+                    result = ThreadPool::TaskResult::Success;
+                } else {
+                    err = retries_exhausted_msg();
+                    result = ThreadPool::TaskResult::Fatal;
+                }
+            }
+        } catch (const std::exception& exc) {
+            err = std::string("Failed to write chunk: ") + exc.what();
+            result = ThreadPool::TaskResult::Fatal;
+        }
+
+        write_counter_.fetch_sub(1);
+        write_counter_cv_.notify_all();
+        return result;
+    };
+
+    // one thread is reserved for processing the frame queue and runs the
+    // entire lifetime of the stream
+    if (thread_pool_->n_threads() == 1 || !thread_pool_->push_job(job)) {
+        if (!thread_pool_->execute_job_with_retry(std::move(job), 2)) {
+            LOG_ERROR("Failed to write chunk ",
+                      chunk_idx,
+                      ", (internal index ",
+                      internal_idx,
+                      ") of shard ",
+                      shard_idx);
+        }
+    }
+}
+
 bool
 zarr::Array::compress_and_flush_data_()
 {
@@ -611,166 +785,29 @@ zarr::Array::compress_and_flush_data_()
     const auto chunks_in_mem = dims->number_of_chunks_in_memory();
     const auto chunk_offset = current_layer_ * chunks_in_mem;
 
-    const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
+    const size_t bytes_per_chunk = dims->bytes_per_chunk();
     const size_t bytes_per_px = bytes_of_type(config_->dtype);
 
-    // wait for the chunks in each shard to finish compressing, then defragment
-    // and write the shard
+    // compress and write every chunk in the current layer, skipping ragged
+    // padding slots so each shard's countdown completes
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         auto shard = shards_[shard_idx];
-        const auto chunk_indices_this_layer =
-          dims->chunk_indices_for_shard_layer(shard_idx, current_layer_);
 
-        // skip empty chunks
-        const auto empty_chunks =
-          dims->skipped_internal_indices_for_shard_layer(shard_idx,
-                                                         current_layer_);
-
-        for (const auto& internal_idx : empty_chunks) {
-            write_counter_.fetch_add(1);
-            write_counter_cv_.notify_all();
-
-            auto job = [this, shard, internal_idx, shard_idx](
-                         std::string& err) -> ThreadPool::TaskResult {
-                bool success = false;
-                ThreadPool::TaskResult result;
-
-                try {
-                    success = shard->skip_chunk(internal_idx);
-                    if (success) {
-                        result = ThreadPool::TaskResult::Success;
-                    } else { // failed to write table / flush shard
-                        err = "Failed to skip chunk " +
-                              std::to_string(internal_idx) + " of shard " +
-                              std::to_string(shard_idx);
-                        result = ThreadPool::TaskResult::Fatal;
-                    }
-                } catch (const std::exception& exc) {
-                    err = std::string("Failed skipping chunk: ") + exc.what();
-                    result = ThreadPool::TaskResult::Fatal;
-                }
-
-                write_counter_.fetch_sub(1);
-                write_counter_cv_.notify_all();
-                return result;
-            };
-
-            // one thread is reserved for processing the frame queue and
-            // runs the entire lifetime of the stream
-            if (thread_pool_->n_threads() == 1 ||
-                !thread_pool_->push_job(job)) {
-                if (!thread_pool_->execute_job(std::move(job))) {
-                    LOG_ERROR("Failed to skip chunk ",
-                              internal_idx,
-                              " of shard ",
-                              shard_idx);
-                }
-            }
+        for (const auto& internal_idx :
+             dims->skipped_internal_indices_for_shard_layer(shard_idx,
+                                                            current_layer_)) {
+            dispatch_skip_job_(shard, internal_idx, shard_idx);
         }
 
-        for (const auto& chunk_idx : chunk_indices_this_layer) {
-            auto& chunk = chunks_[chunk_idx - chunk_offset];
-            const auto internal_idx = dims->shard_internal_index(chunk_idx);
-            write_counter_.fetch_add(1);
-            write_counter_cv_.notify_all();
-
-            auto job = [this,
-                        shard,
-                        internal_idx,
-                        chunk_idx,
-                        chunk_offset,
-                        shard_idx,
-                        bytes_per_chunk,
-                        bytes_per_px,
-                        chunk = std::move(chunk),
-                        params = config_->compression_params](
-                         std::string& err) -> ThreadPool::TaskResult {
-                ThreadPool::TaskResult result;
-
-                constexpr size_t n_retries = 3;
-
-                try {
-                    // reset chunk slot for the next layer
-                    {
-                        std::unique_lock lock(
-                          chunk_mutexes_[chunk_idx - chunk_offset]);
-
-                        if (!chunks_[chunk_idx - chunk_offset]) {
-                            chunks_[chunk_idx - chunk_offset] =
-                              std::make_shared<Chunk>(bytes_per_chunk,
-                                                      bytes_per_px);
-                        }
-                    }
-
-                    auto try_write = [&](const auto& write_fn) {
-                        for (auto retry = 0; retry < n_retries; ++retry) {
-                            if (write_fn()) {
-                                return true;
-                            }
-                            std::this_thread::sleep_for(
-                              std::chrono::milliseconds(
-                                static_cast<int>(std::pow(10, retry))));
-                        }
-                        return false;
-                    };
-
-                    auto retries_exhausted_msg = [&] {
-                        return "Failed to write chunk " +
-                               std::to_string(chunk_idx) + " of shard " +
-                               std::to_string(shard_idx) + " after " +
-                               std::to_string(n_retries) + " attempts";
-                    };
-
-                    if (!chunk->has_data()) {
-                        if (try_write([&] {
-                                return shard->skip_chunk(internal_idx);
-                            })) {
-                            result = ThreadPool::TaskResult::Success;
-                        } else {
-                            err = retries_exhausted_msg();
-                            result = ThreadPool::TaskResult::Fatal;
-                        }
-                    } else {
-                        std::vector<uint8_t> compressed;
-                        if (!chunk->compress_and_take_buffer(params,
-                                                             compressed)) {
-                            err = "Failed to compress chunk " +
-                                  std::to_string(chunk_idx) + " of shard " +
-                                  std::to_string(shard_idx);
-                            result = ThreadPool::TaskResult::Fatal;
-                        } else if (try_write([&] {
-                                       return shard->write_chunk(internal_idx,
-                                                                 compressed);
-                                   })) {
-                            result = ThreadPool::TaskResult::Success;
-                        } else {
-                            err = retries_exhausted_msg();
-                            result = ThreadPool::TaskResult::Fatal;
-                        }
-                    }
-                } catch (const std::exception& exc) {
-                    err = std::string("Failed to write chunk: ") + exc.what();
-                    result = ThreadPool::TaskResult::Fatal;
-                }
-
-                write_counter_.fetch_sub(1);
-                write_counter_cv_.notify_all();
-                return result;
-            };
-
-            // one thread is reserved for processing the frame queue and
-            // runs the entire lifetime of the stream
-            if (thread_pool_->n_threads() == 1 ||
-                !thread_pool_->push_job(job)) {
-                if (!thread_pool_->execute_job_with_retry(std::move(job), 2)) {
-                    LOG_ERROR("Failed to write chunk ",
-                              chunk_idx,
-                              ", (internal index ",
-                              internal_idx,
-                              ") of shard ",
-                              shard_idx);
-                }
-            }
+        for (const auto& chunk_idx :
+             dims->chunk_indices_for_shard_layer(shard_idx, current_layer_)) {
+            dispatch_chunk_job_(shard,
+                                chunk_idx,
+                                dims->shard_internal_index(chunk_idx),
+                                shard_idx,
+                                chunk_offset,
+                                bytes_per_chunk,
+                                bytes_per_px);
         }
     }
 
@@ -778,6 +815,109 @@ zarr::Array::compress_and_flush_data_()
         current_layer_ = 0;
     } else {
         ++current_layer_;
+    }
+
+    return true;
+}
+
+bool
+zarr::Array::compress_and_flush_band_(uint32_t band_idx, uint32_t n_bands)
+{
+    if (data_paths_.empty()) {
+        make_shards_();
+    }
+
+    const auto& dims = config_->dimensions;
+
+    const auto n_shards = dims->number_of_shards();
+    CHECK(shards_.size() == n_shards);
+
+    const auto chunks_in_mem = dims->number_of_chunks_in_memory();
+    const auto chunk_offset = current_layer_ * chunks_in_mem;
+
+    const size_t bytes_per_chunk = dims->bytes_per_chunk();
+    const size_t bytes_per_px = bytes_of_type(config_->dtype);
+
+    // chunks of one band occupy a contiguous block of the in-memory layout,
+    // since dimension 1 is the slowest-varying chunk index within a layer
+    const auto chunks_per_band = chunks_in_mem / n_bands;
+    const auto local_begin = band_idx * chunks_per_band;
+    const auto local_end = local_begin + chunks_per_band;
+
+    for (auto local_idx = local_begin; local_idx < local_end; ++local_idx) {
+        const auto chunk_idx = chunk_offset + local_idx;
+        const auto shard_idx = dims->shard_index_for_chunk(chunk_idx);
+        dispatch_chunk_job_(shards_[shard_idx],
+                            chunk_idx,
+                            dims->shard_internal_index(chunk_idx),
+                            shard_idx,
+                            chunk_offset,
+                            bytes_per_chunk,
+                            bytes_per_px);
+    }
+
+    // the final band of the layer accounts for ragged padding across all shards
+    // (slots backed by no lattice chunk, possibly in shards the band never
+    // touched) so every shard's unwritten-chunk countdown reaches zero exactly
+    // once
+    if (band_idx + 1 == n_bands) {
+        for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
+            for (const auto& internal_idx :
+                 dims->skipped_internal_indices_for_shard_layer(
+                   shard_idx, current_layer_)) {
+                dispatch_skip_job_(shards_[shard_idx], internal_idx, shard_idx);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool
+zarr::Array::flush_layer_remainder_()
+{
+    const auto n_bands = config_->dimensions->dim1_band_count();
+    for (auto band = flushed_band_count_; band < n_bands; ++band) {
+        CHECK(compress_and_flush_band_(band, n_bands));
+    }
+    flushed_band_count_ = n_bands;
+    return true;
+}
+
+bool
+zarr::Array::flush_completed_bands_()
+{
+    const auto& dims = config_->dimensions;
+
+    const auto frames_per_layer = dims->frames_per_chunk_layer();
+    const auto frames_per_band = dims->frames_per_dim1_band();
+    const auto n_bands = dims->dim1_band_count();
+
+    // frames written into the current append-chunk layer
+    const auto frames_in_layer = frames_written_() % frames_per_layer;
+
+    if (frames_in_layer == 0) {
+        // the layer just completed: flush any bands not yet flushed (the
+        // trailing, possibly ragged, band) and account for padding
+        CHECK(flush_layer_remainder_());
+
+        if (should_rollover_()) {
+            rollover_();
+            CHECK(write_metadata_());
+            current_layer_ = 0;
+        } else {
+            ++current_layer_;
+        }
+        bytes_to_flush_ = 0;
+        flushed_band_count_ = 0;
+    } else if (frames_in_layer % frames_per_band == 0) {
+        // one or more interior bands just completed; flush any not yet flushed
+        const auto completed =
+          static_cast<uint32_t>(frames_in_layer / frames_per_band);
+        for (auto band = flushed_band_count_; band < completed; ++band) {
+            CHECK(compress_and_flush_band_(band, n_bands));
+        }
+        flushed_band_count_ = completed;
     }
 
     return true;

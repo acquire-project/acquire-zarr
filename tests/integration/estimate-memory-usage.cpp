@@ -1,6 +1,7 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <thread>
@@ -78,8 +79,12 @@ test_max_memory_usage()
     const std::string output_key1 = "test_array1";
     initialize_array(settings.arrays[0], output_key1, false, false);
 
-    const size_t frame_queue_size = 1 << 30; // 1 GiB
     const size_t expected_frame_size = array_width * array_height * 2;
+
+    // mirror init_frame_queue_: 256 MiB budget clamped to [16, 512] frames
+    const size_t frame_queue_frames =
+      std::clamp<size_t>((256ULL << 20) / expected_frame_size, 16, 512);
+    const size_t frame_queue_size = frame_queue_frames * expected_frame_size;
 
     const size_t padded_width = padded_size(array_width, chunk_width);
     const size_t padded_height = padded_size(array_height, chunk_height);

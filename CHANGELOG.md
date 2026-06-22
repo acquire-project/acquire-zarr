@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Flush incrementally along a large intermediate dimension: when the append dimension has a chunk size of 1, chunk
+  buffers are now flushed and freed one band at a time along the dimension just inside the append axis, so peak memory
+  tracks a single band rather than the whole inner volume. This makes large intermediate axes (e.g. a `[t, z, y, x]`
+  store with a ~62k `z`) feasible without running out of memory. `estimate_max_memory_usage` reflects the reduced bound
+  (czbiohub-sf/livescreen-acquisition#210)
 - Bound the frame queue to 256 MiB; `append()` now applies backpressure instead of buffering unboundedly, cutting
   peak memory ~3x at the cost of higher tail latency under sustained pressure (#230)
 - Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem) (#230)
@@ -22,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `estimate_max_memory_usage` now models the frame queue as the actual 256 MiB / [16, 512]-frame bound (#230) instead
+  of a flat 1 GiB, so the estimate matches real peak usage
 - Shard flush (`fsync`) failures are no longer swallowed in the `Shard` destructor; an I/O error now fails the
   stream instead of silently producing corrupt shards. Python `close()` raises on a failed flush (#231)
 

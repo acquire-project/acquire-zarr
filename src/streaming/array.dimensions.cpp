@@ -325,6 +325,58 @@ ArrayDimensions::bytes_per_chunk() const
     return bytes_per_chunk_;
 }
 
+uint64_t
+ArrayDimensions::frames_per_chunk_layer() const
+{
+    uint64_t frames = dims_.front().chunk_size_px;
+    for (auto i = 1; i + 2 < ndims(); ++i) { // intermediate dims: 1..ndims-3
+        frames *= dims_[i].array_size_px;
+    }
+    return frames;
+}
+
+uint64_t
+ArrayDimensions::frames_per_shard_layer() const
+{
+    return frames_per_chunk_layer() * dims_.front().shard_size_chunks;
+}
+
+bool
+ArrayDimensions::supports_dim1_banding() const
+{
+    // Need an append chunk of 1 (so each inner sweep completes its chunks) and
+    // at least one intermediate dimension (index 1 must not be spatial).
+    //
+    // Banding triggers off the acquisition frame count, so it requires that
+    // acquisition order matches storage order; under transposition a storage
+    // band's frames arrive out of sequence and a band could be flushed before
+    // it is complete, so fall back to whole-layer flushing.
+    return dims_.front().chunk_size_px == 1 && ndims() >= 4 &&
+           !needs_transposition();
+}
+
+uint32_t
+ArrayDimensions::dim1_band_count() const
+{
+    return zarr::chunks_along_dimension(dims_[1]);
+}
+
+uint64_t
+ArrayDimensions::frames_per_dim1_band() const
+{
+    uint64_t frames = dims_[1].chunk_size_px;
+    for (auto i = 2; i + 2 < ndims(); ++i) { // dims inside dim 1: 2..ndims-3
+        frames *= dims_[i].array_size_px;
+    }
+    return frames;
+}
+
+uint32_t
+ArrayDimensions::chunks_per_dim1_band() const
+{
+    return number_of_chunks_in_memory_ / dim1_band_count();
+}
+
 uint32_t
 ArrayDimensions::number_of_shards() const
 {

@@ -310,12 +310,14 @@ def test_estimate_max_memory_usage():
     )
     for dim in array.dimensions[1:]:
         array_usage *= dim.array_size_px
-    frame_queue_usage = 1 << 30
     frame_buffer_usage = (
         array.dimensions[-2].array_size_px
         * array.dimensions[-1].array_size_px
         * np.dtype(np.uint16).itemsize
     )
+    # mirror init_frame_queue_: 256 MiB budget clamped to [16, 512] frames
+    frame_queue_frames = min(max((256 << 20) // frame_buffer_usage, 16), 512)
+    frame_queue_usage = frame_queue_frames * frame_buffer_usage
     expected_memory = array_usage + frame_buffer_usage + frame_queue_usage
 
     stream = aqz.StreamSettings(arrays=[array])
