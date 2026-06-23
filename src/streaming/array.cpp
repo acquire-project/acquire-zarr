@@ -103,15 +103,10 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
 
-    // Chunk buffers are allocated lazily on first write (write_frame_to_chunks_)
-    // and freed as each band/layer is flushed, so peak memory tracks the live
-    // working set rather than the full inner volume.
+    // allocated lazily on write, freed per band/layer on flush
     chunks_.resize(n_chunks);
 
-    // Incremental band flushing requires an append chunk of 1 (see
-    // ArrayDimensions::supports_dim1_banding); with a larger append chunk every
-    // inner chunk must stay resident until the append chunk completes. Warn when
-    // that working set is large so the resulting memory pressure is diagnosable.
+    // append chunk > 1 keeps the whole inner volume resident (no banding); warn
     const auto& dims = *config_->dimensions;
     if (dims.final_dim().chunk_size_px > 1 && dims.ndims() >= 4) {
         const size_t layer_bytes =
@@ -212,8 +207,6 @@ zarr::Array::write_frame(std::vector<uint8_t>& frame,
               frames_written);
 
     if (config_->dimensions->supports_dim1_banding()) {
-        // flush completed dim-1 bands incrementally so peak memory stays bounded
-        // to one band rather than the whole inner volume
         CHECK(flush_completed_bands_());
     } else if (should_flush_()) {
         CHECK(compress_and_flush_data_());
@@ -386,8 +379,7 @@ zarr::Array::close_()
     try {
         if (bytes_to_flush_ > 0) {
             if (config_->dimensions->supports_dim1_banding()) {
-                // bands flushed mid-sweep are already on disk and freed; flush
-                // only the trailing (possibly partial) bands of the open layer
+                // flush the trailing bands of the open layer
                 CHECK(flush_layer_remainder_());
             } else {
                 CHECK(compress_and_flush_data_());
@@ -680,9 +672,7 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
 {
     std::shared_ptr<Chunk> chunk;
     {
-        // take the chunk out of its slot, leaving it empty; the next layer
-        // reallocates lazily on write, so the buffer is reclaimed once this job
-        // finishes with it
+        // take the chunk out of its slot; the next layer reallocates lazily
         std::unique_lock lock(chunk_mutexes_[chunk_idx - chunk_offset]);
         chunk = std::move(chunks_[chunk_idx - chunk_offset]);
     }
@@ -788,8 +778,8 @@ zarr::Array::compress_and_flush_data_()
     const size_t bytes_per_chunk = dims->bytes_per_chunk();
     const size_t bytes_per_px = bytes_of_type(config_->dtype);
 
-    // compress and write every chunk in the current layer, skipping ragged
-    // padding slots so each shard's countdown completes
+    // write every chunk in the layer; skip ragged padding to complete each
+    // shard's countdown
     for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
         auto shard = shards_[shard_idx];
 
@@ -838,8 +828,7 @@ zarr::Array::compress_and_flush_band_(uint32_t band_idx, uint32_t n_bands)
     const size_t bytes_per_chunk = dims->bytes_per_chunk();
     const size_t bytes_per_px = bytes_of_type(config_->dtype);
 
-    // chunks of one band occupy a contiguous block of the in-memory layout,
-    // since dimension 1 is the slowest-varying chunk index within a layer
+    // a band is a contiguous block of slots (dim 1 is the slowest chunk index)
     const auto chunks_per_band = chunks_in_mem / n_bands;
     const auto local_begin = band_idx * chunks_per_band;
     const auto local_end = local_begin + chunks_per_band;
@@ -856,10 +845,7 @@ zarr::Array::compress_and_flush_band_(uint32_t band_idx, uint32_t n_bands)
                             bytes_per_px);
     }
 
-    // the final band of the layer accounts for ragged padding across all shards
-    // (slots backed by no lattice chunk, possibly in shards the band never
-    // touched) so every shard's unwritten-chunk countdown reaches zero exactly
-    // once
+    // on the last band, account for ragged padding across all shards
     if (band_idx + 1 == n_bands) {
         for (auto shard_idx = 0; shard_idx < n_shards; ++shard_idx) {
             for (const auto& internal_idx :
@@ -893,12 +879,10 @@ zarr::Array::flush_completed_bands_()
     const auto frames_per_band = dims->frames_per_dim1_band();
     const auto n_bands = dims->dim1_band_count();
 
-    // frames written into the current append-chunk layer
     const auto frames_in_layer = frames_written_() % frames_per_layer;
 
     if (frames_in_layer == 0) {
-        // the layer just completed: flush any bands not yet flushed (the
-        // trailing, possibly ragged, band) and account for padding
+        // layer complete: flush the trailing band(s) and advance/rollover
         CHECK(flush_layer_remainder_());
 
         if (should_rollover_()) {
@@ -911,7 +895,7 @@ zarr::Array::flush_completed_bands_()
         bytes_to_flush_ = 0;
         flushed_band_count_ = 0;
     } else if (frames_in_layer % frames_per_band == 0) {
-        // one or more interior bands just completed; flush any not yet flushed
+        // flush interior bands completed since the last flush
         const auto completed =
           static_cast<uint32_t>(frames_in_layer / frames_per_band);
         for (auto band = flushed_band_count_; band < completed; ++band) {

@@ -131,51 +131,24 @@ class ArrayDimensions
      */
     uint32_t number_of_chunks_in_memory() const;
 
-    /**
-     * @brief Number of frames that fill one chunk along the append dimension.
-     * @details This is the granularity at which a full inner volume is flushed
-     * today (see Array::should_flush_): append chunk size times the product of
-     * the intermediate (non-append, non-spatial) array sizes.
-     */
+    /// Frames that fill one append-dimension chunk (the whole-layer flush size).
     uint64_t frames_per_chunk_layer() const;
 
-    /**
-     * @brief Number of frames that fill one shard along the append dimension.
-     * @details append chunk size times append shard size (in chunks) times the
-     * product of the intermediate array sizes; the rollover granularity.
-     */
+    /// Frames that fill one append-dimension shard (the rollover size).
     uint64_t frames_per_shard_layer() const;
 
-    /**
-     * @brief Whether incremental ("courtesy") flushing along dimension 1 can
-     * bound peak memory below a full inner volume.
-     * @details Only possible when the append-dimension chunk size is 1 and at
-     * least one intermediate dimension exists. With append chunk size > 1, a
-     * chunk spans multiple inner sweeps, so every inner chunk must stay resident
-     * until the append chunk completes and incremental flushing cannot help.
-     * @see issue czbiohub-sf/livescreen-acquisition#210
-     */
+    /// Whether dim-1 band flushing applies: append chunk size 1, an
+    /// intermediate dim, and no transposition.
+    /// @see czbiohub-sf/livescreen-acquisition#210
     bool supports_dim1_banding() const;
 
-    /**
-     * @brief Number of dim-1 chunk bands per append-chunk layer.
-     * @return chunks_along_dimension(dim 1) -- the count of incremental flushes
-     * per layer when banding is active.
-     */
+    /// Number of dim-1 chunk bands per layer (== chunks along dim 1).
     uint32_t dim1_band_count() const;
 
-    /**
-     * @brief Number of frames that fill one dim-1 chunk band.
-     * @return dim-1 chunk size times the product of array sizes of the
-     * intermediate dimensions inside dim 1. For [t, z, y, x] this is the z chunk
-     * size.
-     */
+    /// Frames that fill one dim-1 chunk band (z chunk size for [t, z, y, x]).
     uint64_t frames_per_dim1_band() const;
 
-    /**
-     * @brief Number of in-memory chunks belonging to a single dim-1 band.
-     * @return number_of_chunks_in_memory() / dim1_band_count().
-     */
+    /// In-memory chunks per dim-1 band (number_of_chunks_in_memory / bands).
     uint32_t chunks_per_dim1_band() const;
 
     /**

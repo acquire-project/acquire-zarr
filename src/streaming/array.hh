@@ -50,8 +50,7 @@ class Array : public ArrayBase
     uint64_t last_successful_frame_id_;
     uint32_t current_layer_;
 
-    // number of dim-1 chunk bands already flushed in the current append-chunk
-    // layer (only meaningful when dimensions->supports_dim1_banding())
+    // dim-1 bands flushed so far in the current layer (banding only)
     uint32_t flushed_band_count_;
 
     bool make_metadata_(nlohmann::json& metadata) override;
@@ -70,19 +69,15 @@ class Array : public ArrayBase
 
     [[nodiscard]] bool compress_and_flush_data_();
 
-    // Incremental ("courtesy") flushing along dimension 1, used when
-    // dimensions->supports_dim1_banding(). Flushes and frees one band of chunks
-    // at a time as the inner sweep completes them, bounding peak raw memory to a
-    // single band instead of the full inner volume.
-    // @see issue czbiohub-sf/livescreen-acquisition#210
+    // Incremental flush along dimension 1, one chunk band at a time, to bound
+    // peak memory. Used when dimensions->supports_dim1_banding().
+    // @see czbiohub-sf/livescreen-acquisition#210
     [[nodiscard]] bool flush_completed_bands_();
     [[nodiscard]] bool flush_layer_remainder_();
     [[nodiscard]] bool compress_and_flush_band_(uint32_t band_idx,
                                                 uint32_t n_bands);
 
-    // Dispatch a single chunk's compress-and-write (or skip-if-empty) job,
-    // moving the chunk out of its slot and leaving the slot empty so the buffer
-    // is reclaimed; the next layer reallocates it lazily on write.
+    // Compress and write (or skip-if-empty) one chunk, freeing its slot.
     void dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                              uint32_t chunk_idx,
                              uint32_t internal_idx,
@@ -90,8 +85,7 @@ class Array : public ArrayBase
                              uint32_t chunk_offset,
                              size_t bytes_per_chunk,
                              size_t bytes_per_px);
-    // Dispatch a skip for a shard-internal index backed by no lattice chunk
-    // (ragged padding), so the shard's unwritten-chunk countdown completes.
+    // Skip a ragged-padding slot to complete the shard's countdown.
     void dispatch_skip_job_(std::shared_ptr<Shard> shard,
                             uint32_t internal_idx,
                             uint32_t shard_idx);

@@ -1,7 +1,5 @@
-// Unit coverage for the dim-1 "courtesy flush" band math that lets a large
-// intermediate dimension stream incrementally instead of buffering the whole
-// inner volume.
-// @see issue czbiohub-sf/livescreen-acquisition#210
+// Band math for dim-1 "courtesy flush".
+// @see czbiohub-sf/livescreen-acquisition#210
 #include "array.dimensions.hh"
 #include "unit.test.macros.hh"
 
@@ -22,8 +20,7 @@ main()
     int retval = 1;
 
     try {
-        // [t, z, y, x] with append chunk size 1 and a chunked intermediate z:
-        // this is the reported layout. Banding is active and z is the band axis.
+        // [t, z, y, x], append chunk 1, chunked z: the reported layout
         {
             std::vector<ZarrDimension> dims;
             dims.emplace_back("t", ZarrDimensionType_Time, 0, 1, 1);
@@ -74,8 +71,7 @@ main()
                    "Expected banding disabled without an intermediate dim");
         }
 
-        // A requested transposition disables banding: acquisition order would
-        // not match storage order, so band-completion timing is unreliable.
+        // a requested transposition disables banding
         {
             std::vector<ZarrDimension> dims;
             dims.emplace_back("t", ZarrDimensionType_Time, 0, 1, 1);
@@ -90,8 +86,7 @@ main()
                    "Expected banding disabled under transposition");
         }
 
-        // Multiple intermediate dims [t, a, b, y, x]: bands run along a (dim 1)
-        // and each band spans a full sweep of b.
+        // multiple intermediate dims [t, a, b, y, x]: bands run along a (dim 1)
         {
             std::vector<ZarrDimension> dims;
             dims.emplace_back("t", ZarrDimensionType_Time, 0, 1, 1);

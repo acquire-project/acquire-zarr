@@ -344,13 +344,8 @@ ArrayDimensions::frames_per_shard_layer() const
 bool
 ArrayDimensions::supports_dim1_banding() const
 {
-    // Need an append chunk of 1 (so each inner sweep completes its chunks) and
-    // at least one intermediate dimension (index 1 must not be spatial).
-    //
-    // Banding triggers off the acquisition frame count, so it requires that
-    // acquisition order matches storage order; under transposition a storage
-    // band's frames arrive out of sequence and a band could be flushed before
-    // it is complete, so fall back to whole-layer flushing.
+    // append chunk 1 (each sweep completes its chunks) + an intermediate dim;
+    // transposition would desync the acquisition-order frame trigger
     return dims_.front().chunk_size_px == 1 && ndims() >= 4 &&
            !needs_transposition();
 }

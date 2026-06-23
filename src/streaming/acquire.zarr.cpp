@@ -235,9 +235,8 @@ extern "C"
 
         EXPECT_VALID_ARGUMENT(usage, "Null pointer: usage");
 
-        // Mirror ZarrStream_s::init_frame_queue_: the shared frame queue is
-        // bounded to ~256 MiB worth of frames, clamped to [16, 512] slots sized
-        // by the largest array's frame.
+        // frame queue: mirror init_frame_queue_ (256 MiB, clamped to [16, 512]
+        // frames sized by the largest array's frame)
         size_t max_frame_size_bytes = 0;
         for (size_t i = 0; i < settings->array_count; ++i) {
             const auto& array = settings->arrays[i];
@@ -271,16 +270,9 @@ extern "C"
 
             *usage += frame_size_bytes; // each array has a frame buffer
 
-            // With an append chunk of 1 and at least one intermediate
-            // dimension, the writer flushes and frees one dim-1 chunk band at a
-            // time (see Array::flush_completed_bands_), so peak memory tracks a
-            // single band along the first intermediate axis rather than the
-            // full inner volume.
-            // @see issue czbiohub-sf/livescreen-acquisition#210
-            // Banding is disabled under a requested transposition (see
-            // ArrayDimensions::supports_dim1_banding), so only claim the reduced
-            // bound when storage order matches acquisition order; otherwise this
-            // estimate must stay a true upper bound.
+            // banding bounds memory to one dim-1 band; mirror
+            // supports_dim1_banding (no transposition) to stay an upper bound
+            // @see czbiohub-sf/livescreen-acquisition#210
             const bool banded = dims[0].chunk_size_px == 1 && ndims >= 4 &&
                                 array.storage_dimension_order == nullptr;
 
