@@ -10,14 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Filesystem files are now opened with `FILE_SHARE_READ` on Windows, so another process (e.g. napari) can open the
-  store for reading while an acquisition is in progress (PR_NUMBER)
+  store for reading while an acquisition is in progress (#234)
 
 ### Fixed
 
 - Metadata (`zarr.json`) writes now truncate the file to the written length. Previously a rewrite shorter than the
   prior version (e.g. replacing a large custom-metadata blob with a smaller one) left stale trailing bytes, since
   neither the Win32 nor POSIX backend truncated on write; strict JSON parsers such as zarr-python rejected the
-  result (PR_NUMBER)
+  result (#234)
 
 ## [0.8.1]
 
