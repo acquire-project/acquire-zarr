@@ -29,6 +29,17 @@ zarr::FileSink::write(size_t offset, ConstByteSpan data)
         return true;
     }
 
+    // truncate_to_fit_ clamps the file to offset + data.size(), which is only
+    // correct for a whole-file write at 0; a later write at a lower offset would
+    // truncate away earlier content. Enforce the invariant at its use site.
+    if (truncate_to_fit_ && offset != 0) {
+        LOG_ERROR("Truncating sink for ",
+                  filename_,
+                  " requires writes at offset 0; got offset ",
+                  offset);
+        return false;
+    }
+
     const auto borrowed = file_handle_pool_->get_handle(filename_);
     if (borrowed.handle_ == nullptr) {
         LOG_ERROR("Failed to get file handle for ", filename_);
