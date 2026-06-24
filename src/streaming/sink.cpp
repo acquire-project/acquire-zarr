@@ -101,7 +101,8 @@ zarr::construct_data_paths(std::string_view base_path,
 
 std::unique_ptr<zarr::Sink>
 zarr::make_file_sink(std::string_view file_path,
-                     std::shared_ptr<FileHandlePool> file_handle_pool)
+                     std::shared_ptr<FileHandlePool> file_handle_pool,
+                     bool truncate_to_fit)
 {
     if (file_path.starts_with("file://")) {
         file_path = file_path.substr(7);
@@ -124,7 +125,8 @@ zarr::make_file_sink(std::string_view file_path,
         }
     }
 
-    return std::make_unique<FileSink>(file_path, file_handle_pool);
+    return std::make_unique<FileSink>(
+      file_path, file_handle_pool, truncate_to_fit);
 }
 
 std::unique_ptr<zarr::Sink>

@@ -1568,7 +1568,8 @@ ZarrStream_s::write_intermediate_metadata_()
             metadata_sink = zarr::make_s3_sink(
               bucket_name.value(), sink_path, s3_connection_pool_);
         } else {
-            metadata_sink = zarr::make_file_sink(sink_path, file_handle_pool_);
+            metadata_sink = zarr::make_file_sink(
+              sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
         }
 
         if (!metadata_sink->write(0, metadata_span) ||

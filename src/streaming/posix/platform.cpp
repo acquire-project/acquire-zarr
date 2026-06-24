@@ -96,6 +96,22 @@ flush_file(void* handle)
     return res == 0;
 }
 
+bool
+truncate_file(void* handle, size_t size)
+{
+    CHECK(handle);
+    const auto* fd = static_cast<int*>(handle);
+    if (*fd < 0) {
+        return false;
+    }
+
+    if (ftruncate(*fd, static_cast<off_t>(size)) < 0) {
+        LOG_ERROR("Failed to truncate file: ", get_last_error_as_string());
+        return false;
+    }
+    return true;
+}
+
 void
 destroy_handle(void* handle)
 {

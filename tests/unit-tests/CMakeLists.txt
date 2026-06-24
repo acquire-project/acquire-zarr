@@ -3,6 +3,7 @@ set(project acquire-zarr)
 set(tests
         create-stream
         stream-write-metadata
+        metadata-shrink-stale-bytes
         create-stream-simple-array-root
         array-dimensions-chunk-lattice-index
         array-dimensions-tile-group-offset
