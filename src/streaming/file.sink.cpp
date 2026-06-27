@@ -17,6 +17,18 @@ zarr::FileSink::FileSink(std::string_view filename,
     EXPECT(file_handle_pool_ != nullptr, "File handle pool not provided.");
 }
 
+zarr::FileSink::~FileSink()
+{
+    // The sink is being finalized/destroyed, so this file is sealed: the
+    // writer will never touch it again. Proactively close the pooled handle so
+    // the OS frees the fd and a later unlink can reclaim the disk blocks. Left
+    // open, the pool keeps the handle for the store's lifetime, and deleting a
+    // sealed chunk frees no space on the local filesystem (issue #226).
+    if (file_handle_pool_ != nullptr) {
+        file_handle_pool_->close(filename_);
+    }
+}
+
 bool
 zarr::FileSink::write(size_t offset, ConstByteSpan data)
 {
