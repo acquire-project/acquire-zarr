@@ -70,7 +70,8 @@ construct_data_paths(std::string_view base_path,
  */
 std::unique_ptr<Sink>
 make_file_sink(std::string_view file_path,
-               std::shared_ptr<FileHandlePool> file_handle_pool);
+               std::shared_ptr<FileHandlePool> file_handle_pool,
+               bool truncate_to_fit = false);
 
 /**
  * @brief Create a sink from an S3 bucket name and object key.

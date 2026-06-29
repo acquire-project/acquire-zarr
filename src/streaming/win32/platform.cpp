@@ -71,7 +71,7 @@ init_handle(const std::string& filename, const void* flags)
     auto* fd = new HANDLE;
     *fd = CreateFileA(filename.c_str(),
                       GENERIC_WRITE,
-                      FILE_SHARE_WRITE,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE,
                       nullptr,
                       OPEN_ALWAYS,
                       *static_cast<const DWORD*>(flags),
@@ -157,6 +157,27 @@ flush_file(void* handle)
     if (const auto* fd = static_cast<HANDLE*>(handle);
         *fd != INVALID_HANDLE_VALUE) {
         return FlushFileBuffers(*fd);
+    }
+    return true;
+}
+
+bool
+truncate_file(void* handle, size_t size)
+{
+    CHECK(handle);
+    const auto* fd = static_cast<HANDLE*>(handle);
+    if (*fd == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    // FileEndOfFileInfo takes an explicit size and ignores the file pointer,
+    // which FILE_FLAG_OVERLAPPED writes never move (unlike SetEndOfFile).
+    FILE_END_OF_FILE_INFO eof_info = { 0 };
+    eof_info.EndOfFile.QuadPart = static_cast<LONGLONG>(size);
+    if (!SetFileInformationByHandle(
+          *fd, FileEndOfFileInfo, &eof_info, sizeof(eof_info))) {
+        LOG_ERROR("Failed to truncate file: ", get_last_error_as_string());
+        return false;
     }
     return true;
 }

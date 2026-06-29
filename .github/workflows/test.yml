@@ -43,11 +43,27 @@ jobs:
     permissions:
       actions: write
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install CMake 3.31
         if: matrix.platform != 'ubuntu-24.04-arm'
@@ -65,7 +81,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -92,12 +108,14 @@ jobs:
           cmake --preset=default -G Ninja
           -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Configure CMake
         if: ${{ !startsWith(matrix.platform, 'windows') }}
         run: |
           cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
@@ -110,6 +128,8 @@ jobs:
     name: Test S3
     runs-on: ubuntu-latest
     env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password
       MINIO_URL: http://localhost:9000
@@ -123,6 +143,18 @@ jobs:
         with:
           submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+          key: vcpkg-ubuntu-latest-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-ubuntu-latest-
 
       - name: Install CMake 3.31
         uses: jwlawson/actions-setup-cmake@v2
@@ -151,7 +183,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -161,7 +193,7 @@ jobs:
       - name: Configure CMake
         run: |
           cmake --preset=default
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
@@ -198,6 +230,10 @@ jobs:
           - "macos-latest" # arm
           - "macos-15-intel" # x86_64
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -208,10 +244,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13.3"
+          cache: 'pip'
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH

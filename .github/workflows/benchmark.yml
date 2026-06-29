@@ -35,6 +35,10 @@ jobs:
     permissions:
       actions: write
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,10 +49,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13.3"
+          cache: 'pip'
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
