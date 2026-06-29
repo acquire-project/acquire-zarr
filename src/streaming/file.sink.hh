@@ -14,7 +14,7 @@ class FileSink : public Sink
     FileSink(std::string_view filename,
              std::shared_ptr<FileHandlePool> file_handle_pool,
              bool truncate_to_fit = false);
-    ~FileSink() override = default;
+    ~FileSink() override;
 
     bool write(size_t offset, ConstByteSpan data) override;
 

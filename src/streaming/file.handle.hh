@@ -68,6 +68,17 @@ class FileHandlePool
     BorrowedHandle get_handle(const std::string& filename);
     void return_handle(const std::string& filename);
 
+    /**
+     * @brief Close and evict the pooled handle for @p filename.
+     * @details Only acts when the handle is cached and not currently borrowed
+     * (refcount == 0). Called when a sink is finalized: the file is sealed and
+     * will never be written again, so closing its fd lets the OS release it and
+     * a later unlink can reclaim the disk blocks. A no-op if the handle is
+     * absent or still in use (issue #226).
+     * @param filename Path of the file whose handle should be closed.
+     */
+    void close(const std::string& filename);
+
   private:
     struct CacheEntry
     {

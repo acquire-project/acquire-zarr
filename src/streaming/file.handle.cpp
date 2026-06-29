@@ -109,6 +109,26 @@ zarr::FileHandlePool::return_handle(const std::string& filename)
 }
 
 void
+zarr::FileHandlePool::close(const std::string& filename)
+{
+    std::unique_lock lock(mutex_);
+
+    const auto it = cache_.find(filename);
+    if (it == cache_.end() || it->second.refcount > 0) {
+        // Not cached, or still borrowed by an in-flight write: leave it. A
+        // borrowed handle is reclaimed by the next return_handle eviction once
+        // the borrow ends.
+        return;
+    }
+
+    lru_order_.erase(it->second.lru_it);
+    cache_.erase(it); // destroys FileHandle -> close
+    cache_space_available_ = cache_.size() < max_active_handles_;
+
+    cv_.notify_all();
+}
+
+void
 zarr::FileHandlePool::evict_lru_()
 {
     // iterate from back (least recent) looking for idle handle
