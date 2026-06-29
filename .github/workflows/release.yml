@@ -37,6 +37,9 @@ jobs:
     permissions:
       actions: write
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -45,6 +48,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install CMake 3.31
         if: matrix.platform != 'ubuntu-24.04-arm'
@@ -62,7 +78,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -89,7 +105,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build ${{github.workspace}}/build --config Release
 
       - name: Test  # don't release if tests are failing
@@ -98,7 +114,7 @@ jobs:
 
       - name: Package
         run: |
-          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+          cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}} -B ${{github.workspace}}/pack -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build ${{github.workspace}}/pack --config Release
           cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
 
@@ -150,6 +166,10 @@ jobs:
     permissions:
       actions: write
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}-${{ matrix.python }}-build-wheel
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -163,11 +183,27 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: 'pip'
+
+      - name: Set up sccache
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        if: ${{ !startsWith(matrix.platform, 'ubuntu') }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install vcpkg
         if: ${{ !startsWith(matrix.platform, 'ubuntu') }} # vcpkg will be installed in the manylinux image for Ubuntu builds
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -217,7 +253,7 @@ jobs:
           CIBW_BEFORE_BUILD: >-
             yum install -y ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd &&
             source /opt/rh/gcc-toolset-11/enable &&
-            git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 &&
+            git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1 &&
             cd vcpkg &&
             CMAKE_POLICY_VERSION_MINIMUM=3.5 ./bootstrap-vcpkg.sh &&
             ./vcpkg integrate install
