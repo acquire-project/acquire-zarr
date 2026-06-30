@@ -2,6 +2,9 @@
 #include "file.handle.hh"
 #include "macros.hh"
 
+#include <chrono>
+#include <thread>
+
 void*
 init_handle(const std::string& filename, const void* flags);
 
@@ -64,32 +67,64 @@ zarr::FileHandlePool::get_handle(const std::string& filename)
 
     auto it = cache_.find(filename);
     if (it == cache_.end()) {
-        // Open the new handle BEFORE mutating cache_/lru_order_. If the open
-        // fails (e.g. the parent directory was removed concurrently), the pool
-        // state is left untouched and the failure is reported to the caller as
-        // a null handle rather than thrown. FileSink::write()/flush_() check
-        // for the null handle and return false, so a recoverable I/O error no
-        // longer escapes get_handle() as an exception that would terminate the
-        // writer. (Opening first also avoids leaving an orphan lru_order_ entry
-        // when the open throws.)
+        // Not cached: open a new handle. Retry briefly on failure so a
+        // transient open error (e.g. a momentary ENOENT during a concurrent
+        // rename, or a filesystem hiccup) is recovered instead of failing the
+        // write. Open BEFORE mutating cache_/lru_order_ so a failure leaves
+        // pool state untouched; on persistent failure return a null handle,
+        // which FileSink::write()/flush_() report as a recoverable false rather
+        // than letting an exception escape and terminate the writer.
+        constexpr int max_open_attempts = 3;
+        constexpr auto open_retry_backoff = std::chrono::milliseconds(10);
         std::shared_ptr<FileHandle> handle;
-        try {
-            handle = std::make_shared<FileHandle>(filename);
-        } catch (const std::exception& e) {
-            LOG_ERROR(
-              "Failed to open file handle for '", filename, "': ", e.what());
-            return BorrowedHandle();
+        bool relocked = false;
+        for (int attempt = 1;; ++attempt) {
+            try {
+                handle = std::make_shared<FileHandle>(filename);
+                break;
+            } catch (const std::exception& e) {
+                if (attempt >= max_open_attempts) {
+                    LOG_ERROR("Failed to open file handle for '",
+                              filename,
+                              "' after ",
+                              max_open_attempts,
+                              " attempts: ",
+                              e.what());
+                    return BorrowedHandle();
+                }
+                LOG_WARNING("Open failed for '",
+                            filename,
+                            "' (attempt ",
+                            attempt,
+                            "/",
+                            max_open_attempts,
+                            "); retrying: ",
+                            e.what());
+                // Drop the pool mutex around the backoff so other handle
+                // requests are not blocked while this one waits.
+                lock.unlock();
+                std::this_thread::sleep_for(open_retry_backoff);
+                lock.lock();
+                relocked = true;
+            }
         }
 
-        lru_order_.push_front(filename);
-        auto [new_it, _] =
-          cache_.emplace(filename,
-                         CacheEntry{
-                           .handle = std::move(handle),
-                           .lru_it = lru_order_.begin(),
-                           .refcount = 0,
-                         });
-        it = new_it;
+        // If the lock was dropped to retry, another thread may have opened and
+        // cached this same file meanwhile; reuse that entry and drop ours.
+        if (relocked) {
+            it = cache_.find(filename);
+        }
+        if (it == cache_.end()) {
+            lru_order_.push_front(filename);
+            auto [new_it, _] =
+              cache_.emplace(filename,
+                             CacheEntry{
+                               .handle = std::move(handle),
+                               .lru_it = lru_order_.begin(),
+                               .refcount = 0,
+                             });
+            it = new_it;
+        }
     } else {
         // move to front of LRU
         lru_order_.splice(lru_order_.begin(), lru_order_, it->second.lru_it);
