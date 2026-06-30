@@ -19,6 +19,7 @@ set(tests
         s3-connection-upload-multipart-object
         file-sink-write
         file-sink-close-on-destroy
+        file-sink-reopen-after-close
         shard-finalize
         s3-sink-write
         s3-sink-write-multipart
