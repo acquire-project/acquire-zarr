@@ -9,6 +9,8 @@ endif ()
 add_library(${tgt}
         macros.hh
         acquire.zarr.cpp
+        settings.io.hh
+        settings.io.cpp
         array.dimensions.hh
         array.dimensions.cpp
         frame.queue.hh
@@ -64,6 +66,8 @@ target_link_libraries(${tgt} PRIVATE
         blosc_static
         miniocpp::miniocpp
         Crc32c::crc32c
+        nlohmann_json::nlohmann_json
+        yaml-cpp::yaml-cpp
         $<IF:$<TARGET_EXISTS:zstd::libzstd_static>,zstd::libzstd_static,zstd::libzstd_shared>
         OpenMP::OpenMP_CXX
 )

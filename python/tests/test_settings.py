@@ -7,6 +7,53 @@ import pytest
 import acquire_zarr as aqz
 import numpy as np
 
+CONFIGS = {
+    "yaml": """
+version: 1
+store_path: from-config.zarr
+overwrite: true
+max_threads: 4
+arrays:
+  - output_key: channel0
+    data_type: uint16
+    multiscale: true
+    downsampling_method: mean
+    compression:
+      compressor: blosc1
+      codec: blosc-zstd
+      level: 1
+      shuffle: 1
+    dimensions:
+      - {name: t, type: time,  array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+      - {name: z, type: space, array_size_px: 10, chunk_size_px: 5,  shard_size_chunks: 1}
+      - {name: y, type: space, array_size_px: 48, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
+      - {name: x, type: space, array_size_px: 64, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
+""",
+    "json": """
+{
+  "version": 1,
+  "store_path": "from-config.zarr",
+  "overwrite": true,
+  "max_threads": 4,
+  "arrays": [
+    {
+      "output_key": "channel0",
+      "data_type": "uint16",
+      "multiscale": true,
+      "downsampling_method": "mean",
+      "compression": {"compressor": "blosc1", "codec": "blosc-zstd", "level": 1, "shuffle": 1},
+      "dimensions": [
+        {"name": "t", "type": "time",  "array_size_px": 0,  "chunk_size_px": 1,  "shard_size_chunks": 1},
+        {"name": "z", "type": "space", "array_size_px": 10, "chunk_size_px": 5,  "shard_size_chunks": 1},
+        {"name": "y", "type": "space", "array_size_px": 48, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5},
+        {"name": "x", "type": "space", "array_size_px": 64, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5}
+      ]
+    }
+  ]
+}
+""",
+}
+
 
 @pytest.fixture(scope="function")
 def settings():
@@ -324,3 +371,100 @@ def test_estimate_max_memory_usage():
     max_memory = stream.get_maximum_memory_usage()
 
     assert max_memory == expected_memory
+
+
+def _assert_expected(s):
+    assert s.store_path == "from-config.zarr"
+    assert s.overwrite is True
+    assert s.max_threads == 4
+    assert len(s.arrays) == 1
+    a = s.arrays[0]
+    assert a.output_key == "channel0"
+    assert a.data_type == aqz.DataType.UINT16
+    assert a.downsampling_method == aqz.DownsamplingMethod.MEAN
+    assert a.compression is not None
+    assert a.compression.compressor == aqz.Compressor.BLOSC1
+    assert a.compression.codec == aqz.CompressionCodec.BLOSC_ZSTD
+    assert a.compression.level == 1
+    assert a.compression.shuffle == 1
+    assert len(a.dimensions) == 4
+    assert a.dimensions[0].name == "t"
+    assert a.dimensions[0].kind == aqz.DimensionType.TIME
+    assert a.dimensions[2].name == "y"
+    assert a.dimensions[2].unit == "micrometer"
+    assert a.dimensions[2].scale == 0.5
+
+
+@pytest.mark.parametrize("fmt", ["yaml", "json"])
+def test_load_settings_from_string(fmt):
+    _assert_expected(aqz.StreamSettings.from_string(CONFIGS[fmt]))
+
+
+def test_config_round_trip(tmp_path):
+    base = aqz.StreamSettings.from_string(CONFIGS["yaml"])
+
+    # dump -> reload through both formats
+    _assert_expected(aqz.StreamSettings.from_string(base.to_yaml()))
+    _assert_expected(aqz.StreamSettings.from_string(base.to_json()))
+
+    # dump to file (format by extension) -> reload
+    for name in ("rt.yaml", "rt.json"):
+        path = tmp_path / name
+        base.to_file(str(path))
+        _assert_expected(aqz.StreamSettings.from_file(str(path)))
+
+
+def test_load_settings_rejects_malformed():
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(
+            "version: 1\nstore_path: x\n"
+        )  # no arrays
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(
+            "store_path: x\narrays:\n  - data_type: float128\n    dimensions: []\n"
+        )
+
+
+def test_config_dict_round_trip():
+    base = aqz.StreamSettings.from_string(CONFIGS["yaml"])
+
+    d = base.to_dict()
+    assert isinstance(d, dict)
+    assert d["store_path"] == "from-config.zarr"
+    assert d["arrays"][0]["data_type"] == "uint16"
+
+    _assert_expected(aqz.StreamSettings.from_dict(d))
+
+
+def test_yaml_dump_quotes_ambiguous_strings():
+    hcs_yaml = """
+version: 1
+store_path: plate.zarr
+plates:
+  - path: test_plate
+    name: Test Plate
+    row_names: [C]
+    column_names: ["5"]
+    wells:
+      - row_name: C
+        column_name: "5"
+        images:
+          - path: fov1
+            array:
+              data_type: uint16
+              dimensions:
+                - {name: z, type: space, array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+                - {name: y, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+                - {name: x, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+"""
+
+    s = aqz.StreamSettings.from_string(hcs_yaml)
+    assert s.hcs_plates[0].wells[0].column_name == "5"
+
+    yaml = s.to_yaml()
+    # numeric-looking names are emitted quoted so they reload as strings
+    assert '"5"' in yaml
+
+    reloaded = aqz.StreamSettings.from_string(yaml)
+    assert reloaded.hcs_plates[0].wells[0].column_name == "5"
+    assert list(reloaded.hcs_plates[0].column_names) == ["5"]

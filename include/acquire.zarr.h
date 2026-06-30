@@ -121,6 +121,67 @@ extern "C"
       char** key);
 
     /**
+     * @brief Populate stream settings from a YAML or JSON config file.
+     * @details JSON is a subset of YAML, so both formats are accepted. All
+     * arrays, dimensions, and strings referenced by @p settings are allocated
+     * and owned by the loader; free them with
+     * ZarrStreamSettings_destroy_loaded (NOT the piecemeal destroy_* functions).
+     * Secrets (e.g. AWS credentials) are never read from the file; provide them
+     * via the environment.
+     * @param[out] settings The stream settings struct to populate.
+     * @param path Path to the config file.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_load_from_file(
+      ZarrStreamSettings* settings,
+      const char* path);
+
+    /**
+     * @brief Populate stream settings from an in-memory YAML or JSON string.
+     * @details Ownership matches ZarrStreamSettings_load_from_file; free with
+     * ZarrStreamSettings_destroy_loaded.
+     * @param[out] settings The stream settings struct to populate.
+     * @param text The config document.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_load_from_string(
+      ZarrStreamSettings* settings,
+      const char* text);
+
+    /**
+     * @brief Free settings populated by ZarrStreamSettings_load_from_file or
+     * ZarrStreamSettings_load_from_string, including all loader-owned strings,
+     * arrays, dimensions, and plates.
+     * @param[in, out] settings The loader-populated stream settings struct.
+     */
+    void ZarrStreamSettings_destroy_loaded(ZarrStreamSettings* settings);
+
+    /**
+     * @brief Serialize stream settings to a config file.
+     * @details The format is chosen by the file extension: `.json` writes JSON,
+     * `.yaml`/`.yml` (or anything else) writes YAML.
+     * @param settings The stream settings struct to serialize.
+     * @param path Destination file path.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_dump_to_file(
+      const ZarrStreamSettings* settings,
+      const char* path);
+
+    /**
+     * @brief Serialize stream settings to a newly allocated config string.
+     * @param settings The stream settings struct to serialize.
+     * @param[out] text Set to a newly allocated string; the caller frees it
+     * (C++ callers use `free`).
+     * @param format Output format (YAML or JSON).
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStreamSettings_dump_to_string(
+      const ZarrStreamSettings* settings,
+      char** text,
+      ZarrConfigFormat format);
+
+    /**
      * @brief Allocate memory for the dimension array in the Zarr array settings
      * struct.
      * @param[in, out] settings The Zarr array settings struct.

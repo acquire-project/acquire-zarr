@@ -18,6 +18,7 @@ set(tests
         stream-mixed-flat-and-hcs-acquisition
         stream-with-ragged-final-shard
         stream-append-nullptr
+        stream-from-config-file
 )
 
 foreach (name ${tests})

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "store_path": "acquisition.zarr",
+  "overwrite": true,
+  "max_threads": 0,
+  "arrays": [
+    {
+      "output_key": "channel0",
+      "data_type": "uint16",
+      "multiscale": true,
+      "downsampling_method": "mean",
+      "max_levels": 0,
+      "compression": {
+        "compressor": "blosc1",
+        "codec": "blosc-zstd",
+        "level": 1,
+        "shuffle": 1
+      },
+      "dimensions": [
+        {"name": "t", "type": "time",  "array_size_px": 0,     "chunk_size_px": 1,   "shard_size_chunks": 1},
+        {"name": "z", "type": "space", "array_size_px": 62500, "chunk_size_px": 64,  "shard_size_chunks": 2},
+        {"name": "y", "type": "space", "array_size_px": 1200,  "chunk_size_px": 600, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.65},
+        {"name": "x", "type": "space", "array_size_px": 1920,  "chunk_size_px": 960, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.65}
+      ]
+    }
+  ]
+}

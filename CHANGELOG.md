@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Load and dump stream settings from YAML/JSON config files, via `ZarrStreamSettings_load_from_*`/`_dump_to_*` (C) and
+  `StreamSettings.from_file`/`from_string`/`from_dict`/`to_file`/`to_yaml`/`to_json`/`to_dict` (Python). Credentials are
+  never read from config. See `examples/config/` (#236)
+
 ### Changed
 
 - Filesystem files are now opened with `FILE_SHARE_READ` on Windows, so another process (e.g. napari) can open the

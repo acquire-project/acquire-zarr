@@ -97,6 +97,16 @@ extern "C"
     } ZarrDownsamplingMethod;
 
     /**
+     * @brief Serialization format for stream settings config files.
+     */
+    typedef enum
+    {
+        ZarrConfigFormat_Yaml = 0,
+        ZarrConfigFormat_Json,
+        ZarrConfigFormatCount,
+    } ZarrConfigFormat;
+
+    /**
      * @brief S3 settings for streaming to Zarr.
      */
     typedef struct
