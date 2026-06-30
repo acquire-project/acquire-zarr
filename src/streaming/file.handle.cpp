@@ -1,5 +1,6 @@
 #include "definitions.hh"
 #include "file.handle.hh"
+#include "macros.hh"
 
 void*
 init_handle(const std::string& filename, const void* flags);
@@ -63,12 +64,28 @@ zarr::FileHandlePool::get_handle(const std::string& filename)
 
     auto it = cache_.find(filename);
     if (it == cache_.end()) {
-        // not in cache, open a new handle
+        // Open the new handle BEFORE mutating cache_/lru_order_. If the open
+        // fails (e.g. the parent directory was removed concurrently), the pool
+        // state is left untouched and the failure is reported to the caller as
+        // a null handle rather than thrown. FileSink::write()/flush_() check
+        // for the null handle and return false, so a recoverable I/O error no
+        // longer escapes get_handle() as an exception that would terminate the
+        // writer. (Opening first also avoids leaving an orphan lru_order_ entry
+        // when the open throws.)
+        std::shared_ptr<FileHandle> handle;
+        try {
+            handle = std::make_shared<FileHandle>(filename);
+        } catch (const std::exception& e) {
+            LOG_ERROR(
+              "Failed to open file handle for '", filename, "': ", e.what());
+            return BorrowedHandle();
+        }
+
         lru_order_.push_front(filename);
         auto [new_it, _] =
           cache_.emplace(filename,
                          CacheEntry{
-                           .handle = std::make_shared<FileHandle>(filename),
+                           .handle = std::move(handle),
                            .lru_it = lru_order_.begin(),
                            .refcount = 0,
                          });
