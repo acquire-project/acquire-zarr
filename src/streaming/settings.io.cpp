@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -22,8 +23,11 @@ json
 scalar_to_json(const YAML::Node& node)
 {
     const auto& s = node.Scalar();
-    if (node.Tag() == "tag:yaml.org,2002:str") {
-        return s; // explicitly tagged string, e.g. a numeric well name
+    // yaml-cpp tags quoted scalars "!"; an explicit !!str tag becomes
+    // "tag:yaml.org,2002:str". Either means "treat as string verbatim",
+    // e.g. a numeric well name or an intentional empty string.
+    if (node.Tag() == "!" || node.Tag() == "tag:yaml.org,2002:str") {
+        return s;
     }
 
     // Strict JSON-style booleans only. yaml-cpp follows YAML 1.1, where y/yes/
@@ -262,8 +266,29 @@ as_string(const json& j, const std::string& ctx)
     fail(ctx, "expected a string");
 }
 
+template<typename T>
+T as_uint(const json& j, const std::string& ctx);
+
+template<>
+uint64_t as_uint<uint64_t>(const json& j, const std::string& ctx);
+
+template<typename T>
+T
+as_uint(const json& j, const std::string& ctx)
+{
+    static_assert(std::is_unsigned_v<T>);
+    const auto v = as_uint<uint64_t>(j, ctx);
+    if (v > std::numeric_limits<T>::max()) {
+        fail(ctx,
+             "value out of range (max " +
+               std::to_string(std::numeric_limits<T>::max()) + ")");
+    }
+    return static_cast<T>(v);
+}
+
+template<>
 uint64_t
-as_u64(const json& j, const std::string& ctx)
+as_uint(const json& j, const std::string& ctx)
 {
     if (j.is_number_unsigned()) {
         return j.get<uint64_t>();
@@ -283,12 +308,6 @@ as_u64(const json& j, const std::string& ctx)
         }
     }
     fail(ctx, "expected an integer");
-}
-
-uint32_t
-as_u32(const json& j, const std::string& ctx)
-{
-    return static_cast<uint32_t>(as_u64(j, ctx));
 }
 
 bool
@@ -366,11 +385,12 @@ load_dimension(const json& j,
               as_string(require(j, "type", ctx), ctx + ".type"),
               "dimension type"));
     dim->array_size_px =
-      as_u32(require(j, "array_size_px", ctx), ctx + ".array_size_px");
+      as_uint<uint32_t>(require(j, "array_size_px", ctx), ctx + ".array_size_px");
     dim->chunk_size_px =
-      as_u32(require(j, "chunk_size_px", ctx), ctx + ".chunk_size_px");
+      as_uint<uint32_t>(require(j, "chunk_size_px", ctx), ctx + ".chunk_size_px");
     dim->shard_size_chunks =
-      as_u32(require(j, "shard_size_chunks", ctx), ctx + ".shard_size_chunks");
+      as_uint<uint32_t>(require(j, "shard_size_chunks", ctx),
+                        ctx + ".shard_size_chunks");
 
     if (j.contains("unit") && !j.at("unit").is_null()) {
         dim->unit = dup_cstr(as_string(j.at("unit"), ctx + ".unit"));
@@ -407,7 +427,8 @@ load_array(const json& j,
                   "downsampling method")
         : ZarrDownsamplingMethod_Decimate);
     arr->max_levels = j.contains("max_levels")
-                        ? as_u32(j.at("max_levels"), ctx + ".max_levels")
+                        ? as_uint<uint32_t>(j.at("max_levels"),
+                                            ctx + ".max_levels")
                         : 0;
 
     if (j.contains("compression") && !j.at("compression").is_null()) {
@@ -424,13 +445,11 @@ load_array(const json& j,
                   as_string(require(c, "codec", cctx), cctx + ".codec"),
                   "codec"));
         cs->level =
-          c.contains("level")
-            ? static_cast<uint8_t>(as_u32(c.at("level"), cctx + ".level"))
-            : 0;
-        cs->shuffle =
-          c.contains("shuffle")
-            ? static_cast<uint8_t>(as_u32(c.at("shuffle"), cctx + ".shuffle"))
-            : 0;
+          c.contains("level") ? as_uint<uint8_t>(c.at("level"), cctx + ".level")
+                              : 0;
+        cs->shuffle = c.contains("shuffle")
+                        ? as_uint<uint8_t>(c.at("shuffle"), cctx + ".shuffle")
+                        : 0;
     }
 
     const auto& dims = require(j, "dimensions", ctx);
@@ -456,7 +475,7 @@ load_array(const json& j,
         arr->storage_dimension_order = buf;
         for (size_t i = 0; i < order.size(); ++i) {
             buf[i] = static_cast<size_t>(
-              as_u64(order[i], ctx + ".storage_dimension_order"));
+              as_uint<uint64_t>(order[i], ctx + ".storage_dimension_order"));
         }
     }
 }
@@ -464,7 +483,7 @@ load_array(const json& j,
 void
 load_acquisition(const json& j, ZarrHCSAcquisition* acq, const std::string& ctx)
 {
-    acq->id = as_u32(require(j, "id", ctx), ctx + ".id");
+    acq->id = as_uint<uint32_t>(require(j, "id", ctx), ctx + ".id");
     if (j.contains("name") && !j.at("name").is_null()) {
         acq->name = dup_cstr(as_string(j.at("name"), ctx + ".name"));
     }
@@ -473,11 +492,11 @@ load_acquisition(const json& j, ZarrHCSAcquisition* acq, const std::string& ctx)
           dup_cstr(as_string(j.at("description"), ctx + ".description"));
     }
     if (j.contains("start_time") && !j.at("start_time").is_null()) {
-        acq->start_time = as_u64(j.at("start_time"), ctx + ".start_time");
+        acq->start_time = as_uint<uint64_t>(j.at("start_time"), ctx + ".start_time");
         acq->has_start_time = true;
     }
     if (j.contains("end_time") && !j.at("end_time").is_null()) {
-        acq->end_time = as_u64(j.at("end_time"), ctx + ".end_time");
+        acq->end_time = as_uint<uint64_t>(j.at("end_time"), ctx + ".end_time");
         acq->has_end_time = true;
     }
 }
@@ -488,7 +507,7 @@ load_fov(const json& j, ZarrHCSFieldOfView* fov, const std::string& ctx)
     fov->path = dup_cstr(as_string(require(j, "path", ctx), ctx + ".path"));
     if (j.contains("acquisition_id") && !j.at("acquisition_id").is_null()) {
         fov->acquisition_id =
-          as_u32(j.at("acquisition_id"), ctx + ".acquisition_id");
+          as_uint<uint32_t>(j.at("acquisition_id"), ctx + ".acquisition_id");
         fov->has_acquisition_id = true;
     }
     fov->array_settings = alloc_zeroed<ZarrArraySettings>(1);
@@ -536,7 +555,15 @@ dup_string_list(const std::vector<std::string>& src)
 {
     auto* arr = alloc_zeroed<const char*>(src.size());
     for (size_t i = 0; i < src.size(); ++i) {
-        arr[i] = dup_cstr(src[i]);
+        try {
+            arr[i] = dup_cstr(src[i]);
+        } catch (...) {
+            for (size_t k = 0; k < i; ++k) {
+                free_cstr(arr[k]);
+            }
+            std::free(arr);
+            throw;
+        }
     }
     return arr;
 }
@@ -551,13 +578,13 @@ load_plate(const json& j, ZarrHCSPlate* plate, const std::string& ctx)
 
     const auto rows =
       as_string_list(require(j, "row_names", ctx), ctx + ".row_names");
-    plate->row_count = rows.size();
     plate->row_names = dup_string_list(rows);
+    plate->row_count = rows.size();
 
     const auto cols =
       as_string_list(require(j, "column_names", ctx), ctx + ".column_names");
-    plate->column_count = cols.size();
     plate->column_names = dup_string_list(cols);
+    plate->column_count = cols.size();
 
     const auto& wells = require(j, "wells", ctx);
     if (!wells.is_array()) {
@@ -737,7 +764,7 @@ json_to_settings(const json& doc, ZarrStreamSettings* out)
         fail("", "config root must be a mapping");
     }
     if (doc.contains("version")) {
-        const auto v = as_u64(doc.at("version"), "version");
+        const auto v = as_uint<uint64_t>(doc.at("version"), "version");
         if (v != kSchemaVersion) {
             fail("version",
                  "unsupported schema version " + std::to_string(v) +
@@ -752,7 +779,7 @@ json_to_settings(const json& doc, ZarrStreamSettings* out)
                        : false;
     out->max_threads = doc.contains("max_threads")
                          ? static_cast<unsigned int>(
-                             as_u32(doc.at("max_threads"), "max_threads"))
+                             as_uint<uint32_t>(doc.at("max_threads"), "max_threads"))
                          : 0;
 
     if (doc.contains("s3") && !doc.at("s3").is_null()) {
@@ -888,14 +915,18 @@ destroy_loaded_settings(ZarrStreamSettings* s)
             auto& plate = s->hcs_settings->plates[p];
             free_cstr(plate.path);
             free_cstr(plate.name);
-            for (size_t i = 0; i < plate.row_count; ++i) {
-                free_cstr(plate.row_names[i]);
+            if (plate.row_names) {
+                for (size_t i = 0; i < plate.row_count; ++i) {
+                    free_cstr(plate.row_names[i]);
+                }
+                std::free(const_cast<const char**>(plate.row_names));
             }
-            std::free(const_cast<const char**>(plate.row_names));
-            for (size_t i = 0; i < plate.column_count; ++i) {
-                free_cstr(plate.column_names[i]);
+            if (plate.column_names) {
+                for (size_t i = 0; i < plate.column_count; ++i) {
+                    free_cstr(plate.column_names[i]);
+                }
+                std::free(const_cast<const char**>(plate.column_names));
             }
-            std::free(const_cast<const char**>(plate.column_names));
             for (size_t i = 0; i < plate.acquisition_count; ++i) {
                 free_cstr(plate.acquisitions[i].name);
                 free_cstr(plate.acquisitions[i].description);
