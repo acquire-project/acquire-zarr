@@ -109,9 +109,14 @@ zarr::FileHandlePool::get_handle(const std::string& filename)
             }
         }
 
-        // If the lock was dropped to retry, another thread may have opened and
-        // cached this same file meanwhile; reuse that entry and drop ours.
+        // If the lock was dropped to retry, cache state may have changed:
+        // another thread may have opened and cached this same file meanwhile
+        // (reuse that entry and drop ours), or filled the cache with other
+        // entries (wait for space before inserting ours).
         if (relocked) {
+            cv_.wait(lock, [&] {
+                return cache_.contains(filename) || cache_space_available_;
+            });
             it = cache_.find(filename);
         }
         if (it == cache_.end()) {
