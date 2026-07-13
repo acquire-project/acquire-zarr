@@ -1428,6 +1428,7 @@ ZarrStream_s::commit_settings_(const ZarrStreamSettings* settings)
 void
 ZarrStream_s::start_thread_pool_(uint32_t max_threads)
 {
+    max_threads = zarr::resolve_max_threads(max_threads);
     max_threads =
       max_threads == 0 ? std::thread::hardware_concurrency() : max_threads;
     if (max_threads == 0) {
@@ -1807,4 +1808,10 @@ finalize_stream(ZarrStream* stream)
     }
 
     return true;
+}
+
+uint32_t
+stream_thread_count(ZarrStream* stream)
+{
+    return stream->thread_pool_->n_threads();
 }

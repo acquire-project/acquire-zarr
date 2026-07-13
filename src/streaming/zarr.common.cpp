@@ -4,6 +4,8 @@
 #include <blosc.h>
 #include <zstd.h>
 
+#include <charconv>
+#include <cstdlib>
 #include <regex>
 #include <stdexcept>
 
@@ -178,9 +180,28 @@ zarr::regularize_key(const char* key)
 uint32_t
 zarr::resolve_max_threads(uint32_t requested_max_threads)
 {
-    // TODO: consult the ZARR_MAX_THREADS environment variable when
-    // requested_max_threads is 0.
-    return requested_max_threads;
+    if (requested_max_threads != 0) {
+        return requested_max_threads;
+    }
+
+    const char* env = std::getenv("ZARR_MAX_THREADS");
+    if (env == nullptr || *env == '\0') {
+        return 0;
+    }
+
+    const std::string_view value{ env };
+    uint32_t parsed = 0;
+    const auto result =
+      std::from_chars(value.data(), value.data() + value.size(), parsed);
+
+    if (result.ec != std::errc{} ||
+        result.ptr != value.data() + value.size() || parsed == 0) {
+        LOG_WARNING(
+          "Ignoring invalid ZARR_MAX_THREADS value: '", value, "'");
+        return 0;
+    }
+
+    return parsed;
 }
 
 std::string
