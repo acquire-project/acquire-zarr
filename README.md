@@ -758,6 +758,17 @@ s3_settings = aqz.S3Settings(
 settings.s3 = s3_settings
 ```
 
+### Threading
+
+The stream's thread pool size is controlled by `max_threads` (`ZarrStreamSettings.max_threads`
+in C/C++, `StreamSettings.max_threads` in Python). Leaving it at its default of `0` means
+"not explicitly set": the stream will use the `ZARR_MAX_THREADS` environment variable if it's
+set to a positive integer, or otherwise auto-detect based on hardware concurrency.
+
+- `ZARR_MAX_THREADS` is ignored if `max_threads` is explicitly set to a nonzero value.
+- An invalid `ZARR_MAX_THREADS` value (non-numeric, zero, or negative) is ignored, with a
+  warning logged, and auto-detection is used instead.
+
 ### Anaconda GLIBCXX issue
 
 If you encounter the error `GLIBCXX_3.4.30 not found` when working with the library in Python, it may be due to a
