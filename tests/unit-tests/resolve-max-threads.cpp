@@ -6,6 +6,33 @@
 #include <string>
 
 namespace {
+#ifdef _WIN32
+void
+set_env(const char* name, const char* value)
+{
+    _putenv_s(name, value);
+}
+
+void
+unset_env(const char* name)
+{
+    // An empty value removes the variable from the environment on Windows.
+    _putenv_s(name, "");
+}
+#else
+void
+set_env(const char* name, const char* value)
+{
+    setenv(name, value, 1);
+}
+
+void
+unset_env(const char* name)
+{
+    unsetenv(name);
+}
+#endif
+
 class ScopedEnvVar
 {
   public:
@@ -17,18 +44,18 @@ class ScopedEnvVar
         }
 
         if (value == nullptr) {
-            unsetenv(name);
+            unset_env(name);
         } else {
-            setenv(name, value, 1);
+            set_env(name, value);
         }
     }
 
     ~ScopedEnvVar()
     {
         if (previous_value_) {
-            setenv(name_.c_str(), previous_value_->c_str(), 1);
+            set_env(name_.c_str(), previous_value_->c_str());
         } else {
-            unsetenv(name_.c_str());
+            unset_env(name_.c_str());
         }
     }
 
