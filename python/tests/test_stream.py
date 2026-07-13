@@ -304,6 +304,31 @@ def test_create_stream(
 
 
 @pytest.mark.parametrize(
+    ("env_value",),
+    [
+        ("2",),  # valid
+        ("not-a-number",),  # invalid, falls back to auto-detect
+    ],
+)
+def test_create_stream_honors_max_threads_env_var(
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+):
+    monkeypatch.setenv("ZARR_MAX_THREADS", env_value)
+
+    assert settings.max_threads == 0  # left unset, so the env var applies
+
+    settings.store_path = str(store_path / f"{request.node.name}.zarr")
+    stream = ZarrStream(settings)
+    assert stream
+
+    stream.close()
+
+
+@pytest.mark.parametrize(
     ("compression_codec",),
     [
         (None,),
