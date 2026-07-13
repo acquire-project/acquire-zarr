@@ -175,6 +175,14 @@ zarr::regularize_key(const char* key)
     return regularize_key(std::string_view{ key });
 }
 
+uint32_t
+zarr::resolve_max_threads(uint32_t requested_max_threads)
+{
+    // TODO: consult the ZARR_MAX_THREADS environment variable when
+    // requested_max_threads is 0.
+    return requested_max_threads;
+}
+
 std::string
 zarr::regularize_key(const std::string_view key)
 {

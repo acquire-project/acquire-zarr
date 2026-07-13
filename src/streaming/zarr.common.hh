@@ -114,4 +114,16 @@ regularize_key(const char* key);
  */
 std::string
 regularize_key(std::string_view key);
+
+/**
+ * @brief Resolve the number of threads to use, applying the ZARR_MAX_THREADS
+ * environment variable when no explicit value was requested.
+ * @param requested_max_threads The value from ZarrStreamSettings.max_threads.
+ * 0 means "not explicitly set".
+ * @return @p requested_max_threads if it is non-zero; otherwise the value of
+ * ZARR_MAX_THREADS if it is set and a valid positive integer; otherwise 0
+ * (meaning: the caller should fall back to hardware_concurrency()).
+ */
+uint32_t
+resolve_max_threads(uint32_t requested_max_threads);
 } // namespace zarr
