@@ -414,7 +414,9 @@ class StreamSettings:
         store_path: Path to the store. Can be a filesystem path or S3 key prefix.
             For S3, this becomes the key prefix within the specified bucket.
         s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
-        max_threads: Maximum number of threads for parallel processing.
+        max_threads: Maximum number of threads for parallel processing. Defaults to 0,
+            meaning: use the ZARR_MAX_THREADS environment variable if set, otherwise
+            auto-detect based on available hardware concurrency.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
 

@@ -277,9 +277,9 @@ def test_set_version(settings):
 
 
 def test_set_max_threads(settings):
-    assert (
-        settings.max_threads > 0
-    )  # depends on your system, but will be nonzero
+    # 0 means "not explicitly set" -- the stream will auto-detect the
+    # thread count (or honor ZARR_MAX_THREADS) when it's created.
+    assert settings.max_threads == 0
 
     settings.max_threads = 4
     assert settings.max_threads == 4
