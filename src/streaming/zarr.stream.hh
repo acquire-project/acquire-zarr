@@ -173,7 +173,7 @@ struct ZarrStream_s
     void finalize_frame_queue_();
 
     friend bool finalize_stream(ZarrStream* stream);
-    friend uint32_t stream_thread_count(ZarrStream* stream);
+    friend uint32_t stream_thread_count(const ZarrStream* stream);
 };
 
 bool
@@ -182,4 +182,4 @@ finalize_stream(ZarrStream* stream);
 /** @brief Get the number of threads in the stream's thread pool. Exposed for
  * testing. */
 uint32_t
-stream_thread_count(ZarrStream* stream);
+stream_thread_count(const ZarrStream* stream);

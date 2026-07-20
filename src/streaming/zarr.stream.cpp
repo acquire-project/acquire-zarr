@@ -1811,7 +1811,7 @@ finalize_stream(ZarrStream* stream)
 }
 
 uint32_t
-stream_thread_count(ZarrStream* stream)
+stream_thread_count(const ZarrStream* stream)
 {
     return stream->thread_pool_->n_threads();
 }
