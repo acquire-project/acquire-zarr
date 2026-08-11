@@ -7,25 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - [2026-08-11](https://github.com/acquire-project/acquire-zarr/compare/v0.8.1...v0.9.0)
+
 ### Added
 
 - Load and dump stream settings from YAML/JSON config files, via `ZarrStreamSettings_load_from_*`/`_dump_to_*` (C) and
   `StreamSettings.from_file`/`from_string`/`from_dict`/`to_file`/`to_yaml`/`to_json`/`to_dict` (Python). Credentials are
   never read from config. See `examples/config/` (#236)
+- `ZARR_MAX_THREADS` environment variable: when `max_threads` is left at its default of `0`, the thread pool size is
+  read from `ZARR_MAX_THREADS`, falling back to hardware concurrency if it is unset or invalid. An explicitly nonzero
+  `max_threads` takes precedence (#239)
 
 ### Changed
 
+- Python `StreamSettings.max_threads` now defaults to `0` ("not explicitly set") rather than `hardware_concurrency()`.
+  The resolved thread count is unchanged when `ZARR_MAX_THREADS` is unset, but the attribute reads back as `0` until
+  assigned (#239)
+- A chunk/shard file's pooled handle is now closed as soon as its sink is finalized. Previously, on hosts with a large
+  `RLIMIT_NOFILE`, the handle pool's LRU cap was never reached and every handle stayed open for the lifetime of the
+  stream, so deleting a sealed chunk freed no blocks and long runs could exhaust local storage (#237)
 - Filesystem files are now opened with `FILE_SHARE_READ` on Windows, so another process (e.g. napari) can open the
   store for reading while an acquisition is in progress (#234)
 
 ### Fixed
 
+- A failed file (re)open during `append` no longer kills the writer thread for that array. Transient open failures are
+  retried with backoff, and a persistent failure returns a null handle, which surfaces as a recoverable write error
+  rather than a fatal "Internal error" (regression from #237) (#238)
 - Metadata (`zarr.json`) writes now truncate the file to the written length. Previously a rewrite shorter than the
   prior version (e.g. replacing a large custom-metadata blob with a smaller one) left stale trailing bytes, since
   neither the Win32 nor POSIX backend truncated on write; strict JSON parsers such as zarr-python rejected the
   result (#234)
 
-## [0.8.1]
+## [0.8.1] - [2026-06-23](https://github.com/acquire-project/acquire-zarr/compare/v0.8.0...v0.8.1)
 
 ### Added
 
