@@ -412,7 +412,7 @@ validate_plate_metadata()
     CHECK(ome.contains("plate"));
     const auto& plate = ome["plate"];
 
-    EXPECT(plate.size() == 7, "Expected 7 fields in plate, got ", plate.size());
+    EXPECT(plate.size() == 6, "Expected 6 fields in plate, got ", plate.size());
 
     // plate field 1: name
     CHECK(plate.contains("name"));
