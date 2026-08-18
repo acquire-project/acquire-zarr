@@ -140,6 +140,34 @@ run(ZarrOMEVersion ome_version,
     // an OME image group always has multiscales
     EXPECT(ome.contains("multiscales"), "Expected multiscales in ome metadata");
 
+    // multiscales shape differs between 0.5 and RFC-5 (0.6)
+    const auto& ms = ome["multiscales"][0];
+    const auto& xform = ms["datasets"][0]["coordinateTransformations"][0];
+    if (ome_version == ZarrOMEVersion_0_6) {
+        EXPECT(ms.contains("coordinateSystems"),
+               "Expected coordinateSystems in 0.6 multiscales");
+        EXPECT(!ms.contains("axes"),
+               "Expected no top-level axes in 0.6 multiscales");
+
+        const auto& cs = ms["coordinateSystems"][0];
+        EXPECT_STR_EQ(cs["name"].get<std::string>().c_str(), "intrinsic");
+        EXPECT(cs["axes"].is_array() && !cs["axes"].empty(),
+               "Expected non-empty axes in the intrinsic coordinate system");
+
+        // input/output are objects: {"path": ...} and {"name": ...}
+        EXPECT_STR_EQ(xform["type"].get<std::string>().c_str(), "scale");
+        EXPECT_STR_EQ(xform["input"]["path"].get<std::string>().c_str(), "0");
+        EXPECT_STR_EQ(xform["output"]["name"].get<std::string>().c_str(),
+                      "intrinsic");
+    } else {
+        EXPECT(ms.contains("axes"),
+               "Expected top-level axes in 0.5 multiscales");
+        EXPECT(!ms.contains("coordinateSystems"),
+               "Expected no coordinateSystems in 0.5 multiscales");
+        EXPECT(!xform.contains("input"),
+               "Expected no input key on the 0.5 scale transform");
+    }
+
     if (omero != nullptr) {
         EXPECT(ome.contains("omero"), "Expected omero in ome metadata");
         const auto& j = ome["omero"];

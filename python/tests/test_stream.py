@@ -2359,4 +2359,18 @@ def test_ome_version_selector(tmp_path, settings):
     stream.close()
 
     group = zarr.open(settings.store_path, mode="r")
-    assert group.attrs["ome"]["version"] == "0.6"
+    ome = group.attrs["ome"]
+    assert ome["version"] == "0.6"
+
+    # RFC-5 shape: named coordinate systems replace the top-level axes key,
+    # and each dataset's scale transform names its input/output.
+    ms = ome["multiscales"][0]
+    assert "coordinateSystems" in ms
+    assert "axes" not in ms
+    assert ms["coordinateSystems"][0]["name"] == "intrinsic"
+    assert len(ms["coordinateSystems"][0]["axes"]) == 3
+
+    xform = ms["datasets"][0]["coordinateTransformations"][0]
+    assert xform["type"] == "scale"
+    assert xform["input"] == {"path": "0"}
+    assert xform["output"] == {"name": "intrinsic"}

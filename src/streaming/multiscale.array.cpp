@@ -253,7 +253,12 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
     const size_t start_dim = config_->dimensions->is_2d() ? 1 : 0;
     const size_t visible_ndims = ndims - start_dim;
 
-    auto& axes = multiscales[0]["axes"];
+    const bool is_v06 = config_->ome_version == ZarrOMEVersion_0_6;
+    // RFC-5 (0.6): the physical coordinate system every dataset maps its array
+    // coordinates onto.
+    constexpr const char* intrinsic = "intrinsic";
+
+    nlohmann::json axes = nlohmann::json::array();
     for (auto i = start_dim; i < ndims; ++i) {
         const auto& dim = config_->dimensions->at(i);
         const auto type = dimension_type_to_string(dim.type);
@@ -270,6 +275,39 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
         }
     }
 
+    if (is_v06) {
+        // RFC-5 supersedes the top-level `axes` key with named coordinate
+        // systems; the axis metadata moves into the intrinsic system.
+        multiscales[0]["coordinateSystems"] = {
+            {
+              { "name", intrinsic },
+              { "axes", axes },
+            },
+        };
+    } else {
+        multiscales[0]["axes"] = axes;
+    }
+
+    // Build one dataset entry. In 0.6 the scale transform additionally names
+    // its input (the array, referenced by path) and output (the intrinsic
+    // coordinate system, referenced by name). Both are objects, not strings.
+    auto make_dataset = [&](const std::string& path,
+                            const std::vector<double>& level_scales) {
+        nlohmann::json transform = {
+            { "type", "scale" },
+            { "scale", level_scales },
+        };
+        if (is_v06) {
+            transform["input"] = nlohmann::json::object({ { "path", path } });
+            transform["output"] =
+              nlohmann::json::object({ { "name", intrinsic } });
+        }
+        return nlohmann::json{
+            { "path", path },
+            { "coordinateTransformations", { transform } },
+        };
+    };
+
     // spatial multiscale metadata
     std::vector<double> scales(visible_ndims);
     for (auto i = start_dim; i < ndims; ++i) {
@@ -277,18 +315,10 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
         scales[i - start_dim] = dim.scale;
     }
 
-    multiscales[0]["datasets"] = {
-        {
-          { "path", "0" },
-          { "coordinateTransformations",
-            {
-              {
-                { "type", "scale" },
-                { "scale", scales },
-              },
-            } },
-        },
-    };
+    // json::array() is required here: MSVC resolves `= { <json> }` to
+    // copy-assignment, yielding the object itself rather than an array of one.
+    multiscales[0]["datasets"] =
+      nlohmann::json::array({ make_dataset("0", scales) });
 
     const auto& base_config = make_base_array_config_();
     const auto& base_dims = base_config->dimensions;
@@ -311,16 +341,8 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
             scales[j - start_dim] = base_dim.scale * std::bit_ceil(ratio);
         }
 
-        multiscales[0]["datasets"].push_back({
-          { "path", std::to_string(i) },
-          { "coordinateTransformations",
-            {
-              {
-                { "type", "scale" },
-                { "scale", scales },
-              },
-            } },
-        });
+        multiscales[0]["datasets"].push_back(
+          make_dataset(std::to_string(i), scales));
 
         // downsampling metadata
         multiscales[0]["type"] = downsampler_->downsampling_method();
