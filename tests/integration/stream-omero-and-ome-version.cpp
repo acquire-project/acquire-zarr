@@ -196,6 +196,18 @@ run(ZarrOMEVersion ome_version,
                "Expected no omero block when none configured");
     }
 }
+
+// Settings that should not survive validation.
+void
+expect_rejected(ZarrOMERenderingSettings* omero, const char* why)
+{
+    if (fs::exists(test_path)) {
+        fs::remove_all(test_path);
+    }
+
+    auto* stream = setup(ZarrOMEVersion_0_5, omero, /*multiscale=*/false);
+    EXPECT(stream == nullptr, "Expected rejection: ", why);
+}
 } // namespace
 
 int
@@ -235,6 +247,22 @@ main()
 
         // opt in to 0.6 via a multiscale image, no omero
         run(ZarrOMEVersion_0_6, nullptr, /*multiscale=*/true);
+
+        // an empty omero block would write "channels": [], which is invalid
+        ZarrOMERenderingSettings empty = {};
+        expect_rejected(&empty, "omero with no channels");
+
+        // one channel too few for the 2-wide Channel dimension
+        ZarrOMERenderingSettings short_channels = omero;
+        short_channels.channel_count = 1;
+        expect_rejected(&short_channels, "omero channel count mismatch");
+
+        // a zero-initialized window renders the channel blank
+        ZarrOMEChannel blank_window[2] = { channels[0], channels[1] };
+        blank_window[1].window = {};
+        ZarrOMERenderingSettings blank = omero;
+        blank.channels = blank_window;
+        expect_rejected(&blank, "omero channel with a zeroed window");
 
         retval = 0;
     } catch (const std::exception& e) {

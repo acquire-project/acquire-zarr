@@ -268,14 +268,21 @@ as_string(const json& j, const std::string& ctx)
     if (j.is_boolean()) {
         return j.get<bool>() ? "true" : "false";
     }
+    if (j.is_number_float()) {
+        // unquoted YAML scalars like `ome_version: 0.6` decode as doubles;
+        // dump() gives the shortest round-trip form, i.e. "0.6" not "0.600000"
+        return j.dump();
+    }
     fail(ctx, "expected a string");
 }
 
 template<typename T>
-T as_uint(const json& j, const std::string& ctx);
+T
+as_uint(const json& j, const std::string& ctx);
 
 template<>
-uint64_t as_uint<uint64_t>(const json& j, const std::string& ctx);
+uint64_t
+as_uint<uint64_t>(const json& j, const std::string& ctx);
 
 template<typename T>
 T
@@ -342,14 +349,15 @@ as_double(const json& j, const std::string& ctx)
 
 // ---------------------------------------------------------------------------
 // Owning allocation helpers (freed by destroy_loaded_settings)
+//
+// These use new[]/delete[] to match the public ZarrXxx_create_*_array and
+// ZarrXxx_destroy_*_array helpers. A caller may replace a loaded array with one
+// from the C API (or vice versa), so both paths must agree on the allocator.
 // ---------------------------------------------------------------------------
 char*
 dup_cstr(const std::string& s)
 {
-    auto* p = static_cast<char*>(std::malloc(s.size() + 1));
-    if (!p) {
-        throw std::bad_alloc();
-    }
+    auto* p = new char[s.size() + 1];
     std::memcpy(p, s.c_str(), s.size() + 1);
     return p;
 }
@@ -357,7 +365,7 @@ dup_cstr(const std::string& s)
 void
 free_cstr(const char* p)
 {
-    std::free(const_cast<char*>(p));
+    delete[] p;
 }
 
 template<typename T>
@@ -367,11 +375,14 @@ alloc_zeroed(size_t n)
     if (n == 0) {
         return nullptr;
     }
-    auto* p = static_cast<T*>(std::calloc(n, sizeof(T)));
-    if (!p) {
-        throw std::bad_alloc();
-    }
-    return p;
+    return new T[n]{};
+}
+
+template<typename T>
+void
+free_array(T* p)
+{
+    delete[] p;
 }
 } // namespace
 
@@ -389,13 +400,12 @@ load_dimension(const json& j,
       to_enum(kDimensionTypes,
               as_string(require(j, "type", ctx), ctx + ".type"),
               "dimension type"));
-    dim->array_size_px =
-      as_uint<uint32_t>(require(j, "array_size_px", ctx), ctx + ".array_size_px");
-    dim->chunk_size_px =
-      as_uint<uint32_t>(require(j, "chunk_size_px", ctx), ctx + ".chunk_size_px");
-    dim->shard_size_chunks =
-      as_uint<uint32_t>(require(j, "shard_size_chunks", ctx),
-                        ctx + ".shard_size_chunks");
+    dim->array_size_px = as_uint<uint32_t>(require(j, "array_size_px", ctx),
+                                           ctx + ".array_size_px");
+    dim->chunk_size_px = as_uint<uint32_t>(require(j, "chunk_size_px", ctx),
+                                           ctx + ".chunk_size_px");
+    dim->shard_size_chunks = as_uint<uint32_t>(
+      require(j, "shard_size_chunks", ctx), ctx + ".shard_size_chunks");
 
     if (j.contains("unit") && !j.at("unit").is_null()) {
         dim->unit = dup_cstr(as_string(j.at("unit"), ctx + ".unit"));
@@ -431,10 +441,10 @@ load_array(const json& j,
                             ctx + ".downsampling_method"),
                   "downsampling method")
         : ZarrDownsamplingMethod_Decimate);
-    arr->max_levels = j.contains("max_levels")
-                        ? as_uint<uint32_t>(j.at("max_levels"),
-                                            ctx + ".max_levels")
-                        : 0;
+    arr->max_levels =
+      j.contains("max_levels")
+        ? as_uint<uint32_t>(j.at("max_levels"), ctx + ".max_levels")
+        : 0;
 
     if (j.contains("compression") && !j.at("compression").is_null()) {
         const auto& c = j.at("compression");
@@ -449,9 +459,9 @@ load_array(const json& j,
           to_enum(kCodecs,
                   as_string(require(c, "codec", cctx), cctx + ".codec"),
                   "codec"));
-        cs->level =
-          c.contains("level") ? as_uint<uint8_t>(c.at("level"), cctx + ".level")
-                              : 0;
+        cs->level = c.contains("level")
+                      ? as_uint<uint8_t>(c.at("level"), cctx + ".level")
+                      : 0;
         cs->shuffle = c.contains("shuffle")
                         ? as_uint<uint8_t>(c.at("shuffle"), cctx + ".shuffle")
                         : 0;
@@ -491,7 +501,8 @@ load_array(const json& j,
         arr->omero = omero;
 
         if (o.contains("id") && !o.at("id").is_null()) {
-            omero->id = dup_cstr(as_string(o.at("id"), octx + ".id"));
+            omero->id = as_uint<uint32_t>(o.at("id"), octx + ".id");
+            omero->has_id = true;
         }
         if (o.contains("name") && !o.at("name").is_null()) {
             omero->name = dup_cstr(as_string(o.at("name"), octx + ".name"));
@@ -524,8 +535,7 @@ load_array(const json& j,
             omero->channels = alloc_zeroed<ZarrOMEChannel>(channels.size());
             for (size_t i = 0; i < channels.size(); ++i) {
                 const auto& c = channels[i];
-                const auto cctx =
-                  octx + ".channels[" + std::to_string(i) + "]";
+                const auto cctx = octx + ".channels[" + std::to_string(i) + "]";
                 auto& ch = omero->channels[i];
 
                 if (c.contains("label") && !c.at("label").is_null()) {
@@ -581,7 +591,8 @@ load_acquisition(const json& j, ZarrHCSAcquisition* acq, const std::string& ctx)
           dup_cstr(as_string(j.at("description"), ctx + ".description"));
     }
     if (j.contains("start_time") && !j.at("start_time").is_null()) {
-        acq->start_time = as_uint<uint64_t>(j.at("start_time"), ctx + ".start_time");
+        acq->start_time =
+          as_uint<uint64_t>(j.at("start_time"), ctx + ".start_time");
         acq->has_start_time = true;
     }
     if (j.contains("end_time") && !j.at("end_time").is_null()) {
@@ -650,7 +661,7 @@ dup_string_list(const std::vector<std::string>& src)
             for (size_t k = 0; k < i; ++k) {
                 free_cstr(arr[k]);
             }
-            std::free(arr);
+            free_array(arr);
             throw;
         }
     }
@@ -750,7 +761,7 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
     if (a.omero) {
         const auto& o = *a.omero;
         json oj;
-        if (o.id) {
+        if (o.has_id) {
             oj["id"] = o.id;
         }
         if (o.name) {
@@ -914,8 +925,8 @@ json_to_settings(const json& doc, ZarrStreamSettings* out)
                        ? as_bool(doc.at("overwrite"), "overwrite")
                        : false;
     out->max_threads = doc.contains("max_threads")
-                         ? static_cast<unsigned int>(
-                             as_uint<uint32_t>(doc.at("max_threads"), "max_threads"))
+                         ? static_cast<unsigned int>(as_uint<uint32_t>(
+                             doc.at("max_threads"), "max_threads"))
                          : 0;
     out->ome_version = static_cast<ZarrOMEVersion>(
       doc.contains("ome_version")
@@ -1018,10 +1029,9 @@ free_array_contents(ZarrArraySettings* a)
         return;
     }
     free_cstr(a->output_key);
-    std::free(a->compression_settings);
-    std::free(const_cast<size_t*>(a->storage_dimension_order));
+    free_array(a->compression_settings);
+    free_array(const_cast<size_t*>(a->storage_dimension_order));
     if (a->omero) {
-        free_cstr(a->omero->id);
         free_cstr(a->omero->name);
         free_cstr(a->omero->rdefs.model);
         if (a->omero->channels) {
@@ -1030,16 +1040,16 @@ free_array_contents(ZarrArraySettings* a)
                 free_cstr(a->omero->channels[i].color);
                 free_cstr(a->omero->channels[i].family);
             }
-            std::free(a->omero->channels);
+            free_array(a->omero->channels);
         }
-        std::free(a->omero);
+        free_array(a->omero);
     }
     if (a->dimensions) {
         for (size_t i = 0; i < a->dimension_count; ++i) {
             free_cstr(a->dimensions[i].name);
             free_cstr(a->dimensions[i].unit);
         }
-        std::free(a->dimensions);
+        free_array(a->dimensions);
     }
 }
 } // namespace
@@ -1057,14 +1067,14 @@ destroy_loaded_settings(ZarrStreamSettings* s)
         free_cstr(s->s3_settings->endpoint);
         free_cstr(s->s3_settings->bucket_name);
         free_cstr(s->s3_settings->region);
-        std::free(s->s3_settings);
+        free_array(s->s3_settings);
     }
 
     if (s->arrays) {
         for (size_t i = 0; i < s->array_count; ++i) {
             free_array_contents(&s->arrays[i]);
         }
-        std::free(s->arrays);
+        free_array(s->arrays);
     }
 
     if (s->hcs_settings) {
@@ -1076,19 +1086,19 @@ destroy_loaded_settings(ZarrStreamSettings* s)
                 for (size_t i = 0; i < plate.row_count; ++i) {
                     free_cstr(plate.row_names[i]);
                 }
-                std::free(const_cast<const char**>(plate.row_names));
+                free_array(const_cast<const char**>(plate.row_names));
             }
             if (plate.column_names) {
                 for (size_t i = 0; i < plate.column_count; ++i) {
                     free_cstr(plate.column_names[i]);
                 }
-                std::free(const_cast<const char**>(plate.column_names));
+                free_array(const_cast<const char**>(plate.column_names));
             }
             for (size_t i = 0; i < plate.acquisition_count; ++i) {
                 free_cstr(plate.acquisitions[i].name);
                 free_cstr(plate.acquisitions[i].description);
             }
-            std::free(plate.acquisitions);
+            free_array(plate.acquisitions);
             for (size_t i = 0; i < plate.well_count; ++i) {
                 auto& well = plate.wells[i];
                 free_cstr(well.row_name);
@@ -1096,14 +1106,14 @@ destroy_loaded_settings(ZarrStreamSettings* s)
                 for (size_t k = 0; k < well.image_count; ++k) {
                     free_cstr(well.images[k].path);
                     free_array_contents(well.images[k].array_settings);
-                    std::free(well.images[k].array_settings);
+                    free_array(well.images[k].array_settings);
                 }
-                std::free(well.images);
+                free_array(well.images);
             }
-            std::free(plate.wells);
+            free_array(plate.wells);
         }
-        std::free(s->hcs_settings->plates);
-        std::free(s->hcs_settings);
+        free_array(s->hcs_settings->plates);
+        free_array(s->hcs_settings);
     }
 
     std::memset(s, 0, sizeof(*s));

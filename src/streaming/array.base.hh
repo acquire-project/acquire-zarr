@@ -42,7 +42,7 @@ struct OMEChannel
 // Internal representation of OME "omero" rendering metadata for one image.
 struct OMERendering
 {
-    std::optional<std::string> id;
+    std::optional<uint32_t> id;
     std::optional<std::string> name;
     std::vector<OMEChannel> channels;
     bool has_rdefs{ false };
@@ -105,7 +105,7 @@ enum class WriteResult
     PartialWrite,
     OutOfBounds,
     FrameSizeMismatch,
-    FrameOutOfOrder,   // frame ID gap detected; predecessor not yet written
+    FrameOutOfOrder, // frame ID gap detected; predecessor not yet written
 };
 
 class ArrayBase

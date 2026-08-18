@@ -164,7 +164,9 @@ extern "C"
     /**
      * @brief Display window for an OME "omero" rendering channel.
      * @details Maps to the omero channel `window` object. All four bounds are
-     * required when a channel is specified.
+     * required when a channel is specified. Validation rejects a window with
+     * @p max <= @p min or @p end <= @p start, so a zero-initialized window
+     * fails rather than silently writing a blank display range.
      */
     typedef struct
     {
@@ -208,13 +210,16 @@ extern "C"
      * @note The channels array may be allocated with
      * ZarrOMERenderingSettings_create_channel_array and freed with
      * ZarrOMERenderingSettings_destroy_channel_array.
+     * @note At least one channel is required, and @p channel_count must match
+     * the size of the array's Channel dimension (1 if it has none).
      */
     typedef struct
     {
-        const char* id;           /**< Image identifier. May be NULL. */
-        const char* name;         /**< Image name. May be NULL. */
-        ZarrOMEChannel* channels; /**< Array of channel structs. */
-        size_t channel_count;     /**< Number of channel structs. */
+        uint32_t id;      /**< Image identifier, emitted as a JSON integer. */
+        bool has_id;      /**< Whether @p id is set. If false, it is omitted. */
+        const char* name; /**< Image name. May be NULL. */
+        ZarrOMEChannel* channels;   /**< Array of channel structs. */
+        size_t channel_count;       /**< Number of channel structs. */
         ZarrOMERenderingDefs rdefs; /**< Rendering defaults. */
         bool has_rdefs;             /**< Whether @p rdefs is emitted. */
     } ZarrOMERenderingSettings;
@@ -235,6 +240,12 @@ extern "C"
      * are [t, z, c, y, x] and you want storage order [t, c, z, y, x], use [0,
      * 2, 1, 3, 4]. If storage_dimension_order is NULL, dimensions will be
      * stored in the order provided.
+     * @note omero rendering metadata lives in OME group metadata, so setting
+     * omero makes this node an OME image group -- the same layout multiscale
+     * produces. `<output_key>/zarr.json` becomes the group metadata and the
+     * array moves to `<output_key>/0`, so adding omero to a previously
+     * single-resolution array relocates its chunks from `<output_key>/c/...`
+     * to `<output_key>/0/c/...`.
      */
     typedef struct
     {

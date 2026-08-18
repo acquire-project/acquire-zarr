@@ -25,7 +25,7 @@ arrays:
       level: 1
       shuffle: 1
     omero:
-      id: "1"
+      id: 1
       name: my image
       channels:
         - {label: red, color: "FF0000", window: {min: 0.0, max: 65535.0, start: 0.0, end: 1500.0}, active: true, coefficient: 1.0}
@@ -33,6 +33,7 @@ arrays:
       rdefs: {model: color, defaultT: 0, defaultZ: 2}
     dimensions:
       - {name: t, type: time,  array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+      - {name: c, type: channel, array_size_px: 2, chunk_size_px: 1, shard_size_chunks: 1}
       - {name: z, type: space, array_size_px: 10, chunk_size_px: 5,  shard_size_chunks: 1}
       - {name: y, type: space, array_size_px: 48, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
       - {name: x, type: space, array_size_px: 64, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
@@ -52,7 +53,7 @@ arrays:
       "downsampling_method": "mean",
       "compression": {"compressor": "blosc1", "codec": "blosc-zstd", "level": 1, "shuffle": 1},
       "omero": {
-        "id": "1",
+        "id": 1,
         "name": "my image",
         "channels": [
           {"label": "red", "color": "FF0000", "window": {"min": 0.0, "max": 65535.0, "start": 0.0, "end": 1500.0}, "active": true, "coefficient": 1.0},
@@ -62,6 +63,7 @@ arrays:
       },
       "dimensions": [
         {"name": "t", "type": "time",  "array_size_px": 0,  "chunk_size_px": 1,  "shard_size_chunks": 1},
+        {"name": "c", "type": "channel", "array_size_px": 2, "chunk_size_px": 1, "shard_size_chunks": 1},
         {"name": "z", "type": "space", "array_size_px": 10, "chunk_size_px": 5,  "shard_size_chunks": 1},
         {"name": "y", "type": "space", "array_size_px": 48, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5},
         {"name": "x", "type": "space", "array_size_px": 64, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5}
@@ -406,15 +408,17 @@ def _assert_expected(s):
     assert a.compression.codec == aqz.CompressionCodec.BLOSC_ZSTD
     assert a.compression.level == 1
     assert a.compression.shuffle == 1
-    assert len(a.dimensions) == 4
+    assert len(a.dimensions) == 5
     assert a.dimensions[0].name == "t"
     assert a.dimensions[0].kind == aqz.DimensionType.TIME
-    assert a.dimensions[2].name == "y"
-    assert a.dimensions[2].unit == "micrometer"
-    assert a.dimensions[2].scale == 0.5
+    assert a.dimensions[1].name == "c"
+    assert a.dimensions[1].kind == aqz.DimensionType.CHANNEL
+    assert a.dimensions[3].name == "y"
+    assert a.dimensions[3].unit == "micrometer"
+    assert a.dimensions[3].scale == 0.5
 
     assert a.omero is not None
-    assert a.omero.id == "1"
+    assert a.omero.id == 1
     assert a.omero.name == "my image"
     assert len(a.omero.channels) == 2
 
@@ -451,6 +455,26 @@ def test_config_round_trip(tmp_path):
         path = tmp_path / name
         base.to_file(str(path))
         _assert_expected(aqz.StreamSettings.from_file(str(path)))
+
+
+@pytest.mark.parametrize("scalar", ["0.6", '"0.6"'])
+def test_load_settings_accepts_unquoted_ome_version(scalar):
+    # an unquoted YAML `ome_version: 0.6` decodes as a double, not a string
+    s = aqz.StreamSettings.from_string(
+        f"version: 1\n"
+        f"store_path: x\n"
+        f"ome_version: {scalar}\n"
+        f"arrays:\n"
+        f"  - data_type: uint8\n"
+        f"    dimensions:\n"
+        f"      - {{name: t, type: time, array_size_px: 0, "
+        f"chunk_size_px: 1, shard_size_chunks: 1}}\n"
+        f"      - {{name: y, type: space, array_size_px: 4, "
+        f"chunk_size_px: 4, shard_size_chunks: 1}}\n"
+        f"      - {{name: x, type: space, array_size_px: 4, "
+        f"chunk_size_px: 4, shard_size_chunks: 1}}\n"
+    )
+    assert s.ome_version == aqz.OMEVersion.V0_6
 
 
 def test_load_settings_rejects_malformed():
@@ -543,7 +567,9 @@ def test_omero_optional_and_identity():
     array = aqz.ArraySettings()
     assert array.omero is None
 
-    array.omero = aqz.OMERenderingSettings(channels=[aqz.OMEChannel(label="c0")])
+    array.omero = aqz.OMERenderingSettings(
+        channels=[aqz.OMEChannel(label="c0")]
+    )
     assert array.omero is not None
     assert array.omero.channels[0].label == "c0"
 

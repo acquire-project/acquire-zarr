@@ -52,7 +52,7 @@ struct ArrayLifetimeProps
     };
 
     bool has_omero{ false };
-    std::optional<std::string> omero_id;
+    std::optional<uint32_t> omero_id;
     std::optional<std::string> omero_name;
     std::vector<OMEChannelStorage> omero_channels;
     bool omero_has_rdefs{ false };
@@ -110,7 +110,8 @@ struct ArrayLifetimeProps
         }
 
         if (has_omero) {
-            omero_.id = omero_id ? omero_id->c_str() : nullptr;
+            omero_.has_id = omero_id.has_value();
+            omero_.id = omero_id.value_or(0);
             omero_.name = omero_name ? omero_name->c_str() : nullptr;
 
             channels_c_.assign(omero_channels.size(), ZarrOMEChannel{});
@@ -132,7 +133,8 @@ struct ArrayLifetimeProps
 
             omero_.has_rdefs = omero_has_rdefs;
             if (omero_has_rdefs) {
-                omero_.rdefs.model = omero_model ? omero_model->c_str() : nullptr;
+                omero_.rdefs.model =
+                  omero_model ? omero_model->c_str() : nullptr;
                 omero_.rdefs.default_t = omero_default_t;
                 omero_.rdefs.default_z = omero_default_z;
             } else {
@@ -598,8 +600,7 @@ class PyZarrOMEChannel
 
     std::string repr() const
     {
-        return "OMEChannel(label=" +
-               (label_ ? ("'" + *label_ + "'") : "None") +
+        return "OMEChannel(label=" + (label_ ? ("'" + *label_ + "'") : "None") +
                ", color=" + (color_ ? ("'" + *color_ + "'") : "None") +
                ", active=" + (active_ ? "True" : "False") + ")";
     }
@@ -649,8 +650,8 @@ class PyZarrOMERenderingSettings
     PyZarrOMERenderingSettings() = default;
     ~PyZarrOMERenderingSettings() = default;
 
-    const std::optional<std::string>& id() const { return id_; }
-    void set_id(const std::optional<std::string>& v) { id_ = v; }
+    const std::optional<uint32_t>& id() const { return id_; }
+    void set_id(const std::optional<uint32_t>& v) { id_ = v; }
 
     const std::optional<std::string>& name() const { return name_; }
     void set_name(const std::optional<std::string>& v) { name_ = v; }
@@ -671,13 +672,13 @@ class PyZarrOMERenderingSettings
     std::string repr() const
     {
         return "OMERenderingSettings(channels=[" +
-               std::to_string(channels_.size()) + " channel(s)], id=" +
-               (id_ ? ("'" + *id_ + "'") : "None") +
+               std::to_string(channels_.size()) +
+               " channel(s)], id=" + (id_ ? std::to_string(*id_) : "None") +
                ", name=" + (name_ ? ("'" + *name_ + "'") : "None") + ")";
     }
 
   private:
-    std::optional<std::string> id_;
+    std::optional<uint32_t> id_;
     std::optional<std::string> name_;
     std::vector<PyZarrOMEChannel> channels_;
     std::shared_ptr<PyZarrOMERenderingDefs> rdefs_;
@@ -1398,7 +1399,8 @@ read_array(const ZarrArraySettings& a)
         arr.set_output_key(a.output_key);
     }
     arr.set_data_type(a.data_type);
-    // multiscale is implicit in Python: it is on iff a downsampling method is set
+    // multiscale is implicit in Python: it is on iff a downsampling method is
+    // set
     if (a.multiscale) {
         arr.set_downsampling_method(a.downsampling_method);
         arr.set_max_levels(a.max_levels);
@@ -1414,8 +1416,8 @@ read_array(const ZarrArraySettings& a)
 
     if (a.omero) {
         auto omero = std::make_shared<PyZarrOMERenderingSettings>();
-        if (a.omero->id) {
-            omero->set_id(std::string(a.omero->id));
+        if (a.omero->has_id) {
+            omero->set_id(a.omero->id);
         }
         if (a.omero->name) {
             omero->set_name(std::string(a.omero->name));
@@ -1476,7 +1478,8 @@ read_array(const ZarrArraySettings& a)
         order.reserve(a.dimension_count);
         for (size_t i = 0; i < a.dimension_count; ++i) {
             const size_t idx = a.storage_dimension_order[i];
-            order.push_back(idx < dims.size() ? dims[idx].name() : std::string());
+            order.push_back(idx < dims.size() ? dims[idx].name()
+                                              : std::string());
         }
         arr.set_storage_dimension_order(order);
     }
@@ -1616,8 +1619,9 @@ finish_load(ZarrStreamSettings& c, ZarrStatusCode status, const char* what)
 {
     if (status != ZarrStatusCode_Success) {
         ZarrStreamSettings_destroy_loaded(&c);
-        throw py::value_error(std::string("Failed to load stream settings from ") +
-                              what + " (see log for details)");
+        throw py::value_error(
+          std::string("Failed to load stream settings from ") + what +
+          " (see log for details)");
     }
     PyZarrStreamSettings out = read_stream_settings(c);
     ZarrStreamSettings_destroy_loaded(&c);
@@ -2122,14 +2126,13 @@ PYBIND11_MODULE(acquire_zarr, m)
         "label", &PyZarrOMEChannel::label, &PyZarrOMEChannel::set_label)
       .def_property(
         "color", &PyZarrOMEChannel::color, &PyZarrOMEChannel::set_color)
-      .def_property(
-        "window",
-        py::cpp_function(
-          [](PyZarrOMEChannel& self) -> PyZarrOMEWindow& {
-              return self.window();
-          },
-          py::return_value_policy::reference_internal),
-        &PyZarrOMEChannel::set_window)
+      .def_property("window",
+                    py::cpp_function(
+                      [](PyZarrOMEChannel& self) -> PyZarrOMEWindow& {
+                          return self.window();
+                      },
+                      py::return_value_policy::reference_internal),
+                    &PyZarrOMEChannel::set_window)
       .def_property(
         "active", &PyZarrOMEChannel::active, &PyZarrOMEChannel::set_active)
       .def_property(
@@ -2141,8 +2144,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrOMEChannel::inverted,
                     &PyZarrOMEChannel::set_inverted);
 
-    py::class_<PyZarrOMERenderingDefs,
-               std::shared_ptr<PyZarrOMERenderingDefs>>(
+    py::class_<PyZarrOMERenderingDefs, std::shared_ptr<PyZarrOMERenderingDefs>>(
       m, "OMERenderingDefs", py::dynamic_attr())
       .def(py::init([](std::optional<std::string> model,
                        uint32_t default_t,
@@ -2159,8 +2161,9 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("default_z") = 0)
       .def("__repr__",
            [](const PyZarrOMERenderingDefs& self) { return self.repr(); })
-      .def_property(
-        "model", &PyZarrOMERenderingDefs::model, &PyZarrOMERenderingDefs::set_model)
+      .def_property("model",
+                    &PyZarrOMERenderingDefs::model,
+                    &PyZarrOMERenderingDefs::set_model)
       .def_property("default_t",
                     &PyZarrOMERenderingDefs::default_t,
                     &PyZarrOMERenderingDefs::set_default_t)
@@ -2172,7 +2175,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                std::shared_ptr<PyZarrOMERenderingSettings>>(
       m, "OMERenderingSettings", py::dynamic_attr())
       .def(py::init([](std::optional<py::list> channels,
-                       std::optional<std::string> id,
+                       std::optional<uint32_t> id,
                        std::optional<std::string> name,
                        std::shared_ptr<PyZarrOMERenderingDefs> rdefs) {
                PyZarrOMERenderingSettings s;
@@ -2197,8 +2200,9 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("rdefs") = std::shared_ptr<PyZarrOMERenderingDefs>())
       .def("__repr__",
            [](const PyZarrOMERenderingSettings& self) { return self.repr(); })
-      .def_property(
-        "id", &PyZarrOMERenderingSettings::id, &PyZarrOMERenderingSettings::set_id)
+      .def_property("id",
+                    &PyZarrOMERenderingSettings::id,
+                    &PyZarrOMERenderingSettings::set_id)
       .def_property("name",
                     &PyZarrOMERenderingSettings::name,
                     &PyZarrOMERenderingSettings::set_name)
@@ -2424,9 +2428,8 @@ PYBIND11_MODULE(acquire_zarr, m)
                 self.set_compression(obj.cast<PyZarrCompressionSettings>());
             }
         })
-      .def_property("omero",
-                    &PyZarrArraySettings::omero,
-                    &PyZarrArraySettings::set_omero)
+      .def_property(
+        "omero", &PyZarrArraySettings::omero, &PyZarrArraySettings::set_omero)
       .def_property(
         "dimensions",
         [](PyZarrArraySettings& self) -> py::object {
@@ -3033,11 +3036,10 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def(
         "to_file",
         [](const PyZarrStreamSettings& self, const std::string& path) {
-            if (ZarrStreamSettings_dump_to_file(self.to_settings(),
-                                                path.c_str()) !=
-                ZarrStatusCode_Success) {
-                throw py::value_error(
-                  "Failed to write stream settings to " + path);
+            if (ZarrStreamSettings_dump_to_file(
+                  self.to_settings(), path.c_str()) != ZarrStatusCode_Success) {
+                throw py::value_error("Failed to write stream settings to " +
+                                      path);
             }
         },
         py::arg("path"),
@@ -3058,8 +3060,9 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_static(
         "from_dict",
         [](const py::object& data) {
-            const std::string text =
-              py::module::import("json").attr("dumps")(data).cast<std::string>();
+            const std::string text = py::module::import("json")
+                                       .attr("dumps")(data)
+                                       .cast<std::string>();
             ZarrStreamSettings c{};
             auto status = ZarrStreamSettings_load_from_string(&c, text.c_str());
             return finish_load(c, status, "config dict");

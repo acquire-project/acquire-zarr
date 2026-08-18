@@ -87,6 +87,13 @@ class ArraySettings:
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
       compression: Optional compression settings for chunks. If None, no compression is applied.
+      omero: Optional OME ``omero`` rendering metadata. Because omero metadata
+        lives in OME group metadata, setting it makes this node an OME image
+        group -- the same layout ``downsampling_method`` produces.
+        ``<output_key>/zarr.json`` becomes the group metadata and the array
+        moves to ``<output_key>/0``, so adding omero to a previously
+        single-resolution array relocates its chunks from
+        ``<output_key>/c/...`` to ``<output_key>/0/c/...``.
       downsampling_method: Method used for generating optional multiscale levels
         (image pyramid). When set, the array is wrapped in an OME-NGFF
         multiscales group. When None (default), a simple array node is written.
@@ -380,6 +387,10 @@ class LogLevel:
 class OMEWindow:
     """Display window for an OME ``omero`` rendering channel.
 
+    All four bounds are required. ``max`` must be greater than ``min`` and
+    ``end`` greater than ``start``, so a default-constructed window is
+    rejected rather than silently written as a blank display range.
+
     Attributes:
       min: Minimum possible pixel value.
       max: Maximum possible pixel value.
@@ -440,14 +451,16 @@ class OMERenderingSettings:
     """OME ``omero`` rendering metadata for an image (array).
 
     Attributes:
-      channels: List of channel rendering settings.
-      id: Optional image identifier.
+      channels: List of channel rendering settings. At least one is required,
+        and the count must match the size of the array's Channel dimension
+        (1 if it has none).
+      id: Optional integer image identifier.
       name: Optional image name.
       rdefs: Optional rendering defaults.
     """
 
     channels: List[OMEChannel]
-    id: Optional[str]
+    id: Optional[int]
     name: Optional[str]
     rdefs: Optional[OMERenderingDefs]
 
