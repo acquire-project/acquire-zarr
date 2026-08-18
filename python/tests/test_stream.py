@@ -2372,5 +2372,5 @@ def test_ome_version_selector(tmp_path, settings):
 
     xform = ms["datasets"][0]["coordinateTransformations"][0]
     assert xform["type"] == "scale"
-    assert xform["input"] == "0"
-    assert xform["output"] == "intrinsic"
+    assert xform["input"] == {"path": "0"}
+    assert xform["output"] == {"name": "intrinsic"}

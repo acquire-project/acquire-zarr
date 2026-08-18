@@ -289,8 +289,8 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
     }
 
     // Build one dataset entry. In 0.6 the scale transform additionally names
-    // its input (the array coordinate system, whose name is the dataset path)
-    // and output (the intrinsic coordinate system).
+    // its input (the array, referenced by path) and output (the intrinsic
+    // coordinate system, referenced by name). Both are objects, not strings.
     auto make_dataset = [&](const std::string& path,
                             const std::vector<double>& level_scales) {
         nlohmann::json transform = {
@@ -298,8 +298,9 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
             { "scale", level_scales },
         };
         if (is_v06) {
-            transform["input"] = path;
-            transform["output"] = intrinsic;
+            transform["input"] = nlohmann::json::object({ { "path", path } });
+            transform["output"] =
+              nlohmann::json::object({ { "name", intrinsic } });
         }
         return nlohmann::json{
             { "path", path },

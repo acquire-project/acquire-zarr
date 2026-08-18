@@ -154,9 +154,11 @@ run(ZarrOMEVersion ome_version,
         EXPECT(cs["axes"].is_array() && !cs["axes"].empty(),
                "Expected non-empty axes in the intrinsic coordinate system");
 
+        // input/output are objects: {"path": ...} and {"name": ...}
         EXPECT_STR_EQ(xform["type"].get<std::string>().c_str(), "scale");
-        EXPECT_STR_EQ(xform["input"].get<std::string>().c_str(), "0");
-        EXPECT_STR_EQ(xform["output"].get<std::string>().c_str(), "intrinsic");
+        EXPECT_STR_EQ(xform["input"]["path"].get<std::string>().c_str(), "0");
+        EXPECT_STR_EQ(xform["output"]["name"].get<std::string>().c_str(),
+                      "intrinsic");
     } else {
         EXPECT(ms.contains("axes"),
                "Expected top-level axes in 0.5 multiscales");

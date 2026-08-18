@@ -48,10 +48,12 @@ Minimal faithful translation of what we already emit:
   "datasets": [
     { "path": "0",
       "coordinateTransformations": [
-        { "type":"scale", "scale":[1,1,1], "input":"0", "output":"intrinsic" } ] },
+        { "type":"scale", "scale":[1,1,1],
+          "input":{"path":"0"}, "output":{"name":"intrinsic"} } ] },
     { "path": "1",
       "coordinateTransformations": [
-        { "type":"scale", "scale":[2,2,2], "input":"1", "output":"intrinsic" } ] }
+        { "type":"scale", "scale":[2,2,2],
+          "input":{"path":"1"}, "output":{"name":"intrinsic"} } ] }
   ]
 }]
 ```
@@ -82,8 +84,9 @@ into the RFC-5 shape. So the first slice is a **pure emission change** gated on
 
 1. Build one `coordinateSystems` entry named `"intrinsic"` from the existing visible
    axes (reusing `dimension_type_to_string` + units).
-2. Emit each dataset transform as today's `scale`, adding `"input": "<path>"` and
-   `"output": "intrinsic"`.
+2. Emit each dataset transform as today's `scale`, adding `"input": {"path": "<path>"}`
+   and `"output": {"name": "intrinsic"}` (both are objects, per the 0.6rc0
+   `inputOutput` schema, not bare strings).
 3. Omit the top-level `axes` key in 0.6 mode (superseded); keep it in 0.5 mode.
 
 This lands RFC-5-structural conformance with zero API surface and a clean 0.5/0.6````
@@ -143,8 +146,12 @@ struct Transform {              // tagged union over the supported subset
    target viewer needs both.
 2. **Coordinate-system name.** RFC examples use `"intrinsic"`. **Recommendation:**
    default `"intrinsic"`; allow override later via API.
-3. **HCS + 0.6.** RFC-5 doesn't redefine plate/well; keep those at 0.5 semantics
-   (as PR #240 already does) and only vary the image-level metadata.
+3. **HCS + 0.6.** RFC-5 doesn't redefine plate/well, so only the image-level
+   metadata varies by version. Note the plate/well dicts carry no `version` key of
+   their own in 0.5 or later: RFC-2 moved the version up to `ome.version`, and the
+   leftover 0.5 prose requiring an inner `version` was a spec bug, fixed in
+   ome/ngff-spec#84 (see ome/ngff#309). So there is nothing version-dependent to
+   thread into `Plate::to_json`/`Well::to_json`.
 4. **Non-space axes in transforms.** Today downsampling scales only space axes.
    RFC-5 transforms cover all axes; keep the current scale semantics (identity on
    non-space) and just restructure.
