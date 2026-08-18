@@ -315,7 +315,10 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
         scales[i - start_dim] = dim.scale;
     }
 
-    multiscales[0]["datasets"] = { make_dataset("0", scales) };
+    // json::array() is required here: MSVC resolves `= { <json> }` to
+    // copy-assignment, yielding the object itself rather than an array of one.
+    multiscales[0]["datasets"] =
+      nlohmann::json::array({ make_dataset("0", scales) });
 
     const auto& base_config = make_base_array_config_();
     const auto& base_dims = base_config->dimensions;
