@@ -769,6 +769,31 @@ set to a positive integer, or otherwise auto-detect based on hardware concurrenc
 - An invalid `ZARR_MAX_THREADS` value (non-numeric, zero, or negative) is ignored, with a
   warning logged, and auto-detection is used instead.
 
+### Direct I/O
+
+On Linux, setting the `ZARR_DIRECT_IO` environment variable opens files for writing with
+`O_DIRECT`, so written bytes bypass the OS page cache. A streaming writer never
+reads back what it wrote, so cached write data is pure overhead; on a large sustained write
+it can fill the page cache and exhaust the host's supply of free high-order (contiguous)
+memory blocks, starving unrelated drivers that need them.
+
+- Off by default.
+- **Only safe on filesystems that accept unaligned direct writes.** NFS is the tested case:
+  the client turns direct writes into WRITE RPCs without imposing a block-alignment check.
+  Sharded stores pack variable-length compressed chunks at arbitrary offsets and append a
+  small index footer, so on a block-backed filesystem (ext4, xfs, NVMe) every write fails
+  with `EINVAL`. Do not enable it there.
+- Linux only. The request is ignored, with a warning logged once, on Windows (where
+  `FILE_FLAG_NO_BUFFERING` requires sector-aligned offsets and lengths with no NFS-style
+  exemption) and on platforms without `O_DIRECT`, such as macOS.
+- S3-backed streams are unaffected.
+- Recognized true values are `1`, `true`, `on`, and `yes` (case-insensitive). Unset, empty,
+  `0`, `false`, `off`, and `no` disable it. Any other value is ignored, with a warning
+  logged, and direct I/O stays off.
+- The value is read once, at the first file open in the process, so setting it after
+  streaming has begun has no effect. When it resolves to enabled, a message is logged at
+  info level.
+
 ### Anaconda GLIBCXX issue
 
 If you encounter the error `GLIBCXX_3.4.30 not found` when working with the library in Python, it may be due to a

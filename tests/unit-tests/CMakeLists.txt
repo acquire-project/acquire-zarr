@@ -13,6 +13,7 @@ set(tests
         array-dimensions-courtesy-flush
         thread-pool-push-to-job-queue
         resolve-max-threads
+        resolve-direct-io
         construct-data-paths
         s3-connection-bucket-exists
         s3-connection-object-exists-check-false-positives
