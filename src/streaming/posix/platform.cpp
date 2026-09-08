@@ -22,21 +22,12 @@ make_flags(bool direct_io)
     *flags = O_WRONLY | O_CREAT;
 
     if (direct_io) {
-        // A streaming writer never reads back what it wrote, so page-cache
-        // residency is pure cost; on a large sustained write it exhausts the
-        // host's high-order free lists and starves unrelated kernel-context
-        // contiguous allocations.
-        //
-        // Not the default: shards pack variable-length compressed chunks at
-        // unaligned offsets and append an index footer, and a block-backed
-        // filesystem rejects unaligned direct writes with EINVAL. NFS accepts
-        // them, since the client turns direct writes into WRITE RPCs without
-        // imposing the alignment check.
+        // Opt-in: unaligned shard writes get EINVAL on block-backed
+        // filesystems; NFS accepts them.
 #ifdef O_DIRECT
         *flags |= O_DIRECT;
 #else
-        // macOS and other POSIX platforms without O_DIRECT: warn once rather
-        // than on every open.
+        // Warn once, not on every open.
         [[maybe_unused]] static const bool warned = [] {
             LOG_WARNING("Direct I/O was requested, but O_DIRECT is not "
                         "available on this platform; writes will go through "

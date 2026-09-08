@@ -41,11 +41,8 @@ make_flags(bool direct_io)
     *flags = FILE_FLAG_OVERLAPPED;
 
     if (direct_io) {
-        // Deliberately ignored on Windows. FILE_FLAG_NO_BUFFERING is stricter
-        // than Linux O_DIRECT: it requires sector-aligned offsets and lengths
-        // with no NFS-style exemption, whereas shards pack variable-length
-        // compressed chunks at arbitrary offsets, so every write would fail.
-        // Warn once rather than on every open.
+        // Unsupported on Windows: FILE_FLAG_NO_BUFFERING demands
+        // sector-aligned offsets, which shard writes can't satisfy.
         [[maybe_unused]] static const bool warned = [] {
             LOG_WARNING("Direct I/O was requested, but is not supported on "
                         "Windows; writes will go through the OS cache.");

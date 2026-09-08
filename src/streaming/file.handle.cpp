@@ -28,10 +28,7 @@ namespace {
 bool
 direct_io_enabled()
 {
-    // Latched on first use: a getenv on every file open would be wasted work
-    // in a path that opens and closes shard files continuously. Function-local
-    // static initialization is thread-safe (C++11). The consequence is that
-    // setting ZARR_DIRECT_IO after streaming has begun has no effect.
+    // Latched: setting ZARR_DIRECT_IO mid-stream has no effect.
     static const bool enabled = [] {
         const bool value = zarr::resolve_direct_io();
         if (value) {

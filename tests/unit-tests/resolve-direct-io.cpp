@@ -16,7 +16,7 @@ set_env(const char* name, const char* value)
 void
 unset_env(const char* name)
 {
-    // An empty value removes the variable from the environment on Windows.
+    // An empty value removes the variable on Windows.
     _putenv_s(name, "");
 }
 #else

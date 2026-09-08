@@ -227,8 +227,7 @@ zarr::resolve_direct_io()
         return false;
     }
 
-    // Fail closed: wrongly enabling direct I/O fails every write with EINVAL
-    // on a block-backed filesystem.
+    // Fail closed: enabling this by mistake fails every write with EINVAL.
     LOG_WARNING("Ignoring invalid ZARR_DIRECT_IO value: '", env, "'");
     return false;
 }

@@ -128,12 +128,9 @@ uint32_t
 resolve_max_threads(uint32_t requested_max_threads);
 
 /**
- * @brief Whether to bypass the OS page cache when opening files for writing,
- * from the ZARR_DIRECT_IO environment variable.
- * @return true if ZARR_DIRECT_IO is set to a recognized true value ("1",
- * "true", "on", "yes", case-insensitive); false if it is unset, empty, or set
- * to a recognized false value ("0", "false", "off", "no"). An unrecognized
- * value logs a warning and returns false.
+ * @brief Whether ZARR_DIRECT_IO asks writes to bypass the OS page cache.
+ * Honored on Linux only; ignored on Windows and macOS.
+ * @return true for "1", "true", "on", "yes" (case-insensitive), else false.
  */
 bool
 resolve_direct_io();
