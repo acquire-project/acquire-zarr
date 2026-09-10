@@ -368,7 +368,11 @@ main()
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
     auto* stream = setup();
-    std::vector<uint16_t> frame(array_width * array_height, 0);
+
+    // nonzero: an all-zero chunk is skipped rather than written, since Zarr v3
+    // reads a missing chunk back as fill_value, and verify_file_data below
+    // expects fully populated shards
+    const std::vector<uint16_t> frame(array_width * array_height, 1);
 
     int retval = 1;
 
