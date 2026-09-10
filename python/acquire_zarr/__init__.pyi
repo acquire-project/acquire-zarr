@@ -106,7 +106,9 @@ class ArraySettings:
         When False (default), a simple array node is written. Note that setting
         `downsampling_method` will coerce this to True regardless, and
         subsequently setting `is_ngff = False` will have no effect as long as
-        `downsampling_method` is set. Setting `is_ngff = True` without a
+        `downsampling_method` is set. The coercion lasts only as long as the
+        downsampling method does: clearing `downsampling_method` restores the
+        value last requested via `is_ngff`. Setting `is_ngff = True` without a
         downsampling method produces a single-level OME-NGFF multiscales group
         with no image pyramid.
     """

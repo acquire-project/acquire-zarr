@@ -782,6 +782,11 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
                 std::string segment = segments.top();
                 segments.pop();
 
+                const bool is_last_segment = segments.empty();
+                const auto array_node_type =
+                  is_multiscale_array ? DatasetNodeType::MultiscaleArray
+                                      : DatasetNodeType::Array;
+
                 // check if this segment already exists
                 if (auto it = current_node->children.find(segment);
                     it == current_node->children.end()) {
@@ -790,14 +795,14 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
                     new_node->name = segment;
                     new_node->parent = current_node;
 
-                    if (segments.empty()) { // Last segment
-                        new_node->type = is_multiscale_array
-                                           ? DatasetNodeType::MultiscaleArray
-                                           : DatasetNodeType::Array;
-                    } else {
-                        new_node->type = DatasetNodeType::Directory;
-                    }
+                    new_node->type = is_last_segment
+                                       ? array_node_type
+                                       : DatasetNodeType::Directory;
                     current_node->children.emplace(segment, new_node);
+                } else if (is_last_segment) {
+                    // a longer key processed earlier created this node as a
+                    // placeholder directory, but it is really an array
+                    it->second->type = array_node_type;
                 }
 
                 // Move to the child node
@@ -831,8 +836,8 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
 
         // if the parent is not multiscale, it must not have any children
         if (!can_have_children && !current_node->children.empty()) {
-            error = "Directory node '" + current_node->name +
-                    "' cannot have children";
+            error =
+              "Array node '" + current_node->name + "' cannot have children";
             return false;
         }
 
@@ -1382,12 +1387,13 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                 }
                 image_out.path = zarr::regularize_key(image_in.path);
 
-                if (image_in.array_settings) {
-                    image_in.array_settings->output_key = image_in.path;
-                }
+                // the array's key is fully specified by the FOV path, so
+                // supply it on a copy rather than writing back through the
+                // caller's settings (validation guarantees non-null here)
+                ZarrArraySettings fov_array = *image_in.array_settings;
+                fov_array.output_key = image_in.path;
 
-                if (!configure_array_(
-                      image_in.array_settings, well_key, true)) {
+                if (!configure_array_(&fov_array, well_key, true)) {
                     set_error_("Failed to configure array for field of view " +
                                std::to_string(k) + " in well " +
                                std::to_string(j) + " in plate " +

@@ -392,6 +392,39 @@ def test_is_ngff_coercion():
     assert settings.downsampling_method is not None
 
 
+def test_is_ngff_coercion_is_not_sticky():
+    # clearing downsampling_method must restore the requested is_ngff, not
+    # leave it stuck at the coerced True
+    settings = aqz.ArraySettings()
+    assert settings.is_ngff is False
+
+    settings.downsampling_method = aqz.DownsamplingMethod.MEAN
+    assert settings.is_ngff is True
+
+    settings.downsampling_method = None
+    assert settings.downsampling_method is None
+    assert settings.is_ngff is False
+
+    # an explicitly requested True survives the round trip
+    settings.is_ngff = True
+    settings.downsampling_method = aqz.DownsamplingMethod.MEAN
+    settings.downsampling_method = None
+    assert settings.is_ngff is True
+
+
+def test_array_settings_repr_includes_is_ngff():
+    # is_ngff selects between a plain array node and an OME-NGFF group, so
+    # two settings that write different hierarchies must not repr identically
+    plain = aqz.ArraySettings(output_key="ch0", data_type=aqz.DataType.UINT16)
+    ngff = aqz.ArraySettings(
+        output_key="ch0", data_type=aqz.DataType.UINT16, is_ngff=True
+    )
+
+    assert "is_ngff=False" in repr(plain)
+    assert "is_ngff=True" in repr(ngff)
+    assert repr(plain) != repr(ngff)
+
+
 def _assert_expected(s):
     assert s.store_path == "from-config.zarr"
     assert s.overwrite is True

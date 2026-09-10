@@ -507,6 +507,49 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     assert np.array_equal(array[:], expected)
 
 
+def test_cleared_downsampling_method_writes_a_plain_array(
+    settings: StreamSettings, store_path: Path
+):
+    """Setting and then clearing downsampling_method must leave the on-disk
+    layout identical to never having set it, rather than writing an NGFF
+    multiscales group with the data one level deeper."""
+
+    def write(name: str, mutate) -> set:
+        s = StreamSettings()
+        s.store_path = str(store_path / name)
+        s.overwrite = True
+        arr = ArraySettings(
+            output_key="ch0",
+            data_type=np.uint16,
+            dimensions=list(settings.arrays[0].dimensions),
+        )
+        mutate(arr)
+        s.arrays = [arr]
+
+        stream = ZarrStream(s)
+        assert stream
+        stream.append(np.zeros((48, 64), dtype=np.uint16), key="ch0")
+        stream.close()
+
+        root = Path(s.store_path)
+        return {
+            str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()
+        }
+
+    def noop(arr):
+        pass
+
+    def set_then_clear(arr):
+        arr.downsampling_method = DownsamplingMethod.MEAN
+        arr.downsampling_method = None
+
+    assert write("plain.zarr", noop) == write("toggled.zarr", set_then_clear)
+
+    # and the array is readable as an array, not a group
+    array = zarr.open(str(store_path / "toggled.zarr" / "ch0"), mode="r")
+    assert isinstance(array, zarr.Array)
+
+
 def _make_data(settings: StreamSettings) -> np.ndarray:
     return np.zeros(
         (

@@ -557,15 +557,14 @@ class PyZarrArraySettings
         compression_settings_ = settings;
     }
 
-    bool is_ngff() const { return is_ngff_; }
-
-    void set_is_ngff(bool is_ngff)
+    // a value for downsampling_method coerces is_ngff to True, but only for
+    // as long as it is set: clearing it restores the requested value
+    bool is_ngff() const
     {
-        // a value for downsampling_method coerces is_ngff to True
-        if (!downsampling_method_.has_value()) {
-            is_ngff_ = is_ngff;
-        }
+        return is_ngff_ || downsampling_method_.has_value();
     }
+
+    void set_is_ngff(bool is_ngff) { is_ngff_ = is_ngff; }
 
     const std::vector<PyZarrDimensionProperties>& dimensions() const
     {
@@ -590,11 +589,6 @@ class PyZarrArraySettings
     void set_downsampling_method(std::optional<ZarrDownsamplingMethod> method)
     {
         downsampling_method_ = method;
-
-        // a value for downsampling_method coerces is_ngff to True
-        if (downsampling_method_.has_value()) {
-            is_ngff_ = true;
-        }
     }
 
     uint32_t max_levels() const { return max_levels_; }
@@ -654,7 +648,7 @@ class PyZarrArraySettings
         lt_props.output_key = output_key_;
         lt_props.data_type = data_type_;
         lt_props.downsampling_method = downsampling_method_;
-        lt_props.is_ngff = is_ngff_;
+        lt_props.is_ngff = is_ngff();
         lt_props.max_levels = max_levels_;
 
         // compression settings
@@ -1947,6 +1941,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                    }
                    repr += ", downsampling_method=" + method_str;
                }
+
+               repr += std::string(", is_ngff=") +
+                       (self.is_ngff() ? "True" : "False");
 
                repr += ")";
                return repr;

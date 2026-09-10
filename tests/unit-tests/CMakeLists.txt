@@ -5,6 +5,7 @@ set(tests
         stream-write-metadata
         metadata-shrink-stale-bytes
         create-stream-simple-array-root
+        create-stream-array-key-order
         array-dimensions-chunk-lattice-index
         array-dimensions-tile-group-offset
         array-dimensions-chunk-internal-offset

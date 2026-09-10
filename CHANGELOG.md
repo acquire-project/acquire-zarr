@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coerce `is_ngff` to true (#213)
 - Config files use `is_ngff` in place of `multiscale`, and `downsampling_method` gained a `"none"` value. A
   config containing `multiscale` is now rejected with an error rather than silently reinterpreted (#213)
+- A config that sets `downsampling_method` but omits `multiscale` previously produced a plain array, because
+  `downsampling_method` was only honoured when `multiscale` was true. It now produces an OME-NGFF multiscales
+  group, relocating the data from `<output_key>/` to `<output_key>/0/`. Set `downsampling_method: none` to keep
+  the old plain-array layout (#213)
+
+### Fixed
+
+- An array key that is a strict prefix of another array key (for example `"foo"` alongside `"foo/bar"`) is now
+  rejected regardless of the order in which the keys are declared. Previously, declaring the longer key first was
+  accepted and wrote a group `zarr.json` over the array node, stranding its chunks with no readable array
+  metadata (#213)
+- Clearing `downsampling_method` now restores the previously requested `is_ngff` value instead of leaving it stuck
+  at the coerced `true`, which silently wrote an OME-NGFF group with the data one level deeper than the plain
+  array the caller asked for (#213)
+- `ArraySettings.__repr__` (Python) includes `is_ngff`, which otherwise made a plain array and an OME-NGFF group
+  print identically (#213)
+- Configuring an HCS field of view no longer writes the FOV path back into the caller's
+  `ZarrArraySettings.output_key` (#213)
 
 ## [0.9.0] - [2026-08-11](https://github.com/acquire-project/acquire-zarr/compare/v0.8.1...v0.9.0)
 
