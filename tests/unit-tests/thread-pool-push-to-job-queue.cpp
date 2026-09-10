@@ -19,12 +19,20 @@ main()
 
         zarr::ThreadPool pool{ 1, [](const std::string&) {} };
 
-        CHECK(pool.push_job([&tmp_path](std::string&) {
-            std::ofstream ofs(tmp_path);
-            ofs << "Hello, Acquire!";
-            ofs.close();
-            return true;
-        }));
+        CHECK(pool.push_job(
+          [&tmp_path](std::string& err) -> zarr::ThreadPool::TaskResult {
+              try {
+                  std::ofstream ofs(tmp_path);
+                  ofs << "Hello, Acquire!";
+                  ofs.close();
+
+                  return zarr::ThreadPool::TaskResult::Success;
+              } catch (const std::exception& e) {
+                  err = e.what();
+              }
+
+              return zarr::ThreadPool::TaskResult::Fatal;
+          }));
         pool.await_stop();
 
         CHECK(fs::exists(tmp_path));

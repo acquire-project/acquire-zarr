@@ -138,11 +138,11 @@ main()
               nullptr);
 
             const size_t frame_size = array_width * array_height * nbytes_px;
-            zarr::LockedBuffer data(std::move(ByteVector(frame_size, 0)));
+            std::vector<uint8_t> data(frame_size, 1);
 
             for (auto i = 0; i < n_frames; ++i) { // 2 time points
                 size_t bytes_out;
-                CHECK(writer->write_frame(data, bytes_out) ==
+                CHECK(writer->write_frame(data, bytes_out, i) ==
                       zarr::WriteResult::Ok);
                 CHECK(bytes_out == data.size());
             }
@@ -152,10 +152,10 @@ main()
 
         const auto chunk_size = chunk_width * chunk_height * chunk_planes *
                                 chunk_timepoints * nbytes_px;
-        const auto index_size = chunks_per_shard *
-                                sizeof(uint64_t) * // indices are 64 bits
-                                2;                 // 2 indices per chunk
-        const auto checksum_size = 4;              // CRC32 checksum
+        constexpr auto index_size = chunks_per_shard *
+                                    sizeof(uint64_t) * // indices are 64 bits
+                                    2;                 // 2 indices per chunk
+        constexpr auto checksum_size = 4;              // CRC32 checksum
         const auto expected_file_size = shard_width * shard_height *
                                           shard_planes * shard_timepoints *
                                           chunk_size +

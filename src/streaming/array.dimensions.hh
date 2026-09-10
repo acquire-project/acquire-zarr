@@ -131,6 +131,26 @@ class ArrayDimensions
      */
     uint32_t number_of_chunks_in_memory() const;
 
+    /// Frames that fill one append-dimension chunk (the whole-layer flush size).
+    uint64_t frames_per_chunk_layer() const;
+
+    /// Frames that fill one append-dimension shard (the rollover size).
+    uint64_t frames_per_shard_layer() const;
+
+    /// Whether dim-1 band flushing applies: append chunk size 1, an
+    /// intermediate dim, and no transposition.
+    /// @see czbiohub-sf/livescreen-acquisition#210
+    bool supports_dim1_banding() const;
+
+    /// Number of dim-1 chunk bands per layer (== chunks along dim 1).
+    uint32_t dim1_band_count() const;
+
+    /// Frames that fill one dim-1 chunk band (z chunk size for [t, z, y, x]).
+    uint64_t frames_per_dim1_band() const;
+
+    /// In-memory chunks per dim-1 band (number_of_chunks_in_memory / bands).
+    uint32_t chunks_per_dim1_band() const;
+
     /**
      * @brief Get the size, in bytes, of a single raw chunk.
      * @return The number of bytes to allocate for a chunk.
@@ -181,6 +201,10 @@ class ArrayDimensions
      */
     std::vector<uint32_t> chunk_indices_for_shard_layer(uint32_t shard_index,
                                                         uint32_t layer) const;
+
+    std::vector<uint32_t> skipped_internal_indices_for_shard_layer(
+      uint32_t shard_index,
+      uint32_t layer) const;
 
     /**
      * @brief Get the streaming index of a chunk within a shard.

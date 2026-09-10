@@ -19,6 +19,7 @@ set(tests
         stream-with-ragged-final-shard
         stream-append-nullptr
         stream-ngff-no-multiscale
+        stream-from-config-file
 )
 
 foreach (name ${tests})

@@ -55,18 +55,21 @@ zarr::MultiscaleArray::memory_usage() const noexcept
 }
 
 zarr::WriteResult
-zarr::MultiscaleArray::write_frame(LockedBuffer& data, size_t& bytes_written)
+zarr::MultiscaleArray::write_frame(std::vector<uint8_t>& frame,
+                                   size_t& bytes_written,
+                                   uint64_t frame_id)
 {
     bytes_written = 0;
 
     size_t n_bytes;
-    if (const auto result = arrays_[0]->write_frame(data, n_bytes);
+
+    if (const auto result = arrays_[0]->write_frame(frame, n_bytes, frame_id);
         result != WriteResult::Ok) {
         LOG_ERROR("Failed to write data to full-resolution array.");
         return result;
     }
 
-    write_multiscale_frames_(data);
+    write_multiscale_frames_(frame);
     return WriteResult::Ok;
 }
 
@@ -149,6 +152,8 @@ zarr::MultiscaleArray::create_arrays_()
         arrays_.push_back(std::make_unique<Array>(
           config, thread_pool_, file_handle_pool_, s3_connection_pool_));
     }
+
+    array_frame_ids_.resize(arrays_.size(), 0);
 
     return true;
 }
@@ -280,25 +285,27 @@ zarr::MultiscaleArray::make_base_array_config_() const
                                          config_->dtype,
                                          std::nullopt,
                                          0,
-                                         true);
+                                         true,
+                                         config_->max_levels);
 }
 
 zarr::WriteResult
-zarr::MultiscaleArray::write_multiscale_frames_(LockedBuffer& data) const
+zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& frame)
 {
     if (!downsampler_) {
         return WriteResult::Ok; // no downsampler, nothing to do
     }
 
-    downsampler_->add_frame(data);
+    downsampler_->add_frame(frame);
 
     for (auto i = 1; i < arrays_.size(); ++i) {
-        if (LockedBuffer downsampled_frame;
+        if (std::vector<uint8_t> downsampled_frame;
             downsampler_->take_frame(i, downsampled_frame)) {
+            auto& frame_id = array_frame_ids_[i];
 
             size_t n_bytes;
-            if (const auto result =
-                  arrays_[i]->write_frame(downsampled_frame, n_bytes);
+            if (const auto result = arrays_[i]->write_frame(
+                  downsampled_frame, n_bytes, frame_id++);
                 result != WriteResult::Ok) {
                 LOG_ERROR("Failed to write frame to LOD ", i);
                 return result;

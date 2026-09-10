@@ -330,7 +330,7 @@ main()
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
     auto* stream = setup();
-    std::vector<uint16_t> frame(array_width * array_height, 0);
+    const std::vector<uint16_t> frame(array_width * array_height, 1);
 
     int retval = 1;
 

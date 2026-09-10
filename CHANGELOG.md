@@ -9,12 +9,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `is_ngff` flag on `ZarrArraySettings` to explicitly request OME-NGFF multiscales wrapping without downsampling (#213)
+- `is_ngff` flag on `ZarrArraySettings` to explicitly request OME-NGFF multiscales wrapping without
+  downsampling (#213)
 - `ZarrDownsamplingMethod_None` sentinel value for explicitly representing "no downsampling" (#213)
+- `ZARR_DIRECT_IO` environment variable: when set, file handles are opened with `O_DIRECT` so writes bypass the OS page
+  cache. Off by default, Linux only, and only valid on filesystems that accept unaligned direct writes, such as NFS
 
 ### Changed
 
-- `ZarrArraySettings.multiscale` has been replaced by `is_ngff`; setting a downsampling method continues to coerce `is_ngff` to true (#213)
+- `ZarrArraySettings.multiscale` has been replaced by `is_ngff`; setting a downsampling method continues to
+  coerce `is_ngff` to true (#213)
+- Config files use `is_ngff` in place of `multiscale`, and `downsampling_method` gained a `"none"` value. A
+  config containing `multiscale` is now rejected with an error rather than silently reinterpreted (#213)
+
+## [0.9.0] - [2026-08-11](https://github.com/acquire-project/acquire-zarr/compare/v0.8.1...v0.9.0)
+
+### Added
+
+- Load and dump stream settings from YAML/JSON config files, via `ZarrStreamSettings_load_from_*`/`_dump_to_*` (C) and
+  `StreamSettings.from_file`/`from_string`/`from_dict`/`to_file`/`to_yaml`/`to_json`/`to_dict` (Python). Credentials are
+  never read from config. See `examples/config/` (#236)
+- `ZARR_MAX_THREADS` environment variable: when `max_threads` is left at its default of `0`, the thread pool size is
+  read from `ZARR_MAX_THREADS`, falling back to hardware concurrency if it is unset or invalid. An explicitly nonzero
+  `max_threads` takes precedence (#239)
+
+### Changed
+
+- Python `StreamSettings.max_threads` now defaults to `0` ("not explicitly set") rather than `hardware_concurrency()`.
+  The resolved thread count is unchanged when `ZARR_MAX_THREADS` is unset, but the attribute reads back as `0` until
+  assigned (#239)
+- A chunk/shard file's pooled handle is now closed as soon as its sink is finalized. Previously, on hosts with a large
+  `RLIMIT_NOFILE`, the handle pool's LRU cap was never reached and every handle stayed open for the lifetime of the
+  stream, so deleting a sealed chunk freed no blocks and long runs could exhaust local storage (#237)
+- Filesystem files are now opened with `FILE_SHARE_READ` on Windows, so another process (e.g. napari) can open the
+  store for reading while an acquisition is in progress (#234)
+
+### Fixed
+
+- A failed file (re)open during `append` no longer kills the writer thread for that array. Transient open failures are
+  retried with backoff, and a persistent failure returns a null handle, which surfaces as a recoverable write error
+  rather than a fatal "Internal error" (regression from #237) (#238)
+- Metadata (`zarr.json`) writes now truncate the file to the written length. Previously a rewrite shorter than the
+  prior version (e.g. replacing a large custom-metadata blob with a smaller one) left stale trailing bytes, since
+  neither the Win32 nor POSIX backend truncated on write; strict JSON parsers such as zarr-python rejected the
+  result (#234)
+
+## [0.8.1] - [2026-06-23](https://github.com/acquire-project/acquire-zarr/compare/v0.8.0...v0.8.1)
+
+### Added
+
+- `ZarrStream_close` (C): finalizes and frees a stream, returning a status code so a failed flush can be detected;
+  `ZarrStream_destroy` remains as a void wrapper (#231)
+
+### Changed
+
+- Flush incrementally along a large intermediate dimension: when the append dimension has a chunk size of 1, chunk
+  buffers are now flushed and freed one band at a time along the dimension just inside the append axis, so peak memory
+  tracks a single band rather than the whole inner volume. This makes large intermediate axes (e.g. a `[t, z, y, x]`
+  store with a ~62k `z`) feasible without running out of memory. `estimate_max_memory_usage` reflects the reduced bound
+  (czbiohub-sf/livescreen-acquisition#210)
+- Bound the frame queue to 256 MiB; `append()` now applies backpressure instead of buffering unboundedly, cutting
+  peak memory ~3x at the cost of higher tail latency under sustained pressure (#230)
+- Copy frames directly into chunk buffers, removing an intermediate copy (~1.3-1.9x write throughput on filesystem) (#230)
+- Windows: reuse the per-handle `OVERLAPPED` event and drop the per-close `FlushFileBuffers` (#230)
+- Enable AVX2 and LTO for the streaming library (#230)
+
+### Fixed
+
+- `estimate_max_memory_usage` now models the frame queue as the actual 256 MiB / [16, 512]-frame bound (#230) instead
+  of a flat 1 GiB, so the estimate matches real peak usage
+- Shard flush (`fsync`) failures are no longer swallowed in the `Shard` destructor; an I/O error now fails the
+  stream instead of silently producing corrupt shards. Python `close()` raises on a failed flush (#231)
+
+## [0.8.0] - [2026-05-29](https://github.com/acquire-project/acquire-zarr/compare/v0.7.0...v0.8.0)
+
+### Added
+
+- `max_levels` field on `ZarrArraySettings` (C API) and `ArraySettings` (Python) to cap the maximum number of
+  downsampled pyramid levels; `0` means no limit (default) (#225)
+- Stock Zstd compression codec support as a standalone codec without Blosc (#209)
+- Dockerfile for containerized builds (#207)
+
+### Changed
+
+- `ZarrStream_write_custom_metadata` (C) and `stream.write_custom_metadata` (Python) signatures have changed: the
+  `custom_metadata` and `overwrite` parameters have been replaced with `array_key`, `metadata_key`, and `metadata`.
+  Custom metadata is now written under the `attributes` key of the target array or group's `zarr.json`, rather than
+  to a sidecar `acquire.json` file (#201)
+- Chunk sizes at downsampled pyramid levels are now preserved rather than clamped to the array size; a chunk larger
+  than the array produces a single partial chunk, which is valid in Zarr v3 (#225)
+- Restored compression/write parallelism through a refactor of the chunk and shard write paths, reducing peak memory
+  usage and improving write throughput on multicore systems (#219)
+- Documented `output_key` and `downsampling_method` behavior (#206)
+
+### Fixed
+
+- LOD1 pixel corruption when downsampling an odd-sized Z dimension and the downsampled writes crossed a shard
+  boundary on the append dimension (#228)
+- Frame-processing deadlock that could occur when an error was raised during processing, and a related worker-exit
+  deadlock where producers could block forever on a full frame queue after the worker had returned (#216, #221, #222)
 
 ## [0.7.0] - [2026-03-11](https://github.com/acquire-project/acquire-zarr/compare/v0.6.0...v0.7.0)
 

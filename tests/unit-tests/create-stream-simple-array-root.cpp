@@ -112,6 +112,32 @@ multiple_arrays_with_simple_array_at_root()
 
     return retval;
 }
+
+// an is_ngff array with no downsampling method is still a multiscales group
+// that writes a child named "0", so it may not have a numeric child of its own
+// (should fail)
+bool
+ngff_array_at_root_with_numeric_child()
+{
+    ZarrStreamSettings settings = { TEST ".zarr" };
+
+    ZarrStreamSettings_create_arrays(&settings, 2);
+
+    settings.arrays->output_key = nullptr;
+    configure_stream_dimensions(settings.arrays);
+    settings.arrays->is_ngff = true;
+
+    settings.arrays[1].output_key = "0";
+    configure_stream_dimensions(settings.arrays + 1);
+
+    ZarrStream* stream = ZarrStream_create(&settings);
+    const bool retval = stream == nullptr; // impossible to configure this
+    ZarrStream_destroy(stream);
+
+    ZarrStreamSettings_destroy_arrays(&settings); // destroys dimensions
+
+    return retval;
+}
 } // namespace
 
 int
@@ -135,6 +161,12 @@ main()
         if (!multiple_arrays_with_simple_array_at_root()) {
             LOG_ERROR("Erroneously successful configuration of multiple arrays "
                       "with simple array at root");
+            retval = 1;
+        }
+
+        if (!ngff_array_at_root_with_numeric_child()) {
+            LOG_ERROR("Erroneously successful configuration of an NGFF array "
+                      "at root with a numeric child");
             retval = 1;
         }
     } catch (const std::exception& exception) {

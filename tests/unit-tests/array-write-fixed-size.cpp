@@ -69,14 +69,13 @@ make_array()
 [[nodiscard]] bool
 try_append_beyond_bounds(zarr::Array& array)
 {
-    zarr::LockedBuffer frame(std::move(
-      std::vector<uint8_t>(array_height * array_width * sizeof(uint16_t), 1)));
-
+    std::vector<uint8_t> frame(array_height * array_width * sizeof(uint16_t),
+                               1);
     size_t bytes_out;
 
     // append to full
     for (auto i = 0; i < array_planes; ++i) {
-        EXPECT(array.write_frame(frame, bytes_out) == zarr::WriteResult::Ok,
+        EXPECT(array.write_frame(frame, bytes_out, i) == zarr::WriteResult::Ok,
                "Failed to write frames");
         EXPECT(bytes_out == frame.size(),
                "Expected write of ",
@@ -86,7 +85,7 @@ try_append_beyond_bounds(zarr::Array& array)
     }
 
     // try to append beyond the bounds of the array
-    if (const auto result = array.write_frame(frame, bytes_out);
+    if (const auto result = array.write_frame(frame, bytes_out, array_planes);
         result != zarr::WriteResult::OutOfBounds) {
         LOG_ERROR("Unexpected write result: ", result_to_str(result));
         return false;

@@ -2,6 +2,7 @@
 #include "macros.hh"
 #include "zarr.common.hh"
 
+#include <set>
 #include <tuple>
 #include <unordered_map>
 
@@ -324,6 +325,53 @@ ArrayDimensions::bytes_per_chunk() const
     return bytes_per_chunk_;
 }
 
+uint64_t
+ArrayDimensions::frames_per_chunk_layer() const
+{
+    uint64_t frames = dims_.front().chunk_size_px;
+    for (auto i = 1; i + 2 < ndims(); ++i) { // intermediate dims: 1..ndims-3
+        frames *= dims_[i].array_size_px;
+    }
+    return frames;
+}
+
+uint64_t
+ArrayDimensions::frames_per_shard_layer() const
+{
+    return frames_per_chunk_layer() * dims_.front().shard_size_chunks;
+}
+
+bool
+ArrayDimensions::supports_dim1_banding() const
+{
+    // append chunk 1 (each sweep completes its chunks) + an intermediate dim;
+    // transposition would desync the acquisition-order frame trigger
+    return dims_.front().chunk_size_px == 1 && ndims() >= 4 &&
+           !needs_transposition();
+}
+
+uint32_t
+ArrayDimensions::dim1_band_count() const
+{
+    return zarr::chunks_along_dimension(dims_[1]);
+}
+
+uint64_t
+ArrayDimensions::frames_per_dim1_band() const
+{
+    uint64_t frames = dims_[1].chunk_size_px;
+    for (auto i = 2; i + 2 < ndims(); ++i) { // dims inside dim 1: 2..ndims-3
+        frames *= dims_[i].array_size_px;
+    }
+    return frames;
+}
+
+uint32_t
+ArrayDimensions::chunks_per_dim1_band() const
+{
+    return number_of_chunks_in_memory_ / dim1_band_count();
+}
+
 uint32_t
 ArrayDimensions::number_of_shards() const
 {
@@ -371,6 +419,37 @@ ArrayDimensions::chunk_indices_for_shard_layer(uint32_t shard_index,
     }
 
     return indices;
+}
+
+std::vector<uint32_t>
+ArrayDimensions::skipped_internal_indices_for_shard_layer(uint32_t shard_index,
+                                                          uint32_t layer) const
+{
+    const auto chunks_per_shard_layer =
+      chunks_per_shard_ / chunk_layers_per_shard();
+    const auto layer_indices =
+      chunk_indices_for_shard_layer(shard_index, layer);
+
+    if (layer_indices.size() == chunks_per_shard_layer) {
+        return {};
+    }
+
+    std::set<uint32_t> internal_indices;
+    std::vector<uint32_t> skipped_indices;
+
+    for (const auto& layer_idx : layer_indices) {
+        const auto internal_idx = shard_internal_index(layer_idx);
+        internal_indices.insert(internal_idx);
+    }
+
+    const uint32_t layer_offset = chunks_per_shard_layer * layer;
+    for (auto i = 0; i < chunks_per_shard_layer; ++i) {
+        if (!internal_indices.contains(layer_offset + i)) {
+            skipped_indices.push_back(layer_offset + i);
+        }
+    }
+
+    return skipped_indices;
 }
 
 uint32_t

@@ -7,6 +7,11 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+constexpr size_t array_width = 64, array_height = 48;
+const std::string data_path =
+  (fs::temp_directory_path() / TEST ".zarr").string();
+
 void
 configure_stream_dimensions(ZarrArraySettings* settings)
 {
@@ -14,7 +19,7 @@ configure_stream_dimensions(ZarrArraySettings* settings)
           ZarrArraySettings_create_dimension_array(settings, 3));
     ZarrDimensionProperties* dim = settings->dimensions;
 
-    *dim = ZarrDimensionProperties{
+    *dim++ = ZarrDimensionProperties{
         .name = "t",
         .type = ZarrDimensionType_Time,
         .array_size_px = 0,
@@ -22,21 +27,19 @@ configure_stream_dimensions(ZarrArraySettings* settings)
         .shard_size_chunks = 1,
     };
 
-    dim = settings->dimensions + 1;
-    *dim = ZarrDimensionProperties{
+    *dim++ = ZarrDimensionProperties{
         .name = "y",
         .type = ZarrDimensionType_Space,
-        .array_size_px = 48,
-        .chunk_size_px = 48,
+        .array_size_px = array_height,
+        .chunk_size_px = array_height,
         .shard_size_chunks = 1,
     };
 
-    dim = settings->dimensions + 2;
     *dim = ZarrDimensionProperties{
         .name = "x",
         .type = ZarrDimensionType_Space,
-        .array_size_px = 64,
-        .chunk_size_px = 64,
+        .array_size_px = array_width,
+        .chunk_size_px = array_width,
         .shard_size_chunks = 1,
     };
 }
@@ -69,7 +72,7 @@ verify_file_data(const ZarrStreamSettings& settings)
 
     // Verify each row contains the correct values
     constexpr size_t table_size = 2 * sizeof(uint64_t) + 4;
-    EXPECT_EQ(int, buffer.size(), row_size* num_rows + table_size);
+    EXPECT_EQ(int, buffer.size(), array_width * array_height + table_size);
     for (size_t row = 0; row < num_rows; ++row) {
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
@@ -103,14 +106,20 @@ verify_file_data(const ZarrStreamSettings& settings)
         // Check each byte in this row
         for (size_t col = 0; col < row_size; ++col) {
             const size_t index = row * row_size + col;
-            EXPECT_EQ(int, buffer[index], 48 + row);
+            EXPECT(buffer[index] == array_height + row,
+                   "buffer[",
+                   index,
+                   "] == ",
+                   static_cast<int>(buffer[index]),
+                   " != ",
+                   array_height + row);
         }
     }
 
     // after this, we wrote more bytes than a single frame, in a sequence
     // beginning at 96 and incrementing 1 at a time, so we should have 2 frames
     // starting at 96 and ending at 191
-    uint8_t px_value = 96;
+    uint8_t px_value = 2 * array_height;
 
     shard_path = fs::path(settings.store_path) / "c" / "2" / "0" / "0";
     CHECK(fs::is_regular_file(shard_path));
@@ -164,6 +173,7 @@ verify_file_data(const ZarrStreamSettings& settings)
         EXPECT_EQ(int, buffer[i], px_value++);
     }
 }
+} // namespace
 
 int
 main()
@@ -175,7 +185,7 @@ main()
 
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
-    settings.store_path = static_cast<const char*>(TEST ".zarr");
+    settings.store_path = data_path.c_str();
     settings.max_threads = 0;
 
     ZarrStreamSettings_create_arrays(&settings, 1);
@@ -189,25 +199,26 @@ main()
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));
 
-        // append partial frames
-        std::vector<uint8_t> data(16, 0);
-        for (auto row = 0; row < 96; ++row) {
-            // 2 frames worth of data
-            std::fill(data.begin(), data.end(), row);
+        // append 2 frames' worth of partial frame data
+        std::vector<uint8_t> data(array_width / 4, 0);
+        for (auto row = 0; row < 2 * array_height; ++row) {
+            std::ranges::fill(data, row);
+
             for (auto col_group = 0; col_group < 4; ++col_group) {
                 size_t bytes_written;
-                const auto result =
-                  stream->append(nullptr, data.data(), data.size(), bytes_written);
-                CHECK(result == ZarrStatusCode_Success);
+                CHECK(stream->append(
+                        nullptr, data.data(), data.size(), bytes_written) ==
+                      ZarrStatusCode_Success);
                 EXPECT_EQ(int, data.size(), bytes_written);
             }
         }
 
-        data.resize(2 * 48 * 64);
+        // resize to a full frame
+        data.resize(2 * array_width * array_height);
         std::iota(data.begin(), data.end(), 96);
 
         // append more than one frame, then fill in the rest
-        const auto bytes_to_write = 48 * 64 + 7;
+        constexpr auto bytes_to_write = array_width * array_height + 7;
         size_t bytes_written;
         auto result =
           stream->append(nullptr, data.data(), bytes_to_write, bytes_written);
@@ -215,9 +226,9 @@ main()
         EXPECT_EQ(int, bytes_to_write, bytes_written);
 
         result = stream->append(nullptr,
-                                       data.data() + bytes_to_write,
-                                       data.size() - bytes_to_write,
-                                       bytes_written);
+                                data.data() + bytes_to_write,
+                                data.size() - bytes_to_write,
+                                bytes_written);
         CHECK(result == ZarrStatusCode_Success);
         EXPECT_EQ(int, data.size() - bytes_to_write, bytes_written);
 

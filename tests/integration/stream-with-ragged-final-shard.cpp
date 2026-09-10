@@ -78,7 +78,7 @@ main()
         constexpr size_t width = 125;
         constexpr size_t height = 125;
         constexpr size_t planes = 125;
-        std::vector<uint8_t> stack(width * height * planes, 0);
+        const std::vector<uint8_t> stack(width * height * planes, 1);
 
         // Write frames
         size_t bytes_written;

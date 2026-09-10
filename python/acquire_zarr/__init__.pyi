@@ -65,7 +65,12 @@ class ArraySettings:
       group is written with no image pyramid.
     - **downsampling_method set**: An OME-NGFF multiscales group is written with
       the full-resolution array at level ``0`` plus additional downsampled levels.
-      ``is_ngff`` is coerced to True.
+      The number of levels is determined automatically from the chunk and array
+      sizes, and can be capped with ``max_levels``. ``is_ngff`` is coerced to True.
+
+    In every case the node is written at ``store_path / output_key``, or at
+    ``store_path`` if ``output_key`` is empty or omitted. Intermediate group
+    directories are created as needed.
 
     Arrays belonging to a ``FieldOfView`` are always treated as NGFF regardless
     of the value of ``is_ngff``.
@@ -83,6 +88,10 @@ class ArraySettings:
         (image pyramid). When set, `is_ngff` is also coerced to True and the array
         is wrapped in an OME-NGFF multiscales group. When None (default), no
         image pyramid is generated.
+      max_levels: Maximum number of downsampled pyramid levels to generate when
+        ``downsampling_method`` is set. The number of levels is otherwise
+        determined automatically from the chunk and array sizes. Set to 0
+        (the default) for no limit.
       storage_dimension_order: Order of dimensions for storage, which may different
         from the acquisition order defined in `dimensions`. Must be a list of dimension
         names corresponding to those in `dimensions`.
@@ -107,6 +116,7 @@ class ArraySettings:
     data_type: Union[DataType, numpy.dtype]
     compression: Optional[CompressionSettings]
     downsampling_method: Optional[DownsamplingMethod]
+    max_levels: int
     storage_dimension_order: List[str]
     is_ngff: bool
 
@@ -302,7 +312,7 @@ class DownsamplingMethod:
     MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 4>
     __members__: ClassVar[
         dict[str, DownsamplingMethod]
-    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
+    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 1>, 'MEAN': <DownsamplingMethod.MEAN: 2>, 'MIN': <DownsamplingMethod.MIN: 3>, 'MAX': <DownsamplingMethod.MAX: 4>}
 
     def __eq__(self, other: Any) -> bool: ...
     def __getstate__(self) -> int: ...
@@ -327,7 +337,8 @@ class FieldOfView:
         acquisition_id: Optional ID linking this field of view to a specific acquisition.
         array_settings: Array configuration for this field of view's data.
             ``output_key`` must be None to prevent key conflicts with the FOV path.
-            ``is_ngff`` is always coerced to True for HCS field of view arrays.
+            The array is always written as an OME-NGFF multiscales group,
+            regardless of ``is_ngff``.
     """
 
     path: str
@@ -416,7 +427,9 @@ class StreamSettings:
         store_path: Path to the store. Can be a filesystem path or S3 key prefix.
             For S3, this becomes the key prefix within the specified bucket.
         s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
-        max_threads: Maximum number of threads for parallel processing.
+        max_threads: Maximum number of threads for parallel processing. Defaults to 0,
+            meaning: use the ZARR_MAX_THREADS environment variable if set, otherwise
+            auto-detect based on available hardware concurrency.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
 
@@ -441,6 +454,30 @@ class StreamSettings:
 
     def get_array_keys(self) -> List[str]:
         """Get the list of array keys configured in this stream."""
+
+    @staticmethod
+    def from_file(path: str) -> "StreamSettings":
+        """Load stream settings from a YAML or JSON config file."""
+
+    @staticmethod
+    def from_string(text: str) -> "StreamSettings":
+        """Load stream settings from a YAML or JSON config string."""
+
+    @staticmethod
+    def from_dict(data: dict) -> "StreamSettings":
+        """Build stream settings from a config dict (same schema as files)."""
+
+    def to_dict(self) -> dict:
+        """Serialize stream settings to a config dict."""
+
+    def to_file(self, path: str) -> None:
+        """Dump settings to a config file (``.json`` -> JSON, else YAML)."""
+
+    def to_yaml(self) -> str:
+        """Serialize stream settings to a YAML string."""
+
+    def to_json(self) -> str:
+        """Serialize stream settings to a JSON string."""
 
 class Well:
     """Well configuration for HCS plate layouts.

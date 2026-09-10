@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 
@@ -40,6 +41,7 @@ struct ArrayLifetimeProps
 
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     bool is_ngff{ false };
+    uint32_t max_levels{ 0 };
 
     ZarrArraySettings* array_settings()
     {
@@ -81,6 +83,7 @@ struct ArrayLifetimeProps
         array_settings_.downsampling_method =
           downsampling_method.value_or(ZarrDownsamplingMethod_None);
         array_settings_.is_ngff = is_ngff;
+        array_settings_.max_levels = max_levels;
 
         if (!storage_dimension_order.empty()) {
             array_settings_.storage_dimension_order =
@@ -114,7 +117,6 @@ struct FieldOfViewLifetimeProps
         }
 
         field_of_view_.array_settings = array.array_settings();
-        field_of_view_.array_settings->is_ngff = true; // just in case
 
         return &field_of_view_;
     }
@@ -595,6 +597,9 @@ class PyZarrArraySettings
         }
     }
 
+    uint32_t max_levels() const { return max_levels_; }
+    void set_max_levels(uint32_t levels) { max_levels_ = levels; }
+
     const std::vector<std::string>& storage_dimension_order() const
     {
         return storage_dimension_order_;
@@ -650,6 +655,7 @@ class PyZarrArraySettings
         lt_props.data_type = data_type_;
         lt_props.downsampling_method = downsampling_method_;
         lt_props.is_ngff = is_ngff_;
+        lt_props.max_levels = max_levels_;
 
         // compression settings
         if (compression_settings_.has_value()) {
@@ -718,6 +724,7 @@ class PyZarrArraySettings
     ZarrDataType data_type_{ ZarrDataType_uint8 };
     bool is_ngff_{ false };
     std::optional<ZarrDownsamplingMethod> downsampling_method_{ std::nullopt };
+    uint32_t max_levels_{ 0 };
 
     std::vector<std::string> storage_dimension_order_;
 };
@@ -1106,7 +1113,7 @@ class PyZarrStreamSettings
   private:
     std::string store_path_;
     mutable std::optional<PyZarrS3Settings> py_s3_settings_{ std::nullopt };
-    unsigned int max_threads_{ std::thread::hardware_concurrency() };
+    unsigned int max_threads_{ 0 };
     bool overwrite_{ false };
 
     std::vector<PyZarrArraySettings> arrays_;
@@ -1123,6 +1130,223 @@ class PyZarrStreamSettings
 
     mutable ZarrStreamSettings settings_{};
 };
+
+// ---------------------------------------------------------------------------
+// Config-file support: read a loader-owned ZarrStreamSettings into Python
+// objects (the dump direction reuses to_settings() + the C dump API).
+// ---------------------------------------------------------------------------
+namespace {
+PyZarrDimensionProperties
+read_dimension(const ZarrDimensionProperties& d)
+{
+    PyZarrDimensionProperties dim;
+    dim.set_name(d.name ? d.name : "");
+    dim.set_type(d.type);
+    dim.set_array_size_px(d.array_size_px);
+    dim.set_chunk_size_px(d.chunk_size_px);
+    dim.set_shard_size_chunks(d.shard_size_chunks);
+    if (d.unit) {
+        dim.set_unit(std::string(d.unit));
+    }
+    dim.set_scale(d.scale);
+    return dim;
+}
+
+PyZarrArraySettings
+read_array(const ZarrArraySettings& a)
+{
+    PyZarrArraySettings arr;
+    if (a.output_key) {
+        arr.set_output_key(a.output_key);
+    }
+    arr.set_data_type(a.data_type);
+    if (a.downsampling_method > ZarrDownsamplingMethod_None) {
+        arr.set_downsampling_method(a.downsampling_method);
+        arr.set_max_levels(a.max_levels);
+    }
+    arr.set_is_ngff(a.is_ngff);
+    if (a.compression_settings) {
+        PyZarrCompressionSettings c;
+        c.set_compressor(a.compression_settings->compressor);
+        c.set_codec(a.compression_settings->codec);
+        c.set_level(a.compression_settings->level);
+        c.set_shuffle(a.compression_settings->shuffle);
+        arr.set_compression(c);
+    }
+
+    std::vector<PyZarrDimensionProperties> dims;
+    dims.reserve(a.dimension_count);
+    for (size_t i = 0; i < a.dimension_count; ++i) {
+        dims.push_back(read_dimension(a.dimensions[i]));
+    }
+    arr.set_dimensions(dims);
+
+    // storage order is index-based in the config/C struct, name-based in Python
+    if (a.storage_dimension_order) {
+        std::vector<std::string> order;
+        order.reserve(a.dimension_count);
+        for (size_t i = 0; i < a.dimension_count; ++i) {
+            const size_t idx = a.storage_dimension_order[i];
+            order.push_back(idx < dims.size() ? dims[idx].name() : std::string());
+        }
+        arr.set_storage_dimension_order(order);
+    }
+    return arr;
+}
+
+PyZarrAcquisition
+read_acquisition(const ZarrHCSAcquisition& a)
+{
+    PyZarrAcquisition acq;
+    acq.set_id(a.id);
+    if (a.name) {
+        acq.set_name(std::string(a.name));
+    }
+    if (a.description) {
+        acq.set_description(std::string(a.description));
+    }
+    if (a.has_start_time) {
+        acq.set_start_time(a.start_time);
+    }
+    if (a.has_end_time) {
+        acq.set_end_time(a.end_time);
+    }
+    return acq;
+}
+
+PyZarrFieldOfView
+read_fov(const ZarrHCSFieldOfView& f)
+{
+    PyZarrFieldOfView fov;
+    fov.set_path(f.path ? f.path : "");
+    if (f.has_acquisition_id) {
+        fov.set_acquisition_id(f.acquisition_id);
+    }
+    if (f.array_settings) {
+        fov.set_array_settings(read_array(*f.array_settings));
+    }
+    return fov;
+}
+
+PyZarrWell
+read_well(const ZarrHCSWell& w)
+{
+    PyZarrWell well;
+    well.set_row_name(w.row_name ? w.row_name : "");
+    well.set_column_name(w.column_name ? w.column_name : "");
+    std::vector<PyZarrFieldOfView> images;
+    images.reserve(w.image_count);
+    for (size_t i = 0; i < w.image_count; ++i) {
+        images.push_back(read_fov(w.images[i]));
+    }
+    well.set_images(images);
+    return well;
+}
+
+PyZarrPlate
+read_plate(const ZarrHCSPlate& p)
+{
+    PyZarrPlate plate;
+    plate.set_path(p.path ? p.path : "");
+    if (p.name) {
+        plate.set_name(p.name);
+    }
+
+    std::vector<std::string> rows;
+    rows.reserve(p.row_count);
+    for (size_t i = 0; i < p.row_count; ++i) {
+        rows.emplace_back(p.row_names[i] ? p.row_names[i] : "");
+    }
+    plate.set_row_names(rows);
+
+    std::vector<std::string> cols;
+    cols.reserve(p.column_count);
+    for (size_t i = 0; i < p.column_count; ++i) {
+        cols.emplace_back(p.column_names[i] ? p.column_names[i] : "");
+    }
+    plate.set_column_names(cols);
+
+    std::vector<PyZarrAcquisition> acqs;
+    acqs.reserve(p.acquisition_count);
+    for (size_t i = 0; i < p.acquisition_count; ++i) {
+        acqs.push_back(read_acquisition(p.acquisitions[i]));
+    }
+    plate.set_acquisitions(acqs);
+
+    std::vector<PyZarrWell> wells;
+    wells.reserve(p.well_count);
+    for (size_t i = 0; i < p.well_count; ++i) {
+        wells.push_back(read_well(p.wells[i]));
+    }
+    plate.set_wells(wells);
+    return plate;
+}
+
+PyZarrStreamSettings
+read_stream_settings(const ZarrStreamSettings& s)
+{
+    PyZarrStreamSettings out;
+    out.set_store_path(s.store_path ? s.store_path : "");
+    out.set_max_threads(s.max_threads);
+    out.set_overwrite(s.overwrite);
+
+    if (s.s3_settings) {
+        PyZarrS3Settings s3;
+        s3.set_endpoint(s.s3_settings->endpoint ? s.s3_settings->endpoint : "");
+        s3.set_bucket_name(
+          s.s3_settings->bucket_name ? s.s3_settings->bucket_name : "");
+        if (s.s3_settings->region) {
+            s3.set_region(s.s3_settings->region);
+        }
+        out.set_s3(s3);
+    }
+
+    if (s.arrays) {
+        std::vector<PyZarrArraySettings> arrays;
+        arrays.reserve(s.array_count);
+        for (size_t i = 0; i < s.array_count; ++i) {
+            arrays.push_back(read_array(s.arrays[i]));
+        }
+        out.set_arrays(arrays);
+    }
+
+    if (s.hcs_settings) {
+        std::vector<PyZarrPlate> plates;
+        plates.reserve(s.hcs_settings->plate_count);
+        for (size_t i = 0; i < s.hcs_settings->plate_count; ++i) {
+            plates.push_back(read_plate(s.hcs_settings->plates[i]));
+        }
+        out.set_plates(plates);
+    }
+    return out;
+}
+
+PyZarrStreamSettings
+finish_load(ZarrStreamSettings& c, ZarrStatusCode status, const char* what)
+{
+    if (status != ZarrStatusCode_Success) {
+        ZarrStreamSettings_destroy_loaded(&c);
+        throw py::value_error(std::string("Failed to load stream settings from ") +
+                              what + " (see log for details)");
+    }
+    PyZarrStreamSettings out = read_stream_settings(c);
+    ZarrStreamSettings_destroy_loaded(&c);
+    return out;
+}
+
+std::string
+dump_settings(const PyZarrStreamSettings& self, ZarrConfigFormat format)
+{
+    char* text = nullptr;
+    if (ZarrStreamSettings_dump_to_string(self.to_settings(), &text, format) !=
+        ZarrStatusCode_Success) {
+        throw py::value_error("Failed to serialize stream settings");
+    }
+    std::string out(text);
+    free(text);
+    return out;
+}
+} // namespace
 
 class PyZarrStream
 {
@@ -1325,11 +1549,27 @@ class PyZarrStream
             return;
         }
 
+        ZarrStatusCode status = ZarrStatusCode_Success;
         try {
-            stream_.reset(); // calls ZarrStream_destroy
+            // release ownership so the deleter does not also destroy the
+            // stream; ZarrStream_close finalizes, frees, and reports a failed
+            // flush (e.g. an I/O error on a network filesystem). It blocks on
+            // the queue drain + fsyncs, so drop the GIL while it runs.
+            ZarrStream* raw = stream_.release();
+            {
+                py::gil_scoped_release release;
+                status = ZarrStream_close(raw);
+            }
         } catch (const std::exception& exc) {
             std::string err =
               "Failed to close Zarr stream: " + std::string(exc.what());
+            PyErr_SetString(PyExc_RuntimeError, err.c_str());
+            throw py::error_already_set();
+        }
+
+        if (status != ZarrStatusCode_Success) {
+            std::string err = "Failed to close Zarr stream: " +
+                              std::string(Zarr_get_status_message(status));
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }
@@ -1606,6 +1846,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                     std::optional<py::list> dimensions,
                     std::optional<py::object> data_type,
                     std::optional<ZarrDownsamplingMethod> downsampling_method,
+                    uint32_t max_levels,
                     std::optional<py::list> storage_dimension_order,
                     std::optional<bool> is_ngff) {
             PyZarrArraySettings settings;
@@ -1645,6 +1886,7 @@ PYBIND11_MODULE(acquire_zarr, m)
             if (downsampling_method) {
                 settings.set_downsampling_method(*downsampling_method);
             }
+            settings.set_max_levels(max_levels);
             if (is_ngff) {
                 settings.set_is_ngff(*is_ngff);
             }
@@ -1665,6 +1907,7 @@ PYBIND11_MODULE(acquire_zarr, m)
         py::arg("dimensions") = std::nullopt,
         py::arg("data_type") = std::nullopt,
         py::arg("downsampling_method") = std::nullopt,
+        py::arg("max_levels") = 0,
         py::arg("storage_dimension_order") = std::nullopt,
         py::arg("is_ngff") = std::nullopt)
       .def("__repr__",
@@ -1698,6 +1941,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                        case ZarrDownsamplingMethod_Max:
                            method_str = "DownsamplingMethod.MAX";
                            break;
+                       case ZarrDownsamplingMethod_None:
                        default:
                            method_str = "None";
                    }
@@ -1780,6 +2024,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                   obj.cast<ZarrDownsamplingMethod>());
             }
         })
+      .def_property("max_levels",
+                    &PyZarrArraySettings::max_levels,
+                    &PyZarrArraySettings::set_max_levels)
       .def_property("storage_dimension_order",
                     &PyZarrArraySettings::storage_dimension_order,
                     &PyZarrArraySettings::set_storage_dimension_order)
@@ -2301,7 +2548,68 @@ PYBIND11_MODULE(acquire_zarr, m)
             }
             return key_list;
         },
-        "Get a list of all array output keys defined in the stream settings.");
+        "Get a list of all array output keys defined in the stream settings.")
+      .def_static(
+        "from_file",
+        [](const std::string& path) {
+            ZarrStreamSettings c{};
+            auto status = ZarrStreamSettings_load_from_file(&c, path.c_str());
+            return finish_load(c, status, "config file");
+        },
+        py::arg("path"),
+        "Load stream settings from a YAML or JSON config file.")
+      .def_static(
+        "from_string",
+        [](const std::string& text) {
+            ZarrStreamSettings c{};
+            auto status = ZarrStreamSettings_load_from_string(&c, text.c_str());
+            return finish_load(c, status, "config string");
+        },
+        py::arg("text"),
+        "Load stream settings from a YAML or JSON config string.")
+      .def(
+        "to_file",
+        [](const PyZarrStreamSettings& self, const std::string& path) {
+            if (ZarrStreamSettings_dump_to_file(self.to_settings(),
+                                                path.c_str()) !=
+                ZarrStatusCode_Success) {
+                throw py::value_error(
+                  "Failed to write stream settings to " + path);
+            }
+        },
+        py::arg("path"),
+        "Dump stream settings to a config file (format chosen by extension: "
+        "`.json` -> JSON, otherwise YAML).")
+      .def(
+        "to_yaml",
+        [](const PyZarrStreamSettings& self) {
+            return dump_settings(self, ZarrConfigFormat_Yaml);
+        },
+        "Serialize stream settings to a YAML string.")
+      .def(
+        "to_json",
+        [](const PyZarrStreamSettings& self) {
+            return dump_settings(self, ZarrConfigFormat_Json);
+        },
+        "Serialize stream settings to a JSON string.")
+      .def_static(
+        "from_dict",
+        [](const py::object& data) {
+            const std::string text =
+              py::module::import("json").attr("dumps")(data).cast<std::string>();
+            ZarrStreamSettings c{};
+            auto status = ZarrStreamSettings_load_from_string(&c, text.c_str());
+            return finish_load(c, status, "config dict");
+        },
+        py::arg("data"),
+        "Build stream settings from a config dict (same schema as the files).")
+      .def(
+        "to_dict",
+        [](const PyZarrStreamSettings& self) {
+            const std::string text = dump_settings(self, ZarrConfigFormat_Json);
+            return py::module::import("json").attr("loads")(text);
+        },
+        "Serialize stream settings to a config dict.");
 
     py::class_<PyZarrStream>(m, "ZarrStream")
       .def(py::init<PyZarrStreamSettings>())

@@ -29,7 +29,7 @@ main()
         {
             const auto parts_fun = create_parts_fun(2);
             const auto paths =
-              zarr::construct_data_paths("", dimensions, parts_fun);
+              zarr::construct_data_paths("", dimensions, parts_fun, true);
 
             EXPECT_EQ(int, paths.size(), 4);
             EXPECT_STR_EQ(paths[0].c_str(), "0/0");
@@ -41,7 +41,7 @@ main()
         {
             const auto parts_fun = create_parts_fun(3);
             const auto paths =
-              zarr::construct_data_paths("", dimensions, parts_fun);
+              zarr::construct_data_paths("", dimensions, parts_fun, true);
 
             EXPECT_EQ(int, paths.size(), 9);
             EXPECT_STR_EQ(paths[0].c_str(), "0/0");

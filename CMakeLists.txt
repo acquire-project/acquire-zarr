@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(acquire-zarr VERSION 0.7.0)
+project(acquire-zarr VERSION 0.9.0)
 cmake_policy(SET CMP0057 NEW) # allows IN_LIST operator (for pybind11)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()
@@ -17,6 +17,7 @@ find_package(blosc CONFIG REQUIRED)
 #find_package(miniocpp CONFIG REQUIRED) # TODO (aliddell): uncomment when minio-cpp pushes a new release to vcpkg
 find_package(Crc32c CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
+find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenMP REQUIRED)
 
 set(CMAKE_C_STANDARD 11)

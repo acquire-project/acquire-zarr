@@ -3,23 +3,29 @@ set(project acquire-zarr)
 set(tests
         create-stream
         stream-write-metadata
+        metadata-shrink-stale-bytes
         create-stream-simple-array-root
         array-dimensions-chunk-lattice-index
         array-dimensions-tile-group-offset
         array-dimensions-chunk-internal-offset
         array-dimensions-shard-index-for-chunk
         array-dimensions-shard-internal-index
+        array-dimensions-courtesy-flush
         thread-pool-push-to-job-queue
-        make-dirs
+        resolve-max-threads
+        resolve-direct-io
         construct-data-paths
         s3-connection-bucket-exists
         s3-connection-object-exists-check-false-positives
         s3-connection-put-object
         s3-connection-upload-multipart-object
         file-sink-write
+        file-sink-close-on-destroy
+        file-sink-reopen-after-close
+        file-sink-reopen-retry-recovers
+        shard-finalize
         s3-sink-write
         s3-sink-write-multipart
-        make-data-sinks
         array-write-even
         array-write-ragged-append-dim
         array-write-ragged-internal-dim

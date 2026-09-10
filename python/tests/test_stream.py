@@ -29,7 +29,6 @@ from acquire_zarr import (
     S3Settings,
     Dimension,
     DimensionType,
-    ZarrVersion,
     LogLevel,
     DownsamplingMethod,
     Plate,
@@ -305,6 +304,31 @@ def test_create_stream(
 
 
 @pytest.mark.parametrize(
+    ("env_value",),
+    [
+        ("2",),  # valid
+        ("not-a-number",),  # invalid, falls back to auto-detect
+    ],
+)
+def test_create_stream_honors_max_threads_env_var(
+    settings: StreamSettings,
+    store_path: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+):
+    monkeypatch.setenv("ZARR_MAX_THREADS", env_value)
+
+    assert settings.max_threads == 0  # left unset, so the env var applies
+
+    settings.store_path = str(store_path / f"{request.node.name}.zarr")
+    stream = ZarrStream(settings)
+    assert stream
+
+    stream.close()
+
+
+@pytest.mark.parametrize(
     ("compression_codec",),
     [
         (None,),
@@ -384,6 +408,157 @@ def test_stream_data_to_filesystem(
 
         assert data_file_path.is_file()
         assert data_file_path.stat().st_size == shard_size_bytes
+
+
+@pytest.mark.parametrize("ragged", [False, True])
+def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
+    """Large intermediate z with append chunk 1: data round-trips and live
+    memory stays well below the full inner volume (czbiohub-sf/livescreen-acquisition#210).
+    """
+    Y, X, cz = 64, 64, 64
+    Z = 1000 if ragged else 1024  # ragged trailing band when not a multiple
+    dtype = np.uint16
+
+    # full timepoints, then a partial one to exercise the close-time flush
+    n_full_t = 2
+    partial_planes = (Z // 2) + 7
+    n_t = n_full_t + 1
+
+    arr = ArraySettings(
+        dimensions=[
+            Dimension(
+                name="t",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="z",
+                kind=DimensionType.SPACE,
+                array_size_px=Z,
+                chunk_size_px=cz,
+                shard_size_chunks=3,  # doesn't divide 16 chunks: tests padding
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=Y,
+                chunk_size_px=Y,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=X,
+                chunk_size_px=X,
+                shard_size_chunks=1,
+            ),
+        ]
+    )
+    arr.data_type = dtype
+
+    s = StreamSettings()
+    s.store_path = str(store_path / "intermediate.zarr")
+    s.overwrite = True
+    s.arrays = [arr]
+
+    itemsize = np.dtype(dtype).itemsize
+    full_inner_volume = Z * Y * X * itemsize
+    band_bytes = cz * Y * X * itemsize
+    frame_bytes = Y * X * itemsize
+
+    # frame queue: 256 MiB clamped to [16, 512] frames
+    frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
+
+    # the maximum reflects a single z band, not the whole volume
+    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    assert s.get_maximum_memory_usage() == expected_max
+
+    stream = ZarrStream(s)
+    assert stream
+
+    expected = np.zeros((n_t, Z, Y, X), dtype=dtype)
+    peak = 0
+
+    def write_t(t: int, n_planes: int):
+        nonlocal peak
+        for z in range(n_planes):
+            value = (t * Z + z) % np.iinfo(dtype).max
+            frame = np.full((Y, X), value, dtype=dtype)
+            expected[t, z] = frame
+            stream.append(frame)
+            peak = max(peak, stream.get_current_memory_usage())
+
+    for t in range(n_full_t):
+        write_t(t, Z)
+    write_t(n_full_t, partial_planes)  # trailing partial layer
+
+    stream.close()
+
+    # band-by-band flushing keeps live memory well under the full inner volume
+    assert peak < int(full_inner_volume * 0.75), (
+        f"peak memory {peak} not bounded below the full inner volume "
+        f"{full_inner_volume}"
+    )
+
+    array = zarr.open(s.store_path, mode="r")
+    assert array.shape == (n_t, Z, Y, X)
+    assert np.array_equal(array[:], expected)
+
+
+def _make_data(settings: StreamSettings) -> np.ndarray:
+    return np.zeros(
+        (
+            2 * settings.arrays[0].dimensions[0].chunk_size_px,
+            settings.arrays[0].dimensions[1].array_size_px,
+            settings.arrays[0].dimensions[2].array_size_px,
+        ),
+        dtype=np.uint16,
+    )
+
+
+def test_close_raises_on_write_failure(
+    settings: StreamSettings, store_path: Path
+):
+    """A failed write must surface as an exception from close(), not be
+    silently swallowed and leave a corrupt store (regression for #229)."""
+    settings.store_path = str(store_path / "test.zarr")
+    settings.arrays[0].data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    assert stream
+
+    # Place a regular file where the chunk directory tree must be created, so
+    # writes fail with ENOTDIR. Unlike permission bits, this is enforced even
+    # when the test runs as root, keeping it deterministic in CI.
+    chunk_root = store_path / "test.zarr" / "c"
+    if chunk_root.is_dir():
+        shutil.rmtree(chunk_root)
+    elif chunk_root.exists():
+        chunk_root.unlink()
+    chunk_root.write_bytes(b"")
+
+    stream.append(_make_data(settings))
+
+    with pytest.raises(RuntimeError):
+        stream.close()
+
+
+def test_close_is_idempotent(settings: StreamSettings, store_path: Path):
+    """close() may be called more than once; the second call is a no-op and
+    must not double-free the underlying stream."""
+    settings.store_path = str(store_path / "test.zarr")
+    settings.arrays[0].data_type = np.uint16
+
+    stream = ZarrStream(settings)
+    stream.append(_make_data(settings))
+
+    stream.close()
+    stream.close()  # safe no-op
+
+    array = zarr.open(settings.store_path, mode="r")
+    assert array.shape == _make_data(settings).shape
 
 
 @pytest.mark.parametrize(
@@ -1040,6 +1215,87 @@ def test_3d_multiscale_stream(store_path: Path, method: DownsamplingMethod):
         np.testing.assert_array_equal(actual, expected)
 
 
+# see acquire-project/acquire-zarr#226
+def test_odd_z_multi_channel_no_lod_bleed(store_path: Path):
+    T, C, Z, Y, X = 2, 2, 3, 8, 8
+    dtype = np.uint16
+
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=[
+            ArraySettings(
+                output_key="image",
+                data_type=dtype,
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=T,
+                        chunk_size_px=1,
+                        shard_size_chunks=T,
+                    ),
+                    Dimension(
+                        name="c",
+                        kind=DimensionType.CHANNEL,
+                        array_size_px=C,
+                        chunk_size_px=1,
+                        shard_size_chunks=C,
+                    ),
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=Z,
+                        chunk_size_px=1,
+                        shard_size_chunks=Z,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=Y,
+                        chunk_size_px=Y,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=X,
+                        chunk_size_px=X,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                downsampling_method=DownsamplingMethod.MEAN,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    channel_values = [100, 200]
+    for t in range(T):
+        for c in range(C):
+            block = np.full((1, 1, Z, Y, X), channel_values[c], dtype=dtype)
+            stream.append(block, key="image")
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")["image"]
+
+    full_res = np.asarray(group["0"])
+    assert full_res.shape == (T, C, Z, Y, X)
+    for t in range(T):
+        for c in range(C):
+            assert np.all(full_res[t, c] == channel_values[c])
+
+    lod1 = np.asarray(group["1"])
+    assert lod1.shape == (T, C, (Z + 1) // 2, Y, X)
+    for t in range(T):
+        for c in range(C):
+            assert np.all(lod1[t, c] == channel_values[c]), (
+                f"LOD1 bleed at t={t}, c={c}: "
+                f"got values {np.unique(lod1[t, c])}, "
+                f"expected {channel_values[c]}"
+            )
+
+
 @pytest.mark.parametrize(
     ("output_key", "downsampling_method"),
     [
@@ -1170,12 +1426,13 @@ def test_anisotropic_downsampling(settings: StreamSettings, store_path: Path):
     assert "2" in group
     array = group["2"]
     assert array.shape == (250, 500, 500)
-    assert array.chunks == (250, 256, 256)
+    # chunk size is preserved even though z_array (250) < z_chunk (256)
+    assert array.chunks == (256, 256, 256)
 
     assert "3" in group
     array = group["3"]
     assert array.shape == (250, 250, 250)
-    assert array.chunks == (250, 250, 250)
+    assert array.chunks == (256, 256, 256)
 
     assert "4" not in group  # No further downsampling
 
@@ -1890,3 +2147,111 @@ def test_ngff_streams(
     else:
         assert len(multiscales["datasets"]) == 1
         assert "1" not in group  # no pyramid created
+
+
+def test_multiscale_max_levels(store_path: Path):
+    """max_levels limits the number of downsampled pyramid levels.
+
+    128x128 with 32px chunks produces 2 natural downsampled levels (levels 1
+    and 2).  With max_levels=1 only level 1 should be written.
+    """
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=5,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=128,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+                downsampling_method=DownsamplingMethod.MEAN,
+                max_levels=1,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    stream.append(np.zeros((128, 128), dtype=np.uint16))
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")
+    assert "0" in group
+    assert "1" in group
+    assert "2" not in group  # capped by max_levels=1
+
+
+def test_multiscale_chunk_size_preserved(store_path: Path):
+    """Chunk size is preserved at downsampled levels even when smaller than the array.
+
+    Level 1 shrinks y from 48 to 24, which is less than chunk_y=32.  The
+    stored inner chunk shape must remain 32 (not clamped to 24).
+    """
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=4,
+                        chunk_size_px=4,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=32,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+                downsampling_method=DownsamplingMethod.MEAN,
+            )
+        ],
+    )
+
+    stream = ZarrStream(settings)
+    stream.append(np.zeros((4, 48, 64), dtype=np.uint16))
+    stream.close()
+
+    group = zarr.open(settings.store_path, mode="r")
+    assert "0" in group
+    assert "1" in group
+    assert "2" not in group  # only one natural XY level
+
+    lod0 = group["0"]
+    assert lod0.shape == (4, 48, 64)
+    assert lod0.chunks == (4, 32, 32)
+
+    lod1 = group["1"]
+    assert lod1.shape == (4, 24, 32)
+    # chunk_size_px=32 must be preserved even though y_array=24 < y_chunk=32
+    assert lod1.chunks == (4, 32, 32)

@@ -9,10 +9,10 @@ endif ()
 add_library(${tgt}
         macros.hh
         acquire.zarr.cpp
+        settings.io.hh
+        settings.io.cpp
         array.dimensions.hh
         array.dimensions.cpp
-        locked.buffer.hh
-        locked.buffer.cpp
         frame.queue.hh
         frame.queue.cpp
         downsampler.hh
@@ -46,6 +46,10 @@ add_library(${tgt}
         multiscale.array.cpp
         plate.hh
         plate.cpp
+        chunk.hh
+        chunk.cpp
+        shard.hh
+        shard.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
 )
 
@@ -62,18 +66,34 @@ target_link_libraries(${tgt} PRIVATE
         blosc_static
         miniocpp::miniocpp
         Crc32c::crc32c
+        nlohmann_json::nlohmann_json
+        yaml-cpp::yaml-cpp
         $<IF:$<TARGET_EXISTS:zstd::libzstd_static>,zstd::libzstd_static,zstd::libzstd_shared>
         OpenMP::OpenMP_CXX
 )
 
 target_compile_definitions(${tgt} PRIVATE
-        "ACQUIRE_ZARR_API_VERSION=\"0.7.0\""
+        "ACQUIRE_ZARR_API_VERSION=\"0.8.0\""
 )
 
 set_target_properties(${tgt} PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
         POSITION_INDEPENDENT_CODE ON
 )
+
+# Performance: AVX2 baseline for the streaming hot path (tiling/downsample
+# loops). NB: requires an AVX2-capable CPU at runtime; gate for distribution
+# on pre-AVX2 targets. Blosc has its own runtime SIMD dispatch.
+target_enable_simd(${tgt})
+
+# Link-time optimization for Release builds of the hot-path library.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error LANGUAGES CXX)
+if (ipo_supported)
+    set_target_properties(${tgt} PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+else ()
+    message(STATUS "IPO/LTO not supported, skipping: ${ipo_error}")
+endif ()
 
 install(TARGETS ${tgt}
         EXPORT acquire-zarrTargets

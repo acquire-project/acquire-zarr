@@ -1,18 +1,24 @@
 authors:
-- affiliation: Chan Zuckerberg Initiative (United States)
+- affiliation: Chan Zuckerberg Biohub
   family-names: Liddell
   given-names: Alan
-- affiliation: Chan Zuckerberg Initiative (United States)
+- affiliation: Chan Zuckerberg Biohub
   family-names: Eskesen
   given-names: Justin
-- affiliation: Chan Zuckerberg Initiative (United States)
+- affiliation: Chan Zuckerberg Biohub
   family-names: Clack
   given-names: Nathan
-  orcid: 0000-0001-6236-9282
+  orcid: https://orcid.org/0000-0001-6236-9282
 cff-version: 1.2.0
-date-released: '2025-02-06'
-doi: 10.5280/zenodo.14828040
-license:
-- apache-2.0
+date-released: '2026-08-11'
+doi: 10.5281/zenodo.21892791
+identifiers:
+- type: doi
+  value: 10.5281/zenodo.14828040
+  description: The concept DOI of the work
+license: Apache-2.0
+message: If you use this software, please cite it using the metadata from this file.
+repository-code: https://github.com/acquire-project/acquire-zarr
 title: 'acquire-zarr: Streaming directly to Zarr on the file system or cloud'
 type: software
+version: 0.9.0

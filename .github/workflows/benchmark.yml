@@ -35,6 +35,10 @@ jobs:
     permissions:
       actions: write
 
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,10 +49,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13.3"
+          cache: 'pip'
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19
+          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -60,50 +78,34 @@ jobs:
         run: |
           brew install libomp
 
+      # VS18 has no CMake 3.31 generator; set up MSVC and drive scikit-build
+      # with Ninja via CMAKE_GENERATOR (see test.yml for the full rationale).
+      - name: Set up MSVC environment
+        if: startsWith(matrix.platform, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Use Ninja generator on Windows
+        if: startsWith(matrix.platform, 'windows')
+        run: echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+        shell: bash
+
       - name: Install dependencies
-        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich psutil
+        run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build tensorstore click rich psutil matplotlib
 
       - name: Build and install Python bindings
         run: python -m pip install ".[testing]"
 
       - name: Run benchmark
-        run: python benchmarks/benchmark.py --nocompare --output benchmark-${{ matrix.platform }}-${{ github.sha }}.json
+        run: python benchmarks/benchmark.py --nocompare --output benchmark-${{ matrix.platform }}-${{ github.sha }}.json --num-runs 3
+
+      - name: Package artifacts
+        run: tar -cvzf benchmark-results-${{ matrix.platform }}-${{ github.sha }}.tar.gz benchmark-${{ matrix.platform }}-${{ github.sha }}.json benchmark-${{ matrix.platform }}-${{ github.sha }}_viz.png
+        shell: bash
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-${{ matrix.platform }}-${{ github.sha }}
           path: benchmark-${{ matrix.platform }}-${{ github.sha }}.json
-
-  generate-plots:
-    name: Generate benchmark plots
-    needs: run-benchmark
-    runs-on: ubuntu-latest
-    if: always()  # Run even if some benchmark jobs fail
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13.3"
-
-      - name: Install plotting dependencies
-        run: pip install matplotlib click
-
-      - name: Download all benchmark artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: benchmark-*
-          path: benchmark-results
-          merge-multiple: true
-
-      - name: Generate plots
-        run: python benchmarks/plot_benchmarks.py --input-dir benchmark-results --output-prefix benchmark_comparison
-
-      - name: Upload plot
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-plots-${{ github.sha }}
-          path: benchmark_comparison_*.png

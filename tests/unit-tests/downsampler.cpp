@@ -9,7 +9,7 @@ namespace {
 
 // Helper to create simple test images
 template<typename T>
-zarr::LockedBuffer
+std::vector<uint8_t>
 create_test_image(size_t width, size_t height, T value = 100)
 {
     ByteVector data(width * height * sizeof(T), 0);
@@ -19,7 +19,7 @@ create_test_image(size_t width, size_t height, T value = 100)
         typed_data[i] = value;
     }
 
-    return { std::move(data) };
+    return std::move(data);
 }
 
 void
@@ -56,7 +56,7 @@ test_basic_downsampling()
     // Add the frame and check that downsampled version is created
     downsampler.add_frame(image);
 
-    zarr::LockedBuffer downsampled;
+    std::vector<uint8_t> downsampled;
     bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(has_frame, "Downsampled frame not found");
 
@@ -65,11 +65,9 @@ test_basic_downsampling()
 
     // Verify the downsampled values (should still be 100 since all input pixels
     // were 100)
-    downsampled.with_lock([](auto& data) {
-        for (size_t i = 0; i < 5 * 5; ++i) {
-            EXPECT_EQ(uint8_t, data[i], 100);
-        }
-    });
+    for (size_t i = 0; i < 5 * 5; ++i) {
+        EXPECT_EQ(uint8_t, downsampled[i], 100);
+    }
 
     // Check frame is removed from cache after retrieval
     has_frame = downsampler.take_frame(1, downsampled);
@@ -110,7 +108,7 @@ test_3d_downsampling()
     // Add first frame - should be stored in partial_scaled_frames_
     downsampler.add_frame(image1);
 
-    zarr::LockedBuffer downsampled;
+    std::vector<uint8_t> downsampled;
     bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(!has_frame, "Downsampled frame should not be ready yet in 3D mode");
 
@@ -122,12 +120,10 @@ test_3d_downsampling()
     EXPECT(has_frame, "Downsampled frame not found after second frame");
 
     // Verify the values (should be average of 100 and 200 = 150)
-    downsampled.with_lock([](auto& data) {
-        auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-        for (size_t i = 0; i < 10 * 10; ++i) {
-            EXPECT_EQ(uint16_t, typed_downsampled[i], 150);
-        }
-    });
+    auto* typed_downsampled = reinterpret_cast<uint16_t*>(downsampled.data());
+    for (size_t i = 0; i < 10 * 10; ++i) {
+        EXPECT_EQ(uint16_t, typed_downsampled[i], 150);
+    }
 
     // second level shouldn't be ready yet
     has_frame = downsampler.take_frame(2, downsampled);
@@ -151,12 +147,10 @@ test_3d_downsampling()
     EXPECT(has_frame, "Downsampled frame not found after fourth frame");
 
     // Verify the values (should be average of 100, 200, 300, and 400 = 250)
-    downsampled.with_lock([](auto& data) {
-        auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-        for (size_t i = 0; i < 5 * 5; ++i) {
-            EXPECT_EQ(uint16_t, typed_downsampled[i], 250);
-        }
-    });
+    typed_downsampled = reinterpret_cast<uint16_t*>(downsampled.data());
+    for (size_t i = 0; i < 5 * 5; ++i) {
+        EXPECT_EQ(uint16_t, typed_downsampled[i], 250);
+    }
 }
 
 void
@@ -194,7 +188,7 @@ test_data_types()
             zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
             // Add a frame based on the type
-            zarr::LockedBuffer image;
+            std::vector<uint8_t> image;
             size_t pixel_size = 0;
 
             switch (type) {
@@ -245,7 +239,7 @@ test_data_types()
 
             downsampler.add_frame(image);
 
-            zarr::LockedBuffer downsampled;
+            std::vector<uint8_t> downsampled;
             bool has_frame = downsampler.take_frame(1, downsampled);
             EXPECT(has_frame,
                    "Downsampled frame not found for type " +
@@ -374,7 +368,7 @@ test_anisotropic_writer_configurations()
 
     // Check that spatial dimensions are downsampled
     {
-        const auto level = 1;
+        constexpr auto level = 1;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
@@ -389,7 +383,7 @@ test_anisotropic_writer_configurations()
     }
 
     {
-        const auto level = 2;
+        constexpr auto level = 2;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
@@ -397,22 +391,22 @@ test_anisotropic_writer_configurations()
         EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
-        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 512);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
         EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
     }
 
     {
-        const auto level = 3;
+        constexpr auto level = 3;
         const auto lvl_config = configs.at(level);
         const auto& lvl_dims = lvl_config->dimensions;
 
         EXPECT_EQ(uint32_t, lvl_dims->at(2).array_size_px, 125);
-        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 125);
+        EXPECT_EQ(uint32_t, lvl_dims->at(2).chunk_size_px, 128);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(3).array_size_px, 500);
-        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 500);
+        EXPECT_EQ(uint32_t, lvl_dims->at(3).chunk_size_px, 512);
 
         EXPECT_EQ(uint32_t, lvl_dims->at(4).array_size_px, 500);
         EXPECT_EQ(uint32_t, lvl_dims->at(4).chunk_size_px, 256);
@@ -445,10 +439,10 @@ test_edge_cases()
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
     // Create a test image (11x11)
-    zarr::LockedBuffer image(std::move(ByteVector(11 * 11, 100)));
+    std::vector<uint8_t> image(11 * 11, 100);
     downsampler.add_frame(image);
 
-    zarr::LockedBuffer downsampled;
+    std::vector<uint8_t> downsampled;
     bool has_frame = downsampler.take_frame(1, downsampled);
     EXPECT(has_frame, "Downsampled frame not found for odd dimensions");
 
@@ -479,37 +473,32 @@ test_min_max_downsampling()
 
     // Create a test image with a pattern that will show different results for
     // min/max/mean
-    zarr::LockedBuffer image(
-      std::move(ByteVector(10 * 10 * sizeof(uint8_t), 0)));
-    image.with_lock([](auto& data) {
-        auto* typed_data = reinterpret_cast<uint8_t*>(data.data());
+    std::vector<uint8_t> image(10 * 10 * sizeof(uint8_t), 0);
+    auto* typed_data = reinterpret_cast<uint8_t*>(image.data());
 
-        // Create a pattern where each 2x2 block has values [100, 200, 150, 250]
-        for (size_t y = 0; y < 10; y += 2) {
-            for (size_t x = 0; x < 10; x += 2) {
-                typed_data[y * 10 + x] = 100;             // top-left
-                typed_data[y * 10 + (x + 1)] = 200;       // top-right
-                typed_data[(y + 1) * 10 + x] = 150;       // bottom-left
-                typed_data[(y + 1) * 10 + (x + 1)] = 250; // bottom-right
-            }
+    // Create a pattern where each 2x2 block has values [100, 200, 150, 250]
+    for (size_t y = 0; y < 10; y += 2) {
+        for (size_t x = 0; x < 10; x += 2) {
+            typed_data[y * 10 + x] = 100;             // top-left
+            typed_data[y * 10 + (x + 1)] = 200;       // top-right
+            typed_data[(y + 1) * 10 + x] = 150;       // bottom-left
+            typed_data[(y + 1) * 10 + (x + 1)] = 250; // bottom-right
         }
-    });
+    }
 
     // Test with mean downsampling
     {
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Mean downsampled frame not found");
 
-        downsampled.with_lock([](auto& data) {
-            // For mean, we expect (100 + 200 + 150 + 250) / 4 = 175
-            for (size_t i = 0; i < 5 * 5; ++i) {
-                EXPECT_EQ(uint8_t, data[i], 175);
-            }
-        });
+        // For mean, we expect (100 + 200 + 150 + 250) / 4 = 175
+        for (size_t i = 0; i < 5 * 5; ++i) {
+            EXPECT_EQ(uint8_t, downsampled[i], 175);
+        }
     }
 
     // Test with min downsampling
@@ -518,16 +507,14 @@ test_min_max_downsampling()
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Min);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
-        downsampled.with_lock([](auto& data) {
-            // For min, we expect min(100, 200, 150, 250) = 100
-            for (size_t i = 0; i < 5 * 5; ++i) {
-                EXPECT_EQ(uint8_t, data[i], 100);
-            }
-        });
+        // For min, we expect min(100, 200, 150, 250) = 100
+        for (size_t i = 0; i < 5 * 5; ++i) {
+            EXPECT_EQ(uint8_t, downsampled[i], 100);
+        }
     }
 
     // Test with max downsampling
@@ -536,16 +523,14 @@ test_min_max_downsampling()
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Max);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Max downsampled frame not found");
 
-        downsampled.with_lock([](auto& data) {
-            // For max, we expect max(100, 200, 150, 250) = 250
-            for (size_t i = 0; i < 5 * 5; ++i) {
-                EXPECT_EQ(uint8_t, data[i], 250);
-            }
-        });
+        // For max, we expect max(100, 200, 150, 250) = 250
+        for (size_t i = 0; i < 5 * 5; ++i) {
+            EXPECT_EQ(uint8_t, downsampled[i], 250);
+        }
     }
 }
 
@@ -583,17 +568,16 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image1);
         downsampler.add_frame(image2);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found after second frame");
 
-        downsampled.with_lock([](auto& data) {
-            // Verify the values (should be min of 100 and 200 = 100)
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 10 * 10; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], 100);
-            }
-        });
+        // Verify the values (should be min of 100 and 200 = 100)
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 10 * 10; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], 100);
+        }
     }
 
     // Test with max downsampling
@@ -608,17 +592,16 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image1);
         downsampler.add_frame(image2);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Max downsampled frame not found after second frame");
 
-        downsampled.with_lock([](auto& data) {
-            // Verify the values (should be max of 100 and 200 = 200)
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 10 * 10; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], 200);
-            }
-        });
+        // Verify the values (should be max of 100 and 200 = 200)
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 10 * 10; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], 200);
+        }
     }
 
     // Test multi-level downsampling with max
@@ -635,17 +618,16 @@ test_3d_min_max_downsampling()
         downsampler.add_frame(image3);
         downsampler.add_frame(image4);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(2, downsampled);
         EXPECT(has_frame, "Level 2 max downsampled frame not found");
 
-        downsampled.with_lock([](auto& data) {
-            // Verify the values (should be max of all values = 400)
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 5 * 5; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], 400);
-            }
-        });
+        // Verify the values (should be max of all values = 400)
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 5 * 5; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], 400);
+        }
     }
 }
 
@@ -671,59 +653,53 @@ test_pattern_downsampling()
                                           true);
 
     // Create a test image with a gradient pattern
-    zarr::LockedBuffer image(
-      std::move(ByteVector(8 * 8 * sizeof(uint16_t), 0)));
+    std::vector<uint8_t> image(8 * 8 * sizeof(uint16_t), 0);
 
     std::vector<uint16_t> expected_mean(4 * 4);
     std::vector<uint16_t> expected_min(4 * 4);
     std::vector<uint16_t> expected_max(4 * 4);
-    image.with_lock([&](auto& data) {
-        auto* typed_data = reinterpret_cast<uint16_t*>(data.data());
+    auto* typed_data = reinterpret_cast<uint16_t*>(image.data());
 
-        // Values increase from left to right and top to bottom
-        for (size_t y = 0; y < 8; ++y) {
-            for (size_t x = 0; x < 8; ++x) {
-                typed_data[y * 8 + x] =
-                  static_cast<uint16_t>(100 + x * 20 + y * 50);
-            }
+    // Values increase from left to right and top to bottom
+    for (size_t y = 0; y < 8; ++y) {
+        for (size_t x = 0; x < 8; ++x) {
+            typed_data[y * 8 + x] =
+              static_cast<uint16_t>(100 + x * 20 + y * 50);
         }
+    }
 
-        // Get expected results for various methods
-        for (size_t y = 0; y < 4; ++y) {
-            for (size_t x = 0; x < 4; ++x) {
-                uint16_t v1 = typed_data[(y * 2) * 8 + (x * 2)]; // top-left
-                uint16_t v2 =
-                  typed_data[(y * 2) * 8 + (x * 2 + 1)]; // top-right
-                uint16_t v3 =
-                  typed_data[(y * 2 + 1) * 8 + (x * 2)]; // bottom-left
-                uint16_t v4 =
-                  typed_data[(y * 2 + 1) * 8 + (x * 2 + 1)]; // bottom-right
+    // Get expected results for various methods
+    for (size_t y = 0; y < 4; ++y) {
+        for (size_t x = 0; x < 4; ++x) {
+            uint16_t v1 = typed_data[(y * 2) * 8 + (x * 2)];     // top-left
+            uint16_t v2 = typed_data[(y * 2) * 8 + (x * 2 + 1)]; // top-right
+            uint16_t v3 = typed_data[(y * 2 + 1) * 8 + (x * 2)]; // bottom-left
+            uint16_t v4 =
+              typed_data[(y * 2 + 1) * 8 + (x * 2 + 1)]; // bottom-right
 
-                expected_mean[y * 4 + x] =
-                  static_cast<uint16_t>((v1 + v2 + v3 + v4) / 4);
-                expected_min[y * 4 + x] =
-                  std::min(std::min(v1, v2), std::min(v3, v4));
-                expected_max[y * 4 + x] =
-                  std::max(std::max(v1, v2), std::max(v3, v4));
-            }
+            expected_mean[y * 4 + x] =
+              static_cast<uint16_t>((v1 + v2 + v3 + v4) / 4);
+            expected_min[y * 4 + x] =
+              std::min(std::min(v1, v2), std::min(v3, v4));
+            expected_max[y * 4 + x] =
+              std::max(std::max(v1, v2), std::max(v3, v4));
         }
-    });
+    }
 
     // Test with mean downsampling
     {
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Mean downsampled frame not found");
 
-        downsampled.with_lock([&expected_mean](auto& data) {
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 4 * 4; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], expected_mean[i]);
-            }
-        });
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 4 * 4; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], expected_mean[i]);
+        }
     }
 
     // Test with min downsampling
@@ -732,16 +708,15 @@ test_pattern_downsampling()
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Min);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
-        downsampled.with_lock([&expected_min](auto& data) {
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 4 * 4; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], expected_min[i]);
-            }
-        });
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 4 * 4; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], expected_min[i]);
+        }
     }
 
     // Test with max downsampling
@@ -750,17 +725,74 @@ test_pattern_downsampling()
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Max);
         downsampler.add_frame(image);
 
-        zarr::LockedBuffer downsampled;
+        std::vector<uint8_t> downsampled;
         bool has_frame = downsampler.take_frame(1, downsampled);
         EXPECT(has_frame, "Min downsampled frame not found");
 
-        downsampled.with_lock([&expected_max](auto& data) {
-            auto* typed_downsampled = reinterpret_cast<uint16_t*>(data.data());
-            for (size_t i = 0; i < 4 * 4; ++i) {
-                EXPECT_EQ(uint16_t, typed_downsampled[i], expected_max[i]);
-            }
-        });
+        auto* typed_downsampled =
+          reinterpret_cast<uint16_t*>(downsampled.data());
+        for (size_t i = 0; i < 4 * 4; ++i) {
+            EXPECT_EQ(uint16_t, typed_downsampled[i], expected_max[i]);
+        }
     }
+}
+void
+test_max_levels()
+{
+    // Without max_levels, these dimensions would produce 3 downsampled levels
+    // (levels 1, 2, 3) plus the base (level 0) = 4 total.
+    std::vector<ZarrDimension> dimensions = {
+        { "t", ZarrDimensionType_Time, 100, 10, 1 },
+        { "y", ZarrDimensionType_Space, 512, 64, 1 },
+        { "x", ZarrDimensionType_Space, 512, 64, 1 },
+    };
+
+    auto dims = std::make_shared<ArrayDimensions>(
+      std::vector<ZarrDimension>(dimensions), ZarrDataType_uint16);
+
+    auto config =
+      std::make_shared<zarr::ArrayConfig>("",
+                                          "/0",
+                                          std::nullopt,
+                                          std::nullopt,
+                                          dims,
+                                          ZarrDataType_uint16,
+                                          ZarrDownsamplingMethod_Mean,
+                                          0,
+                                          true,
+                                          2 /* max_levels */);
+
+    zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
+    const auto& configs = downsampler.writer_configurations();
+
+    EXPECT(configs.size() == 3,
+           "Expected 3 writer configurations (levels 0-2), got ",
+           configs.size());
+
+    EXPECT(configs.count(0) > 0, "Level 0 configuration missing");
+    EXPECT(configs.count(1) > 0, "Level 1 configuration missing");
+    EXPECT(configs.count(2) > 0, "Level 2 configuration missing");
+    EXPECT(configs.count(3) == 0, "Level 3 should not exist with max_levels=2");
+
+    // max_levels=0 means no limit — verify all levels are produced
+    config = std::make_shared<zarr::ArrayConfig>("",
+                                                 "/0",
+                                                 std::nullopt,
+                                                 std::nullopt,
+                                                 dims,
+                                                 ZarrDataType_uint16,
+                                                 ZarrDownsamplingMethod_Mean,
+                                                 0,
+                                                 true,
+                                                 0 /* max_levels */);
+
+    zarr::Downsampler downsampler2(config, ZarrDownsamplingMethod_Mean);
+    const auto& configs2 = downsampler2.writer_configurations();
+
+    EXPECT(configs2.size() > 3,
+           "Expected more than 3 writer configurations without max_levels limit, "
+           "got ",
+           configs2.size());
 }
 } // namespace zarr::test
 
@@ -779,6 +811,7 @@ main()
         test_min_max_downsampling();
         test_3d_min_max_downsampling();
         test_pattern_downsampling();
+        test_max_levels();
 
         retval = 0;
     } catch (const std::exception& e) {

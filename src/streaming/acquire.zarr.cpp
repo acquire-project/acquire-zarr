@@ -3,8 +3,9 @@
 #include "zarr.common.hh"
 #include "zarr.stream.hh"
 
-#include <bit>     // bit_ceil
-#include <cstdint> // uint32_t
+#include <algorithm> // std::clamp, std::max
+#include <bit>       // bit_ceil
+#include <cstdint>   // uint32_t
 #include <unordered_set>
 #include <vector>
 
@@ -234,7 +235,28 @@ extern "C"
 
         EXPECT_VALID_ARGUMENT(usage, "Null pointer: usage");
 
-        *usage = (1 << 30); // start with 1 GiB for the frame queue
+        // frame queue: mirror init_frame_queue_ (256 MiB, clamped to [16, 512]
+        // frames sized by the largest array's frame)
+        size_t max_frame_size_bytes = 0;
+        for (size_t i = 0; i < settings->array_count; ++i) {
+            const auto& array = settings->arrays[i];
+            const auto& dims = array.dimensions;
+            const auto& ndims = array.dimension_count;
+            const size_t frame_size_bytes =
+              zarr::bytes_of_type(array.data_type) *
+              dims[ndims - 2].array_size_px * dims[ndims - 1].array_size_px;
+            max_frame_size_bytes =
+              std::max(max_frame_size_bytes, frame_size_bytes);
+        }
+
+        constexpr uint64_t frame_queue_budget_bytes = 256ULL << 20;
+        if (max_frame_size_bytes > 0) {
+            const auto frame_count = std::clamp<uint64_t>(
+              frame_queue_budget_bytes / max_frame_size_bytes, 16ULL, 512ULL);
+            *usage = frame_count * max_frame_size_bytes;
+        } else {
+            *usage = 0;
+        }
 
         for (size_t i = 0; i < settings->array_count; ++i) {
             const auto& array = settings->arrays[i];
@@ -248,6 +270,12 @@ extern "C"
 
             *usage += frame_size_bytes; // each array has a frame buffer
 
+            // banding bounds memory to one dim-1 band; mirror
+            // supports_dim1_banding (no transposition) to stay an upper bound
+            // @see czbiohub-sf/livescreen-acquisition#210
+            const bool banded = dims[0].chunk_size_px == 1 && ndims >= 4 &&
+                                array.storage_dimension_order == nullptr;
+
             size_t array_usage = bytes_of_type * dims[0].chunk_size_px;
             for (auto j = 1; j < ndims; ++j) {
                 const auto& dim = dims[j];
@@ -257,7 +285,11 @@ extern "C"
                   dim.array_size_px, dim.chunk_size_px);
                 size_t padded_array_size_px = nchunks * dim.chunk_size_px;
 
-                array_usage *= padded_array_size_px;
+                if (banded && j == 1) {
+                    array_usage *= dim.chunk_size_px;
+                } else {
+                    array_usage *= padded_array_size_px;
+                }
             }
 
             // compression can instantaneously double memory usage in the worst
@@ -615,13 +647,23 @@ extern "C"
         return stream;
     }
 
-    void ZarrStream_destroy(struct ZarrStream_s* stream)
+    ZarrStatusCode ZarrStream_close(struct ZarrStream_s* stream)
     {
-        if (!finalize_stream(stream)) {
-            return;
+        if (stream == nullptr) {
+            return ZarrStatusCode_Success;
         }
 
+        const bool ok = finalize_stream(stream);
         delete stream;
+
+        return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;
+    }
+
+    void ZarrStream_destroy(struct ZarrStream_s* stream)
+    {
+        // Ignore the status: callers that need to detect a failed flush should
+        // use ZarrStream_close instead.
+        (void)ZarrStream_close(stream);
     }
 
     ZarrStatusCode ZarrStream_append(struct ZarrStream_s* stream,

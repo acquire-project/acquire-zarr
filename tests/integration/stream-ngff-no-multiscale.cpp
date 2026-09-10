@@ -327,7 +327,7 @@ verify_file_data()
         CHECK(!fs::is_directory(t_dir / std::to_string(shards_in_c)));
     }
 
-    CHECK(!fs::is_directory(data_root / "c" / std::to_string(shards_in_t)));
+    CHECK(!fs::is_directory(data_root / "0/c" / std::to_string(shards_in_t)));
 }
 
 void

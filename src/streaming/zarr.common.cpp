@@ -4,6 +4,10 @@
 #include <blosc.h>
 #include <zstd.h>
 
+#include <algorithm>
+#include <cctype>
+#include <charconv>
+#include <cstdlib>
 #include <regex>
 #include <stdexcept>
 
@@ -173,6 +177,59 @@ zarr::regularize_key(const char* key)
     }
 
     return regularize_key(std::string_view{ key });
+}
+
+uint32_t
+zarr::resolve_max_threads(uint32_t requested_max_threads)
+{
+    if (requested_max_threads != 0) {
+        return requested_max_threads;
+    }
+
+    const char* env = std::getenv("ZARR_MAX_THREADS");
+    if (env == nullptr || *env == '\0') {
+        return 0;
+    }
+
+    const std::string_view value{ env };
+    uint32_t parsed = 0;
+    const auto result =
+      std::from_chars(value.data(), value.data() + value.size(), parsed);
+
+    if (result.ec != std::errc{} ||
+        result.ptr != value.data() + value.size() || parsed == 0) {
+        LOG_WARNING(
+          "Ignoring invalid ZARR_MAX_THREADS value: '", value, "'");
+        return 0;
+    }
+
+    return parsed;
+}
+
+bool
+zarr::resolve_direct_io()
+{
+    const char* env = std::getenv("ZARR_DIRECT_IO");
+    if (env == nullptr || *env == '\0') {
+        return false;
+    }
+
+    std::string value{ env };
+    std::transform(value.begin(), value.end(), value.begin(), [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    });
+
+    if (value == "1" || value == "true" || value == "on" || value == "yes") {
+        return true;
+    }
+
+    if (value == "0" || value == "false" || value == "off" || value == "no") {
+        return false;
+    }
+
+    // Fail closed: enabling this by mistake fails every write with EINVAL.
+    LOG_WARNING("Ignoring invalid ZARR_DIRECT_IO value: '", env, "'");
+    return false;
 }
 
 std::string

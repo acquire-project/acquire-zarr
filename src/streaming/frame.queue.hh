@@ -1,7 +1,6 @@
 #pragma once
 
 #include "definitions.hh"
-#include "locked.buffer.hh"
 
 #include <atomic>
 #include <condition_variable>
@@ -16,8 +15,11 @@ class FrameQueue
     explicit FrameQueue(size_t num_frames, size_t avg_frame_size);
     ~FrameQueue() = default;
 
-    bool push(LockedBuffer& frame, const std::string& key);
-    bool pop(LockedBuffer& frame, std::string& key);
+    bool push(const std::span<const uint8_t>& frame,
+              const std::string& key,
+              uint64_t frame_id);
+
+    bool pop(std::vector<uint8_t>& frame, std::string& key_, uint64_t& frame_id_);
 
     size_t size() const;
     size_t bytes_used() const;
@@ -29,7 +31,8 @@ class FrameQueue
     struct Frame
     {
         std::string key;
-        LockedBuffer data;
+        std::vector<uint8_t> data;
+        uint64_t frame_id;
         std::atomic<bool> ready{ false };
     };
 
@@ -40,6 +43,6 @@ class FrameQueue
     std::atomic<size_t> write_pos_{ 0 };
     std::atomic<size_t> read_pos_{ 0 };
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
 };
 } // namespace zarr

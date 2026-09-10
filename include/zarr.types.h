@@ -105,6 +105,16 @@ extern "C"
     } ZarrDownsamplingMethod;
 
     /**
+     * @brief Serialization format for stream settings config files.
+     */
+    typedef enum
+    {
+        ZarrConfigFormat_Yaml = 0,
+        ZarrConfigFormat_Json,
+        ZarrConfigFormatCount,
+    } ZarrConfigFormat;
+
+    /**
      * @brief S3 settings for streaming to Zarr.
      */
     typedef struct
@@ -170,6 +180,8 @@ extern "C"
         size_t dimension_count;
         ZarrDataType data_type;
         ZarrDownsamplingMethod downsampling_method;
+        uint32_t max_levels; /**< Maximum number of downsampled levels in the
+                                  pyramid. 0 means no limit. */
         const size_t* storage_dimension_order;
         bool is_ngff;
     } ZarrArraySettings;
@@ -177,9 +189,9 @@ extern "C"
     /**
      * @brief Settings for a field of view in a high-content screening (HCS)
      * well.
-     * @note @p array_settings->output_key must be @p NULL, because the path to
+     * @note @p array_settings->output_key must be NULL, because the path to
      * the array is fully specified by @p path. Validation will fail if it is
-     * non-NULL
+     * non-NULL.
      */
     typedef struct
     {

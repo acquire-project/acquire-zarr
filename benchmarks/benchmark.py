@@ -1,7 +1,8 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "acquire-zarr>=0.5.2",
+#     "acquire-zarr>=0.6.0",
+#     "matplotlib",
 #     "zarr",
 #     "rich",
 #     "tensorstore",
@@ -326,7 +327,7 @@ def compare(
 
         try:
             print("\nCleaning up acquire-zarr output...", end="")
-            shutil.rmtree(az_path) # cleanup
+            shutil.rmtree(az_path)  # cleanup
             print("[OK]")
         except Exception as e:
             print("[ERROR]", e)
@@ -402,6 +403,131 @@ def compare(
     return results
 
 
+def summarize_runs(runs: list[dict]) -> dict:
+    """Compute mean/std/min/max across runs for tracked metrics."""
+    metrics = {
+        "az": [
+            "throughput_gib_per_s",
+            "frame_write_time_50th_percentile_ms",
+            "frame_write_time_99th_percentile_ms",
+        ],
+        "ts": [
+            "throughput_gib_per_s",
+            "frame_write_time_50th_percentile_ms",
+            "frame_write_time_99th_percentile_ms",
+        ],
+    }
+    summary = {}
+
+    for lib, lib_key in [("az", "acquire_zarr"), ("ts", "tensorstore")]:
+        summary[lib_key] = {}
+        for metric in metrics[lib]:
+            values = np.array([r[lib_key][metric] for r in runs])
+            summary[lib_key][metric] = {
+                "mean": float(np.mean(values)),
+                "std": float(np.std(values)),
+                "min": float(np.min(values)),
+                "max": float(np.max(values)),
+            }
+
+    ratio_values = np.array([r["ratio_ts_to_az"] for r in runs])
+    summary["ratio_ts_to_az"] = {
+        "mean": float(np.mean(ratio_values)),
+        "std": float(np.std(ratio_values)),
+        "min": float(np.min(ratio_values)),
+        "max": float(np.max(ratio_values)),
+    }
+
+    return summary
+
+
+
+def visualize(runs: list[dict], summary: dict, output_prefix: str = "results") -> None:
+    def _add_summary_lines(ax, mean: float, color: str) -> None:
+        """Draw a dashed mean line across the axis."""
+        ax.axhline(mean, color=color, linestyle="--", linewidth=1.0, alpha=0.7)
+
+    DISTRIBUTION_THRESHOLD = 20 # switch to boxplots if we have this many runs to show variability
+
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
+
+    n_runs = len(runs)
+    run_labels = [f"Run {i+1}" for i in range(n_runs)]
+    use_distribution = n_runs >= DISTRIBUTION_THRESHOLD
+
+    az_color = "#4C72B0"
+    ts_color = "#DD8452"
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig.suptitle("TensorStore vs. acquire-zarr Benchmark", fontsize=14, fontweight="bold")
+
+    metrics = [
+        ("throughput_gib_per_s",                  "Throughput (GiB/s)",          axes[0, 0]),
+        ("frame_write_time_50th_percentile_ms",    "Frame Write Time — p50 (ms)", axes[0, 1]),
+        ("frame_write_time_99th_percentile_ms",    "Frame Write Time — p99 (ms)", axes[1, 0]),
+    ]
+
+    x = np.arange(n_runs)
+    w = 0.35
+
+    for metric, title, ax in metrics:
+        az_vals = [r["acquire_zarr"][metric] for r in runs]
+        ts_vals = [r["tensorstore"][metric] for r in runs]
+
+        if use_distribution:
+            ax.boxplot(
+                [az_vals, ts_vals],
+                labels=["acquire-zarr", "TensorStore"],
+                patch_artist=True,
+                boxprops=dict(facecolor="none"),
+                medianprops=dict(linewidth=2),
+            )
+            # color the median lines manually
+            for patch, color in zip(ax.patches, [az_color, ts_color]):
+                patch.set_edgecolor(color)
+            for line, color in zip(ax.lines[4::6], [az_color, ts_color]):  # median lines
+                line.set_color(color)
+        else:
+            ax.bar(x - w/2, az_vals, w, label="acquire-zarr", color=az_color)
+            ax.bar(x + w/2, ts_vals, w, label="TensorStore", color=ts_color)
+            _add_summary_lines(ax, summary["acquire_zarr"][metric]["mean"], az_color)
+            _add_summary_lines(ax, summary["tensorstore"][metric]["mean"], ts_color)
+            ax.set_xticks(x)
+            ax.set_xticklabels(run_labels, rotation=45 if n_runs > 10 else 0)
+            ax.legend()
+
+        ax.set_title(title)
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+
+    # --- TS/AZ ratio (single-series, same logic) ---
+    ax = axes[1, 1]
+    ratio_vals = [r["ratio_ts_to_az"] for r in runs]
+
+    if use_distribution:
+        ax.boxplot(
+            [ratio_vals],
+            labels=["TS/AZ ratio"],
+            patch_artist=True,
+            boxprops=dict(facecolor="none", edgecolor="#55A868"),
+            medianprops=dict(color="#55A868", linewidth=2),
+        )
+    else:
+        ax.bar(x, ratio_vals, 0.5, color="#55A868")
+        _add_summary_lines(ax, summary["ratio_ts_to_az"]["mean"], "#55A868")
+        ax.set_xticks(x)
+        ax.set_xticklabels(run_labels, rotation=45 if n_runs > 10 else 0)
+
+    ax.axhline(1.0, color="black", linestyle="--", linewidth=0.8, label="Parity (1.0)")
+    ax.set_title("TS / AZ Time Ratio (higher = AZ faster)")
+    ax.legend()
+
+    fig.tight_layout()
+    plot_path = f"{output_prefix}_viz.png"
+    fig.savefig(plot_path, dpi=150)
+    print(f"Plot saved to {plot_path}")
+
+
 @click.command()
 @click.option("--t-chunk-size", default=64, help="Time dimension chunk size")
 @click.option(
@@ -412,6 +538,9 @@ def compare(
 )
 @click.option("--frame-count", default=1024, help="Number of frames to write")
 @click.option(
+    "--num-runs", default=5, help="Number of repeated benchmark runs"
+)
+@click.option(
     "--output", default="results.json", help="Output file for results"
 )
 @click.option(
@@ -420,17 +549,41 @@ def compare(
     help="Disable data comparison between implementations",
 )
 def main(
-    t_chunk_size, xy_chunk_size, xy_shard_size, frame_count, output, nocompare
+    t_chunk_size,
+    xy_chunk_size,
+    xy_shard_size,
+    frame_count,
+    num_runs,
+    output,
+    nocompare,
 ):
     """Compare write performance of TensorStore vs. acquire-zarr for a Zarr v3 store."""
-    results = compare(
-        t_chunk_size, xy_chunk_size, xy_shard_size, frame_count, not nocompare
-    )
+    all_runs = []
+    for run_idx in range(num_runs):
+        print(
+            f"\n[bold cyan]--- Run {run_idx + 1} of {num_runs} ---[/bold cyan]"
+        )
+        result = compare(
+            t_chunk_size,
+            xy_chunk_size,
+            xy_shard_size,
+            frame_count,
+            not nocompare,
+        )
+        all_runs.append(result)
+
+    summary = summarize_runs(all_runs)
+
+    output_data = {
+        "runs": all_runs,
+        "summary": summary,
+    }
 
     with open(output, "w") as f:
-        json.dump(results, f, indent=2)
-
+        json.dump(output_data, f, indent=2)
     print(f"\nResults written to {output}")
+
+    visualize(all_runs, summary, output_prefix=Path(output).stem)
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ zarr::ArrayBase::make_metadata_sink_()
         auto sink =
           config_->bucket_name
             ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
-            : make_file_sink(path, file_handle_pool_);
+            : make_file_sink(path, file_handle_pool_, /*truncate_to_fit=*/true);
         if (!sink) {
             LOG_ERROR("Failed to create metadata sink for path: ", path);
             return false;

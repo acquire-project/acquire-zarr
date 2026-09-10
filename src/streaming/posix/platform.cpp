@@ -16,17 +16,34 @@ get_last_error_as_string()
 }
 
 void*
-make_flags()
+make_flags(bool direct_io)
 {
     auto* flags = new int;
     *flags = O_WRONLY | O_CREAT;
+
+    if (direct_io) {
+        // Opt-in: unaligned shard writes get EINVAL on block-backed
+        // filesystems; NFS accepts them.
+#ifdef O_DIRECT
+        *flags |= O_DIRECT;
+#else
+        // Warn once, not on every open.
+        [[maybe_unused]] static const bool warned = [] {
+            LOG_WARNING("Direct I/O was requested, but O_DIRECT is not "
+                        "available on this platform; writes will go through "
+                        "the OS page cache.");
+            return true;
+        }();
+#endif
+    }
+
     return flags;
 }
 
 void
-destroy_flags(void* flags)
+destroy_flags(const void* flags)
 {
-    const auto* fd = static_cast<int*>(flags);
+    const auto* fd = static_cast<const int*>(flags);
     delete fd;
 }
 
@@ -42,11 +59,11 @@ get_max_active_handles()
 }
 
 void*
-init_handle(const std::string& filename, void* flags)
+init_handle(const std::string& filename, const void* flags)
 {
     auto* fd = new int;
 
-    *fd = open(filename.data(), *static_cast<int*>(flags), 0644);
+    *fd = open(filename.data(), *static_cast<const int*>(flags), 0644);
     if (*fd < 0) {
         const auto err = get_last_error_as_string();
         delete fd;
@@ -94,6 +111,22 @@ flush_file(void* handle)
     }
 
     return res == 0;
+}
+
+bool
+truncate_file(void* handle, size_t size)
+{
+    CHECK(handle);
+    const auto* fd = static_cast<int*>(handle);
+    if (*fd < 0) {
+        return false;
+    }
+
+    if (ftruncate(*fd, static_cast<off_t>(size)) < 0) {
+        LOG_ERROR("Failed to truncate file: ", get_last_error_as_string());
+        return false;
+    }
+    return true;
 }
 
 void

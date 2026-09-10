@@ -1,3 +1,4 @@
+#include "logger.hh"
 #include "thread.pool.hh"
 
 #include <algorithm>
@@ -31,18 +32,56 @@ zarr::ThreadPool::~ThreadPool() noexcept
 }
 
 bool
-zarr::ThreadPool::push_job(Task&& job)
+zarr::ThreadPool::push_job(Task&& job, std::optional<uint32_t> max_retries)
 {
     std::unique_lock lock(jobs_mutex_);
-    // only allow pushing jobs from the main thread
-    if (!accepting_jobs || std::this_thread::get_id() != main_thread_id_) {
+    if (!accepting_jobs) {
         return false;
     }
 
-    jobs_.push(job);
-    jobs_cv_.notify_one();
+    TaskWrapper wrapper{
+        .task = std::move(job),
+        .max_retries = max_retries,
+        .attempt = 0,
+    };
+
+    push_to_queue_(std::move(wrapper));
+    return true;
+}
+
+bool
+zarr::ThreadPool::execute_job(Task&& job)
+{
+    if (std::string err_msg; job(err_msg) != TaskResult::Success) {
+        LOG_ERROR(err_msg);
+        return false;
+    }
 
     return true;
+}
+
+bool
+zarr::ThreadPool::execute_job_with_retry(Task&& job, uint32_t max_retries)
+{
+    std::string err_msg;
+
+    for (uint32_t retry = 0; retry < max_retries; ++retry) {
+        switch (job(err_msg)) {
+            case TaskResult::Success:
+                return true;
+            case TaskResult::Retry:
+                continue;
+            case TaskResult::Fatal:
+                LOG_ERROR("Error while executing job: ", err_msg);
+                return false;
+        }
+    }
+
+    LOG_ERROR("Failed to execute job after ",
+              max_retries,
+              " retries",
+              err_msg.empty() ? err_msg : ": " + err_msg);
+    return false;
 }
 
 void
@@ -69,7 +108,14 @@ zarr::ThreadPool::n_threads() const
     return threads_.size();
 }
 
-std::optional<zarr::ThreadPool::Task>
+void
+zarr::ThreadPool::push_to_queue_(TaskWrapper&& job)
+{
+    jobs_.push(std::move(job));
+    jobs_cv_.notify_one();
+}
+
+std::optional<zarr::ThreadPool::TaskWrapper>
 zarr::ThreadPool::pop_from_job_queue_() noexcept
 {
     if (jobs_.empty()) {
@@ -100,9 +146,31 @@ zarr::ThreadPool::process_tasks_()
 
         if (auto job = pop_from_job_queue_(); job.has_value()) {
             lock.unlock();
-            if (std::string err_msg; !job.value()(err_msg)) {
-                error_messages_.push_back(err_msg);
-                error_handler_(err_msg);
+
+            switch (std::string err_msg; job->task(err_msg)) {
+                case TaskResult::Success:
+                    break;
+                case TaskResult::Retry:
+                    if (const auto max_retries =
+                          job->max_retries ? *job->max_retries : 1;
+                        job->attempt < max_retries) {
+                        ++job->attempt;
+                        lock.lock();
+                        push_to_queue_(std::move(*job)); // requeue
+                        break;
+                    } else {
+                        err_msg = "Max retries (" +
+                                  std::to_string(max_retries) + ") exceeded";
+                        [[fallthrough]];
+                    }
+                case TaskResult::Fatal:
+                    lock.lock();
+                    error_messages_.push_back(err_msg);
+                    accepting_jobs = false; // drain and stop
+                    lock.unlock();
+                    jobs_cv_.notify_all();
+                    error_handler_(err_msg);
+                    break;
             }
         }
     }

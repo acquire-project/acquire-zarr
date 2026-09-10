@@ -8,10 +8,8 @@
 namespace fs = std::filesystem;
 
 namespace {
-const size_t array_width = 64;
-const size_t array_height = 48;
-const size_t frames_to_acquire = 12;
-const size_t frames_per_append = 3;
+constexpr size_t array_width = 64, array_height = 48, frames_to_acquire = 12,
+                 frames_per_append = 3;
 const fs::path test_path = "multi-frame-test.zarr";
 
 ZarrStream*

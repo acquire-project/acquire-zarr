@@ -2,6 +2,7 @@ import glob
 import os
 from pathlib import Path
 import subprocess
+import sys
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
@@ -33,8 +34,19 @@ class CMakeBuild(build_ext):
             "-DBUILD_TESTING=OFF",
         ]
 
-        extra_args = os.environ.get("CMAKE_ARGS", "").split()
-        cmake_args += [arg for arg in extra_args if arg]  # Filter out empty strings
+        extra_args = [
+            arg for arg in os.environ.get("CMAKE_ARGS", "").split() if arg
+        ]
+        cmake_args += extra_args
+
+        # macOS: <filesystem> requires a deployment target of 10.15+, but
+        # setuptools defaults MACOSX_DEPLOYMENT_TARGET to the Python build's
+        # value (often 10.9). Pin a modern target unless the caller overrides.
+        if sys.platform == "darwin" and not any(
+            "CMAKE_OSX_DEPLOYMENT_TARGET" in arg for arg in cmake_args
+        ):
+            target = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0")
+            cmake_args.append(f"-DCMAKE_OSX_DEPLOYMENT_TARGET={target}")
 
         if self.compiler.compiler_type == "msvc":
             cmake_args.append("-DVCPKG_TARGET_TRIPLET=x64-windows-static")

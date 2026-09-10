@@ -77,3 +77,6 @@ venv.bak/
 *.zarr
 *.csv
 uv.lock
+
+# Claude code
+.claude/

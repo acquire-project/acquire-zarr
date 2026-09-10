@@ -21,7 +21,7 @@ class Downsampler
      * level, by calling take_frame().
      * @param frame The full-resolution frame data.
      */
-    void add_frame(LockedBuffer& frame);
+    void add_frame(std::vector<uint8_t>& frame);
 
     /**
      * @brief Get the downsampled frame for the given level, removing it from
@@ -32,7 +32,7 @@ class Downsampler
      * @param[out] frame_data The downsampled frame data.
      * @return True if the downsampled frame was found, false otherwise.
      */
-    bool take_frame(int level, LockedBuffer& frame_data);
+    bool take_frame(int level, std::vector<uint8_t>& frame_data);
 
     const std::unordered_map<int, std::shared_ptr<zarr::ArrayConfig>>&
     writer_configurations() const;
