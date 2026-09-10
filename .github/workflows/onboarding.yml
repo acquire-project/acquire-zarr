@@ -1,0 +1,85 @@
+name: Onboarding
+
+# Guards the setup path README.md hands new contributors (`just install`,
+# `just test`). No other workflow touches the justfile, so without this job it
+# can rot unnoticed.
+#
+# This job deliberately starts from nothing: no submodules, no pre-cloned
+# vcpkg, no VCPKG_ROOT. `just install` is responsible for all three, and the
+# point is to prove it still is. That makes it expensive (minio-cpp drags in
+# openssl and curl), so it runs only when a build input changes, weekly to
+# catch drift in the unpinned vcpkg clone `setup-vcpkg` makes, or on demand.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "justfile"
+      - "pyproject.toml"
+      - "setup.py"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "python/CMakeLists.txt"
+      - "vcpkg.json"
+      - ".python-version"
+      - ".github/workflows/onboarding.yml"
+  pull_request:
+    branches:
+      - main
+    # Actions does not expand YAML anchors, so this list is duplicated above.
+    paths:
+      - "justfile"
+      - "pyproject.toml"
+      - "setup.py"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "python/CMakeLists.txt"
+      - "vcpkg.json"
+      - ".python-version"
+      - ".github/workflows/onboarding.yml"
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  justfile:
+    name: just install + just test on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - "ubuntu-latest"
+          - "macos-latest" # arm
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install uv and just
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/uv" tool install rust-just
+        shell: bash
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-onboarding-${{ matrix.platform }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-onboarding-${{ matrix.platform }}-
+
+      - name: just install
+        run: just install -p 3.13
+
+      # S3 tests skip themselves when the ZARR_S3_* env vars are absent, so no
+      # MinIO service is needed here.
+      - name: just test
+        run: just test

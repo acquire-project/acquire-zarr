@@ -24,6 +24,9 @@ testing = [
     "dask",
     "mypy",
     "ome-zarr",
+    # also a build requirement; kept here so a bare `cmake -DBUILD_PYTHON=ON`
+    # against .venv can find it the same way the wheel build does
+    "pybind11[global]",
     "pytest>=7",
     "pytest-cov",
     "python-dotenv",

@@ -7,7 +7,11 @@ set shell := ["bash", "-cu"]
 # Global paths - exported to all child processes
 ROOT := justfile_directory()
 BUILD_DIR := ROOT / "build"
-VCPKG_DIR := ROOT / "vcpkg"
+
+# Reuse an existing vcpkg checkout when the caller already has one, rather than
+# cloning a second copy into the repo. Falls back to a repo-local clone that
+# `setup-vcpkg` creates on demand.
+VCPKG_DIR := env_var_or_default("VCPKG_ROOT", ROOT / "vcpkg")
 export VCPKG_ROOT := VCPKG_DIR
 
 # Default recipe
