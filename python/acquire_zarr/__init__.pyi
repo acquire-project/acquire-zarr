@@ -25,6 +25,11 @@ __all__ = [
     "DownsamplingMethod",
     "FieldOfView",
     "LogLevel",
+    "OMEChannel",
+    "OMERenderingDefs",
+    "OMERenderingSettings",
+    "OMEVersion",
+    "OMEWindow",
     "Plate",
     "S3Settings",
     "StreamSettings",
@@ -82,6 +87,13 @@ class ArraySettings:
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
       compression: Optional compression settings for chunks. If None, no compression is applied.
+      omero: Optional OME ``omero`` rendering metadata. Because omero metadata
+        lives in OME group metadata, setting it makes this node an OME image
+        group -- the same layout ``downsampling_method`` produces.
+        ``<output_key>/zarr.json`` becomes the group metadata and the array
+        moves to ``<output_key>/0``, so adding omero to a previously
+        single-resolution array relocates its chunks from
+        ``<output_key>/c/...`` to ``<output_key>/0/c/...``.
       downsampling_method: Method used for generating optional multiscale levels
         (image pyramid). When set, the array is wrapped in an OME-NGFF
         multiscales group. When None (default), a simple array node is written.
@@ -105,6 +117,7 @@ class ArraySettings:
     dimensions: List[Dimension]
     data_type: Union[DataType, numpy.dtype]
     compression: Optional[CompressionSettings]
+    omero: Optional[OMERenderingSettings]
     downsampling_method: Optional[DownsamplingMethod]
     max_levels: int
     storage_dimension_order: List[str]
@@ -371,6 +384,119 @@ class LogLevel:
     @property
     def value(self) -> int: ...
 
+class OMEWindow:
+    """Display window for an OME ``omero`` rendering channel.
+
+    All four bounds are required. ``max`` must be greater than ``min`` and
+    ``end`` greater than ``start``, so a default-constructed window is
+    rejected rather than silently written as a blank display range.
+
+    Attributes:
+      min: Minimum possible pixel value.
+      max: Maximum possible pixel value.
+      start: Display window lower bound.
+      end: Display window upper bound.
+    """
+
+    min: float
+    max: float
+    start: float
+    end: float
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
+class OMEChannel:
+    """A single channel of OME ``omero`` rendering metadata.
+
+    Attributes:
+      label: Optional channel label.
+      color: Optional hex RGB color, e.g. ``"FF0000"``.
+      window: Display window for the channel.
+      active: Whether the channel is displayed.
+      family: Optional transfer-function family, e.g. ``"linear"``.
+      coefficient: Optional display coefficient. When None, readers default
+        to 1.0.
+      inverted: Whether the lookup table is inverted.
+    """
+
+    label: Optional[str]
+    color: Optional[str]
+    window: OMEWindow
+    active: bool
+    family: Optional[str]
+    coefficient: Optional[float]
+    inverted: bool
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
+class OMERenderingDefs:
+    """OME ``omero`` rendering defaults (the ``rdefs`` object).
+
+    Attributes:
+      model: Optional rendering model, ``"color"`` or ``"greyscale"``.
+      default_t: Default timepoint index.
+      default_z: Default z-plane index.
+    """
+
+    model: Optional[str]
+    default_t: int
+    default_z: int
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
+class OMERenderingSettings:
+    """OME ``omero`` rendering metadata for an image (array).
+
+    Attributes:
+      channels: List of channel rendering settings. At least one is required,
+        and the count must match the size of the array's Channel dimension
+        (1 if it has none).
+      id: Optional integer image identifier.
+      name: Optional image name.
+      rdefs: Optional rendering defaults.
+    """
+
+    channels: List[OMEChannel]
+    id: Optional[int]
+    name: Optional[str]
+    rdefs: Optional[OMERenderingDefs]
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
+class OMEVersion:
+    """
+    OME-NGFF (OME-Zarr) metadata version to emit.
+
+    Attributes:
+      V0_5: OME-Zarr 0.5 (default).
+      V0_6: OME-Zarr 0.6 (in progress; may change until released).
+    """
+
+    V0_5: ClassVar[OMEVersion]  # value = <OMEVersion.V0_5: 0>
+    V0_6: ClassVar[OMEVersion]  # value = <OMEVersion.V0_6: 1>
+    __members__: ClassVar[
+        dict[str, OMEVersion]
+    ]  # value = {'V0_5': <OMEVersion.V0_5: 0>, 'V0_6': <OMEVersion.V0_6: 1>}
+
+    def __eq__(self, other: Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+
 class Plate:
     """Plate configuration for HCS datasets.
 
@@ -432,6 +558,7 @@ class StreamSettings:
     store_path: str
     max_threads: int
     overwrite: bool
+    ome_version: OMEVersion
     plates: List[Plate]
 
     def __init__(self, **kwargs) -> None: ...

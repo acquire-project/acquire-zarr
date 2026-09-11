@@ -13,6 +13,44 @@
 #include <string>
 
 namespace zarr {
+// OME-NGFF version string emitted in the `ome.version` metadata field.
+inline std::string
+ome_version_to_string(ZarrOMEVersion version)
+{
+    switch (version) {
+        case ZarrOMEVersion_0_6:
+            return "0.6";
+        case ZarrOMEVersion_0_5:
+        default:
+            return "0.5";
+    }
+}
+
+// Internal representation of one OME "omero" rendering channel, copied out of
+// the transient ZarrOMEChannel C struct at commit time.
+struct OMEChannel
+{
+    std::optional<std::string> label;
+    std::optional<std::string> color;
+    ZarrOMEWindow window;
+    bool active{ false };
+    std::optional<std::string> family;
+    std::optional<double> coefficient;
+    bool inverted{ false };
+};
+
+// Internal representation of OME "omero" rendering metadata for one image.
+struct OMERendering
+{
+    std::optional<uint32_t> id;
+    std::optional<std::string> name;
+    std::vector<OMEChannel> channels;
+    bool has_rdefs{ false };
+    std::optional<std::string> model;
+    uint32_t default_t{ 0 };
+    uint32_t default_z{ 0 };
+};
+
 struct ArrayConfig
 {
     ArrayConfig() = default;
@@ -54,6 +92,11 @@ struct ArrayConfig
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     uint16_t level_of_detail;
     uint32_t max_levels{ 0 };
+
+    // OME-NGFF metadata version to emit for this node.
+    ZarrOMEVersion ome_version{ ZarrOMEVersion_0_5 };
+    // Optional OME "omero" rendering metadata for this image.
+    std::optional<OMERendering> omero;
 };
 
 enum class WriteResult
@@ -62,7 +105,7 @@ enum class WriteResult
     PartialWrite,
     OutOfBounds,
     FrameSizeMismatch,
-    FrameOutOfOrder,   // frame ID gap detected; predecessor not yet written
+    FrameOutOfOrder, // frame ID gap detected; predecessor not yet written
 };
 
 class ArrayBase

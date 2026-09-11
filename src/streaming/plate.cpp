@@ -32,10 +32,8 @@ zarr::Well::to_json() const
         j["images"].push_back(img);
     }
 
-    // The well dictionary SHOULD contain a version key whose value MUST be a
-    // string specifying the version of the well specification.
-    j["version"] = "0.5";
-
+    // No version key here: 0.5 carries a single version at `ome.version`.
+    // See ome/ngff#309 and ome/ngff-spec#84.
     return j;
 }
 
@@ -289,12 +287,11 @@ zarr::Plate::validate_wells_()
 nlohmann::json
 zarr::Plate::to_json() const
 {
-    // See https://ngff.openmicroscopy.org/latest/#plate-md
+    // See https://ngff.openmicroscopy.org/0.5/#plate-md
     nlohmann::json j;
 
-    // The plate dictionary MUST contain a version key whose value MUST be a
-    // string specifying the version of the plate specification.
-    j["version"] = "0.5";
+    // No version key here: 0.5 carries a single version at `ome.version`.
+    // See ome/ngff#309 and ome/ngff-spec#84.
 
     // The plate dictionary SHOULD contain a name key whose value MUST be a
     // string defining the name of the plate.

@@ -35,6 +35,8 @@ extern "C"
         ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
                                                non-NULL, the stream will be
                                                configured for HCS data. */
+        ZarrOMEVersion ome_version; /**< The OME-NGFF metadata version to emit.
+                                         Defaults to ZarrOMEVersion_0_5. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -200,6 +202,26 @@ extern "C"
      * dimension array to free.
      */
     void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings);
+
+    /**
+     * @brief Allocate memory for the channels array in the
+     * ZarrOMERenderingSettings struct.
+     * @param[in, out] settings The ZarrOMERenderingSettings struct.
+     * @param channel_count The number of channels to allocate memory for.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrOMERenderingSettings_create_channel_array(
+      ZarrOMERenderingSettings* settings,
+      size_t channel_count);
+
+    /**
+     * @brief Free memory for the channels array in the ZarrOMERenderingSettings
+     * struct.
+     * @param[in, out] settings The ZarrOMERenderingSettings struct containing
+     * the channels array to free.
+     */
+    void ZarrOMERenderingSettings_destroy_channel_array(
+      ZarrOMERenderingSettings* settings);
 
     /**
      * @brief Allocate memory for the images array in the ZarrHCSWell struct.

@@ -77,6 +77,7 @@ struct ZarrStream_s
 
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
+    ZarrOMEVersion ome_version_{ ZarrOMEVersion_0_5 };
 
     // maps of plates and wells, key by their paths relative to the store root
     std::unordered_map<std::string, zarr::Plate> plates_;

@@ -13,6 +13,7 @@ version: 1
 store_path: from-config.zarr
 overwrite: true
 max_threads: 4
+ome_version: "0.6"
 arrays:
   - output_key: channel0
     data_type: uint16
@@ -23,8 +24,16 @@ arrays:
       codec: blosc-zstd
       level: 1
       shuffle: 1
+    omero:
+      id: 1
+      name: my image
+      channels:
+        - {label: red, color: "FF0000", window: {min: 0.0, max: 65535.0, start: 0.0, end: 1500.0}, active: true, coefficient: 1.0}
+        - {label: green, color: "00FF00", window: {min: 0.0, max: 65535.0, start: 0.0, end: 2000.0}, active: false}
+      rdefs: {model: color, defaultT: 0, defaultZ: 2}
     dimensions:
       - {name: t, type: time,  array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+      - {name: c, type: channel, array_size_px: 2, chunk_size_px: 1, shard_size_chunks: 1}
       - {name: z, type: space, array_size_px: 10, chunk_size_px: 5,  shard_size_chunks: 1}
       - {name: y, type: space, array_size_px: 48, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
       - {name: x, type: space, array_size_px: 64, chunk_size_px: 16, shard_size_chunks: 1, unit: micrometer, scale: 0.5}
@@ -35,6 +44,7 @@ arrays:
   "store_path": "from-config.zarr",
   "overwrite": true,
   "max_threads": 4,
+  "ome_version": "0.6",
   "arrays": [
     {
       "output_key": "channel0",
@@ -42,8 +52,18 @@ arrays:
       "multiscale": true,
       "downsampling_method": "mean",
       "compression": {"compressor": "blosc1", "codec": "blosc-zstd", "level": 1, "shuffle": 1},
+      "omero": {
+        "id": 1,
+        "name": "my image",
+        "channels": [
+          {"label": "red", "color": "FF0000", "window": {"min": 0.0, "max": 65535.0, "start": 0.0, "end": 1500.0}, "active": true, "coefficient": 1.0},
+          {"label": "green", "color": "00FF00", "window": {"min": 0.0, "max": 65535.0, "start": 0.0, "end": 2000.0}, "active": false}
+        ],
+        "rdefs": {"model": "color", "defaultT": 0, "defaultZ": 2}
+      },
       "dimensions": [
         {"name": "t", "type": "time",  "array_size_px": 0,  "chunk_size_px": 1,  "shard_size_chunks": 1},
+        {"name": "c", "type": "channel", "array_size_px": 2, "chunk_size_px": 1, "shard_size_chunks": 1},
         {"name": "z", "type": "space", "array_size_px": 10, "chunk_size_px": 5,  "shard_size_chunks": 1},
         {"name": "y", "type": "space", "array_size_px": 48, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5},
         {"name": "x", "type": "space", "array_size_px": 64, "chunk_size_px": 16, "shard_size_chunks": 1, "unit": "micrometer", "scale": 0.5}
@@ -377,6 +397,7 @@ def _assert_expected(s):
     assert s.store_path == "from-config.zarr"
     assert s.overwrite is True
     assert s.max_threads == 4
+    assert s.ome_version == aqz.OMEVersion.V0_6
     assert len(s.arrays) == 1
     a = s.arrays[0]
     assert a.output_key == "channel0"
@@ -387,12 +408,34 @@ def _assert_expected(s):
     assert a.compression.codec == aqz.CompressionCodec.BLOSC_ZSTD
     assert a.compression.level == 1
     assert a.compression.shuffle == 1
-    assert len(a.dimensions) == 4
+    assert len(a.dimensions) == 5
     assert a.dimensions[0].name == "t"
     assert a.dimensions[0].kind == aqz.DimensionType.TIME
-    assert a.dimensions[2].name == "y"
-    assert a.dimensions[2].unit == "micrometer"
-    assert a.dimensions[2].scale == 0.5
+    assert a.dimensions[1].name == "c"
+    assert a.dimensions[1].kind == aqz.DimensionType.CHANNEL
+    assert a.dimensions[3].name == "y"
+    assert a.dimensions[3].unit == "micrometer"
+    assert a.dimensions[3].scale == 0.5
+
+    assert a.omero is not None
+    assert a.omero.id == 1
+    assert a.omero.name == "my image"
+    assert len(a.omero.channels) == 2
+
+    assert a.omero.channels[0].label == "red"
+    assert a.omero.channels[0].color == "FF0000"
+    assert a.omero.channels[0].active is True
+    assert a.omero.channels[0].window.max == 65535.0
+    assert a.omero.channels[0].window.end == 1500.0
+    assert a.omero.channels[0].coefficient == 1.0
+
+    assert a.omero.channels[1].label == "green"
+    assert a.omero.channels[1].active is False
+    assert a.omero.channels[1].coefficient is None
+
+    assert a.omero.rdefs is not None
+    assert a.omero.rdefs.model == "color"
+    assert a.omero.rdefs.default_z == 2
 
 
 @pytest.mark.parametrize("fmt", ["yaml", "json"])
@@ -412,6 +455,26 @@ def test_config_round_trip(tmp_path):
         path = tmp_path / name
         base.to_file(str(path))
         _assert_expected(aqz.StreamSettings.from_file(str(path)))
+
+
+@pytest.mark.parametrize("scalar", ["0.6", '"0.6"'])
+def test_load_settings_accepts_unquoted_ome_version(scalar):
+    # an unquoted YAML `ome_version: 0.6` decodes as a double, not a string
+    s = aqz.StreamSettings.from_string(
+        f"version: 1\n"
+        f"store_path: x\n"
+        f"ome_version: {scalar}\n"
+        f"arrays:\n"
+        f"  - data_type: uint8\n"
+        f"    dimensions:\n"
+        f"      - {{name: t, type: time, array_size_px: 0, "
+        f"chunk_size_px: 1, shard_size_chunks: 1}}\n"
+        f"      - {{name: y, type: space, array_size_px: 4, "
+        f"chunk_size_px: 4, shard_size_chunks: 1}}\n"
+        f"      - {{name: x, type: space, array_size_px: 4, "
+        f"chunk_size_px: 4, shard_size_chunks: 1}}\n"
+    )
+    assert s.ome_version == aqz.OMEVersion.V0_6
 
 
 def test_load_settings_rejects_malformed():
@@ -468,3 +531,47 @@ plates:
     reloaded = aqz.StreamSettings.from_string(yaml)
     assert reloaded.hcs_plates[0].wells[0].column_name == "5"
     assert list(reloaded.hcs_plates[0].column_names) == ["5"]
+
+
+def test_omero_in_place_mutation():
+    """omero should behave like normal Python objects: mutating through the
+    array.omero.channels chain persists to the settings object."""
+    omero = aqz.OMERenderingSettings(
+        channels=[
+            aqz.OMEChannel(
+                label="red",
+                window=aqz.OMEWindow(min=0.0, max=1.0, start=0.0, end=1.0),
+            )
+        ],
+        rdefs=aqz.OMERenderingDefs(model="greyscale"),
+    )
+    array = aqz.ArraySettings(omero=omero)
+
+    # array.omero returns a live object; mutations write through
+    array.omero.name = "img"
+    array.omero.channels[0].label = "green"
+    array.omero.channels[0].window.max = 65535.0
+    array.omero.channels.append(aqz.OMEChannel(label="blue"))
+    array.omero.rdefs.model = "color"
+
+    assert array.omero.name == "img"
+    assert len(array.omero.channels) == 2
+    assert array.omero.channels[0].label == "green"
+    assert array.omero.channels[0].window.max == 65535.0
+    assert array.omero.channels[1].label == "blue"
+    assert array.omero.rdefs.model == "color"
+
+
+def test_omero_optional_and_identity():
+    """array.omero is None when unset, and returns a stable object once set."""
+    array = aqz.ArraySettings()
+    assert array.omero is None
+
+    array.omero = aqz.OMERenderingSettings(
+        channels=[aqz.OMEChannel(label="c0")]
+    )
+    assert array.omero is not None
+    assert array.omero.channels[0].label == "c0"
+
+    array.omero = None
+    assert array.omero is None

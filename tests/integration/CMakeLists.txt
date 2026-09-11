@@ -19,6 +19,7 @@ set(tests
         stream-with-ragged-final-shard
         stream-append-nullptr
         stream-from-config-file
+        stream-omero-and-ome-version
 )
 
 foreach (name ${tests})

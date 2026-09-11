@@ -391,6 +391,45 @@ extern "C"
         settings->dimension_count = 0;
     }
 
+    ZarrStatusCode ZarrOMERenderingSettings_create_channel_array(
+      ZarrOMERenderingSettings* settings,
+      size_t channel_count)
+    {
+        EXPECT_VALID_ARGUMENT(settings, "Null pointer: settings");
+        EXPECT_VALID_ARGUMENT(
+          channel_count > 0, "Invalid channel count: ", channel_count);
+
+        ZarrOMEChannel* channels = nullptr;
+
+        try {
+            channels = new ZarrOMEChannel[channel_count];
+        } catch (const std::bad_alloc&) {
+            LOG_ERROR("Failed to allocate memory for channels");
+            return ZarrStatusCode_OutOfMemory;
+        }
+
+        ZarrOMERenderingSettings_destroy_channel_array(settings);
+        memset(channels, 0, sizeof(ZarrOMEChannel) * channel_count);
+        settings->channels = channels;
+        settings->channel_count = channel_count;
+
+        return ZarrStatusCode_Success;
+    }
+
+    void ZarrOMERenderingSettings_destroy_channel_array(
+      ZarrOMERenderingSettings* settings)
+    {
+        if (settings == nullptr) {
+            return;
+        }
+
+        if (settings->channels != nullptr) {
+            delete[] settings->channels;
+            settings->channels = nullptr;
+        }
+        settings->channel_count = 0;
+    }
+
     ZarrStatusCode ZarrHCSWell_create_image_array(ZarrHCSWell* well,
                                                   size_t image_count)
     {

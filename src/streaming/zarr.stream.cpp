@@ -8,7 +8,7 @@
 #include <blosc.h>
 
 #include <algorithm> // clamp
-#include <bit>        // bit_ceil
+#include <bit>       // bit_ceil
 #include <filesystem>
 #include <regex>
 #include <stack>
@@ -324,12 +324,61 @@ is_valid_zarr_key(const std::string& key, std::string& error)
     return true;
 }
 
+std::optional<std::string>
+optional_cstr(const char* s)
+{
+    if (s == nullptr || *s == '\0') {
+        return std::nullopt;
+    }
+    return std::string(s);
+}
+
+// Copy the transient ZarrOMERenderingSettings C struct into the owning internal
+// representation stored on ArrayConfig.
+std::optional<zarr::OMERendering>
+make_omero(const ZarrOMERenderingSettings* omero)
+{
+    if (omero == nullptr) {
+        return std::nullopt;
+    }
+
+    zarr::OMERendering out;
+    if (omero->has_id) {
+        out.id = omero->id;
+    }
+    out.name = optional_cstr(omero->name);
+    out.has_rdefs = omero->has_rdefs;
+    if (omero->has_rdefs) {
+        out.model = optional_cstr(omero->rdefs.model);
+        out.default_t = omero->rdefs.default_t;
+        out.default_z = omero->rdefs.default_z;
+    }
+
+    for (size_t i = 0; i < omero->channel_count; ++i) {
+        const auto& c = omero->channels[i];
+        zarr::OMEChannel channel;
+        channel.label = optional_cstr(c.label);
+        channel.color = optional_cstr(c.color);
+        channel.window = c.window;
+        channel.active = c.active;
+        channel.family = optional_cstr(c.family);
+        if (c.has_coefficient) {
+            channel.coefficient = c.coefficient;
+        }
+        channel.inverted = c.inverted;
+        out.channels.push_back(std::move(channel));
+    }
+
+    return out;
+}
+
 std::shared_ptr<zarr::ArrayConfig>
 make_array_config(const ZarrArraySettings* settings,
                   const std::string& store_root,
                   const std::string& parent_path,
                   std::optional<std::string> array_key,
                   const std::optional<std::string>& bucket_name,
+                  ZarrOMEVersion ome_version,
                   std::string& error)
 {
     // remove leading/trailing slashes and whitespace
@@ -356,15 +405,19 @@ make_array_config(const ZarrArraySettings* settings,
         downsampling_method = settings->downsampling_method;
     }
 
-    return std::make_shared<zarr::ArrayConfig>(store_root,
-                                               key,
-                                               bucket_name,
-                                               compression_params,
-                                               dimensions,
-                                               settings->data_type,
-                                               downsampling_method,
-                                               0,
-                                               settings->max_levels);
+    auto config = std::make_shared<zarr::ArrayConfig>(store_root,
+                                                      key,
+                                                      bucket_name,
+                                                      compression_params,
+                                                      dimensions,
+                                                      settings->data_type,
+                                                      downsampling_method,
+                                                      0,
+                                                      settings->max_levels);
+    config->ome_version = ome_version;
+    config->omero = make_omero(settings->omero);
+
+    return config;
 }
 
 [[nodiscard]] bool
@@ -401,6 +454,51 @@ validate_dimension(const ZarrDimensionProperties* dimension,
     if (dimension->scale < 0.0) {
         error = "Scale must be non-negative";
         return false;
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool
+validate_omero(const ZarrArraySettings* settings, std::string& error)
+{
+    const auto* omero = settings->omero;
+
+    if (omero->channel_count == 0 || omero->channels == nullptr) {
+        error = "omero requires at least one channel";
+        return false;
+    }
+
+    // omero channels describe the Channel axis, so there must be exactly one
+    // per channel. An array with no Channel dimension has a single channel.
+    uint32_t expected_channels = 1;
+    for (size_t i = 0; i < settings->dimension_count; ++i) {
+        if (settings->dimensions[i].type == ZarrDimensionType_Channel) {
+            expected_channels = settings->dimensions[i].array_size_px;
+            break;
+        }
+    }
+
+    // an append dimension has size 0, i.e., unbounded; nothing to check against
+    if (expected_channels > 0 && omero->channel_count != expected_channels) {
+        error = "omero channel count (" + std::to_string(omero->channel_count) +
+                ") does not match the Channel dimension size (" +
+                std::to_string(expected_channels) + ")";
+        return false;
+    }
+
+    for (size_t i = 0; i < omero->channel_count; ++i) {
+        const auto& window = omero->channels[i].window;
+        const auto ctx = "omero channel " + std::to_string(i) + ": ";
+
+        if (window.max <= window.min) {
+            error = ctx + "window max must be greater than min";
+            return false;
+        }
+        if (window.end <= window.start) {
+            error = ctx + "window end must be greater than start";
+            return false;
+        }
     }
 
     return true;
@@ -466,6 +564,10 @@ validate_array_settings(const ZarrArraySettings* settings,
         settings->downsampling_method >= ZarrDownsamplingMethodCount) {
         error = "Invalid downsampling method: " +
                 std::to_string(settings->downsampling_method);
+        return false;
+    }
+
+    if (settings->omero != nullptr && !validate_omero(settings, error)) {
         return false;
     }
 
@@ -1088,6 +1190,12 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
         return false;
     }
 
+    if (settings->ome_version >= ZarrOMEVersionCount) {
+        error_ =
+          "Invalid OME version: " + std::to_string(settings->ome_version);
+        return false;
+    }
+
     if (settings->store_path == nullptr) {
         error_ = "Null pointer: store_path";
         return false;
@@ -1129,6 +1237,7 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
                                         "",
                                         std::nullopt,
                                         std::nullopt,
+                                        settings->ome_version,
                                         error_);
         if (!config) {
             return false;
@@ -1210,6 +1319,7 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
                                                     parent_path,
                                                     field.path,
                                                     std::nullopt,
+                                                    settings->ome_version,
                                                     error_);
                     if (config == nullptr) {
                         return false;
@@ -1238,8 +1348,13 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
         bucket_name = s3_settings_->bucket_name;
     }
 
-    auto config = make_array_config(
-      settings, store_path_, parent_path, std::nullopt, bucket_name, error_);
+    auto config = make_array_config(settings,
+                                    store_path_,
+                                    parent_path,
+                                    std::nullopt,
+                                    bucket_name,
+                                    ome_version_,
+                                    error_);
     if (config == nullptr) {
         return false;
     }
@@ -1396,6 +1511,7 @@ bool
 ZarrStream_s::commit_settings_(const ZarrStreamSettings* settings)
 {
     store_path_ = zarr::trim(settings->store_path);
+    ome_version_ = settings->ome_version;
 
     std::optional<std::string> bucket_name;
     s3_settings_ = make_s3_settings(settings->s3_settings);
@@ -1522,6 +1638,7 @@ ZarrStream_s::write_intermediate_metadata_()
       { "attributes", nlohmann::json::object() },
     });
     const std::string metadata_key = "zarr.json";
+    const std::string ome_version = zarr::ome_version_to_string(ome_version_);
     std::string metadata_str;
 
     for (const auto& parent_group_key : intermediate_group_paths_) {
@@ -1536,7 +1653,7 @@ ZarrStream_s::write_intermediate_metadata_()
 
             // not supported for Zarr V2 / NGFF 0.4
             plate_metadata["attributes"]["ome"] = {
-                { "version", "0.5" },
+                { "version", ome_version },
                 { "plate", plate.to_json() },
             };
 
@@ -1549,7 +1666,7 @@ ZarrStream_s::write_intermediate_metadata_()
 
             // not supported for Zarr V2 / NGFF 0.4
             well_metadata["attributes"]["ome"] = {
-                { "version", "0.5" },
+                { "version", ome_version },
                 { "well", well.to_json() },
             };
 
@@ -1607,8 +1724,8 @@ ZarrStream_s::init_frame_queue_()
     // tiny frames don't explode the slot count and huge frames still get
     // enough buffering to absorb bursts.
     constexpr uint64_t buffer_size_bytes = 256ULL << 20;
-    const auto frame_count = std::clamp<uint64_t>(
-      buffer_size_bytes / frame_size_bytes, 16ULL, 512ULL);
+    const auto frame_count =
+      std::clamp<uint64_t>(buffer_size_bytes / frame_size_bytes, 16ULL, 512ULL);
 
     try {
         frame_queue_ =
