@@ -137,6 +137,11 @@ jobs:
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
+      # dl.min.io now answers 410 Gone: MinIO archived the community server
+      # and mc and stopped serving their binaries. The container images are
+      # still published, so pull them from there instead.
+      MINIO_IMAGE: minio/minio:RELEASE.2025-09-07T16-13-09Z
+      MC_IMAGE: minio/mc:RELEASE.2025-08-13T08-35-41Z
 
     steps:
       - uses: actions/checkout@v4
@@ -161,25 +166,42 @@ jobs:
         with:
           cmake-version: "3.31.x"
 
-      - name: Install minio and mcli
+      - name: Start minio
         run: |
-          apt update && apt install -y tmux wget
-          wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mcli
-          chmod +x /usr/local/bin/minio
-          chmod +x /usr/local/bin/mcli
+          # nothing here uses the web console, so neither its port nor
+          # --console-address is worth carrying
+          docker run -d --name minio -p 9000:9000 \
+            -e "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
+            -e "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
+            "$MINIO_IMAGE" server /data
+          for _ in $(seq 60); do
+            if curl -fsS "$MINIO_URL/minio/health/live" >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$ready" ]; then
+            docker logs minio >&2
+            echo "minio did not become ready" >&2
+            exit 1
+          fi
 
-      - name: Start minio in tmux
+      - name: Create a service account and a bucket
         run: |
-          tmux new -d -s minio
-          tmux send-keys -t minio "MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD minio server /tmp/minio --console-address :9001" Enter
-          sleep 5
-          mcli alias set $MINIO_ALIAS $MINIO_URL $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
-          mcli admin user svcacct add --access-key $MINIO_ACCESS_KEY --secret-key $MINIO_SECRET_KEY $MINIO_ALIAS $MINIO_ROOT_USER
-
-      - name: Create a bucket
-        run: |
-          mcli mb $MINIO_ALIAS/$MINIO_BUCKET
+          # mc keeps its aliases in a config file, which a --rm container
+          # throws away, so pass the target through MC_HOST_<alias> instead
+          mc_host="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@${MINIO_URL#http://}"
+          mcli() {
+            docker run --rm --network host \
+              -e "MC_HOST_$MINIO_ALIAS=$mc_host" \
+              "$MC_IMAGE" "$@"
+          }
+          mcli admin user svcacct add \
+            --access-key "$MINIO_ACCESS_KEY" \
+            --secret-key "$MINIO_SECRET_KEY" \
+            "$MINIO_ALIAS" "$MINIO_ROOT_USER"
+          mcli mb "$MINIO_ALIAS/$MINIO_BUCKET"
 
       - name: Install vcpkg
         run: |
