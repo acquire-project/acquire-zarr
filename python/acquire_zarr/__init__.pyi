@@ -299,6 +299,11 @@ class DownsamplingMethod:
     """
     Method used to downsample frames.
 
+    There is deliberately no ``NONE`` member: "no downsampling" is spelled
+    ``None``, since ``ArraySettings.downsampling_method`` is an
+    ``Optional[DownsamplingMethod]``. The C enum does carry a
+    ``ZarrDownsamplingMethod_None`` zero value, which maps to ``None`` here.
+
     Attributes:
       DECIMATE: Take the top left of each 2x2 block of pixels
       MEAN: Take the mean value of each 2x2 block of pixels

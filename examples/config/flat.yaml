@@ -1,7 +1,7 @@
 # Flat multi-array store loaded via ZarrStreamSettings_load_from_file /
 # StreamSettings.from_file. JSON is accepted by the same loader (see flat.json).
 # Secrets (e.g. AWS credentials) are never read from config; use the environment.
-version: 1
+version: 2                # version 1 configs still load, with v1 semantics
 store_path: acquisition.zarr
 overwrite: true
 max_threads: 0            # 0 = all available cores

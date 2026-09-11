@@ -87,6 +87,12 @@ extern "C"
         ZarrDimensionTypeCount
     } ZarrDimensionType;
 
+    /**
+     * @brief Method used to downsample frames when building an image
+     *        pyramid.
+     * @note `ZarrDownsamplingMethod_None` is the zero value, so a zeroed
+     *       `ZarrArraySettings` requests no image pyramid.
+     */
     typedef enum
     {
         ZarrDownsamplingMethod_None = 0, /**< No downsampling. When used with

@@ -1,7 +1,7 @@
 # HCS plate store. A FieldOfView's `array` must not set output_key (its path is
 # fixed by the plate/well/fov hierarchy). Quote numeric well names so they stay
 # strings (e.g. column_name: "5").
-version: 1
+version: 2
 store_path: plate.zarr
 overwrite: true
 

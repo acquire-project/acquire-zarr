@@ -165,7 +165,11 @@ emit_json(YAML::Emitter& e, const json& doc)
 // Schema version, enum tables, and typed JSON accessors
 // ---------------------------------------------------------------------------
 namespace {
-constexpr int kSchemaVersion = 1;
+// version 1 shipped in 0.9.0 and gated downsampling behind `multiscale`;
+// version 2 replaced that flag with `is_ngff` (#213). Version-1 configs are
+// still accepted and translated in migrate_v1().
+constexpr uint64_t kSchemaVersion = 2;
+constexpr uint64_t kMinSchemaVersion = 1;
 
 struct EnumEntry
 {
@@ -372,6 +376,80 @@ alloc_zeroed(size_t n)
 } // namespace
 
 // ---------------------------------------------------------------------------
+// Schema version 1 -> 2 migration
+// ---------------------------------------------------------------------------
+namespace {
+void
+migrate_array_v1(json& j, const std::string& ctx)
+{
+    if (!j.is_object()) {
+        return; // load_array will report the real problem
+    }
+
+    // migration writes `is_ngff`, so a version-1 config that sets it would
+    // have its value silently discarded
+    if (j.contains("is_ngff")) {
+        fail(ctx + ".is_ngff",
+             "'is_ngff' requires schema version 2; this config declares "
+             "version 1, where the equivalent field is 'multiscale'");
+    }
+
+    const bool multiscale = j.contains("multiscale") &&
+                            as_bool(j.at("multiscale"), ctx + ".multiscale");
+    j.erase("multiscale");
+
+    j["is_ngff"] = multiscale;
+    if (!multiscale) {
+        // version 1 read `downsampling_method` only when `multiscale` was true
+        j["downsampling_method"] = "none";
+    } else if (!j.contains("downsampling_method")) {
+        // version 1's zero value was Decimate
+        j["downsampling_method"] = "decimate";
+    }
+}
+
+void
+migrate_v1(json& doc)
+{
+    if (doc.contains("arrays") && doc.at("arrays").is_array()) {
+        auto& arrays = doc.at("arrays");
+        for (size_t i = 0; i < arrays.size(); ++i) {
+            migrate_array_v1(arrays[i], "arrays[" + std::to_string(i) + "]");
+        }
+    }
+
+    if (!doc.contains("plates") || !doc.at("plates").is_array()) {
+        return;
+    }
+
+    auto& plates = doc.at("plates");
+    for (size_t p = 0; p < plates.size(); ++p) {
+        const auto pctx = "plates[" + std::to_string(p) + "]";
+        if (!plates[p].is_object() || !plates[p].contains("wells") ||
+            !plates[p].at("wells").is_array()) {
+            continue;
+        }
+        auto& wells = plates[p].at("wells");
+        for (size_t w = 0; w < wells.size(); ++w) {
+            const auto wctx = pctx + ".wells[" + std::to_string(w) + "]";
+            if (!wells[w].is_object() || !wells[w].contains("images") ||
+                !wells[w].at("images").is_array()) {
+                continue;
+            }
+            auto& images = wells[w].at("images");
+            for (size_t i = 0; i < images.size(); ++i) {
+                const auto ictx = wctx + ".images[" + std::to_string(i) + "]";
+                if (!images[i].is_object() || !images[i].contains("array")) {
+                    continue;
+                }
+                migrate_array_v1(images[i].at("array"), ictx + ".array");
+            }
+        }
+    }
+}
+} // namespace
+
+// ---------------------------------------------------------------------------
 // JSON -> settings (owning)
 // ---------------------------------------------------------------------------
 namespace {
@@ -419,8 +497,10 @@ load_array(const json& j,
 
     if (j.contains("multiscale")) {
         throw std::runtime_error(
-          ctx + ".multiscale: 'multiscale' has been replaced by 'is_ngff'; set "
-                "'is_ngff' and/or 'downsampling_method' instead");
+          ctx +
+          ".multiscale: 'multiscale' has been replaced by 'is_ngff'; set "
+          "'is_ngff' and/or 'downsampling_method' instead, or declare "
+          "'version: 1' to load this config with version-1 semantics");
     }
 
     arr->is_ngff =
@@ -760,23 +840,37 @@ json_to_yaml(const json& doc)
 }
 
 void
-json_to_settings(const json& doc, ZarrStreamSettings* out)
+json_to_settings(const json& doc_in, ZarrStreamSettings* out)
 {
     // zero first so a throw anywhere leaves a struct that is safe to pass to
     // destroy_loaded_settings (free(nullptr) is a no-op; zeroed counts skip)
     std::memset(out, 0, sizeof(*out));
 
-    if (!doc.is_object()) {
+    if (!doc_in.is_object()) {
         fail("", "config root must be a mapping");
     }
-    if (doc.contains("version")) {
-        const auto v = as_uint<uint64_t>(doc.at("version"), "version");
-        if (v != kSchemaVersion) {
+
+    // an absent 'version' means the current schema
+    uint64_t version = kSchemaVersion;
+    if (doc_in.contains("version")) {
+        const auto v = as_uint<uint64_t>(doc_in.at("version"), "version");
+        if (v < kMinSchemaVersion || v > kSchemaVersion) {
             fail("version",
                  "unsupported schema version " + std::to_string(v) +
-                   " (expected " + std::to_string(kSchemaVersion) + ")");
+                   " (supported: " + std::to_string(kMinSchemaVersion) +
+                   " through " + std::to_string(kSchemaVersion) + ")");
         }
+        version = v;
     }
+
+    // rewrite an older config into the current shape, so the loaders below
+    // only ever see one schema
+    json migrated;
+    if (version == 1) {
+        migrated = doc_in;
+        migrate_v1(migrated);
+    }
+    const json& doc = migrated.is_null() ? doc_in : migrated;
 
     out->store_path =
       dup_cstr(as_string(require(doc, "store_path", ""), "store_path"));

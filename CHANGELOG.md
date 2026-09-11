@@ -10,21 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `is_ngff` flag on `ZarrArraySettings` to explicitly request OME-NGFF multiscales wrapping without
-  downsampling (#213)
+  requiring downsampling (#213)
 - `ZarrDownsamplingMethod_None` sentinel value for explicitly representing "no downsampling" (#213)
 - `ZARR_DIRECT_IO` environment variable: when set, file handles are opened with `O_DIRECT` so writes bypass the OS page
   cache. Off by default, Linux only, and only valid on filesystems that accept unaligned direct writes, such as NFS
 
 ### Changed
 
-- `ZarrArraySettings.multiscale` has been replaced by `is_ngff`; setting a downsampling method continues to
-  coerce `is_ngff` to true (#213)
-- Config files use `is_ngff` in place of `multiscale`, and `downsampling_method` gained a `"none"` value. A
-  config containing `multiscale` is now rejected with an error rather than silently reinterpreted (#213)
-- A config that sets `downsampling_method` but omits `multiscale` previously produced a plain array, because
-  `downsampling_method` was only honoured when `multiscale` was true. It now produces an OME-NGFF multiscales
-  group, relocating the data from `<output_key>/` to `<output_key>/0/`. Set `downsampling_method: none` to keep
-  the old plain-array layout (#213)
+- The numeric values of `ZarrDownsamplingMethod` have shifted by one, because
+  `ZarrDownsamplingMethod_None` was inserted as the new zero value. Config files, which spell the
+  method as a string, and the Python `DownsamplingMethod` members are unaffected; but C code that
+  persisted the raw integers, and Python code unpickling a `DownsamplingMethod` pickled by 0.9.0 or
+  earlier, will read back a different method than it stored (#213)
+- The layout of `ZarrArraySettings` has changed, since `multiscale` was removed and `is_ngff` added,
+  so callers must recompile against the new header rather than relink against the new binary (#213)
+- Setting a downsampling method continues to coerce `is_ngff` to true (#213)
+- The config schema version is now `2`. Version-2 configs use `is_ngff` in place of `multiscale`, and
+  `downsampling_method` gained a `"none"` value. A version-1 config still loads and is translated
+  using version-1 semantics: `multiscale: true` becomes `is_ngff: true`, defaulting
+  `downsampling_method` to `decimate`, and a `downsampling_method` without `multiscale` is ignored. A
+  config that omits `version` is read as the current schema (#213)
+- A version-2 config containing `multiscale` is rejected with an error rather than silently
+  reinterpreted, as is a version-1 config containing `is_ngff` (#213)
+- In a version-2 config, `downsampling_method` is honoured on its own. Previously `downsampling_method`
+  was only read when `multiscale` was true, so a config that set it alone produced a plain array; it
+  now produces an OME-NGFF multiscales group, relocating the data from `<output_key>/` to
+  `<output_key>/0/`. Set `downsampling_method: none` to keep the old plain-array layout (#213)
 
 ### Fixed
 
@@ -39,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print identically (#213)
 - Configuring an HCS field of view no longer writes the FOV path back into the caller's
   `ZarrArraySettings.output_key` (#213)
+
+### Removed
+
+- `ZarrArraySettings.multiscale` (C) and `ArraySettings.multiscale` (Python), replaced by `is_ngff`.
+  What `multiscale = false` expressed is now the default of `is_ngff = false` with
+  `downsampling_method = ZarrDownsamplingMethod_None` (`None` in Python); what `multiscale = true`
+  expressed is `is_ngff = true`, with or without a downsampling method (#213)
 
 ## [0.9.0] - [2026-08-11](https://github.com/acquire-project/acquire-zarr/compare/v0.8.1...v0.9.0)
 

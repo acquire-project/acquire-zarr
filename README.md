@@ -455,7 +455,7 @@ flushed to disk when the stream is closed.
 ### High-content screening workflows
 
 The library supports high-content screening (HCS) datasets following
-the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
+the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) (Next-Generation File Format) specification.
 HCS data is organized into plates, wells, and fields of view, with automatic generation of appropriate metadata.
 
 Here's an example of creating an HCS dataset in Python:

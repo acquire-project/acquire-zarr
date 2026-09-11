@@ -9,7 +9,7 @@ import numpy as np
 
 CONFIGS = {
     "yaml": """
-version: 1
+version: 2
 store_path: from-config.zarr
 overwrite: true
 max_threads: 4
@@ -30,7 +30,7 @@ arrays:
 """,
     "json": """
 {
-  "version": 1,
+  "version": 2,
   "store_path": "from-config.zarr",
   "overwrite": true,
   "max_threads": 4,
@@ -468,18 +468,102 @@ def test_config_round_trip(tmp_path):
 
 
 def test_load_settings_rejects_multiscale():
-    # `multiscale` was replaced by `is_ngff`; an old config must not be
-    # silently reinterpreted
+    # `multiscale` was replaced by `is_ngff` in schema version 2; a version 2
+    # config carrying it must not be silently reinterpreted
     with pytest.raises(ValueError):
-        aqz.StreamSettings.from_string(CONFIGS["yaml"].replace(
-            "downsampling_method: mean", "multiscale: true"
-        ))
+        aqz.StreamSettings.from_string(
+            CONFIGS["yaml"].replace(
+                "downsampling_method: mean", "multiscale: true"
+            )
+        )
+
+
+def test_load_settings_migrates_v1_multiscale():
+    # version 1 gated downsampling behind `multiscale`, so a version 1 config
+    # must keep loading with version 1 semantics
+    v1 = CONFIGS["yaml"].replace("version: 2", "version: 1")
+
+    s = aqz.StreamSettings.from_string(
+        v1.replace(
+            "downsampling_method: mean",
+            "multiscale: true\n    downsampling_method: mean",
+        )
+    )
+    assert s.arrays[0].is_ngff is True
+    assert s.arrays[0].downsampling_method == aqz.DownsamplingMethod.MEAN
+
+    # `multiscale` without a method: version 1's zero value was DECIMATE
+    s = aqz.StreamSettings.from_string(
+        v1.replace("downsampling_method: mean", "multiscale: true")
+    )
+    assert s.arrays[0].is_ngff is True
+    assert s.arrays[0].downsampling_method == aqz.DownsamplingMethod.DECIMATE
+
+    # version 1 ignored `downsampling_method` unless `multiscale` was true, so
+    # this is a plain array, not the OME-NGFF group version 2 would produce
+    s = aqz.StreamSettings.from_string(v1)
+    assert s.arrays[0].is_ngff is False
+    assert s.arrays[0].downsampling_method is None
+
+    # dumping always writes the current schema version
+    assert s.to_dict()["version"] == 2
+
+
+def test_load_settings_migrates_v1_hcs_arrays():
+    # the migration must also reach field-of-view arrays nested under plates
+    hcs_v1 = """
+version: 1
+store_path: plate.zarr
+plates:
+  - path: test_plate
+    name: Test Plate
+    row_names: [A]
+    column_names: ["1"]
+    wells:
+      - row_name: A
+        column_name: "1"
+        images:
+          - path: fov1
+            array:
+              data_type: uint16
+              multiscale: true
+              downsampling_method: mean
+              dimensions:
+                - {name: z, type: space, array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+                - {name: y, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+                - {name: x, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+"""
+
+    s = aqz.StreamSettings.from_string(hcs_v1)
+    fov = s.hcs_plates[0].wells[0].images[0]
+    assert fov.array_settings.is_ngff is True
+    assert (
+        fov.array_settings.downsampling_method == aqz.DownsamplingMethod.MEAN
+    )
+
+
+def test_load_settings_rejects_is_ngff_in_v1():
+    # migration overwrites `is_ngff`, so a version 1 config that sets it is an
+    # error rather than a silently discarded value
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(
+            CONFIGS["yaml"]
+            .replace("version: 2", "version: 1")
+            .replace("downsampling_method: mean", "is_ngff: true")
+        )
+
+
+def test_load_settings_rejects_unsupported_version():
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(
+            CONFIGS["yaml"].replace("version: 2", "version: 3")
+        )
 
 
 def test_load_settings_rejects_malformed():
     with pytest.raises(ValueError):
         aqz.StreamSettings.from_string(
-            "version: 1\nstore_path: x\n"
+            "version: 2\nstore_path: x\n"
         )  # no arrays
     with pytest.raises(ValueError):
         aqz.StreamSettings.from_string(
@@ -500,7 +584,7 @@ def test_config_dict_round_trip():
 
 def test_yaml_dump_quotes_ambiguous_strings():
     hcs_yaml = """
-version: 1
+version: 2
 store_path: plate.zarr
 plates:
   - path: test_plate
