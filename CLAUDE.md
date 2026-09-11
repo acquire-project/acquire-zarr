@@ -85,7 +85,7 @@ pre-commit run --all-files
 | `thread.pool.hh/cpp` | Worker threads that compress and write chunks; jobs return `TaskStatus` |
 | `sink.hh/cpp` | Abstract write-sink interface |
 | `file.sink.hh/cpp` + `posix/`/`win32/` | Filesystem sink (platform-specific implementation) |
-| `s3.sink.hh/cpp` + `s3.connection.hh/cpp` | S3 sink backed by minio-cpp submodule |
+| `s3.sink.hh/cpp` + `s3.client.hh/cpp` | S3 sink backed by the aws-crt-cpp vcpkg package |
 | `plate.hh/cpp` | HCS plate/well/field-of-view OME-NGFF metadata |
 | `file.handle.hh/cpp` | File handle pool to respect OS open-file limits |
 | `zarr.common.hh/cpp` | Shared types, JSON helpers (nlohmann-json) |

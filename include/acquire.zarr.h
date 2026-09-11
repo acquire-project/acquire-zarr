@@ -14,9 +14,11 @@ extern "C"
      * dimension properties, whether to stream to multiple levels of detail, the
      * pixel data type, and the Zarr format version.
      * @note The store path can be a filesystem path or an S3 key prefix. For
-     * example, supplying an endpoint "s3://my-endpoint.com" and a bucket
-     * "my-bucket" with a store_path of "my-dataset.zarr" will result in the
-     * store being written to "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
+     * example, supplying an endpoint "http://localhost:9000" and a bucket
+     * "my-bucket" with a store_path of "my-dataset.zarr" writes objects under
+     * the key prefix "my-dataset.zarr/" in "my-bucket", which that endpoint
+     * serves at "http://localhost:9000/my-bucket/my-dataset.zarr/...". The
+     * request URL depends on the addressing style; see ZarrS3Settings.
      */
     typedef struct ZarrStreamSettings_s
     {

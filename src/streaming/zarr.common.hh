@@ -17,6 +17,15 @@ std::string
 trim(std::string_view s);
 
 /**
+ * @brief Fold a string to lower case.
+ * @param s The string to fold.
+ * @return The string with every ASCII upper-case character lowered.
+ */
+[[nodiscard]]
+std::string
+to_lower(std::string_view s);
+
+/**
  * @brief Check if a string is empty, including whitespace.
  * @param s The string to check.
  * @param err_on_empty The message to log if the string is empty.

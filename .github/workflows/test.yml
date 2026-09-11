@@ -10,6 +10,11 @@ on:
 
 env:
   BUILD_TYPE: Release
+  # vcpkg 2026.07.29's portfiles use string(JSON ... STRING_ENCODE), which needs
+  # CMake >= 4. Both the pinned 3.31 (for the VS18 generator) and pip's
+  # "cmake<4.0.0" put an older cmake on PATH, so make vcpkg fetch its own
+  # (4.4.0) for building ports instead of borrowing ours.
+  VCPKG_FORCE_DOWNLOADED_BINARIES: 1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,7 +54,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up sccache
@@ -81,7 +85,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -146,7 +150,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up sccache
@@ -205,7 +208,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -236,6 +239,11 @@ jobs:
         run: python -m pip install ".[testing]"
 
       - name: Test Python
+        env:
+          ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
+          ZARR_S3_BUCKET_NAME: ${{ env.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: python -m pytest -v -k test_stream_data_to_s3
 
 
@@ -259,7 +267,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python 3.13
@@ -283,7 +290,7 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH

@@ -12,19 +12,19 @@ constexpr uint64_t kUnwrittenSentinel = std::numeric_limits<uint64_t>::max();
 
 zarr::Shard::Shard(const ShardConfig& config,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
-                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+                   std::shared_ptr<S3Client> s3_client)
   : offsets_(config.chunks_per_shard, kUnwrittenSentinel)
   , extents_(config.chunks_per_shard, kUnwrittenSentinel)
   , table_flushed_(false)
   , unwritten_chunks_(config.chunks_per_shard)
   , file_offset_(0)
   , file_handle_pool_(std::move(file_handle_pool))
-  , s3_connection_pool_(std::move(s3_connection_pool))
+  , s3_client_(std::move(s3_client))
   , path_(config.path)
   , bucket_name_(config.bucket_name)
 {
     if (bucket_name_) {
-        EXPECT(s3_connection_pool_, "S3 connection pool not given");
+        EXPECT(s3_client_, "S3 client not given");
     } else {
         EXPECT(file_handle_pool_, "File handle pool not given");
     }
@@ -132,11 +132,22 @@ zarr::Shard::skip_chunk(uint32_t internal_index)
     return res;
 }
 
+size_t
+zarr::Shard::staged_bytes() const noexcept
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock() || !sink_) {
+        return 0;
+    }
+
+    return sink_->memory_usage();
+}
+
 void
 zarr::Shard::make_sink_()
 {
-    if (s3_connection_pool_) {
-        sink_ = make_s3_sink(*bucket_name_, path_, s3_connection_pool_);
+    if (s3_client_) {
+        sink_ = make_s3_sink(*bucket_name_, path_, s3_client_);
     } else {
         sink_ = make_file_sink(path_, file_handle_pool_);
     }

@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was only read when `multiscale` was true, so a config that set it alone produced a plain array; it
   now produces an OME-NGFF multiscales group, relocating the data from `<output_key>/` to
   `<output_key>/0/`. Set `downsampling_method: none` to keep the old plain-array layout (#213)
+- Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
+  S3 storage.
+- ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
+  `host:port` as plaintext HTTP; neither scheme is a safe default, so a scheme-less endpoint is now rejected at settings
+  validation.
+- S3 requests now use virtual-host addressing for `*.amazonaws.com` endpoints and path-style addressing otherwise. A
+  bucket whose name is not a legal DNS label (a dot, an underscore or an upper-case letter) uses path style even on AWS,
+  since it cannot be prepended to the host. An unset `region` is signed as `us-east-1` instead of being omitted;
+  endpoints that validate the signing region require it to be set explicitly.
+- The bucket is now checked once when the stream is created rather than once per object written.
+- Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency.
 
 ### Fixed
 
@@ -50,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print identically (#213)
 - Configuring an HCS field of view no longer writes the FOV path back into the caller's
   `ZarrArraySettings.output_key` (#213)
+- Fixed a data race in `S3Sink`. `Shard::write_chunk` claims each chunk's offset under a lock but writes outside it, and
+  each chunk is its own thread-pool job, so byte ranges reached the sink concurrently and out of order while it mutated
+  its buffer without synchronization. The sink now stages fragments and appends them in order.
+- Fixed a use-after-free in `ZarrStream_get_current_memory_usage`. `Array::memory_usage()` walked the chunk and shard
+  buffers while the frame thread was freeing them at an append-chunk rollover. Every buffer is now read under its own
+  try-lock, and a busy buffer is omitted from the estimate rather than waited for.
+- Fixed a missed wakeup that could hang stream finalization. Worker threads retired outstanding writes without holding
+  the mutex the closing thread waits under, so a notification could be lost and the close would never wake.
+- `ZarrStream_get_current_memory_usage` no longer dereferences a null array when called concurrently with, or after,
+  stream finalization.
+- Fixed a use-after-free when an array is destroyed without being finalized. Only the close path drained outstanding
+  writes, so an array released on an error path had the state those writes touch destroyed underneath them. The
+  destructor now drains as well.
 
 ### Removed
 

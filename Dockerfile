@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── vcpkg ────────────────────────────────────────────────────────────────────
 ENV VCPKG_ROOT=/opt/vcpkg
-RUN git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" \
+# ubuntu 24.04 ships CMake 3.28; vcpkg 2026.07.29 portfiles need >= 4, so let
+# vcpkg fetch its own for building ports.
+ENV VCPKG_FORCE_DOWNLOADED_BINARIES=1
+RUN git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1 "$VCPKG_ROOT" \
     && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
 # ── build ────────────────────────────────────────────────────────────────────

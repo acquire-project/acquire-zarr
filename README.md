@@ -78,8 +78,10 @@ This library has the following dependencies:
 
 - [c-blosc](https://github.com/Blosc/c-blosc) v1.21.5
 - [nlohmann-json](https://github.com/nlohmann/json) v3.11.3
-- [minio-cpp](https://github.com/minio/minio-cpp) v0.3.0
+- [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) v0.43.0
 - [crc32c](https://github.com/google/crc32c) v1.1.2
+- [zstd](https://github.com/facebook/zstd) v1.5.5
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp) v0.8.0
 
 We use [vcpkg] to install them, as it integrates well with CMake.
 To install vcpkg, clone the repository and bootstrap it:
@@ -718,13 +720,18 @@ If you are using environment variables, set the following:
 - `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
 - `AWS_SESSION_TOKEN`: Optional session token for temporary credentials
 
-These must be set in the environment where your application runs.
+These must be set in the environment where your application runs, before the
+stream is created.
 
-**Important Note:** You should ensure these environment variables are set *before* running your application or importing
-the library or Python module.
-They will not be available if set after the library is loaded.
-Configuration requires specifying the endpoint, bucket
-name, and region:
+Configuration requires specifying the endpoint and bucket name. The endpoint
+must begin with `http://` or `https://`; there is no default scheme. The region
+is optional and defaults to `us-east-1`; endpoints that validate the signing
+region require it to be set explicitly, so set it to match your server.
+
+Requests use virtual-host addressing for `*.amazonaws.com` endpoints and
+path-style addressing otherwise. A bucket whose name is not a legal DNS label —
+because it contains a dot, an underscore or an upper-case letter — uses path
+style even on AWS, since it cannot be prepended to the host:
 
 ```c
 // ensure your environment is set up for S3 access before running your program
@@ -753,7 +760,7 @@ settings = aqz.StreamSettings()
 
 # Configure S3 storage
 s3_settings = aqz.S3Settings(
-    endpoint="s3.amazonaws.com",
+    endpoint="https://s3.amazonaws.com",
     bucket_name="my-zarr-data",
     region="us-east-1"
 )

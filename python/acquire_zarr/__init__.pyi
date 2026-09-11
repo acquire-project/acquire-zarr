@@ -414,7 +414,20 @@ class Plate:
     def __repr__(self) -> str: ...
 
 class S3Settings:
-    """Settings for connecting to and storing data in S3."""
+    """Settings for connecting to and storing data in S3.
+
+    Attributes:
+        bucket_name: Name of the destination bucket, which must already exist.
+            Requests use virtual-host addressing for an "*.amazonaws.com"
+            endpoint whose bucket name is a legal DNS label, and path-style
+            addressing otherwise; a name containing a dot, an underscore or an
+            upper-case letter falls back to path style even on AWS.
+        endpoint: Endpoint URL, which must begin with "http://" or "https://".
+            There is no default scheme.
+        region: Optional region. Defaults to "us-east-1"; endpoints that
+            validate the signing region require it to be set explicitly to
+            match the server.
+    """
 
     bucket_name: str
     endpoint: str
@@ -441,9 +454,11 @@ class StreamSettings:
         overwrite: If True, removes any existing data at store_path before writing.
 
     Note:
-        For S3 storage with endpoint "s3://my-endpoint.com", bucket "my-bucket", and
-        store_path "my-dataset.zarr", the final location will be
-        "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
+        For S3 storage with endpoint "http://localhost:9000", bucket "my-bucket",
+        and store_path "my-dataset.zarr", objects are written under the key prefix
+        "my-dataset.zarr/" in "my-bucket", which that endpoint serves at
+        "http://localhost:9000/my-bucket/my-dataset.zarr/...". The request URL
+        depends on the addressing style; see S3Settings.
     """
 
     arrays: List[ArraySettings]

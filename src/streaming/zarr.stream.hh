@@ -8,12 +8,13 @@
 #include "frame.queue.hh"
 #include "multiscale.array.hh"
 #include "plate.hh"
-#include "s3.connection.hh"
+#include "s3.client.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
@@ -71,6 +72,10 @@ struct ZarrStream_s
         size_t max_array_size_bytes;
         size_t bytes_written;
         uint64_t frames_queued;
+        // frame_buffer.size(), published so get_memory_usage() can read it from
+        // a thread other than the appending one. Last, and default-initialized,
+        // so the positional initialization of the members above still lines up.
+        std::atomic<size_t> frame_buffer_bytes{ 0 };
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
@@ -83,6 +88,10 @@ struct ZarrStream_s
     std::unordered_map<std::string, const zarr::Well&> wells_;
 
     std::unordered_map<std::string, std::unique_ptr<OutputArray>> arrays_;
+    // Held only where the arrays themselves are retired, so that
+    // get_memory_usage() -- which any thread may call, including during close
+    // -- cannot read an array slot while finalize_stream is moving out of it.
+    mutable std::mutex arrays_mutex_;
     std::vector<std::string> intermediate_group_paths_;
 
     std::mutex frame_queue_mutex_;
@@ -95,7 +104,7 @@ struct ZarrStream_s
     std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
-    std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<zarr::S3Client> s3_client_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
 
     bool is_s3_acquisition_() const;

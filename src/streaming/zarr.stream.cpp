@@ -8,7 +8,7 @@
 #include <blosc.h>
 
 #include <algorithm> // clamp
-#include <bit>        // bit_ceil
+#include <bit>       // bit_ceil
 #include <filesystem>
 #include <regex>
 #include <stack>
@@ -40,6 +40,12 @@ validate_s3_settings(const ZarrS3Settings* settings, std::string& error)
 {
     if (zarr::is_empty_string(settings->endpoint, "S3 endpoint is empty")) {
         error = "S3 endpoint is empty";
+        return false;
+    }
+
+    // defer to the client, so validation cannot accept an endpoint the client
+    // would then throw on
+    if (!zarr::is_valid_s3_endpoint(zarr::trim(settings->endpoint), error)) {
         return false;
     }
 
@@ -374,17 +380,17 @@ std::unique_ptr<zarr::ArrayBase>
 make_array(std::shared_ptr<zarr::ArrayConfig> config,
            std::shared_ptr<zarr::ThreadPool> thread_pool,
            std::shared_ptr<zarr::FileHandlePool> file_handle_pool,
-           std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool)
+           std::shared_ptr<zarr::S3Client> s3_client)
 {
     const auto ngff = config->downsampling_method || config->is_ngff;
 
     std::unique_ptr<zarr::ArrayBase> array;
     if (ngff) {
         array = std::make_unique<zarr::MultiscaleArray>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
+          config, thread_pool, file_handle_pool, s3_client);
     } else {
         array = std::make_unique<zarr::Array>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
+          config, thread_pool, file_handle_pool, s3_client);
     }
 
     return array;
@@ -1004,6 +1010,7 @@ ZarrStream::append(const char* key_,
         } else if (bytes_remaining < frame_size_bytes) { // begin partial frame
             if (frame_buffer.empty()) {
                 frame_buffer.resize(frame_size_bytes, 0);
+                output->frame_buffer_bytes.store(frame_buffer.size());
             }
 
             if (data) {
@@ -1084,10 +1091,25 @@ size_t
 ZarrStream_s::get_memory_usage() const noexcept
 {
     size_t usage = frame_queue_->bytes_used();
+
+    // try_lock: finalize_stream holds this across every array's close, and an
+    // estimate must not block on that. Under contention the arrays are omitted,
+    // which matches ArrayBase::memory_usage()'s own best-effort contract.
+    std::unique_lock arrays_lock(arrays_mutex_, std::try_to_lock);
+    if (!arrays_lock.owns_lock()) {
+        return usage;
+    }
+
     for (const auto& [key, output] : arrays_) {
-        const auto frame_buffer_size = output->frame_buffer.size();
-        const auto array_memory_usage = output->array->memory_usage();
-        usage += (frame_buffer_size + array_memory_usage);
+        // frame_buffer is resized on the appending thread, so its size is read
+        // from an atomic rather than from the vector
+        usage += output->frame_buffer_bytes.load();
+
+        // finalize_stream has moved the array out by the time it releases the
+        // lock above, so the slot can legitimately be empty
+        if (output->array) {
+            usage += output->array->memory_usage();
+        }
     }
 
     return usage;
@@ -1291,8 +1313,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                                 0,
                                                 0);
     try {
-        output->array = make_array(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_);
+        output->array =
+          make_array(config, thread_pool_, file_handle_pool_, s3_client_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1484,13 +1506,16 @@ bool
 ZarrStream_s::create_store_(bool overwrite)
 {
     if (is_s3_acquisition_()) {
-        // spin up S3 connection pool
         try {
-            s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
-              std::thread::hardware_concurrency(), *s3_settings_);
+            s3_client_ = std::make_shared<zarr::S3Client>(*s3_settings_);
         } catch (const std::exception& e) {
-            set_error_("Error creating S3 connection pool: " +
-                       std::string(e.what()));
+            set_error_("Error creating S3 client: " + std::string(e.what()));
+            return false;
+        }
+
+        if (!s3_client_->bucket_exists(s3_settings_->bucket_name)) {
+            set_error_("S3 bucket '" + s3_settings_->bucket_name +
+                       "' does not exist or is not accessible.");
             return false;
         }
     } else {
@@ -1593,12 +1618,17 @@ ZarrStream_s::write_intermediate_metadata_()
           reinterpret_cast<const uint8_t*>(metadata_str.data()),
           metadata_str.size());
 
-        const std::string sink_path =
-          store_path_ + "/" + relative_path + "/" + metadata_key;
+        // root group has an empty relative_path; can't regularize_key the
+        // join because store_path_ may be absolute (#247)
+        std::string sink_path = store_path_;
+        if (!relative_path.empty()) {
+            sink_path += "/" + relative_path;
+        }
+        sink_path += "/" + metadata_key;
         std::unique_ptr<zarr::Sink> metadata_sink;
         if (is_s3_acquisition_()) {
-            metadata_sink = zarr::make_s3_sink(
-              bucket_name.value(), sink_path, s3_connection_pool_);
+            metadata_sink =
+              zarr::make_s3_sink(bucket_name.value(), sink_path, s3_client_);
         } else {
             metadata_sink = zarr::make_file_sink(
               sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
@@ -1638,8 +1668,8 @@ ZarrStream_s::init_frame_queue_()
     // tiny frames don't explode the slot count and huge frames still get
     // enough buffering to absorb bursts.
     constexpr uint64_t buffer_size_bytes = 256ULL << 20;
-    const auto frame_count = std::clamp<uint64_t>(
-      buffer_size_bytes / frame_size_bytes, 16ULL, 512ULL);
+    const auto frame_count =
+      std::clamp<uint64_t>(buffer_size_bytes / frame_size_bytes, 16ULL, 512ULL);
 
     try {
         frame_queue_ =
@@ -1823,13 +1853,18 @@ finalize_stream(ZarrStream* stream)
         return false;
     }
 
-    for (auto& [key, output] : stream->arrays_) {
-        if (!zarr::finalize_array(std::move(output->array))) {
-            LOG_ERROR(
-              "Error finalizing Zarr stream. Failed to finalize array '",
-              key,
-              "'");
-            return false;
+    {
+        // get_memory_usage() may be polled from another thread right up to
+        // here; keep it out of the slots being emptied
+        std::unique_lock lock(stream->arrays_mutex_);
+        for (auto& [key, output] : stream->arrays_) {
+            if (!zarr::finalize_array(std::move(output->array))) {
+                LOG_ERROR(
+                  "Error finalizing Zarr stream. Failed to finalize array '",
+                  key,
+                  "'");
+                return false;
+            }
         }
     }
 

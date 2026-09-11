@@ -37,6 +37,17 @@ zarr::trim(std::string_view s)
     return trimmed;
 }
 
+std::string
+zarr::to_lower(std::string_view s)
+{
+    std::string lowered(s);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    });
+
+    return lowered;
+}
+
 bool
 zarr::is_empty_string(std::string_view s, std::string_view err_on_empty)
 {
@@ -214,10 +225,7 @@ zarr::resolve_direct_io()
         return false;
     }
 
-    std::string value{ env };
-    std::transform(value.begin(), value.end(), value.begin(), [](char c) {
-        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    });
+    const auto value = to_lower(env);
 
     if (value == "1" || value == "true" || value == "on" || value == "yes") {
         return true;

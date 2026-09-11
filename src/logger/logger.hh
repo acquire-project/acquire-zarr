@@ -1,3 +1,5 @@
+#pragma once
+
 #include "logger.types.h"
 
 #include <filesystem>

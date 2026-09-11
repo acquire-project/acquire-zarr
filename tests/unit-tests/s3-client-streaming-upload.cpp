@@ -1,7 +1,7 @@
 #include "s3-test-helper.hh"
-#include "s3.sink.hh"
 #include "unit.test.macros.hh"
 
+#include <span>
 #include <vector>
 
 int
@@ -17,25 +17,37 @@ main()
     const std::string object_name = "test-object";
 
     try {
-        auto client = std::make_shared<zarr::S3Client>(*settings);
+        auto client = std::make_unique<zarr::S3Client>(*settings);
 
         CHECK(client->bucket_exists(settings->bucket_name));
         CHECK(client->delete_object(settings->bucket_name, object_name));
         CHECK(!client->object_exists(settings->bucket_name, object_name));
 
-        // one byte over the part size, so the sink streams rather than sending a
-        // single request
-        const std::vector<uint8_t> data((5 << 20) + 1, 0);
+        // enough to force the CRT to split the upload into parts, with a final
+        // part smaller than S3's 5 MiB minimum
+        const size_t part_size = 5 << 20;
+        const size_t n_full_parts = 4;
+        const size_t tail_size = 1 << 20;
+        const size_t total = n_full_parts * part_size + tail_size;
+
         {
-            auto sink = std::make_unique<zarr::S3Sink>(
-              settings->bucket_name, object_name, client);
-            CHECK(sink->write(0, data));
-            CHECK(zarr::finalize_sink(std::move(sink)));
+            auto upload =
+              client->create_upload(settings->bucket_name, object_name);
+            CHECK(upload);
+
+            const std::vector<uint8_t> chunk(part_size, 0);
+            for (auto i = 0; i < n_full_parts; ++i) {
+                CHECK(upload->append(chunk));
+            }
+            CHECK(upload->append(
+              std::span(chunk.data(), tail_size)));
+
+            CHECK(upload->finish());
         }
 
         CHECK(client->object_exists(settings->bucket_name, object_name));
         EXPECT_EQ(size_t,
-                  data.size(),
+                  total,
                   get_object_size(*client, settings->bucket_name, object_name));
 
         // cleanup
@@ -43,7 +55,7 @@ main()
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception: ", e.what());
+        LOG_ERROR("Failed: ", e.what());
     }
 
     return retval;

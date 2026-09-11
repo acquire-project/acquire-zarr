@@ -32,11 +32,12 @@ foreach (name ${tests})
     target_include_directories(${tgt} PRIVATE
             ${PROJECT_SOURCE_DIR}/include
             ${PROJECT_SOURCE_DIR}/src/logger
+            ${PROJECT_SOURCE_DIR}/src/streaming
+            ${PROJECT_SOURCE_DIR}/tests
     )
     target_link_libraries(${tgt} PRIVATE
             acquire-zarr
             nlohmann_json::nlohmann_json
-            miniocpp::miniocpp
             Crc32c::crc32c
     )
 
@@ -48,7 +49,7 @@ foreach (name ${tests})
         list(APPEND test_labels "deprecated")
     endif ()
 
-    if (name MATCHES ".*s3.*")
+    if (name MATCHES ".*s3.*" OR name STREQUAL "stream-append-nullptr")
         list(APPEND test_labels "s3")
     endif ()
 

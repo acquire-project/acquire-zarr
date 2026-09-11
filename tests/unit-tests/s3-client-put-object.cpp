@@ -1,5 +1,4 @@
 #include "s3-test-helper.hh"
-#include "s3.sink.hh"
 #include "unit.test.macros.hh"
 
 #include <vector>
@@ -17,33 +16,24 @@ main()
     const std::string object_name = "test-object";
 
     try {
-        auto client = std::make_shared<zarr::S3Client>(*settings);
+        auto client = std::make_unique<zarr::S3Client>(*settings);
 
         CHECK(client->bucket_exists(settings->bucket_name));
         CHECK(client->delete_object(settings->bucket_name, object_name));
         CHECK(!client->object_exists(settings->bucket_name, object_name));
 
-        // one byte over the part size, so the sink streams rather than sending a
-        // single request
-        const std::vector<uint8_t> data((5 << 20) + 1, 0);
-        {
-            auto sink = std::make_unique<zarr::S3Sink>(
-              settings->bucket_name, object_name, client);
-            CHECK(sink->write(0, data));
-            CHECK(zarr::finalize_sink(std::move(sink)));
-        }
+        const std::vector<uint8_t> data(1024, 0);
+
+        CHECK(client->put_object(settings->bucket_name, object_name, data));
 
         CHECK(client->object_exists(settings->bucket_name, object_name));
-        EXPECT_EQ(size_t,
-                  data.size(),
-                  get_object_size(*client, settings->bucket_name, object_name));
 
         // cleanup
         CHECK(client->delete_object(settings->bucket_name, object_name));
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception: ", e.what());
+        LOG_ERROR("Failed: ", e.what());
     }
 
     return retval;

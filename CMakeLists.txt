@@ -14,7 +14,7 @@ include(cmake/openmp.cmake)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(blosc CONFIG REQUIRED)
-#find_package(miniocpp CONFIG REQUIRED) # TODO (aliddell): uncomment when minio-cpp pushes a new release to vcpkg
+find_package(aws-crt-cpp CONFIG REQUIRED)
 find_package(Crc32c CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
@@ -34,7 +34,6 @@ endif()
 
 # Set to static runtime library
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-add_subdirectory(minio-cpp EXCLUDE_FROM_ALL)
 
 add_subdirectory(src)
 if (BUILD_TESTING)
@@ -79,12 +78,6 @@ install(EXPORT acquire-zarrTargets
         FILE acquire-zarrTargets.cmake
         NAMESPACE acquire-zarr::
         DESTINATION lib/cmake/acquire-zarr
-)
-
-install(TARGETS miniocpp
-        EXPORT acquire-zarrTargets
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
 )
 
 install(DIRECTORY examples/

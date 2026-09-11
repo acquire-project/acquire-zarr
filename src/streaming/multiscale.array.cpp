@@ -25,8 +25,8 @@ zarr::MultiscaleArray::MultiscaleArray(
   std::shared_ptr<ArrayConfig> config,
   std::shared_ptr<ThreadPool> thread_pool,
   std::shared_ptr<FileHandlePool> file_handle_pool,
-  std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+  std::shared_ptr<S3Client> s3_client)
+  : ArrayBase(config, thread_pool, file_handle_pool, s3_client)
 {
     bytes_per_frame_ = config_->dimensions == nullptr
                          ? 0
@@ -145,12 +145,12 @@ zarr::MultiscaleArray::create_arrays_()
 
         for (const auto& [lod, config] : configs) {
             arrays_[lod] = std::make_unique<Array>(
-              config, thread_pool_, file_handle_pool_, s3_connection_pool_);
+              config, thread_pool_, file_handle_pool_, s3_client_);
         }
     } else {
         const auto config = make_base_array_config_();
         arrays_.push_back(std::make_unique<Array>(
-          config, thread_pool_, file_handle_pool_, s3_connection_pool_));
+          config, thread_pool_, file_handle_pool_, s3_client_));
     }
 
     array_frame_ids_.resize(arrays_.size(), 0);

@@ -1,106 +1,53 @@
+#include "s3-test-helper.hh"
 #include "s3.sink.hh"
 #include "unit.test.macros.hh"
 
-#include <miniocpp/client.h>
-
-#include <cstdlib>
-
-namespace {
-bool
-get_settings(zarr::S3Settings& settings)
-{
-    char* env = nullptr;
-    if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
-        LOG_ERROR("ZARR_S3_ENDPOINT not set.");
-        return false;
-    }
-    settings.endpoint = env;
-
-    if (!(env = std::getenv("ZARR_S3_BUCKET_NAME"))) {
-        LOG_ERROR("ZARR_S3_BUCKET_NAME not set.");
-        return false;
-    }
-    settings.bucket_name = env;
-
-    env = std::getenv("ZARR_S3_REGION");
-    if (env) {
-        settings.region = env;
-    }
-
-    return true;
-}
-} // namespace
+#include <span>
 
 int
 main()
 {
-    zarr::S3Settings settings;
-    if (!get_settings(settings)) {
-        LOG_WARNING("Failed to get credentials. Skipping test.");
+    const auto settings = test::s3_settings_from_env();
+    if (!settings) {
+        LOG_WARNING("S3 not configured. Skipping test.");
         return 0;
     }
 
     int retval = 1;
     const std::string object_name = "test-object";
+    const std::string expected = "Hello, Acquire!";
 
     try {
-        auto pool = std::make_shared<zarr::S3ConnectionPool>(1, settings);
+        auto client = std::make_shared<zarr::S3Client>(*settings);
 
-        auto conn = pool->get_connection();
-        CHECK(conn->bucket_exists(settings.bucket_name));
-        CHECK(conn->delete_object(settings.bucket_name, object_name));
-        CHECK(!conn->object_exists(settings.bucket_name, object_name));
-
-        pool->return_connection(std::move(conn));
+        CHECK(client->bucket_exists(settings->bucket_name));
+        CHECK(client->delete_object(settings->bucket_name, object_name));
+        CHECK(!client->object_exists(settings->bucket_name, object_name));
 
         {
-            char str[] = "Hello, Acquire!";
             auto sink = std::make_unique<zarr::S3Sink>(
-              settings.bucket_name, object_name, pool);
-            std::span data{ reinterpret_cast<uint8_t*>(str), sizeof(str) - 1 };
+              settings->bucket_name, object_name, client);
+            std::span data{ reinterpret_cast<const uint8_t*>(expected.data()),
+                            expected.size() };
             CHECK(sink->write(0, data));
             CHECK(zarr::finalize_sink(std::move(sink)));
         }
 
-        conn = pool->get_connection();
-        CHECK(conn->object_exists(settings.bucket_name, object_name));
-        pool->return_connection(std::move(conn));
+        CHECK(client->object_exists(settings->bucket_name, object_name));
 
-        // Verify the object contents.
-        {
-            minio::s3::BaseUrl url(settings.endpoint);
-            url.https = settings.endpoint.starts_with("https://");
-
-            minio::creds::EnvAwsProvider provider;
-            minio::s3::Client client(url, &provider);
-            minio::s3::GetObjectArgs args;
-            args.bucket = settings.bucket_name;
-            args.object = object_name;
-
-            std::string contents;
-            args.datafunc =
-              [&contents](minio::http::DataFunctionArgs args) -> bool {
-                contents = args.datachunk;
-                return true;
-            };
-
-            // Call get object.
-            minio::s3::GetObjectResponse resp = client.GetObject(args);
-
-            if (contents != "Hello, Acquire!") {
-                LOG_ERROR(
-                  "Expected 'Hello, Acquire!' but got '", contents, "'");
-                return 1;
-            }
+        const auto contents =
+          get_object_contents(*client, settings->bucket_name, object_name);
+        if (contents != expected) {
+            LOG_ERROR("Expected '", expected, "' but got '", contents, "'");
+            return 1;
         }
 
         // cleanup
-        conn = pool->get_connection();
-        CHECK(conn->delete_object(settings.bucket_name, object_name));
+        CHECK(client->delete_object(settings->bucket_name, object_name));
 
         retval = 0;
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception: ", e.what());
+        LOG_ERROR("Failed: ", e.what());
     }
 
     return retval;

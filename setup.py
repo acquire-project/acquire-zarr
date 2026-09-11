@@ -32,11 +32,6 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DBUILD_PYTHON=ON",
             "-DBUILD_TESTING=OFF",
-            # Build against the interpreter running this backend, which is the
-            # one the wheel is destined for. Left to its own devices, CMake's
-            # FindPython3 prefers macOS framework builds and ignores the target
-            # environment entirely -- PEP 517 build frontends (pip, uv) don't
-            # export VIRTUAL_ENV, so there is nothing for it to anchor to.
             f"-DPython3_EXECUTABLE={sys.executable}",
         ]
 

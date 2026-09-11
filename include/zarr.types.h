@@ -122,11 +122,24 @@ extern "C"
 
     /**
      * @brief S3 settings for streaming to Zarr.
+     * @details Credentials are never taken from here; they come from the
+     * environment or an AWS credentials file.
      */
     typedef struct
     {
+        /** Endpoint URL, which must begin with http:// or https://. There is
+         * no default scheme. The scheme and host are matched
+         * case-insensitively, and any path, query or fragment is ignored. */
         const char* endpoint;
+        /** Destination bucket, which must already exist. Requests use
+         * virtual-host addressing for an `*.amazonaws.com` endpoint whose
+         * bucket name is a legal DNS label, and path-style addressing
+         * otherwise; a name containing a dot, an underscore or an upper-case
+         * letter therefore falls back to path style even on AWS. */
         const char* bucket_name;
+        /** Region to sign requests for, or NULL. NULL is signed as
+         * "us-east-1"; endpoints that validate the signing region require this
+         * to be set explicitly to match the server. */
         const char* region;
     } ZarrS3Settings;
 

@@ -18,9 +18,9 @@ export VCPKG_ROOT := VCPKG_DIR
 _default:
     @just --list
 
-# Full development setup: submodules + vcpkg + uv sync
+# Full development setup: vcpkg + uv sync
 # (args are passed to uv sync, e.g.: `just install -p 3.12`)
-install *args: _setup-submodules setup-vcpkg (uv-sync args)
+install *args: setup-vcpkg (uv-sync args)
 
 # Run uv sync (includes testing dependencies, forces C extension rebuild)
 uv-sync *args: _ensure-uv
@@ -107,9 +107,6 @@ clean-all: clean
 [windows]
 clean-all: clean
     if (Test-Path "{{VCPKG_DIR}}") { Remove-Item -Recurse -Force "{{VCPKG_DIR}}" }
-
-_setup-submodules:
-    git -C "{{ROOT}}" submodule update --init --recursive
 
 [unix]
 _ensure-uv:

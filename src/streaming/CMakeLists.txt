@@ -27,8 +27,8 @@ add_library(${tgt}
         compression.params.hh
         thread.pool.hh
         thread.pool.cpp
-        s3.connection.hh
-        s3.connection.cpp
+        s3.client.hh
+        s3.client.cpp
         file.handle.hh
         file.handle.cpp
         sink.hh
@@ -64,7 +64,7 @@ target_include_directories(${tgt}
 
 target_link_libraries(${tgt} PRIVATE
         blosc_static
-        miniocpp::miniocpp
+        AWS::aws-crt-cpp
         Crc32c::crc32c
         nlohmann_json::nlohmann_json
         yaml-cpp::yaml-cpp
