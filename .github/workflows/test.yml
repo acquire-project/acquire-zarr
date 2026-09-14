@@ -137,11 +137,11 @@ jobs:
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
-      # dl.min.io now answers 410 Gone: MinIO archived the community server
-      # and mc and stopped serving their binaries. The container images are
-      # still published, so pull them from there instead.
-      MINIO_IMAGE: minio/minio:RELEASE.2025-09-07T16-13-09Z
-      MC_IMAGE: minio/mc:RELEASE.2025-08-13T08-35-41Z
+      # MinIO archived the community server and mc: dl.min.io answers 410 Gone
+      # for the binaries, and the Docker Hub repos are gone outright (a pull
+      # reports "repository does not exist"). quay.io still carries both.
+      MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+      MC_IMAGE: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
 
     steps:
       - uses: actions/checkout@v4
