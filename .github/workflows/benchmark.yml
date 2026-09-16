@@ -58,7 +58,7 @@ jobs:
           cache: 'pip'
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Cache vcpkg binaries
         uses: actions/cache@v6
