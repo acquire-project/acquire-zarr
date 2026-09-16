@@ -122,7 +122,7 @@ jobs:
           cmake --build ${{github.workspace}}/pack --config Release
           cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{matrix.platform}} binaries
           path: ${{github.workspace}}/*.zip
@@ -272,7 +272,7 @@ jobs:
           output-dir: dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{matrix.platform}} ${{matrix.arch}} wheel (Python ${{ matrix.python }})
           path: ${{github.workspace}}/dist/*.whl
