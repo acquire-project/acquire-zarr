@@ -11,6 +11,7 @@
 #include <cstring>
 #include <functional>
 #include <future>
+#include <omp.h>
 #include <stdexcept>
 #include <zstd.h>
 
@@ -603,6 +604,16 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
     const auto* data_ptr = frame.data();
     const auto data_size = frame.size();
     const auto src_row_stride = static_cast<size_t>(frame_cols) * bytes_per_px;
+
+    // This per-frame tile scatter runs inside a ThreadPool worker; a full
+    // (hardware_concurrency) OpenMP team per worker oversubscribes and busy-spins
+    // at barriers on many-core hosts. ZARR_TILE_COPY_THREADS (resolved once) caps
+    // the team for this thread's regions. When unset we touch nothing, so the
+    // parallel-for below is byte-for-byte the original default behavior.
+    static const uint32_t tile_copy_env = zarr::resolve_tile_copy_threads();
+    if (tile_copy_env > 0) {
+        omp_set_num_threads(static_cast<int>(tile_copy_env));
+    }
 
 #pragma omp parallel for reduction(+ : bytes_written)
     for (auto tile_idx = 0; tile_idx < n_tiles; ++tile_idx) {

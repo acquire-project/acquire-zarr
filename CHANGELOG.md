@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ZARR_TILE_COPY_THREADS` environment variable to cap the OpenMP team size for the per-frame
+  tile-copy loop. The loop runs inside every thread-pool worker, so on a many-core host each
+  worker spawns a full hardware-concurrency team; the teams busy-wait at barriers and
+  oversubscribe the machine, cutting sustained write throughput (most visibly when writing to
+  slow/remote storage, e.g. NFS). Set it to a positive integer (e.g. `1`) to cap the team;
+  unset or invalid leaves the previous default behavior unchanged
+
 ### Changed
 
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for

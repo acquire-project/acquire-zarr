@@ -15,6 +15,7 @@ set(tests
         thread-pool-push-to-job-queue
         resolve-max-threads
         resolve-direct-io
+        resolve-tile-copy-threads
         construct-data-paths
         endpoint-request-target
         s3-client-bucket-exists
