@@ -246,7 +246,7 @@ jobs:
 
       - name: Build (manylinux)
         if: startsWith(matrix.platform, 'ubuntu')
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_BUILD: "${{ matrix.cp_ver }}-*"
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
