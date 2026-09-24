@@ -79,7 +79,7 @@ pre-commit run --all-files
 | `array.hh/cpp` | `ArrayBase`/`Array`: manages chunk layout and data for one array within a store |
 | `array.dimensions.hh/cpp` | Per-dimension metadata (size, chunk size, shard size, transposition order) |
 | `multiscale.array.hh/cpp` | Wraps an `Array` and generates downsampled pyramid levels |
-| `downsampler.hh/cpp` | Mean/mode/median downsampling logic |
+| `downsampler.hh/cpp` | Decimate/mean/min/max downsampling logic |
 | `chunk.hh/cpp` + `shard.hh/cpp` | Zarr v3 chunk/shard serialization |
 | `frame.queue.hh/cpp` | Thread-safe frame buffer between `append()` caller and writer threads |
 | `thread.pool.hh/cpp` | Worker threads that compress and write chunks; jobs return `TaskStatus` |
@@ -95,10 +95,18 @@ pre-commit run --all-files
 
 1. Caller → `ZarrStream::append(frame, array_key)`
 2. Frame pushed onto `FrameQueue` with its frame id
-3. Worker threads pop frames, compress chunks with Blosc or zstd
-4. Compressed chunks assembled into shards (Zarr v3 sharding codec)
-5. Shards and metadata (`.zarray`, `zarr.json`) written atomically via the sink abstraction
-6. For multiscale stores, downsampled levels are written in parallel
+3. A single long-lived thread-pool job (`process_frame_queue_`) pops frames and tiles
+   them into chunk buffers; no other pool thread touches the queue
+4. Pool workers compress chunks with Blosc or zstd and write them — compression and write
+   are one job per chunk, not separate stages
+5. Chunks are packed into shards with a crc32c-checksummed index footer, written last
+   (`index_location: "end"`, Zarr v3 sharding codec)
+6. Shards and metadata (`zarr.json`) are written via the sink abstraction. Metadata is
+   rewritten in place rather than atomically — `pwrite` plus `ftruncate` on the live file
+   — at each append-dimension shard rollover and at close
+7. For multiscale stores, downsampled levels are generated and written sequentially on
+   the frame-queue thread; only chunk compression and shard writes are dispatched to the
+   thread pool
 
 ### Tests layout
 
