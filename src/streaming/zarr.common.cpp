@@ -217,6 +217,29 @@ zarr::resolve_max_threads(uint32_t requested_max_threads)
     return parsed;
 }
 
+uint32_t
+zarr::resolve_tile_copy_threads()
+{
+    const char* env = std::getenv("ZARR_TILE_COPY_THREADS");
+    if (env == nullptr || *env == '\0') {
+        return 0; // unset: caller uses the OpenMP default team size
+    }
+
+    const std::string_view value{ env };
+    uint32_t parsed = 0;
+    const auto result =
+      std::from_chars(value.data(), value.data() + value.size(), parsed);
+
+    if (result.ec != std::errc{} ||
+        result.ptr != value.data() + value.size() || parsed == 0) {
+        LOG_WARNING(
+          "Ignoring invalid ZARR_TILE_COPY_THREADS value: '", value, "'");
+        return 0;
+    }
+
+    return parsed;
+}
+
 bool
 zarr::resolve_direct_io()
 {

@@ -143,4 +143,20 @@ resolve_max_threads(uint32_t requested_max_threads);
  */
 bool
 resolve_direct_io();
+
+/**
+ * @brief Resolve the OpenMP team size for the per-frame tile-copy loop from the
+ * ZARR_TILE_COPY_THREADS environment variable.
+ *
+ * That loop runs inside every ThreadPool worker; on many-core hosts a full
+ * (hardware_concurrency) team per worker oversubscribes and busy-spins at
+ * barriers, wasting CPU and cutting throughput. Set ZARR_TILE_COPY_THREADS=1 to
+ * serialize the copy (recommended when writing to slow/remote storage on a
+ * many-core node); leave it unset to keep the OpenMP default (best when the copy
+ * is a meaningful fraction of the write, e.g. fast local disk).
+ * @return the requested team size if set to a valid positive integer; otherwise
+ * 0 (meaning: use the OpenMP default team size, i.e. unchanged behavior).
+ */
+uint32_t
+resolve_tile_copy_threads();
 } // namespace zarr

@@ -805,6 +805,25 @@ memory blocks, starving unrelated drivers that need them.
   streaming has begun has no effect. When it resolves to enabled, a message is logged at
   info level.
 
+### Tile-copy parallelism
+
+Each incoming frame is scattered into its chunk buffers by an OpenMP parallel loop. That
+loop runs inside every thread-pool worker, so on a many-core host each worker can spawn a
+full (hardware-concurrency) OpenMP team; the teams busy-wait at barriers and oversubscribe
+the machine, wasting CPU and cutting throughput — especially when writing to slow or remote
+storage, where the copy is a negligible fraction of the work. The `ZARR_TILE_COPY_THREADS`
+environment variable caps that team.
+
+- Set it to a positive integer (e.g. `ZARR_TILE_COPY_THREADS=1`) to cap the tile-copy team
+  to that many threads. On a many-core node writing to NFS, `1` is a good default and can
+  substantially improve sustained write throughput.
+- Unset (the default), empty, or an invalid value (non-numeric, zero, or negative — ignored
+  with a warning) leaves the OpenMP default team size, i.e. behavior is unchanged.
+- The stream's own thread pool still provides cross-chunk/-frame parallelism; this only
+  bounds the per-frame copy's inner parallelism.
+- The value is read once, on first use. It's harmless on few-core hosts and fast local
+  disks, where the default is already fine.
+
 ### Anaconda GLIBCXX issue
 
 If you encounter the error `GLIBCXX_3.4.30 not found` when working with the library in Python, it may be due to a
