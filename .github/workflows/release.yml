@@ -177,7 +177,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: 'pip'
@@ -240,7 +240,7 @@ jobs:
 
       - name: Build (manylinux)
         if: startsWith(matrix.platform, 'ubuntu')
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_BUILD: "${{ matrix.cp_ver }}-*"
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds
