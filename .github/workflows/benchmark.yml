@@ -79,11 +79,6 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
       # VS18 has no CMake 3.31 generator; set up MSVC and drive scikit-build
       # with Ninja via CMAKE_GENERATOR (see test.yml for the full rationale).
       - name: Set up MSVC environment

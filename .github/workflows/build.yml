@@ -95,11 +95,6 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
       - name: CMake
         run: |
           cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
@@ -207,7 +202,6 @@ jobs:
       - name: macOS fixes
         if: startsWith(matrix.platform, 'macos')
         run: |
-          brew install libomp
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             echo "ARCHFLAGS=-arch arm64" >> $GITHUB_ENV
             echo "_PYTHON_HOST_PLATFORM=macosx-15.0-arm64" >> $GITHUB_ENV
