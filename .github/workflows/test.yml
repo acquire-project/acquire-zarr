@@ -129,18 +129,17 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
       MINIO_URL: http://localhost:9000
-      MINIO_ALIAS: myminio
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
-      # MinIO archived the community server and mc: dl.min.io answers 410 Gone
-      # for the binaries, and the Docker Hub repos are gone outright (a pull
-      # reports "repository does not exist"). quay.io still carries both.
-      MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-      MC_IMAGE: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+      # MinIO removed its community server from every free registry: dl.min.io
+      # answers 410 Gone, the Docker Hub repos are gone, and quay.io now rejects
+      # anonymous pulls ("unauthorized"). Even bitnami/minio has been emptied.
+      # Run the S3 tests against adobe/s3mock instead -- a lightweight S3 API
+      # mock that is still freely pullable and accepts any credentials, so no
+      # root user or service account is needed.
+      S3MOCK_IMAGE: adobe/s3mock:5.2.3
 
     steps:
       - uses: actions/checkout@v7
@@ -164,42 +163,39 @@ jobs:
         with:
           cmake-version: "3.31.x"
 
-      - name: Start minio
+      - name: Start s3mock
         run: |
-          # nothing here uses the web console, so neither its port nor
-          # --console-address is worth carrying
-          docker run -d --name minio -p 9000:9000 \
-            -e "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
-            -e "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
-            "$MINIO_IMAGE" server /data
+          # s3mock serves the S3 API on 9090 (HTTP); map it to the 9000 the
+          # tests expect. It accepts any credentials, so there is no admin /
+          # service-account step; the bucket is created in the next step.
+          docker run -d --name s3mock -p 9000:9090 \
+            "$S3MOCK_IMAGE"
           for _ in $(seq 60); do
-            if curl -fsS "$MINIO_URL/minio/health/live" >/dev/null; then
+            # ready as soon as the server returns any HTTP response
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$MINIO_URL/" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
               ready=1
               break
             fi
             sleep 1
           done
           if [ -z "$ready" ]; then
-            docker logs minio >&2
-            echo "minio did not become ready" >&2
+            docker logs s3mock >&2
+            echo "s3mock did not become ready" >&2
             exit 1
           fi
 
-      - name: Create a service account and a bucket
+      - name: Create the test bucket
         run: |
-          # mc keeps its aliases in a config file, which a --rm container
-          # throws away, so pass the target through MC_HOST_<alias> instead
-          mc_host="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@${MINIO_URL#http://}"
-          mcli() {
-            docker run --rm --network host \
-              -e "MC_HOST_$MINIO_ALIAS=$mc_host" \
-              "$MC_IMAGE" "$@"
-          }
-          mcli admin user svcacct add \
-            --access-key "$MINIO_ACCESS_KEY" \
-            --secret-key "$MINIO_SECRET_KEY" \
-            "$MINIO_ALIAS" "$MINIO_ROOT_USER"
-          mcli mb "$MINIO_ALIAS/$MINIO_BUCKET"
+          # s3mock does not validate signatures, so a plain path-style PUT
+          # creates the bucket exactly as the library addresses it. Verify it is
+          # visible (HeadBucket) before running the tests.
+          curl -fsS -X PUT "$MINIO_URL/$MINIO_BUCKET"
+          if ! curl -fsS -I "$MINIO_URL/$MINIO_BUCKET" >/dev/null; then
+            docker logs s3mock >&2
+            echo "bucket $MINIO_BUCKET not reachable after create" >&2
+            exit 1
+          fi
 
       - name: Install vcpkg
         run: |
