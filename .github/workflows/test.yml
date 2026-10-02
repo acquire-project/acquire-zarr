@@ -171,10 +171,9 @@ jobs:
       - name: Start s3mock
         run: |
           # s3mock serves the S3 API on 9090 (HTTP); map it to the 9000 the
-          # tests expect. initialBuckets pre-creates the test bucket, so there
-          # is no admin / service-account step.
+          # tests expect. It accepts any credentials, so there is no admin /
+          # service-account step; the bucket is created in the next step.
           docker run -d --name s3mock -p 9000:9090 \
-            -e "initialBuckets=$MINIO_BUCKET" \
             "$S3MOCK_IMAGE"
           for _ in $(seq 60); do
             # ready as soon as the server returns any HTTP response
@@ -188,6 +187,18 @@ jobs:
           if [ -z "$ready" ]; then
             docker logs s3mock >&2
             echo "s3mock did not become ready" >&2
+            exit 1
+          fi
+
+      - name: Create the test bucket
+        run: |
+          # s3mock does not validate signatures, so a plain path-style PUT
+          # creates the bucket exactly as the library addresses it. Verify it is
+          # visible (HeadBucket) before running the tests.
+          curl -fsS -X PUT "$MINIO_URL/$MINIO_BUCKET"
+          if ! curl -fsS -I "$MINIO_URL/$MINIO_BUCKET" >/dev/null; then
+            docker logs s3mock >&2
+            echo "bucket $MINIO_BUCKET not reachable after create" >&2
             exit 1
           fi
 
