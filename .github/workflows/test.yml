@@ -92,11 +92,6 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
       # windows-latest ships Visual Studio 18, which CMake 3.31 has no generator
       # for; it falls back to NMake and fails. Set up the MSVC environment and
       # use Ninja so the generator never depends on CMake knowing the VS version.
@@ -292,11 +287,6 @@ jobs:
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
           ./vcpkg integrate install
         shell: bash
-
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
 
       # see the C/C++ job: VS18 has no CMake 3.31 generator. Set up MSVC and
       # tell scikit-build to drive the build with Ninja via CMAKE_GENERATOR.

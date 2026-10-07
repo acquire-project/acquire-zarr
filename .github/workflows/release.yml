@@ -89,11 +89,6 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
       # windows-latest ships Visual Studio 18, which CMake 3.31 has no generator
       # for; set up MSVC and drive every cmake configure with Ninja.
       - name: Set up MSVC environment
@@ -218,7 +213,6 @@ jobs:
       - name: macOS fixes
         if: startsWith(matrix.platform, 'macos')
         run: |
-          brew install libomp
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             echo "ARCHFLAGS=-arch arm64" >> $GITHUB_ENV
             echo "_PYTHON_HOST_PLATFORM=macosx-15.0-arm64" >> $GITHUB_ENV

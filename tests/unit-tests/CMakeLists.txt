@@ -13,6 +13,7 @@ set(tests
         array-dimensions-shard-internal-index
         array-dimensions-courtesy-flush
         thread-pool-push-to-job-queue
+        parallel-for-reduce
         resolve-max-threads
         resolve-direct-io
         construct-data-paths
