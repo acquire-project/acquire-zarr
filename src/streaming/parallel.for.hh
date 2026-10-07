@@ -20,6 +20,9 @@ namespace zarr {
 // copy. The team is capped small because measured copy latency saturates by ~4
 // threads; a per-core team only adds oversubscription/barrier cost at scale.
 //
+// The team is shared by every stream in the process and runs one round at a
+// time. A caller that finds the team busy runs inline rather than waiting.
+//
 // Exceptions thrown by `block` are captured and rethrown on the calling thread
 // after the team rejoins, preserving single-threaded error semantics.
 size_t

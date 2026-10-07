@@ -35,8 +35,17 @@ class TileCopyPool
 
     // Execute block over [0, n) across the team and return the summed result.
     // Rethrows the first exception any worker captured.
+    //
+    // The team runs one round at a time. Streams in the same process share it,
+    // so a caller that finds a round in progress runs its block inline instead
+    // of waiting on another stream's frame.
     size_t run(int n, const std::function<size_t(int, int)>& block)
     {
+        std::unique_lock<std::mutex> round(round_mutex_, std::try_to_lock);
+        if (!round.owns_lock()) {
+            return block(0, n);
+        }
+
         std::unique_lock<std::mutex> lock(mutex_);
         n_ = n;
         block_ = &block;
@@ -126,6 +135,7 @@ class TileCopyPool
 
     int team_ = 1;
     std::vector<std::thread> threads_;
+    std::mutex round_mutex_; // held by the caller for a whole round
     std::mutex mutex_;
     std::condition_variable work_cv_; // workers wait for the next round
     std::condition_variable done_cv_; // caller waits for the round to finish

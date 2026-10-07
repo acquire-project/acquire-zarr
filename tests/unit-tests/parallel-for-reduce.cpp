@@ -3,6 +3,8 @@
 
 #include <numeric>
 #include <stdexcept>
+#include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -60,6 +62,48 @@ test_exception_propagates()
     EXPECT(threw, "expected the block's exception to propagate to the caller");
 }
 
+// Several streams in one process share the team. Concurrent callers must each
+// get their own sum, and none may hang.
+void
+test_concurrent_callers()
+{
+    constexpr int n_callers = 4;
+    constexpr int n_rounds = 2000;
+    constexpr int n = 4096;
+
+    std::vector<std::string> failures(n_callers);
+    std::vector<std::thread> callers;
+    for (int c = 0; c < n_callers; ++c) {
+        callers.emplace_back([c, &failures] {
+            const size_t offset = static_cast<size_t>(c) * 1000003;
+            const size_t expected =
+              static_cast<size_t>(n) * (n - 1) / 2 + n * offset;
+            for (int r = 0; r < n_rounds && failures[c].empty(); ++r) {
+                const size_t total =
+                  zarr::parallel_for_reduce(n, [offset](int begin, int end) {
+                      size_t local = 0;
+                      for (int i = begin; i < end; ++i) {
+                          local += static_cast<size_t>(i) + offset;
+                      }
+                      return local;
+                  });
+                if (total != expected) {
+                    failures[c] = "caller " + std::to_string(c) + " round " +
+                                  std::to_string(r) + ": got " +
+                                  std::to_string(total) + ", expected " +
+                                  std::to_string(expected);
+                }
+            }
+        });
+    }
+    for (auto& t : callers) {
+        t.join();
+    }
+    for (const auto& f : failures) {
+        EXPECT(f.empty(), f);
+    }
+}
+
 } // namespace
 
 int
@@ -78,6 +122,7 @@ main()
         test_covers_range_once(100003); // fanned out, not divisible by team
 
         test_exception_propagates();
+        test_concurrent_callers();
 
         CHECK(zarr::tile_copy_team_size() >= 1);
 
