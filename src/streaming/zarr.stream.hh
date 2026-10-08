@@ -82,6 +82,10 @@ struct ZarrStream_s
 
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
+    bool overwrite_{ false };
+    ZarrIntermediateGroups intermediate_groups_{
+        ZarrIntermediateGroups_IfMissing
+    };
 
     // maps of plates and wells, key by their paths relative to the store root
     std::unordered_map<std::string, zarr::Plate> plates_;
@@ -167,9 +171,33 @@ struct ZarrStream_s
     /**
      * @brief Write intermediate group metadata to the store, including HCS
      * metadata (if applicable).
+     * @details Called once, when the stream is created. Every path and all HCS
+     * metadata are known then, and a reader can navigate the hierarchy while
+     * frames arrive. The stream does not write these groups again at close, so
+     * metadata that the caller writes after create is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();
+
+    /**
+     * @brief Write one generic group's metadata unless a Zarr v3 group node is
+     * already at @p sink_path.
+     * @details An existing file that is not a v3 group (an array node left by
+     * an earlier run, or a file truncated by a crash) is replaced, with a
+     * warning. On S3 the write is conditional, so the check and the write are
+     * one request.
+     * @return True if the group is now in place, otherwise false.
+     */
+    [[nodiscard]] bool write_group_metadata_if_missing_(
+      const std::string& sink_path,
+      const std::string& metadata_str);
+
+    /**
+     * @brief Write @p metadata_str to @p sink_path, replacing what is there.
+     * @return True if the metadata was written, otherwise false.
+     */
+    [[nodiscard]] bool write_metadata_object_(const std::string& sink_path,
+                                              const std::string& metadata_str);
 
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();

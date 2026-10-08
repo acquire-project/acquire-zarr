@@ -10,6 +10,7 @@
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <stack>
 #include <unordered_set>
@@ -17,6 +18,22 @@
 namespace fs = std::filesystem;
 
 namespace {
+/// True if @p text is a Zarr v3 group node; false for anything else, including
+/// text that does not parse.
+bool
+is_v3_group_node(std::string_view text)
+{
+    const auto doc = nlohmann::json::parse(text, nullptr, false);
+    if (!doc.is_object()) {
+        return false;
+    }
+
+    const auto format = doc.find("zarr_format");
+    const auto node_type = doc.find("node_type");
+    return format != doc.end() && *format == 3 && node_type != doc.end() &&
+           *node_type == "group";
+}
+
 std::optional<zarr::S3Settings>
 make_s3_settings(const ZarrS3Settings* settings)
 {
@@ -914,6 +931,8 @@ ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)
     // commit settings and create the output store
     EXPECT(commit_settings_(settings), error_);
 
+    EXPECT(write_intermediate_metadata_(), error_);
+
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
 }
@@ -1133,6 +1152,12 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
           settings->version == 0 ? ZarrVersion_3 : settings->version;
         version != ZarrVersion_3) {
         error_ = "Invalid Zarr version: " + std::to_string(version);
+        return false;
+    }
+
+    if (settings->intermediate_groups >= ZarrIntermediateGroupsCount) {
+        error_ = "Invalid intermediate groups mode: " +
+                 std::to_string(settings->intermediate_groups);
         return false;
     }
 
@@ -1452,6 +1477,8 @@ ZarrStream_s::commit_settings_(const ZarrStreamSettings* settings)
 
     std::optional<std::string> bucket_name;
     s3_settings_ = make_s3_settings(settings->s3_settings);
+    overwrite_ = settings->overwrite;
+    intermediate_groups_ = settings->intermediate_groups;
 
     // create the data store
     if (!create_store_(settings->overwrite)) {
@@ -1566,11 +1593,6 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    std::optional<std::string> bucket_name;
-    if (s3_settings_) {
-        bucket_name = s3_settings_->bucket_name;
-    }
-
     const nlohmann::json group_metadata = nlohmann::json({
       { "zarr_format", 3 },
       { "consolidated_metadata", nullptr },
@@ -1583,6 +1605,14 @@ ZarrStream_s::write_intermediate_metadata_()
     for (const auto& parent_group_key : intermediate_group_paths_) {
         const std::string relative_path =
           (parent_group_key.empty() ? "" : parent_group_key);
+
+        // root group has an empty relative_path; can't regularize_key the
+        // join because store_path_ may be absolute (#247)
+        std::string sink_path = store_path_;
+        if (!relative_path.empty()) {
+            sink_path += "/" + relative_path;
+        }
+        sink_path += "/" + metadata_key;
 
         if (auto pit = plates_.find(relative_path); // is it a plate?
             pit != plates_.end()) {
@@ -1611,31 +1641,27 @@ ZarrStream_s::write_intermediate_metadata_()
 
             metadata_str = well_metadata.dump(4);
         } else { // generic group
+            // a generic group carries nothing of ours, so the caller decides
+            // whether we write it (#186)
+            if (intermediate_groups_ == ZarrIntermediateGroups_Never) {
+                continue;
+            }
+
             metadata_str = group_metadata.dump(4);
+
+            // with overwrite, the filesystem store starts empty; write
+            // unconditionally so that S3, which is not cleared, matches it
+            if (intermediate_groups_ == ZarrIntermediateGroups_IfMissing &&
+                !overwrite_) {
+                if (!write_group_metadata_if_missing_(sink_path,
+                                                      metadata_str)) {
+                    return false;
+                }
+                continue;
+            }
         }
 
-        ConstByteSpan metadata_span(
-          reinterpret_cast<const uint8_t*>(metadata_str.data()),
-          metadata_str.size());
-
-        // root group has an empty relative_path; can't regularize_key the
-        // join because store_path_ may be absolute (#247)
-        std::string sink_path = store_path_;
-        if (!relative_path.empty()) {
-            sink_path += "/" + relative_path;
-        }
-        sink_path += "/" + metadata_key;
-        std::unique_ptr<zarr::Sink> metadata_sink;
-        if (is_s3_acquisition_()) {
-            metadata_sink =
-              zarr::make_s3_sink(bucket_name.value(), sink_path, s3_client_);
-        } else {
-            metadata_sink = zarr::make_file_sink(
-              sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
-        }
-
-        if (!metadata_sink->write(0, metadata_span) ||
-            !zarr::finalize_sink(std::move(metadata_sink))) {
+        if (!write_metadata_object_(sink_path, metadata_str)) {
             set_error_("Failed to write intermediate metadata for group '" +
                        parent_group_key + "'");
             return false;
@@ -1643,6 +1669,109 @@ ZarrStream_s::write_intermediate_metadata_()
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
+                                               const std::string& metadata_str)
+{
+    if (is_s3_acquisition_()) {
+        const auto& bucket_name = s3_settings_->bucket_name;
+        ConstByteSpan metadata_span(
+          reinterpret_cast<const uint8_t*>(metadata_str.data()),
+          metadata_str.size());
+
+        switch (s3_client_->put_object_if_absent(
+          bucket_name, sink_path, metadata_span)) {
+            case zarr::S3Client::PutIfAbsentResult::Stored:
+                return true;
+            case zarr::S3Client::PutIfAbsentResult::Failed:
+                set_error_("Failed to write group metadata at '" + sink_path +
+                           "'");
+                return false;
+            case zarr::S3Client::PutIfAbsentResult::Exists:
+                break;
+        }
+
+        const auto existing = s3_client_->get_object(bucket_name, sink_path);
+        if (!existing) {
+            set_error_("Failed to read existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        if (is_v3_group_node(
+              std::string_view(reinterpret_cast<const char*>(existing->data()),
+                               existing->size()))) {
+            LOG_DEBUG("Keeping existing group metadata at ", sink_path);
+            return true;
+        }
+    } else {
+        std::error_code ec;
+        const bool exists = fs::exists(sink_path, ec);
+        if (ec) {
+            set_error_("Failed to check for group metadata at '" + sink_path +
+                       "': " + ec.message());
+            return false;
+        }
+
+        if (!exists) {
+            if (!write_metadata_object_(sink_path, metadata_str)) {
+                set_error_("Failed to write group metadata at '" + sink_path +
+                           "'");
+                return false;
+            }
+            return true;
+        }
+
+        std::ifstream file(sink_path, std::ios::binary);
+        if (!file.is_open()) {
+            set_error_("Failed to open existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        const std::string existing((std::istreambuf_iterator<char>(file)),
+                                   std::istreambuf_iterator<char>());
+        if (file.bad()) {
+            set_error_("Failed to read existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        file.close(); // before a replacement opens it for writing
+        if (is_v3_group_node(existing)) {
+            LOG_DEBUG("Keeping existing group metadata at ", sink_path);
+            return true;
+        }
+    }
+
+    LOG_WARNING(
+      "Replacing metadata at ", sink_path, " that is not a Zarr v3 group node");
+    if (!write_metadata_object_(sink_path, metadata_str)) {
+        set_error_("Failed to write group metadata at '" + sink_path + "'");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::write_metadata_object_(const std::string& sink_path,
+                                     const std::string& metadata_str)
+{
+    ConstByteSpan metadata_span(
+      reinterpret_cast<const uint8_t*>(metadata_str.data()),
+      metadata_str.size());
+
+    std::unique_ptr<zarr::Sink> metadata_sink;
+    if (is_s3_acquisition_()) {
+        metadata_sink =
+          zarr::make_s3_sink(s3_settings_->bucket_name, sink_path, s3_client_);
+    } else {
+        metadata_sink = zarr::make_file_sink(
+          sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
+    }
+
+    return metadata_sink && metadata_sink->write(0, metadata_span) &&
+           zarr::finalize_sink(std::move(metadata_sink));
 }
 
 bool
@@ -1866,11 +1995,6 @@ finalize_stream(ZarrStream* stream)
                 return false;
             }
         }
-    }
-
-    if (!stream->write_intermediate_metadata_()) {
-        LOG_ERROR(stream->error_);
-        return false;
     }
 
     return true;

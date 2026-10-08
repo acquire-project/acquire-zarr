@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
+  config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
+  default, keeps an existing Zarr v3 group node and replaces anything else; `Always` replaces what is there; `Never`
+  leaves the hierarchy to the caller. Plate and well groups are always written (#186, #268)
+
 ### Changed
 
+- The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
+  closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
+  `ZarrStream_create` is kept (#186, #268)
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
@@ -36,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a use-after-free when an array is destroyed without being finalized. Only the close path drained outstanding
   writes, so an array released on an error path had the state those writes touch destroyed underneath them. The
   destructor now drains as well (#248)
+- A stream no longer overwrites group metadata that the caller wrote, such as the attributes of the root group
+  (#186, #268)
+- `ZarrStream_close` and `ZarrStream_destroy` no longer let a C++ exception escape into the C caller, and they free the
+  stream even when finalization throws (#268)
 
 ## [0.10.0] - [2026-09-11](https://github.com/acquire-project/acquire-zarr/compare/v0.9.0...v0.10.0)
 

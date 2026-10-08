@@ -111,6 +111,29 @@ extern "C"
     } ZarrDownsamplingMethod;
 
     /**
+     * @brief Whether the stream writes `zarr.json` for the generic groups
+     *        above its arrays.
+     * @details Plate and well groups always carry metadata from the stream, so
+     *          they are always written. This setting applies only to the other
+     *          groups between the store root and an array. The stream writes
+     *          these groups when it is created, and not again at close.
+     * @note `ZarrIntermediateGroups_IfMissing` is the zero value, so a zeroed
+     *       `ZarrStreamSettings` keeps metadata that the caller wrote.
+     */
+    typedef enum
+    {
+        ZarrIntermediateGroups_IfMissing = 0, /**< Write a group's `zarr.json`
+                                               * unless a Zarr v3 group node is
+                                               * already there. When overwrite
+                                               * is set, write it always. */
+        ZarrIntermediateGroups_Always, /**< Always write a group's `zarr.json`,
+                                        * and replace what is there. */
+        ZarrIntermediateGroups_Never,  /**< Never write a group's `zarr.json`.
+                                        * The caller writes the hierarchy. */
+        ZarrIntermediateGroupsCount,   /**< Sentinel value, do not use. */
+    } ZarrIntermediateGroups;
+
+    /**
      * @brief Serialization format for stream settings config files.
      */
     typedef enum
