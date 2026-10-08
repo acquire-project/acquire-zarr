@@ -1584,6 +1584,14 @@ ZarrStream_s::write_intermediate_metadata_()
         const std::string relative_path =
           (parent_group_key.empty() ? "" : parent_group_key);
 
+        // root group has an empty relative_path; can't regularize_key the
+        // join because store_path_ may be absolute (#247)
+        std::string sink_path = store_path_;
+        if (!relative_path.empty()) {
+            sink_path += "/" + relative_path;
+        }
+        sink_path += "/" + metadata_key;
+
         if (auto pit = plates_.find(relative_path); // is it a plate?
             pit != plates_.end()) {
             const auto& plate = pit->second;
@@ -1611,6 +1619,16 @@ ZarrStream_s::write_intermediate_metadata_()
 
             metadata_str = well_metadata.dump(4);
         } else { // generic group
+            // a generic group carries nothing of ours, so keep any metadata
+            // the caller wrote there (#186)
+            const bool exists =
+              is_s3_acquisition_()
+                ? s3_client_->object_exists(bucket_name.value(), sink_path)
+                : fs::exists(sink_path);
+            if (exists) {
+                LOG_DEBUG("Keeping existing group metadata at ", sink_path);
+                continue;
+            }
             metadata_str = group_metadata.dump(4);
         }
 
@@ -1618,13 +1636,6 @@ ZarrStream_s::write_intermediate_metadata_()
           reinterpret_cast<const uint8_t*>(metadata_str.data()),
           metadata_str.size());
 
-        // root group has an empty relative_path; can't regularize_key the
-        // join because store_path_ may be absolute (#247)
-        std::string sink_path = store_path_;
-        if (!relative_path.empty()) {
-            sink_path += "/" + relative_path;
-        }
-        sink_path += "/" + metadata_key;
         std::unique_ptr<zarr::Sink> metadata_sink;
         if (is_s3_acquisition_()) {
             metadata_sink =

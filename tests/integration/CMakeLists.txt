@@ -20,6 +20,7 @@ set(tests
         stream-append-nullptr
         stream-ngff-no-multiscale
         stream-from-config-file
+        stream-keep-existing-group-metadata
 )
 
 foreach (name ${tests})
