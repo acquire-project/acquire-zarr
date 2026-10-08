@@ -24,6 +24,7 @@ __all__ = [
     "DimensionType",
     "DownsamplingMethod",
     "FieldOfView",
+    "IntermediateGroups",
     "LogLevel",
     "Plate",
     "S3Settings",
@@ -355,6 +356,46 @@ class FieldOfView:
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
 
+class IntermediateGroups:
+    """
+    Whether the stream writes ``zarr.json`` for the generic groups above its
+    arrays. Plate and well groups are always written.
+
+    Attributes:
+      IF_MISSING: Write a group unless a Zarr v3 group node is already there.
+        With ``overwrite=True``, write it always. The default.
+      ALWAYS: Always write a group, and replace what is there.
+      NEVER: Never write a group. The caller writes the hierarchy.
+    """
+
+    IF_MISSING: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.IF_MISSING: 0>
+    ALWAYS: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.ALWAYS: 1>
+    NEVER: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.NEVER: 2>
+    __members__: ClassVar[
+        dict[str, IntermediateGroups]
+    ]  # value = {'IF_MISSING': <IntermediateGroups.IF_MISSING: 0>, 'ALWAYS': <IntermediateGroups.ALWAYS: 1>, 'NEVER': <IntermediateGroups.NEVER: 2>}
+
+    def __eq__(self, other: Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+
 class LogLevel:
     """
     Severity level to filter logs by.
@@ -452,6 +493,8 @@ class StreamSettings:
             auto-detect based on available hardware concurrency.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
+        intermediate_groups: Whether to write ``zarr.json`` for the generic
+            groups above the arrays. Defaults to IntermediateGroups.IF_MISSING.
 
     Note:
         For S3 storage with endpoint "http://localhost:9000", bucket "my-bucket",
@@ -467,6 +510,7 @@ class StreamSettings:
     store_path: str
     max_threads: int
     overwrite: bool
+    intermediate_groups: IntermediateGroups
     plates: List[Plate]
 
     def __init__(self, **kwargs) -> None: ...

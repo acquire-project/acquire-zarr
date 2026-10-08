@@ -37,6 +37,9 @@ extern "C"
         ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
                                                non-NULL, the stream will be
                                                configured for HCS data. */
+        ZarrIntermediateGroups
+          intermediate_groups; /**< Whether to write the generic groups
+                                  above the arrays. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;

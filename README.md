@@ -386,6 +386,25 @@ The `overwrite` parameter controls whether existing data at the `store_path` is 
 When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
 When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.
 
+### Writing the groups above your arrays
+
+An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream closes, it
+writes a `zarr.json` for each of these groups. The `intermediate_groups` setting controls this:
+
+| C                                  | Python                          | Effect                                                                                                                                   |
+|------------------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| `ZarrIntermediateGroups_IfMissing` | `IntermediateGroups.IF_MISSING` | The default. Keep a Zarr v3 group node that is already there, such as one you wrote with your own attributes. Replace anything else. |
+| `ZarrIntermediateGroups_Always`    | `IntermediateGroups.ALWAYS`     | Write an empty group, and replace what is there.                                                                                         |
+| `ZarrIntermediateGroups_Never`     | `IntermediateGroups.NEVER`      | Write nothing. You write the hierarchy.                                                                                                  |
+
+With `overwrite` set, `IfMissing` writes every group, as `Always` does. A filesystem store is empty after the overwrite,
+but an S3 prefix is not cleared, so this keeps the two backends the same.
+
+Plate and well groups carry HCS metadata from the stream, so the stream always writes them.
+
+On S3, `IfMissing` uses a conditional write (`If-None-Match: *`). A server that ignores this header replaces existing
+group metadata.
+
 ### Writing custom metadata
 
 Custom metadata can be written to any array in the stream using

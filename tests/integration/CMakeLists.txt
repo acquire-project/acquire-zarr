@@ -21,6 +21,7 @@ set(tests
         stream-ngff-no-multiscale
         stream-from-config-file
         stream-keep-existing-group-metadata
+        stream-keep-existing-group-metadata-s3
 )
 
 foreach (name ${tests})

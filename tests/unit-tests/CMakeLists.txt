@@ -21,6 +21,7 @@ set(tests
         s3-client-bucket-exists
         s3-client-object-exists-check-false-positives
         s3-client-put-object
+        s3-client-put-object-if-absent
         s3-client-streaming-upload
         file-sink-write
         file-sink-close-on-destroy

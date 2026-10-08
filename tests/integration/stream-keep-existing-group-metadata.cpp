@@ -5,6 +5,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <sstream>
 #include <vector>
 
@@ -31,6 +33,17 @@ const std::string path_metadata = R"({
     "attributes": { "written_by": "caller", "level": "path" }
 })";
 
+// Not a group: an array node left by an earlier run, and a file cut short by a
+// crash.
+const std::string stale_array_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "array",
+    "attributes": {}
+})";
+const std::string truncated_metadata = R"({ "zarr_format": 3, "node_)";
+
+using StreamPtr = std::unique_ptr<ZarrStream, decltype(&ZarrStream_destroy)>;
+
 void
 write_file(const fs::path& path, const std::string& contents)
 {
@@ -47,10 +60,37 @@ read_file(const fs::path& path)
     ss << f.rdbuf();
     return ss.str();
 }
-} // namespace
+
+void
+remove_test_path()
+{
+    std::error_code ec;
+    fs::remove_all(test_path, ec);
+    if (ec) {
+        LOG_WARNING("Failed to remove ", test_path, ": ", ec.message());
+    }
+}
+
+void
+expect_empty_group(const fs::path& path)
+{
+    EXPECT(fs::is_regular_file(path), "Expected ", path, " to exist");
+    const auto json = nlohmann::json::parse(read_file(path));
+    EXPECT_STR_EQ(json["node_type"].get<std::string>().c_str(), "group");
+    EXPECT(json["attributes"].empty(), "Expected empty attributes in ", path);
+}
+
+void
+expect_array()
+{
+    const fs::path array_meta =
+      test_path / "path" / "to" / "data" / "zarr.json";
+    const auto array_json = nlohmann::json::parse(read_file(array_meta));
+    EXPECT_STR_EQ(array_json["node_type"].get<std::string>().c_str(), "array");
+}
 
 ZarrStream*
-setup()
+create_stream(ZarrIntermediateGroups mode)
 {
     static const std::string store_path = test_path.string();
     ZarrArraySettings array = {
@@ -64,6 +104,7 @@ setup()
         .max_threads = 0,
         .arrays = &array,
         .array_count = 1,
+        .intermediate_groups = mode,
     };
 
     CHECK_OK(ZarrArraySettings_create_dimension_array(settings.arrays, 3));
@@ -93,69 +134,149 @@ setup()
 }
 
 void
-verify()
+stream_frames(ZarrIntermediateGroups mode)
 {
-    // the caller's groups are untouched, byte for byte
-    EXPECT_STR_EQ(read_file(test_path / "zarr.json").c_str(),
-                  root_metadata.c_str());
-    EXPECT_STR_EQ(read_file(test_path / "path" / "zarr.json").c_str(),
-                  path_metadata.c_str());
+    // the guard frees the stream if a check below throws, so no writer thread
+    // outlives the test and holds files open while they are removed
+    StreamPtr stream(create_stream(mode), &ZarrStream_destroy);
+    EXPECT(stream != nullptr, "Failed to create stream");
 
-    // a missing intermediate group is still written, so the hierarchy stays
-    // navigable from the root
-    const fs::path to_meta = test_path / "path" / "to" / "zarr.json";
-    EXPECT(fs::is_regular_file(to_meta), "Expected ", to_meta, " to exist");
-    const auto to_json = nlohmann::json::parse(read_file(to_meta));
-    EXPECT_STR_EQ(to_json["node_type"].get<std::string>().c_str(), "group");
-    EXPECT(to_json["attributes"].empty(), "Expected empty attributes");
+    const std::vector<uint16_t> frame(array_width * array_height, 1);
+    size_t bytes_out;
+    for (unsigned int i = 0; i < array_timepoints; ++i) {
+        ZarrStatusCode status = ZarrStream_append(
+          stream.get(), frame.data(), bytes_of_frame, &bytes_out, nullptr);
+        EXPECT(status == ZarrStatusCode_Success,
+               "Failed to append frame ",
+               i,
+               ": ",
+               Zarr_get_status_message(status));
+    }
 
-    const fs::path array_meta =
-      test_path / "path" / "to" / "data" / "zarr.json";
-    const auto array_json = nlohmann::json::parse(read_file(array_meta));
-    EXPECT_STR_EQ(array_json["node_type"].get<std::string>().c_str(), "array");
+    const ZarrStatusCode status = ZarrStream_close(stream.release());
+    EXPECT(status == ZarrStatusCode_Success,
+           "Failed to close stream: ",
+           Zarr_get_status_message(status));
 }
+
+void
+run_case(const char* name,
+         ZarrIntermediateGroups mode,
+         const std::function<void()>& prepare,
+         const std::function<void()>& verify)
+{
+    LOG_INFO("Case: ", name);
+    remove_test_path();
+    prepare();
+    stream_frames(mode);
+    verify();
+    expect_array();
+}
+
+void
+write_caller_groups()
+{
+    write_file(test_path / "zarr.json", root_metadata);
+    write_file(test_path / "path" / "zarr.json", path_metadata);
+}
+
+void
+test_if_missing_keeps_caller_groups()
+{
+    run_case("if_missing keeps caller groups",
+             ZarrIntermediateGroups_IfMissing,
+             write_caller_groups,
+             [] {
+                 // the caller's groups are untouched, byte for byte
+                 EXPECT_STR_EQ(read_file(test_path / "zarr.json").c_str(),
+                               root_metadata.c_str());
+                 EXPECT_STR_EQ(
+                   read_file(test_path / "path" / "zarr.json").c_str(),
+                   path_metadata.c_str());
+
+                 // a missing intermediate group is still written, so the
+                 // hierarchy stays navigable from the root
+                 expect_empty_group(test_path / "path" / "to" / "zarr.json");
+             });
+}
+
+void
+test_if_missing_replaces_non_groups()
+{
+    run_case(
+      "if_missing replaces non-group metadata",
+      ZarrIntermediateGroups_IfMissing,
+      [] {
+          write_file(test_path / "zarr.json", truncated_metadata);
+          write_file(test_path / "path" / "zarr.json", stale_array_metadata);
+      },
+      [] {
+          expect_empty_group(test_path / "zarr.json");
+          expect_empty_group(test_path / "path" / "zarr.json");
+          expect_empty_group(test_path / "path" / "to" / "zarr.json");
+      });
+}
+
+void
+test_always_replaces_caller_groups()
+{
+    run_case("always replaces caller groups",
+             ZarrIntermediateGroups_Always,
+             write_caller_groups,
+             [] {
+                 expect_empty_group(test_path / "zarr.json");
+                 expect_empty_group(test_path / "path" / "zarr.json");
+                 expect_empty_group(test_path / "path" / "to" / "zarr.json");
+             });
+}
+
+void
+test_never_writes_no_groups()
+{
+    run_case(
+      "never writes no groups",
+      ZarrIntermediateGroups_Never,
+      [] {},
+      [] {
+          for (const auto& path : { test_path / "zarr.json",
+                                    test_path / "path" / "zarr.json",
+                                    test_path / "path" / "to" / "zarr.json" }) {
+              EXPECT(!fs::exists(path), "Expected ", path, " not to exist");
+          }
+      });
+}
+
+void
+test_invalid_mode_is_rejected()
+{
+    LOG_INFO("Case: invalid mode is rejected");
+    remove_test_path();
+    StreamPtr stream(create_stream(ZarrIntermediateGroupsCount),
+                     &ZarrStream_destroy);
+    EXPECT(stream == nullptr, "Expected an invalid mode to be rejected");
+}
+} // namespace
 
 int
 main()
 {
     Zarr_set_log_level(ZarrLogLevel_Debug);
 
-    if (fs::exists(test_path)) {
-        fs::remove_all(test_path);
-    }
-    write_file(test_path / "zarr.json", root_metadata);
-    write_file(test_path / "path" / "zarr.json", path_metadata);
-
     int retval = 1;
 
     try {
-        auto* stream = setup();
-        EXPECT(stream != nullptr, "Failed to create stream");
-
-        const std::vector<uint16_t> frame(array_width * array_height, 1);
-        size_t bytes_out;
-        for (auto i = 0; i < array_timepoints; ++i) {
-            ZarrStatusCode status = ZarrStream_append(
-              stream, frame.data(), bytes_of_frame, &bytes_out, nullptr);
-            EXPECT(status == ZarrStatusCode_Success,
-                   "Failed to append frame ",
-                   i,
-                   ": ",
-                   Zarr_get_status_message(status));
-        }
-
-        ZarrStream_destroy(stream);
-
-        verify();
+        test_if_missing_keeps_caller_groups();
+        test_if_missing_replaces_non_groups();
+        test_always_replaces_caller_groups();
+        test_never_writes_no_groups();
+        test_invalid_mode_is_rejected();
 
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
     }
 
-    if (fs::exists(test_path)) {
-        fs::remove_all(test_path);
-    }
+    remove_test_path();
 
     return retval;
 }
