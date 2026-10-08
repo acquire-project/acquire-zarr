@@ -388,8 +388,10 @@ When set to `false`, the stream will use the existing directory if it exists, or
 
 ### Writing the groups above your arrays
 
-An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream closes, it
-writes a `zarr.json` for each of these groups. The `intermediate_groups` setting controls this:
+An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream is created,
+it writes a `zarr.json` for each of these groups, so a reader can navigate the hierarchy during the acquisition. The
+stream does not write these groups again at close, so metadata that you write after `ZarrStream_create` is kept. The
+`intermediate_groups` setting controls the write at create:
 
 | C                                  | Python                          | Effect                                                                                                                                   |
 |------------------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|

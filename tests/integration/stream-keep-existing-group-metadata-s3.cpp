@@ -143,10 +143,14 @@ create_stream(ZarrIntermediateGroups mode, bool overwrite)
 }
 
 void
-stream_frames(ZarrIntermediateGroups mode, bool overwrite)
+stream_frames(ZarrIntermediateGroups mode,
+              bool overwrite,
+              const std::function<void()>& on_open)
 {
     StreamPtr stream(create_stream(mode, overwrite), &ZarrStream_destroy);
     EXPECT(stream != nullptr, "Failed to create stream");
+
+    on_open();
 
     const std::vector<uint16_t> frame(array_width * array_height, 1);
     size_t bytes_out;
@@ -166,6 +170,9 @@ stream_frames(ZarrIntermediateGroups mode, bool overwrite)
            Zarr_get_status_message(status));
 }
 
+/// Run @p verify while the stream is open, before any frame, and again after
+/// close: the groups must be in place for a reader during the acquisition, and
+/// close must not change them.
 void
 run_case(const char* name,
          ZarrIntermediateGroups mode,
@@ -176,7 +183,7 @@ run_case(const char* name,
     LOG_INFO("Case: ", name);
     clear_store();
     prepare();
-    stream_frames(mode, overwrite);
+    stream_frames(mode, overwrite, verify);
     verify();
     EXPECT(object_exists(*client, s3.bucket_name, array_key),
            "Expected ",
@@ -266,6 +273,14 @@ main()
                          " not to exist");
               }
           });
+
+        LOG_INFO("Case: metadata written after create survives close");
+        clear_store();
+        stream_frames(ZarrIntermediateGroups_Always, false, [] {
+            put(root_key, root_metadata);
+        });
+        EXPECT_STR_EQ(get(root_key).c_str(), root_metadata.c_str());
+        expect_empty_group(path_key);
 
         retval = 0;
     } catch (const std::exception& e) {

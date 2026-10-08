@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
+  closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
+  `ZarrStream_create` is kept (#186, #268)
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
@@ -43,8 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a use-after-free when an array is destroyed without being finalized. Only the close path drained outstanding
   writes, so an array released on an error path had the state those writes touch destroyed underneath them. The
   destructor now drains as well (#248)
-- Closing a stream no longer overwrites group metadata that the caller wrote before the stream opened, such as the
-  attributes of the root group (#186, #268)
+- A stream no longer overwrites group metadata that the caller wrote, such as the attributes of the root group
+  (#186, #268)
 - `ZarrStream_close` and `ZarrStream_destroy` no longer let a C++ exception escape into the C caller, and they free the
   stream even when finalization throws (#268)
 

@@ -931,6 +931,8 @@ ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)
     // commit settings and create the output store
     EXPECT(commit_settings_(settings), error_);
 
+    EXPECT(write_intermediate_metadata_(), error_);
+
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
 }
@@ -1768,7 +1770,7 @@ ZarrStream_s::write_metadata_object_(const std::string& sink_path,
           sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
     }
 
-    return metadata_sink->write(0, metadata_span) &&
+    return metadata_sink && metadata_sink->write(0, metadata_span) &&
            zarr::finalize_sink(std::move(metadata_sink));
 }
 
@@ -1993,11 +1995,6 @@ finalize_stream(ZarrStream* stream)
                 return false;
             }
         }
-    }
-
-    if (!stream->write_intermediate_metadata_()) {
-        LOG_ERROR(stream->error_);
-        return false;
     }
 
     return true;

@@ -115,7 +115,8 @@ extern "C"
      *        above its arrays.
      * @details Plate and well groups always carry metadata from the stream, so
      *          they are always written. This setting applies only to the other
-     *          groups between the store root and an array.
+     *          groups between the store root and an array. The stream writes
+     *          these groups when it is created, and not again at close.
      * @note `ZarrIntermediateGroups_IfMissing` is the zero value, so a zeroed
      *       `ZarrStreamSettings` keeps metadata that the caller wrote.
      */

@@ -359,7 +359,8 @@ class FieldOfView:
 class IntermediateGroups:
     """
     Whether the stream writes ``zarr.json`` for the generic groups above its
-    arrays. Plate and well groups are always written.
+    arrays. Plate and well groups are always written. The stream writes these
+    groups when it is created, and not again at close.
 
     Attributes:
       IF_MISSING: Write a group unless a Zarr v3 group node is already there.

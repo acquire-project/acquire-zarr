@@ -171,6 +171,10 @@ struct ZarrStream_s
     /**
      * @brief Write intermediate group metadata to the store, including HCS
      * metadata (if applicable).
+     * @details Called once, when the stream is created. Every path and all HCS
+     * metadata are known then, and a reader can navigate the hierarchy while
+     * frames arrive. The stream does not write these groups again at close, so
+     * metadata that the caller writes after create is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();

@@ -134,12 +134,14 @@ create_stream(ZarrIntermediateGroups mode)
 }
 
 void
-stream_frames(ZarrIntermediateGroups mode)
+stream_frames(ZarrIntermediateGroups mode, const std::function<void()>& on_open)
 {
     // the guard frees the stream if a check below throws, so no writer thread
     // outlives the test and holds files open while they are removed
     StreamPtr stream(create_stream(mode), &ZarrStream_destroy);
     EXPECT(stream != nullptr, "Failed to create stream");
+
+    on_open();
 
     const std::vector<uint16_t> frame(array_width * array_height, 1);
     size_t bytes_out;
@@ -159,6 +161,9 @@ stream_frames(ZarrIntermediateGroups mode)
            Zarr_get_status_message(status));
 }
 
+/// Run @p verify while the stream is open, before any frame, and again after
+/// close: the groups must be in place for a reader during the acquisition, and
+/// close must not change them.
 void
 run_case(const char* name,
          ZarrIntermediateGroups mode,
@@ -168,7 +173,7 @@ run_case(const char* name,
     LOG_INFO("Case: ", name);
     remove_test_path();
     prepare();
-    stream_frames(mode);
+    stream_frames(mode, verify);
     verify();
     expect_array();
 }
@@ -247,6 +252,22 @@ test_never_writes_no_groups()
 }
 
 void
+test_metadata_written_after_create_survives_close()
+{
+    LOG_INFO("Case: metadata written after create survives close");
+    remove_test_path();
+
+    // even with Always, the stream does not write groups again at close
+    stream_frames(ZarrIntermediateGroups_Always,
+                  [] { write_file(test_path / "zarr.json", root_metadata); });
+
+    EXPECT_STR_EQ(read_file(test_path / "zarr.json").c_str(),
+                  root_metadata.c_str());
+    expect_empty_group(test_path / "path" / "zarr.json");
+    expect_array();
+}
+
+void
 test_invalid_mode_is_rejected()
 {
     LOG_INFO("Case: invalid mode is rejected");
@@ -269,6 +290,7 @@ main()
         test_if_missing_replaces_non_groups();
         test_always_replaces_caller_groups();
         test_never_writes_no_groups();
+        test_metadata_written_after_create_survives_close();
         test_invalid_mode_is_rejected();
 
         retval = 0;
