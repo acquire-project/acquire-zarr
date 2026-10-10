@@ -349,9 +349,15 @@ extern "C"
 
     /**
      * @brief Append data to the Zarr stream.
-     * @details This function will block while chunks are compressed and written
-     * to the store. It will return when all data has been written. Multiple
+     * @details Copies @p data into the stream's bounded internal frame queue;
+     * chunking, compression and I/O happen on the stream's worker threads, never
+     * on the calling thread. This function therefore returns once the data has
+     * been *accepted*, not once it has been written to the store. It blocks only
+     * when the frame queue is full, until the consumer frees a slot. Multiple
      * frames can be appended in a single call.
+     *
+     * Not thread-safe: a stream expects a single producer. Concurrent calls for
+     * the same stream, including calls for different array keys, are undefined.
      * @param[in, out] stream The Zarr stream struct.
      * @param[in] data The data to append. If @p data is NULL, append
      * @p bytes_in zeros instead.
@@ -359,8 +365,14 @@ extern "C"
      * or the number of zeros to fill if @p data is NULL. This can be any
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
-     * @param[out] bytes_out The number of bytes written to the stream.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @param[out] bytes_out The number of bytes accepted by the stream. A value
+     * less than @p bytes_in is reported as ZarrStatusCode_PartialWrite and means
+     * the stream stopped accepting data, because of an asynchronous write error
+     * or because finalization began. It does not indicate a full frame queue,
+     * which blocks instead.
+     * @return ZarrStatusCode_Success on success, or an error code on failure. An
+     * asynchronous compression or write failure is reported as
+     * ZarrStatusCode_InternalError on a subsequent call, or by ZarrStream_close.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,
