@@ -182,15 +182,29 @@ struct ZarrStream_s
     /**
      * @brief Write one generic group's metadata unless a Zarr v3 group node is
      * already at @p sink_path.
-     * @details An existing file that is not a v3 group (an array node left by
-     * an earlier run, or a file truncated by a crash) is replaced, with a
-     * warning. On S3 the write is conditional, so the check and the write are
-     * one request.
+     * @details An existing file that is not a v3 group that a reader can open
+     * (an array node left by an earlier run, a file truncated by a crash, or a
+     * group with malformed fields) is replaced, with a warning. A kept group
+     * loses its consolidated metadata; see keep_group_metadata_(). On S3 the
+     * write is conditional, so the check and the write are one request.
      * @return True if the group is now in place, otherwise false.
      */
     [[nodiscard]] bool write_group_metadata_if_missing_(
       const std::string& sink_path,
       const std::string& metadata_str);
+
+    /**
+     * @brief Keep an existing group node, but clear its consolidated metadata.
+     * @details Consolidated metadata caches the metadata of the nodes below the
+     * group. This stream adds or changes arrays below it, so a reader that
+     * trusts the cache would miss a new array or see an old shape. A group with
+     * no consolidated metadata is kept byte for byte; otherwise it is written
+     * again with `consolidated_metadata` set to null, and nothing else changed.
+     * @param group The parsed group node. Modified if it is written again.
+     * @return True if the group is in place, otherwise false.
+     */
+    [[nodiscard]] bool keep_group_metadata_(const std::string& sink_path,
+                                            nlohmann::json& group);
 
     /**
      * @brief Write @p metadata_str to @p sink_path, replacing what is there.

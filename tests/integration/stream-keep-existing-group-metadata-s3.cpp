@@ -36,6 +36,29 @@ const std::string stale_array_metadata = R"({
     "node_type": "array",
     "attributes": {}
 })";
+const std::string list_attributes_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "attributes": []
+})";
+const std::string consolidated_root_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "attributes": { "written_by": "caller", "level": "root" },
+    "consolidated_metadata": {
+        "kind": "inline",
+        "must_understand": false,
+        "metadata": {
+            "path/to/data": { "zarr_format": 3, "node_type": "array",
+                              "shape": [1, 24, 32] }
+        }
+    }
+})";
+
+// What the stream writes for a generic group, as nlohmann dumps it.
+const std::string empty_group_metadata =
+  R"({"attributes":{},"consolidated_metadata":null,"node_type":"group",)"
+  R"("zarr_format":3})";
 
 using StreamPtr = std::unique_ptr<ZarrStream, decltype(&ZarrStream_destroy)>;
 
@@ -87,8 +110,9 @@ expect_empty_group(const std::string& key)
            key,
            " to exist");
     const auto json = nlohmann::json::parse(get(key));
-    EXPECT_STR_EQ(json["node_type"].get<std::string>().c_str(), "group");
-    EXPECT(json["attributes"].empty(), "Expected empty attributes in ", key);
+    // the whole document, with types: a check of single fields passes for
+    // "attributes": [] or a missing key
+    EXPECT_STR_EQ(json.dump().c_str(), empty_group_metadata.c_str());
 }
 
 ZarrStream*
@@ -236,6 +260,26 @@ main()
               expect_empty_group(root_key);
               expect_empty_group(path_key);
               expect_empty_group(to_key);
+          });
+
+        run_case(
+          "if_missing replaces malformed groups",
+          ZarrIntermediateGroups_IfMissing,
+          false,
+          [] { put(root_key, list_attributes_metadata); },
+          [] { expect_empty_group(root_key); });
+
+        run_case(
+          "if_missing clears consolidated metadata",
+          ZarrIntermediateGroups_IfMissing,
+          false,
+          [] { put(root_key, consolidated_root_metadata); },
+          [] {
+              auto expected = nlohmann::json::parse(consolidated_root_metadata);
+              expected["consolidated_metadata"] = nullptr;
+              const auto root = nlohmann::json::parse(get(root_key));
+              EXPECT(
+                root == expected, "Unexpected root metadata: ", root.dump());
           });
 
         // S3 is not cleared by overwrite, so the stream must not keep what an

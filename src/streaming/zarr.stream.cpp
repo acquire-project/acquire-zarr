@@ -18,20 +18,53 @@
 namespace fs = std::filesystem;
 
 namespace {
-/// True if @p text is a Zarr v3 group node; false for anything else, including
-/// text that does not parse.
-bool
-is_v3_group_node(std::string_view text)
+/**
+ * @brief Parse @p text as a Zarr v3 group node that a reader can open.
+ * @details Applies the rules of the v3 core spec, as zarr-python 3.4 enforces
+ * them: `zarr_format` is the integer 3, `node_type` is "group", `attributes`
+ * (if present) is an object, and any other key is `consolidated_metadata` or an
+ * extension object with `"must_understand": false`. A document that only names
+ * itself a group, such as one with `"attributes": []`, would be kept and then
+ * fail to open, so it is rejected here and replaced.
+ * @returns The document, or nullopt if it is not such a node, including text
+ * that does not parse.
+ */
+std::optional<nlohmann::json>
+parse_v3_group_node(std::string_view text)
 {
-    const auto doc = nlohmann::json::parse(text, nullptr, false);
-    if (!doc.is_object()) {
-        return false;
+    auto doc = nlohmann::json::parse(text, nullptr, false);
+    if (!doc.is_object() || !doc.contains("zarr_format") ||
+        !doc.contains("node_type")) {
+        return std::nullopt;
     }
 
-    const auto format = doc.find("zarr_format");
-    const auto node_type = doc.find("node_type");
-    return format != doc.end() && *format == 3 && node_type != doc.end() &&
-           *node_type == "group";
+    for (const auto& [key, value] : doc.items()) {
+        if (key == "zarr_format") {
+            if (!value.is_number_integer() || value != 3) {
+                return std::nullopt;
+            }
+        } else if (key == "node_type") {
+            if (value != "group") {
+                return std::nullopt;
+            }
+        } else if (key == "attributes") {
+            if (!value.is_object()) {
+                return std::nullopt;
+            }
+        } else if (key != "consolidated_metadata") {
+            if (!value.is_object()) {
+                return std::nullopt;
+            }
+            const auto must_understand = value.find("must_understand");
+            if (must_understand == value.end() ||
+                !must_understand->is_boolean() ||
+                must_understand->get<bool>()) {
+                return std::nullopt;
+            }
+        }
+    }
+
+    return doc;
 }
 
 std::optional<zarr::S3Settings>
@@ -1699,11 +1732,10 @@ ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
                        sink_path + "'");
             return false;
         }
-        if (is_v3_group_node(
+        if (auto group = parse_v3_group_node(
               std::string_view(reinterpret_cast<const char*>(existing->data()),
                                existing->size()))) {
-            LOG_DEBUG("Keeping existing group metadata at ", sink_path);
-            return true;
+            return keep_group_metadata_(sink_path, *group);
         }
     } else {
         std::error_code ec;
@@ -1737,15 +1769,36 @@ ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
             return false;
         }
         file.close(); // before a replacement opens it for writing
-        if (is_v3_group_node(existing)) {
-            LOG_DEBUG("Keeping existing group metadata at ", sink_path);
-            return true;
+        if (auto group = parse_v3_group_node(existing)) {
+            return keep_group_metadata_(sink_path, *group);
         }
     }
 
     LOG_WARNING(
       "Replacing metadata at ", sink_path, " that is not a Zarr v3 group node");
     if (!write_metadata_object_(sink_path, metadata_str)) {
+        set_error_("Failed to write group metadata at '" + sink_path + "'");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::keep_group_metadata_(const std::string& sink_path,
+                                   nlohmann::json& group)
+{
+    const auto consolidated = group.find("consolidated_metadata");
+    if (consolidated == group.end() || consolidated->is_null()) {
+        LOG_DEBUG("Keeping existing group metadata at ", sink_path);
+        return true;
+    }
+
+    LOG_INFO("Clearing consolidated metadata at ",
+             sink_path,
+             ", which would hide the arrays that this stream writes");
+    *consolidated = nullptr;
+    if (!write_metadata_object_(sink_path, group.dump(4))) {
         set_error_("Failed to write group metadata at '" + sink_path + "'");
         return false;
     }

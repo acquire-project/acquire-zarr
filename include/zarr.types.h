@@ -123,9 +123,11 @@ extern "C"
     typedef enum
     {
         ZarrIntermediateGroups_IfMissing = 0, /**< Write a group's `zarr.json`
-                                               * unless a Zarr v3 group node is
-                                               * already there. When overwrite
-                                               * is set, write it always. */
+                                               * unless a valid Zarr v3 group
+                                               * node is already there. Clear
+                                               * the consolidated metadata of a
+                                               * kept group. When overwrite is
+                                               * set, write it always. */
         ZarrIntermediateGroups_Always, /**< Always write a group's `zarr.json`,
                                         * and replace what is there. */
         ZarrIntermediateGroups_Never,  /**< Never write a group's `zarr.json`.

@@ -42,6 +42,49 @@ const std::string stale_array_metadata = R"({
 })";
 const std::string truncated_metadata = R"({ "zarr_format": 3, "node_)";
 
+// Name themselves groups, but zarr-python 3.4 cannot open them.
+const std::string list_attributes_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "attributes": []
+})";
+const std::string float_format_metadata = R"({
+    "zarr_format": 3.0,
+    "node_type": "group"
+})";
+const std::string unknown_key_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "foo": 1
+})";
+
+// Valid groups: one with an extension that readers may ignore, and one whose
+// consolidated metadata caches an old version of the array.
+const std::string extension_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "attributes": { "written_by": "caller" },
+    "foo": { "must_understand": false }
+})";
+const std::string consolidated_root_metadata = R"({
+    "zarr_format": 3,
+    "node_type": "group",
+    "attributes": { "written_by": "caller", "level": "root" },
+    "consolidated_metadata": {
+        "kind": "inline",
+        "must_understand": false,
+        "metadata": {
+            "path/to/data": { "zarr_format": 3, "node_type": "array",
+                              "shape": [1, 24, 32] }
+        }
+    }
+})";
+
+// What the stream writes for a generic group, as nlohmann dumps it.
+const std::string empty_group_metadata =
+  R"({"attributes":{},"consolidated_metadata":null,"node_type":"group",)"
+  R"("zarr_format":3})";
+
 using StreamPtr = std::unique_ptr<ZarrStream, decltype(&ZarrStream_destroy)>;
 
 void
@@ -76,8 +119,9 @@ expect_empty_group(const fs::path& path)
 {
     EXPECT(fs::is_regular_file(path), "Expected ", path, " to exist");
     const auto json = nlohmann::json::parse(read_file(path));
-    EXPECT_STR_EQ(json["node_type"].get<std::string>().c_str(), "group");
-    EXPECT(json["attributes"].empty(), "Expected empty attributes in ", path);
+    // the whole document, with types: a check of single fields passes for
+    // "attributes": [] or a missing key
+    EXPECT_STR_EQ(json.dump().c_str(), empty_group_metadata.c_str());
 }
 
 void
@@ -223,6 +267,48 @@ test_if_missing_replaces_non_groups()
 }
 
 void
+test_if_missing_replaces_malformed_groups()
+{
+    run_case(
+      "if_missing replaces malformed groups",
+      ZarrIntermediateGroups_IfMissing,
+      [] {
+          write_file(test_path / "zarr.json", list_attributes_metadata);
+          write_file(test_path / "path" / "zarr.json", float_format_metadata);
+          write_file(test_path / "path" / "to" / "zarr.json",
+                     unknown_key_metadata);
+      },
+      [] {
+          expect_empty_group(test_path / "zarr.json");
+          expect_empty_group(test_path / "path" / "zarr.json");
+          expect_empty_group(test_path / "path" / "to" / "zarr.json");
+      });
+}
+
+void
+test_if_missing_clears_consolidated_metadata()
+{
+    run_case(
+      "if_missing clears consolidated metadata",
+      ZarrIntermediateGroups_IfMissing,
+      [] {
+          write_file(test_path / "zarr.json", consolidated_root_metadata);
+          write_file(test_path / "path" / "zarr.json", extension_metadata);
+      },
+      [] {
+          // the caller's attributes stay; only the stale cache goes
+          auto expected = nlohmann::json::parse(consolidated_root_metadata);
+          expected["consolidated_metadata"] = nullptr;
+          const auto root =
+            nlohmann::json::parse(read_file(test_path / "zarr.json"));
+          EXPECT(root == expected, "Unexpected root metadata: ", root.dump());
+
+          EXPECT_STR_EQ(read_file(test_path / "path" / "zarr.json").c_str(),
+                        extension_metadata.c_str());
+      });
+}
+
+void
 test_always_replaces_caller_groups()
 {
     run_case("always replaces caller groups",
@@ -288,6 +374,8 @@ main()
     try {
         test_if_missing_keeps_caller_groups();
         test_if_missing_replaces_non_groups();
+        test_if_missing_replaces_malformed_groups();
+        test_if_missing_clears_consolidated_metadata();
         test_always_replaces_caller_groups();
         test_never_writes_no_groups();
         test_metadata_written_after_create_survives_close();

@@ -363,8 +363,9 @@ class IntermediateGroups:
     groups when it is created, and not again at close.
 
     Attributes:
-      IF_MISSING: Write a group unless a Zarr v3 group node is already there.
-        With ``overwrite=True``, write it always. The default.
+      IF_MISSING: Write a group unless a valid Zarr v3 group node is already
+        there. Clear the consolidated metadata of a kept group. With
+        ``overwrite=True``, write it always. The default.
       ALWAYS: Always write a group, and replace what is there.
       NEVER: Never write a group. The caller writes the hierarchy.
     """

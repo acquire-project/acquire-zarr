@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
   config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
-  default, keeps an existing Zarr v3 group node and replaces anything else; `Always` replaces what is there; `Never`
-  leaves the hierarchy to the caller. Plate and well groups are always written (#186, #268)
+  default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
+  anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
+  always written (#186, #268)
 
 ### Changed
 

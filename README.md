@@ -402,6 +402,13 @@ stream does not write these groups again at close, so metadata that you write af
 With `overwrite` set, `IfMissing` writes every group, as `Always` does. A filesystem store is empty after the overwrite,
 but an S3 prefix is not cleared, so this keeps the two backends the same.
 
+`IfMissing` keeps a group only if a reader can open it: `zarr_format` is the integer 3, `node_type` is `"group"`,
+`attributes` is an object, and any other key is `consolidated_metadata` or an extension with `"must_understand": false`.
+A kept group loses its consolidated metadata. That cache describes the arrays below the group, and the stream adds or
+changes those arrays, so a reader that trusts it would miss a new array or see an old shape. The stream sets
+`consolidated_metadata` to null and changes nothing else. With `Never`, the stream does not touch the groups, so clear or
+update any consolidated metadata yourself.
+
 Plate and well groups carry HCS metadata from the stream, so the stream always writes them.
 
 On S3, `IfMissing` uses a conditional write (`If-None-Match: *`). A server that ignores this header replaces existing
