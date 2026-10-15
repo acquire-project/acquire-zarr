@@ -653,7 +653,16 @@ extern "C"
             return ZarrStatusCode_Success;
         }
 
-        const bool ok = finalize_stream(stream);
+        // an exception must not cross the C boundary, and the stream must be
+        // freed either way
+        bool ok = false;
+        try {
+            ok = finalize_stream(stream);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error finalizing Zarr stream: ", e.what());
+        } catch (...) {
+            LOG_ERROR("Unknown error finalizing Zarr stream");
+        }
         delete stream;
 
         return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;

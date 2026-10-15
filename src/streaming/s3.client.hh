@@ -144,10 +144,15 @@ class S3Client
 
     /**
      * @brief Check whether an object exists.
+     * @details Only a 404 means that the object is absent. Any other failure,
+     * such as a 403 or a timeout, says nothing about the object, so it raises
+     * instead of returning false.
      * @param bucket_name The name of the bucket containing the object.
      * @param object_name The name of the object.
-     * @returns True if the object exists, otherwise false. An empty bucket or
-     * object name returns false rather than raising.
+     * @returns True if the object exists, false if the server reports that it
+     * does not. An empty bucket or object name returns false rather than
+     * raising.
+     * @throws std::runtime_error if the request fails for any other reason.
      */
     bool object_exists(std::string_view bucket_name,
                        std::string_view object_name);
@@ -166,6 +171,30 @@ class S3Client
     [[nodiscard]] bool put_object(std::string_view bucket_name,
                                   std::string_view object_name,
                                   ConstByteSpan data);
+
+    enum class PutIfAbsentResult
+    {
+        Stored, ///< The object did not exist and is now stored.
+        Exists, ///< The object exists; nothing was written.
+        Failed, ///< The request failed; the object's state is unknown.
+    };
+
+    /**
+     * @brief Put an object in a single request, unless it already exists.
+     * @details Sends `If-None-Match: *`, so the server makes the check and the
+     * write in one atomic step. A server that ignores the header overwrites the
+     * object and reports Stored.
+     * @param bucket_name The name of the bucket to put the object in.
+     * @param object_name The name of the object.
+     * @param data The data to put in the object.
+     * @returns Stored, Exists (HTTP 412), or Failed.
+     * @throws std::runtime_error if the bucket name is empty, the object name
+     * is empty, or @p data is empty.
+     */
+    [[nodiscard]] PutIfAbsentResult put_object_if_absent(
+      std::string_view bucket_name,
+      std::string_view object_name,
+      ConstByteSpan data);
 
     /**
      * @brief Delete an object.

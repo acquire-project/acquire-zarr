@@ -380,6 +380,65 @@ struct zarr::S3Client::Impl
 
         return run(*options);
     }
+
+    /// Put @p data in a single request, optionally only if the key is free.
+    Outcome put(std::string_view bucket_name,
+                std::string_view object_name,
+                ConstByteSpan data,
+                bool if_none_match)
+    {
+        EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
+        EXPECT(!object_name.empty(), "Object name must not be empty.");
+        EXPECT(!data.empty(), "Data must not be empty.");
+
+        LOG_DEBUG("Putting object ",
+                  object_name,
+                  " with ",
+                  data.size(),
+                  " bytes into bucket ",
+                  bucket_name,
+                  if_none_match ? " if absent" : "");
+
+        const auto target = make_target(endpoint, bucket_name, object_name);
+        auto request = make_request("PUT", target);
+        if (!request) {
+            return {};
+        }
+
+        const auto length = std::to_string(data.size());
+        crt::Http::HttpHeader content_length;
+        content_length.name = crt::ByteCursorFromCString("Content-Length");
+        content_length.value = crt::ByteCursorFromCString(length.c_str());
+        if (!request->AddHeader(content_length)) {
+            return {};
+        }
+
+        if (if_none_match) {
+            crt::Http::HttpHeader none_match;
+            none_match.name = crt::ByteCursorFromCString("If-None-Match");
+            none_match.value = crt::ByteCursorFromCString("*");
+            if (!request->AddHeader(none_match)) {
+                return {};
+            }
+        }
+
+        auto body = std::make_shared<MemoryStream>(
+          reinterpret_cast<const char*>(data.data()), data.size());
+        if (!request->SetBody(
+              std::static_pointer_cast<crt::Io::IStream>(body))) {
+            return {};
+        }
+
+        auto options = crt_s3::S3PutObjectMetaRequestOptions::Create(request);
+        if (!options) {
+            return {};
+        }
+
+        const crt::Io::Uri uri(crt::ByteCursorFromCString(target.uri.c_str()));
+        options->SetEndpoint(uri);
+
+        return run(*options);
+    }
 };
 
 zarr::S3Client::S3Client(const S3Settings& settings)
@@ -450,8 +509,18 @@ zarr::S3Client::object_exists(std::string_view bucket_name,
         return false;
     }
 
-    return impl_->run_simple("HEAD", "HeadObject", bucket_name, object_name)
-      .ok();
+    const auto outcome =
+      impl_->run_simple("HEAD", "HeadObject", bucket_name, object_name);
+    if (outcome.ok()) {
+        return true;
+    }
+    if (outcome.response_status == 404) {
+        return false;
+    }
+
+    throw std::runtime_error(
+      "Failed to check for object " + std::string(object_name) + " in bucket " +
+      std::string(bucket_name) + ": " + outcome.describe());
 }
 
 bool
@@ -459,46 +528,7 @@ zarr::S3Client::put_object(std::string_view bucket_name,
                            std::string_view object_name,
                            ConstByteSpan data)
 {
-    EXPECT(!bucket_name.empty(), "Bucket name must not be empty.");
-    EXPECT(!object_name.empty(), "Object name must not be empty.");
-    EXPECT(!data.empty(), "Data must not be empty.");
-
-    LOG_DEBUG("Putting object ",
-              object_name,
-              " with ",
-              data.size(),
-              " bytes into bucket ",
-              bucket_name);
-
-    const auto target = make_target(impl_->endpoint, bucket_name, object_name);
-    auto request = make_request("PUT", target);
-    if (!request) {
-        return false;
-    }
-
-    const auto length = std::to_string(data.size());
-    crt::Http::HttpHeader content_length;
-    content_length.name = crt::ByteCursorFromCString("Content-Length");
-    content_length.value = crt::ByteCursorFromCString(length.c_str());
-    if (!request->AddHeader(content_length)) {
-        return false;
-    }
-
-    auto body = std::make_shared<MemoryStream>(
-      reinterpret_cast<const char*>(data.data()), data.size());
-    if (!request->SetBody(std::static_pointer_cast<crt::Io::IStream>(body))) {
-        return false;
-    }
-
-    auto options = crt_s3::S3PutObjectMetaRequestOptions::Create(request);
-    if (!options) {
-        return false;
-    }
-
-    const crt::Io::Uri uri(crt::ByteCursorFromCString(target.uri.c_str()));
-    options->SetEndpoint(uri);
-
-    const auto outcome = impl_->run(*options);
+    const auto outcome = impl_->put(bucket_name, object_name, data, false);
     if (!outcome.ok()) {
         LOG_ERROR("Failed to put object ",
                   object_name,
@@ -510,6 +540,28 @@ zarr::S3Client::put_object(std::string_view bucket_name,
     }
 
     return true;
+}
+
+zarr::S3Client::PutIfAbsentResult
+zarr::S3Client::put_object_if_absent(std::string_view bucket_name,
+                                     std::string_view object_name,
+                                     ConstByteSpan data)
+{
+    const auto outcome = impl_->put(bucket_name, object_name, data, true);
+    if (outcome.ok()) {
+        return PutIfAbsentResult::Stored;
+    }
+    if (outcome.response_status == 412) {
+        return PutIfAbsentResult::Exists;
+    }
+
+    LOG_ERROR("Failed to put object ",
+              object_name,
+              " in bucket ",
+              bucket_name,
+              ": ",
+              outcome.describe());
+    return PutIfAbsentResult::Failed;
 }
 
 bool
