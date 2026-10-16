@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ZarrStream_close` now tells the two kinds of failure apart. It returns `ZarrStatusCode_InternalError` if a write
+  failed while the stream was running (the code `ZarrStream_append` already returns for that failure), and
+  `ZarrStatusCode_IOError` only if finalization itself failed. Before, it returned `ZarrStatusCode_IOError` for both.
+  Python's `ZarrStream.close()` still raises `RuntimeError`, with "Internal error" or "I/O error" in the message
+  (#NNN-C)
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
   `ZarrStream_create` is kept (#186, #268)

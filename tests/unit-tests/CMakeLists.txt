@@ -36,6 +36,7 @@ set(tests
         array-write-ragged-internal-dim
         array-write-fixed-size
         zarr-stream-partial-append
+        zarr-stream-close-status
         frame-queue
         downsampler
         downsampler-odd-z

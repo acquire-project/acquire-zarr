@@ -2013,12 +2013,12 @@ ZarrStream_s::finalize_frame_queue_()
     }
 }
 
-bool
+zarr::FinalizeResult
 finalize_stream(ZarrStream* stream)
 {
     if (stream == nullptr) {
         LOG_INFO("Stream is null. Nothing to finalize.");
-        return true;
+        return zarr::FinalizeResult::Ok;
     }
 
     // clear out the frame queue first
@@ -2032,7 +2032,7 @@ finalize_stream(ZarrStream* stream)
     // asynchronously; surface it rather than reporting a clean close
     if (!stream->error_.empty()) {
         LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
-        return false;
+        return zarr::FinalizeResult::StreamingError;
     }
 
     {
@@ -2045,12 +2045,12 @@ finalize_stream(ZarrStream* stream)
                   "Error finalizing Zarr stream. Failed to finalize array '",
                   key,
                   "'");
-                return false;
+                return zarr::FinalizeResult::FinalizeError;
             }
         }
     }
 
-    return true;
+    return zarr::FinalizeResult::Ok;
 }
 
 uint32_t
