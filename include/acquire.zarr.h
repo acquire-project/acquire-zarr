@@ -46,7 +46,7 @@ extern "C"
 
     /**
      * @brief Get the version of the Zarr API.
-     * @return Semver formatted version of the Zarr API.
+     * @return The library release version, e.g. "0.10.0".
      */
     const char* Zarr_get_api_version();
 
@@ -336,7 +336,9 @@ extern "C"
      * of silently producing a corrupt store. The stream is destroyed and the
      * pointer is invalid after this call returns, regardless of the status.
      * @param stream The Zarr stream struct to close.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @return ZarrStatusCode_Success on success. Currently any failure, whether
+     * an earlier asynchronous write error or an error during finalization, is
+     * reported as ZarrStatusCode_IOError.
      */
     ZarrStatusCode ZarrStream_close(ZarrStream* stream);
 
@@ -368,14 +370,22 @@ extern "C"
      * or the number of zeros to fill if @p data is NULL. This can be any
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
-     * @param[out] bytes_out The number of bytes accepted by the stream. A value
-     * less than @p bytes_in is reported as ZarrStatusCode_PartialWrite and means
-     * the stream stopped accepting data, because of an asynchronous write error
-     * or because finalization began. It does not indicate a full frame queue,
-     * which blocks instead.
-     * @return ZarrStatusCode_Success on success, or an error code on failure. An
-     * asynchronous compression or write failure is reported as
-     * ZarrStatusCode_InternalError on a subsequent call, or by ZarrStream_close.
+     * @param[out] bytes_out The number of bytes accepted by the stream. If
+     * @p stream and @p bytes_out are not NULL, this is set on every return, to 0
+     * if the call fails before it accepts any data. Bytes that complete a
+     * partial frame are counted before that frame enters the queue, so if the
+     * stream stops during the call, @p bytes_out can include up to one frame
+     * that was not queued. A trailing part of @p data shorter than one frame is
+     * counted and held in a per-array staging buffer; it enters the frame queue
+     * only when a later call completes the frame.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * ZarrStatusCode_PartialWrite, with @p bytes_out less than @p bytes_in,
+     * means the stream stopped accepting data during this call. Only an error
+     * that the frame-queue thread detects stops the stream this way; a full
+     * frame queue blocks instead. A chunk compression or write failure on a
+     * pool worker does not stop an append that is in progress, and that append
+     * can return ZarrStatusCode_Success. Such a failure is reported as
+     * ZarrStatusCode_InternalError by the next call, or by ZarrStream_close.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,
