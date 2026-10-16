@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `ZarrStream_close` now tells the two kinds of failure apart. It returns `ZarrStatusCode_InternalError` if a write
-  failed while the stream was running (the code `ZarrStream_append` already returns for that failure), and
+- `ZarrStream_close` now tells the two kinds of failure apart. It returns `ZarrStatusCode_InternalError` if the stream
+  recorded an error while it was running (the code a later `ZarrStream_append` returns for that error), and
   `ZarrStatusCode_IOError` only if finalization itself failed. Before, it returned `ZarrStatusCode_IOError` for both.
   Python's `ZarrStream.close()` still raises `RuntimeError`, with "Internal error" or "I/O error" in the message
   (#NNN-C)

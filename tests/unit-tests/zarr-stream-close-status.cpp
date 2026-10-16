@@ -14,9 +14,10 @@ namespace fs = std::filesystem;
  * ZarrStream_close must tell an error recorded during streaming
  * (ZarrStatusCode_InternalError) from a failure while it finalizes the arrays
  * (ZarrStatusCode_IOError). A regular file where the shard directory "c"
- * belongs makes every shard write fail. Placed before a full chunk is
- * appended, the first flush fails on a worker during streaming; placed after
- * only a partial chunk is appended, the first flush is the one at close.
+ * belongs makes every flush fail when it creates the shard directories.
+ * Placed before a full chunk is appended, the first flush fails on the
+ * frame-queue thread during streaming; placed after only a partial chunk is
+ * appended, the first flush is the one at close.
  */
 namespace {
 constexpr size_t array_width = 64, array_height = 48;
@@ -96,7 +97,7 @@ test_streaming_error_is_internal_error()
     // keep appending until the stream reports the failed flush, so that the
     // error is recorded before close begins
     ZarrStatusCode status = ZarrStatusCode_Success;
-    for (int i = 0; i < 2000 && status == ZarrStatusCode_Success; ++i) {
+    for (uint32_t i = 0; i < 2000 && status == ZarrStatusCode_Success; ++i) {
         status = append_frame(stream);
         if (status == ZarrStatusCode_Success && i >= frames_per_chunk) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));

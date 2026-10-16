@@ -671,9 +671,10 @@ extern "C"
             case zarr::FinalizeResult::StreamingError:
                 // the same code ZarrStream_append returns for this error
                 return ZarrStatusCode_InternalError;
-            default:
-                return ZarrStatusCode_IOError;
+            case zarr::FinalizeResult::FinalizeError:
+                break;
         }
+        return ZarrStatusCode_IOError;
     }
 
     void ZarrStream_destroy(struct ZarrStream_s* stream)
