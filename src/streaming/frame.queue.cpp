@@ -1,6 +1,7 @@
 #include "frame.queue.hh"
 #include "macros.hh"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -33,9 +34,13 @@ zarr::FrameQueue::push(const std::span<const uint8_t>& frame,
 
     auto& [key, data, frame_id, ready] = buffer_[write_pos];
     key = key_;
-    data.resize(frame.size(), 0);
+    // pop() swaps a consumed frame into this slot, so a slot is rarely empty;
+    // a null frame must be written as zeros, not left as the old frame
+    data.resize(frame.size());
     if (frame.data()) {
         memcpy(data.data(), frame.data(), frame.size());
+    } else {
+        std::fill(data.begin(), data.end(), 0);
     }
     frame_id = frame_id_;
     ready.store(true, std::memory_order_release);

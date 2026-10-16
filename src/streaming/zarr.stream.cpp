@@ -1035,6 +1035,10 @@ ZarrStream::append(const char* key_,
                 memcpy(frame_buffer.data() + frame_buffer_offset,
                        data + bytes_out,
                        bytes_to_copy);
+            } else {
+                memset(frame_buffer.data() + frame_buffer_offset,
+                       0,
+                       bytes_to_copy);
             }
 
             frame_buffer_offset += bytes_to_copy;
@@ -1065,8 +1069,11 @@ ZarrStream::append(const char* key_,
                 output->frame_buffer_bytes.store(frame_buffer.size());
             }
 
+            // the buffer still holds the last partial frame
             if (data) {
                 memcpy(frame_buffer.data(), data, bytes_remaining);
+            } else {
+                memset(frame_buffer.data(), 0, bytes_remaining);
             }
 
             frame_buffer_offset = bytes_remaining;
