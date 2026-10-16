@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Mean downsampling of `uint32`, `int32`, `uint64` and `int64` data no longer overflows. The overflow-safe integer
-  path never compiled in, so a 2x2 block whose sum left the type's range wrapped (unsigned) or was undefined
+  path never compiled in, so a 2x2 block or z pair whose sum left the type's range wrapped (unsigned) or was undefined
   (signed). Results are unchanged for every input that did not overflow: the mean is still truncated toward zero
   (#265)
 - Fixed a data race in `S3Sink`. `Shard::write_chunk` claims each chunk's offset under a lock but writes outside it, and

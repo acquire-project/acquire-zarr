@@ -5,14 +5,17 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 /**
  * Mean downsampling of integer data must equal the exact mean truncated toward
- * zero, which is what skimage's downscale_local_mean followed by a cast to the
- * dtype gives (the recipe in the multiscales metadata). Values near the ends
+ * zero. For 2D data within float64 precision, that is what the recipe in the
+ * multiscales metadata gives (downscale_local_mean, then a cast). Values near the ends
  * of the range make the 2x2 (mean4) and z-pair (mean2) sums overflow T, so
  * they catch an implementation that sums in T (acquire-project/acquire-zarr#265).
  */
@@ -190,6 +193,13 @@ test_limits()
         check_mean2<T>({ min, T(min + 1) }, T(min + 1));
         check_mean2<T>({ max, min }, 0);
         check_mean2<T>({ -3, 0 }, -1);
+
+        // mixed signs near the ends, where only the quotient/remainder path
+        // of the 64-bit types is exercised
+        check_mean4<T>({ max, max, min, 1 }, T(max / 4));
+        check_mean4<T>({ T(min + 1), T(min + 1), T(min + 1), T(min + 3) },
+                       T(min + 2));
+        check_mean4<T>({ max, T(max - 1), -1, -2 }, T(max / 2 - 1));
     } else {
         check_mean4<T>({ max, 1, 0, 0 }, T(T(1) << (8 * sizeof(T) - 2)));
         check_mean2<T>({ max, 1 }, T(T(1) << (8 * sizeof(T) - 1)));
