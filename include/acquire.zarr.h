@@ -371,8 +371,8 @@ extern "C"
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
      * @param[out] bytes_out The number of bytes accepted by the stream. If
-     * @p stream and @p bytes_out are not NULL, this is set on every return, to 0
-     * if the call fails before it accepts any data. Bytes that complete a
+     * @p stream and @p bytes_out are not NULL, this is set on every return,
+     * to 0 if the call fails before it accepts any data. Bytes that complete a
      * partial frame are counted before that frame enters the queue, so if the
      * stream stops during the call, @p bytes_out can include up to one frame
      * that was not queued. A trailing part of @p data shorter than one frame is
