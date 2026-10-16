@@ -49,11 +49,6 @@ setup-vcpkg:
         echo "Bootstrapping vcpkg..."
         "{{VCPKG_DIR}}/bootstrap-vcpkg.sh" -disableMetrics
     fi
-    # macOS: install libomp if needed
-    if [ "$(uname)" = "Darwin" ] && ! brew list libomp &>/dev/null; then
-        echo "Installing libomp via Homebrew..."
-        brew install libomp
-    fi
 
 [windows]
 setup-vcpkg:

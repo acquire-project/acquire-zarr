@@ -36,6 +36,8 @@ set(tests
         array-write-ragged-internal-dim
         array-write-fixed-size
         zarr-stream-partial-append
+        zarr-stream-append-error-bytes-out
+        api-version
         frame-queue
         downsampler
         downsampler-odd-z
@@ -74,3 +76,7 @@ foreach (name ${tests})
 
     set_tests_properties(test-${tgt} PROPERTIES LABELS "${test_labels}")
 endforeach ()
+
+target_compile_definitions(${project}-unit-test-api-version PRIVATE
+        "EXPECTED_API_VERSION=\"${PROJECT_VERSION}\""
+)

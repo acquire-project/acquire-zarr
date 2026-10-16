@@ -565,8 +565,21 @@ class Well:
 
 class ZarrStream:
     def __init__(self, arg0: StreamSettings) -> None: ...
-    def append(self, data: numpy.ndarray, key: str | None = None) -> None: ...
-    def skip(self, n_bytes: int) -> None: ...
+    def append(self, data: numpy.ndarray, key: str | None = None) -> None:
+        """Append data to the array at ``key``.
+
+        Returns once the stream has accepted the data, not once the data is
+        written to the store; compression and I/O run on worker threads. A
+        write failure raises ``RuntimeError``: from this call if the stream
+        stops during the call and this call's data is not all accepted,
+        otherwise from a later call to ``append`` or ``skip``, or from
+        ``close``.
+
+        A stream expects a single producer. The binding releases the GIL
+        while it appends, so do not call ``append`` or ``skip`` on one stream
+        from two Python threads at the same time.
+        """
+    def skip(self, n_bytes: int, key: str | None = None) -> None: ...
     def write_custom_metadata(
         self,
         metadata: str | dict,

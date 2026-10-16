@@ -46,7 +46,7 @@ extern "C"
 
     /**
      * @brief Get the version of the Zarr API.
-     * @return Semver formatted version of the Zarr API.
+     * @return The library release version, e.g. "0.10.0".
      */
     const char* Zarr_get_api_version();
 
@@ -336,7 +336,9 @@ extern "C"
      * of silently producing a corrupt store. The stream is destroyed and the
      * pointer is invalid after this call returns, regardless of the status.
      * @param stream The Zarr stream struct to close.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @return ZarrStatusCode_Success on success. Currently any failure, whether
+     * an earlier asynchronous write error or an error during finalization, is
+     * reported as ZarrStatusCode_IOError.
      */
     ZarrStatusCode ZarrStream_close(ZarrStream* stream);
 
@@ -352,9 +354,15 @@ extern "C"
 
     /**
      * @brief Append data to the Zarr stream.
-     * @details This function will block while chunks are compressed and written
-     * to the store. It will return when all data has been written. Multiple
-     * frames can be appended in a single call.
+     * @details Copies @p data into the stream's bounded internal frame queue;
+     * chunking, compression and I/O happen on the stream's worker threads,
+     * never on the calling thread. This function therefore returns once the
+     * data has been *accepted*, not once it has been written to the store. It
+     * blocks only when the frame queue is full, until the consumer frees a
+     * slot. Multiple frames can be appended in a single call.
+     *
+     * Not thread-safe: a stream expects a single producer. Concurrent calls for
+     * the same stream, including calls for different array keys, are undefined.
      * @param[in, out] stream The Zarr stream struct.
      * @param[in] data The data to append. If @p data is NULL, append
      * @p bytes_in zeros instead.
@@ -362,8 +370,26 @@ extern "C"
      * or the number of zeros to fill if @p data is NULL. This can be any
      * nonnegative integer. On a value of 0, this function will immediately
      * return.
-     * @param[out] bytes_out The number of bytes written to the stream.
+     * @param[out] bytes_out The number of bytes accepted by the stream. If
+     * @p stream and @p bytes_out are not NULL, this is set on every return,
+     * to 0 if the call fails before it accepts any data. Bytes that complete a
+     * partial frame are counted before that frame enters the queue, so if the
+     * stream stops during the call, @p bytes_out can include up to one frame
+     * that was not queued. A trailing part of @p data shorter than one frame is
+     * counted and held in a per-array staging buffer; it enters the frame queue
+     * only when a later call completes the frame.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * ZarrStatusCode_PartialWrite, with @p bytes_out less than @p bytes_in,
+     * means the stream stopped accepting data during this call. Only an error
+     * that the frame-queue thread detects stops the stream this way; a full
+     * frame queue blocks instead. If the stop drops only the partial frame
+     * that this call completed, the call can still return
+     * ZarrStatusCode_Success, and the next call returns
+     * ZarrStatusCode_InternalError. A chunk compression or write failure on a
+     * pool worker does not stop an append that is in progress, and that append
+     * can return ZarrStatusCode_Success. Such a failure is reported as
+     * ZarrStatusCode_InternalError by a later call, or as
+     * ZarrStatusCode_IOError by ZarrStream_close.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,

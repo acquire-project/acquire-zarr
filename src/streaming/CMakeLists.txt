@@ -75,7 +75,7 @@ target_link_libraries(${tgt} PRIVATE
 )
 
 target_compile_definitions(${tgt} PRIVATE
-        "ACQUIRE_ZARR_API_VERSION=\"0.8.0\""
+        "ACQUIRE_ZARR_API_VERSION=\"${PROJECT_VERSION}\""
 )
 
 # Benchmark/A-B aid: build the per-frame tile scatter serially (no worker team),

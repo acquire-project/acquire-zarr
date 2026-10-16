@@ -38,7 +38,22 @@ just test-cpp
 ctest --test-dir build
 ```
 
-Tests under label `s3` require a local MinIO instance on `localhost:9000`.
+Tests under label `s3` need an S3-compatible endpoint. CI runs `adobe/s3mock:5.2.3`
+(`.github/workflows/test.yml`), mapped to `localhost:9000`, because MinIO images are no
+longer freely pullable. The same container works locally. It accepts any credentials,
+and a plain PUT creates the bucket:
+
+```bash
+docker run -d --name s3mock -p 9000:9090 adobe/s3mock:5.2.3
+until curl -s -o /dev/null http://localhost:9000/; do sleep 1; done  # wait for the server
+curl -fsS -X PUT http://localhost:9000/acquire-test
+export ZARR_S3_ENDPOINT=http://localhost:9000 ZARR_S3_BUCKET_NAME=acquire-test
+export AWS_ACCESS_KEY_ID=any AWS_SECRET_ACCESS_KEY=any
+```
+
+Without these variables the S3 tests return early and pass without testing anything.
+
+A MinIO server that you already run also works.
 
 **Python tests** (pytest, config in `pyproject.toml`):
 ```bash
@@ -63,6 +78,20 @@ pre-commit run --all-files
 - **C/C++**: `clang-format` (Mozilla style, 80-col, config in `.clang-format`) and `clang-tidy` (`.clang-tidy`)
 - **Python**: `black` (line-length 79, target 3.9–3.13) and `ruff`
 
+## Before you open a pull request
+
+An agent must not open a pull request, or push to one, before a separate review.
+
+1. Start a new agent with a clean context. Do not give it your reasoning or your summary.
+   Give it only the repository, the branch, the base and the purpose of the change.
+2. Tell it to verify every claim in the diff against the source: code, comments, docs
+   and the PR text. It cites file:line for each finding. It also checks the change
+   against the current `main`, because a merged PR can make a claim stale.
+3. Fix each blocker and each should-fix, or record in the PR why you did not.
+4. Put the reviewer's verdict and the commit it reviewed in the PR description.
+
+A self-review in the same context does not satisfy this rule.
+
 ## Architecture
 
 ### Public interface
@@ -79,10 +108,11 @@ pre-commit run --all-files
 | `array.hh/cpp` | `ArrayBase`/`Array`: manages chunk layout and data for one array within a store |
 | `array.dimensions.hh/cpp` | Per-dimension metadata (size, chunk size, shard size, transposition order) |
 | `multiscale.array.hh/cpp` | Wraps an `Array` and generates downsampled pyramid levels |
-| `downsampler.hh/cpp` | Mean/mode/median downsampling logic |
+| `downsampler.hh/cpp` | Decimate/mean/min/max downsampling logic |
 | `chunk.hh/cpp` + `shard.hh/cpp` | Zarr v3 chunk/shard serialization |
 | `frame.queue.hh/cpp` | Thread-safe frame buffer between `append()` caller and writer threads |
-| `thread.pool.hh/cpp` | Worker threads that compress and write chunks; jobs return `TaskStatus` |
+| `thread.pool.hh/cpp` | Worker threads that compress and write chunks; jobs return `TaskResult` |
+| `parallel.for.hh/cpp` | `parallel_for_reduce`: a process-wide team of up to 4 threads that scatters a frame's tiles into chunk buffers; small frames run serially on the caller |
 | `sink.hh/cpp` | Abstract write-sink interface |
 | `file.sink.hh/cpp` + `posix/`/`win32/` | Filesystem sink (platform-specific implementation) |
 | `s3.sink.hh/cpp` + `s3.client.hh/cpp` | S3 sink backed by the aws-crt-cpp vcpkg package |
@@ -95,10 +125,33 @@ pre-commit run --all-files
 
 1. Caller → `ZarrStream::append(frame, array_key)`
 2. Frame pushed onto `FrameQueue` with its frame id
-3. Worker threads pop frames, compress chunks with Blosc or zstd
-4. Compressed chunks assembled into shards (Zarr v3 sharding codec)
-5. Shards and metadata (`.zarray`, `zarr.json`) written atomically via the sink abstraction
-6. For multiscale stores, downsampled levels are written in parallel
+3. A single long-lived thread-pool job (`process_frame_queue_`) pops frames and tiles
+   them into chunk buffers; no other pool thread touches the queue
+4. Pool workers compress chunks with Blosc or zstd and write them — compression and write
+   are one job per chunk, not separate stages. With one pool thread, or after the pool
+   stops accepting jobs, the job runs inline on the calling thread
+   (`Array::dispatch_chunk_job_`): the frame-queue thread while streaming, or the thread
+   that calls `ZarrStream_close` for the last flush, because close stops the pool first
+5. Chunks are packed into shards with a crc32c-checksummed index footer, written last
+   (`index_location: "end"`, Zarr v3 sharding codec)
+6. Shards and metadata (`zarr.json`) are written via the sink abstraction. Array metadata
+   is rewritten at each append-dimension shard rollover and at close. How atomic that is
+   depends on the sink:
+   - POSIX file sink: in place with `pwrite` plus `ftruncate` on the live file, so a
+     concurrent reader can observe a torn document (`posix/platform.cpp`)
+   - Windows file sink: in place with `WriteFile` plus `SetFileInformationByHandle`
+     (`win32/platform.cpp`), with the same exposure
+   - S3 sink: one whole-object PUT, which is atomic (`s3.sink.cpp`)
+
+   Intermediate group metadata (root, plate, well and generic parent groups) is written
+   once, when the stream is created (`write_intermediate_metadata_`), not at close.
+   `ZarrIntermediateGroups_Never` skips generic groups. `ZarrIntermediateGroups_IfMissing`
+   writes a generic group only if it is absent, unless `overwrite` is set; on S3 that check
+   is a conditional PUT (`If-None-Match: *`). The multiscale group's metadata is still
+   written at close (`MultiscaleArray::close_`)
+7. For multiscale stores, the frame-queue thread drives the levels in sequence, but the
+   tile scatter for each level fans out to the `parallel_for_reduce` team. Chunk
+   compression and shard writes go to the thread pool
 
 ### Tests layout
 
