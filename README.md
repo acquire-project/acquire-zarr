@@ -105,12 +105,6 @@ If you're using Windows, learn how to set environment
 variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
 You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
 
-On the Mac, you will also need to install OpenMP using Homebrew:
-
-```bash
-brew install libomp
-```
-
 ### Configuring
 
 To build the library, you can use CMake:
@@ -195,13 +189,20 @@ ZarrStream* stream = ZarrStream_create(&settings);
 // You can now safely free the dimensions array
 ZarrArraySettings_destroy_dimension_array(&array);
 
-size_t bytes_written;
-ZarrStream_append(stream,
-                  my_frame_data,
-                  my_frame_size,
-                  &bytes_written,
-                  "my-array"); // if you have just one array configured, this can be NULL
-assert(bytes_written == my_frame_size);
+size_t bytes_out;
+ZarrStatusCode status =
+  ZarrStream_append(stream,
+                    my_frame_data,
+                    my_frame_size,
+                    &bytes_out,
+                    "my-array"); // if you have just one array configured, this can be NULL
+assert(status == ZarrStatusCode_Success && bytes_out == my_frame_size);
+
+// Wait for all writes to finish and free the stream. Check the status:
+// ZarrStream_destroy does the same work but does not report a failed flush.
+if (ZarrStream_close(stream) != ZarrStatusCode_Success) {
+    // the store is incomplete
+}
 ```
 
 Look at [acquire.zarr.h](include/acquire.zarr.h) for more details.
@@ -724,12 +725,16 @@ ZarrStream* stream = ZarrStream_create(&settings);
 // Write data
 uint16_t* frame_data = /* your image data */;
 size_t frame_size = 3 * 512 * 512 * sizeof(uint16_t);
-size_t bytes_written;
+size_t bytes_out;
 
-ZarrStream_append(stream, frame_data, frame_size, &bytes_written, "experiment_plate/A/1/fov1");
+ZarrStatusCode status = ZarrStream_append(
+  stream, frame_data, frame_size, &bytes_out, "experiment_plate/A/1/fov1");
+assert(status == ZarrStatusCode_Success && bytes_out == frame_size);
 
-// Cleanup
-ZarrStream_destroy(stream);
+// Cleanup: ZarrStream_close reports a failed flush, ZarrStream_destroy does not
+if (ZarrStream_close(stream) != ZarrStatusCode_Success) {
+    // the store is incomplete
+}
 ZarrHCSPlate_destroy_well_array(&plate);
 ZarrArraySettings_destroy_dimension_array(&fov_array);
 ```

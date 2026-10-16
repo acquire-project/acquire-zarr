@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#186, #268)
 - `ZarrStream_close` and `ZarrStream_destroy` no longer let a C++ exception escape into the C caller, and they free the
   stream even when finalization throws (#268)
+- `Zarr_get_api_version()` now returns the library release version (`0.10.0`), not the stale `0.8.0`. The string is
+  now derived from the CMake project version (#264)
+- `ZarrStream_append` now sets `bytes_out` to 0 when it fails on an earlier stream error. That path returned before it
+  wrote `bytes_out` (#264)
+- The installed CMake package no longer requires OpenMP, which the library stopped using in #266. It now finds
+  `Threads`, which the static library links (#264)
 
 ## [0.10.0] - [2026-09-11](https://github.com/acquire-project/acquire-zarr/compare/v0.9.0...v0.10.0)
 
