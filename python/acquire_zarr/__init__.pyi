@@ -570,8 +570,9 @@ class ZarrStream:
 
         Returns once the stream has accepted the data, not once the data is
         written to the store; compression and I/O run on worker threads. A
-        write failure on a worker thread raises ``RuntimeError`` from a later
-        call to ``append`` or ``skip``, or from ``close``.
+        write failure raises ``RuntimeError``: from this call if it stops the
+        stream during the call, otherwise from a later call to ``append`` or
+        ``skip``, or from ``close``.
 
         A stream expects a single producer. The binding releases the GIL
         while it appends, so do not call ``append`` or ``skip`` on one stream

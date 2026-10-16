@@ -382,7 +382,10 @@ extern "C"
      * ZarrStatusCode_PartialWrite, with @p bytes_out less than @p bytes_in,
      * means the stream stopped accepting data during this call. Only an error
      * that the frame-queue thread detects stops the stream this way; a full
-     * frame queue blocks instead. A chunk compression or write failure on a
+     * frame queue blocks instead. If the stop drops only the partial frame
+     * that this call completed, the call can still return
+     * ZarrStatusCode_Success, and the next call returns
+     * ZarrStatusCode_InternalError. A chunk compression or write failure on a
      * pool worker does not stop an append that is in progress, and that append
      * can return ZarrStatusCode_Success. Such a failure is reported as
      * ZarrStatusCode_InternalError by a later call, or as

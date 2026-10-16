@@ -45,6 +45,7 @@ and a plain PUT creates the bucket:
 
 ```bash
 docker run -d --name s3mock -p 9000:9090 adobe/s3mock:5.2.3
+until curl -s -o /dev/null http://localhost:9000/; do sleep 1; done  # wait for the server
 curl -fsS -X PUT http://localhost:9000/acquire-test
 export ZARR_S3_ENDPOINT=http://localhost:9000 ZARR_S3_BUCKET_NAME=acquire-test
 export AWS_ACCESS_KEY_ID=any AWS_SECRET_ACCESS_KEY=any
@@ -146,8 +147,8 @@ A self-review in the same context does not satisfy this rule.
    once, when the stream is created (`write_intermediate_metadata_`), not at close.
    `ZarrIntermediateGroups_Never` skips generic groups. `ZarrIntermediateGroups_IfMissing`
    writes a generic group only if it is absent, unless `overwrite` is set; on S3 that check
-   is a conditional PUT (`If-None-Match: *`). The multiscale group's metadata is still written at close
-   (`MultiscaleArray::close_`)
+   is a conditional PUT (`If-None-Match: *`). The multiscale group's metadata is still
+   written at close (`MultiscaleArray::close_`)
 7. For multiscale stores, the frame-queue thread drives the levels in sequence, but the
    tile scatter for each level fans out to the `parallel_for_reduce` team. Chunk
    compression and shard writes go to the thread pool

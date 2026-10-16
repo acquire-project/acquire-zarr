@@ -101,8 +101,9 @@ main()
         EXPECT_EQ(int, status, ZarrStatusCode_InternalError);
         EXPECT_EQ(size_t, bytes_out, 0);
 
-        CHECK(ZarrStream_close(stream) != ZarrStatusCode_Success);
+        status = ZarrStream_close(stream);
         stream = nullptr;
+        CHECK(status != ZarrStatusCode_Success);
 
         retval = 0;
     } catch (const std::exception& exception) {
