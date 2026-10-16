@@ -336,9 +336,12 @@ extern "C"
      * of silently producing a corrupt store. The stream is destroyed and the
      * pointer is invalid after this call returns, regardless of the status.
      * @param stream The Zarr stream struct to close.
-     * @return ZarrStatusCode_Success on success. Currently any failure, whether
-     * an earlier asynchronous write error or an error during finalization, is
-     * reported as ZarrStatusCode_IOError.
+     * @return ZarrStatusCode_Success on success.
+     * ZarrStatusCode_InternalError if a write failed while the stream was
+     * running, before or while close drained the queue; this is the code that
+     * ZarrStream_append returns for the same failure. The arrays are then not
+     * finalized. ZarrStatusCode_IOError if finalization itself failed: the last
+     * flush, a shard index, or a metadata write.
      */
     ZarrStatusCode ZarrStream_close(ZarrStream* stream);
 
@@ -388,8 +391,7 @@ extern "C"
      * ZarrStatusCode_InternalError. A chunk compression or write failure on a
      * pool worker does not stop an append that is in progress, and that append
      * can return ZarrStatusCode_Success. Such a failure is reported as
-     * ZarrStatusCode_InternalError by a later call, or as
-     * ZarrStatusCode_IOError by ZarrStream_close.
+     * ZarrStatusCode_InternalError by a later call, and by ZarrStream_close.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,

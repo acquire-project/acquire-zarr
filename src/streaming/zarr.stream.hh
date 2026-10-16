@@ -24,6 +24,16 @@
 #include <string_view>
 #include <unordered_map>
 
+namespace zarr {
+/** @brief How a stream's finalization ended. */
+enum class FinalizeResult
+{
+    Ok,
+    StreamingError, // recorded by a worker or the frame-queue thread
+    FinalizeError,  // a failure while closing the arrays
+};
+} // namespace zarr
+
 struct ZarrStream_s
 {
   public:
@@ -222,11 +232,17 @@ struct ZarrStream_s
     /** @brief Wait for the frame queue to finish processing. */
     void finalize_frame_queue_();
 
-    friend bool finalize_stream(ZarrStream* stream);
+    friend zarr::FinalizeResult finalize_stream(ZarrStream* stream);
     friend uint32_t stream_thread_count(const ZarrStream* stream);
 };
 
-bool
+/**
+ * @brief Drain, flush and close every array of @p stream.
+ * @return StreamingError if a worker or the frame-queue thread recorded an
+ * error before or while the queue drained; the arrays are then not closed.
+ * FinalizeError if closing an array failed. Ok otherwise.
+ */
+zarr::FinalizeResult
 finalize_stream(ZarrStream* stream);
 
 /** @brief Get the number of threads in the stream's thread pool. Exposed for

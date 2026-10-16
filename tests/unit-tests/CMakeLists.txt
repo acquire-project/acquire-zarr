@@ -38,6 +38,7 @@ set(tests
         zarr-stream-partial-append
         zarr-stream-append-error-bytes-out
         api-version
+        zarr-stream-close-status
         frame-queue
         downsampler
         downsampler-odd-z
