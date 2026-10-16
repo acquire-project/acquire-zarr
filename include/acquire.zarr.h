@@ -355,11 +355,11 @@ extern "C"
     /**
      * @brief Append data to the Zarr stream.
      * @details Copies @p data into the stream's bounded internal frame queue;
-     * chunking, compression and I/O happen on the stream's worker threads, never
-     * on the calling thread. This function therefore returns once the data has
-     * been *accepted*, not once it has been written to the store. It blocks only
-     * when the frame queue is full, until the consumer frees a slot. Multiple
-     * frames can be appended in a single call.
+     * chunking, compression and I/O happen on the stream's worker threads,
+     * never on the calling thread. This function therefore returns once the
+     * data has been *accepted*, not once it has been written to the store. It
+     * blocks only when the frame queue is full, until the consumer frees a
+     * slot. Multiple frames can be appended in a single call.
      *
      * Not thread-safe: a stream expects a single producer. Concurrent calls for
      * the same stream, including calls for different array keys, are undefined.
@@ -385,7 +385,8 @@ extern "C"
      * frame queue blocks instead. A chunk compression or write failure on a
      * pool worker does not stop an append that is in progress, and that append
      * can return ZarrStatusCode_Success. Such a failure is reported as
-     * ZarrStatusCode_InternalError by the next call, or by ZarrStream_close.
+     * ZarrStatusCode_InternalError by a later call, or as
+     * ZarrStatusCode_IOError by ZarrStream_close.
      */
     ZarrStatusCode ZarrStream_append(ZarrStream* stream,
                                      const void* data,

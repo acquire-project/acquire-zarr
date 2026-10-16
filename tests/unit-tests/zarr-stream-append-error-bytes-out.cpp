@@ -11,9 +11,9 @@ namespace fs = std::filesystem;
 
 /**
  * An append that fails on an earlier stream error must still write bytes_out.
- * A regular file where the shard directory "c" belongs makes the first shard
- * write fail, which records a stream error; the next append then returns
- * InternalError before it accepts any data.
+ * A regular file where the shard directory "c" belongs makes the frame-queue
+ * thread fail to create the shard directories, which records a stream error;
+ * a later append then returns InternalError before it accepts any data.
  */
 namespace {
 constexpr size_t array_width = 64, array_height = 48;

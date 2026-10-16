@@ -307,8 +307,7 @@ class DownsamplingMethod:
 
     Attributes:
       DECIMATE: Take the top left of each 2x2 block of pixels
-      MEAN: Take the mean value of each 2x2 block of pixels. Integer types
-        truncate the mean toward zero.
+      MEAN: Take the mean value of each 2x2 block of pixels
       MIN: Take the minimum value of each 2x2 block of pixels
       MAX: Take the maximum value of each 2x2 block of pixels
     """
@@ -572,7 +571,7 @@ class ZarrStream:
         Returns once the stream has accepted the data, not once the data is
         written to the store; compression and I/O run on worker threads. A
         write failure on a worker thread raises ``RuntimeError`` from a later
-        call to ``append`` or from ``close``.
+        call to ``append`` or ``skip``, or from ``close``.
 
         A stream expects a single producer. The binding releases the GIL
         while it appends, so do not call ``append`` or ``skip`` on one stream

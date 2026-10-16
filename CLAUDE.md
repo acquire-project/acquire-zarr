@@ -46,7 +46,11 @@ and a plain PUT creates the bucket:
 ```bash
 docker run -d --name s3mock -p 9000:9090 adobe/s3mock:5.2.3
 curl -fsS -X PUT http://localhost:9000/acquire-test
+export ZARR_S3_ENDPOINT=http://localhost:9000 ZARR_S3_BUCKET_NAME=acquire-test
+export AWS_ACCESS_KEY_ID=any AWS_SECRET_ACCESS_KEY=any
 ```
+
+Without these variables the S3 tests return early and pass without testing anything.
 
 A MinIO server that you already run also works.
 
@@ -124,8 +128,9 @@ A self-review in the same context does not satisfy this rule.
    them into chunk buffers; no other pool thread touches the queue
 4. Pool workers compress chunks with Blosc or zstd and write them — compression and write
    are one job per chunk, not separate stages. With one pool thread, or after the pool
-   stops accepting jobs (for example after a fatal error), the job runs inline on the
-   frame-queue thread (`Array::dispatch_chunk_job_`)
+   stops accepting jobs, the job runs inline on the calling thread
+   (`Array::dispatch_chunk_job_`): the frame-queue thread while streaming, or the thread
+   that calls `ZarrStream_close` for the last flush, because close stops the pool first
 5. Chunks are packed into shards with a crc32c-checksummed index footer, written last
    (`index_location: "end"`, Zarr v3 sharding codec)
 6. Shards and metadata (`zarr.json`) are written via the sink abstraction. Array metadata
@@ -140,8 +145,8 @@ A self-review in the same context does not satisfy this rule.
    Intermediate group metadata (root, plate, well and generic parent groups) is written
    once, when the stream is created (`write_intermediate_metadata_`), not at close.
    `ZarrIntermediateGroups_Never` skips generic groups. `ZarrIntermediateGroups_IfMissing`
-   writes a generic group only if it is absent; on S3 that is a conditional PUT
-   (`If-None-Match: *`). The multiscale group's metadata is still written at close
+   writes a generic group only if it is absent, unless `overwrite` is set; on S3 that check
+   is a conditional PUT (`If-None-Match: *`). The multiscale group's metadata is still written at close
    (`MultiscaleArray::close_`)
 7. For multiscale stores, the frame-queue thread drives the levels in sequence, but the
    tile scatter for each level fans out to the `parallel_for_reduce` team. Chunk

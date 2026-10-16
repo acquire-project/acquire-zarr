@@ -102,8 +102,7 @@ extern "C"
                                           * pixel of each 2x2 (2D) or 2x2x2 (3D)
                                           * region. */
         ZarrDownsamplingMethod_Mean, /**< Average all pixels in each 2x2 (2D)
-                                      *   or 2x2x2 (3D) region. Integer types
-                                      *   truncate the mean toward zero. */
+                                      *   or 2x2x2 (3D) region. */
         ZarrDownsamplingMethod_Min,  /**< Take the minimum pixel value in each
                                       *   2x2 (2D) or 2x2x2 (3D) region. */
         ZarrDownsamplingMethod_Max,  /**< Take the maximum pixel value in each

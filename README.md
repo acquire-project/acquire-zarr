@@ -196,7 +196,9 @@ ZarrStatusCode status =
                     my_frame_size,
                     &bytes_out,
                     "my-array"); // if you have just one array configured, this can be NULL
-assert(status == ZarrStatusCode_Success && bytes_out == my_frame_size);
+if (status != ZarrStatusCode_Success || bytes_out != my_frame_size) {
+    // the stream did not accept all of the frame
+}
 
 // Wait for all writes to finish and free the stream. Check the status:
 // ZarrStream_destroy does the same work but does not report a failed flush.
@@ -729,7 +731,9 @@ size_t bytes_out;
 
 ZarrStatusCode status = ZarrStream_append(
   stream, frame_data, frame_size, &bytes_out, "experiment_plate/A/1/fov1");
-assert(status == ZarrStatusCode_Success && bytes_out == frame_size);
+if (status != ZarrStatusCode_Success || bytes_out != frame_size) {
+    // the stream did not accept all of the frame
+}
 
 // Cleanup: ZarrStream_close reports a failed flush, ZarrStream_destroy does not
 if (ZarrStream_close(stream) != ZarrStatusCode_Success) {
