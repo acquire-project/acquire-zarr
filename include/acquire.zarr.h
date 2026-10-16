@@ -338,9 +338,9 @@ extern "C"
      * @param stream The Zarr stream struct to close.
      * @return ZarrStatusCode_Success on success.
      * ZarrStatusCode_InternalError if the stream recorded an error while it
-     * was running, before or while close drained the queue; a later
-     * ZarrStream_append returns the same code for that error. The metadata is
-     * then not written and the store is incomplete. ZarrStatusCode_IOError if
+     * was running, before or while close drained the queue; this is the code
+     * ZarrStream_append returns for that error. The final array metadata is
+     * then not written, and the store is incomplete. ZarrStatusCode_IOError if
      * finalization itself failed: the last flush, a shard index, or a
      * metadata write.
      */
