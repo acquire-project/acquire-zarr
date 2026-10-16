@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
         python3 \
         zip unzip tar \
-        libomp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ── vcpkg ────────────────────────────────────────────────────────────────────
