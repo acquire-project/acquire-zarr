@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `ZarrStream_append` with NULL data (Python `ZarrStream.skip()`) now writes zeros. A frame-queue slot or the
-  partial-frame staging buffer that had held real data kept it, so a NULL append wrote an old frame (#NNN-B)
+- Fixed `ZarrStream_append` with NULL data (Python `ZarrStream.skip()`), which now writes zeros. A frame-queue slot or the
+  partial-frame staging buffer that had held real data kept it, so a NULL append wrote an old frame (#270)
 - Fixed a data race in `S3Sink`. `Shard::write_chunk` claims each chunk's offset under a lock but writes outside it, and
   each chunk is its own thread-pool job, so byte ranges reached the sink concurrently and out of order while it mutated
   its buffer without synchronization. The sink now stages fragments and appends them in order (#248)
