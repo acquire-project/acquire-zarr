@@ -307,7 +307,9 @@ class DownsamplingMethod:
 
     Attributes:
       DECIMATE: Take the top left of each 2x2 block of pixels
-      MEAN: Take the mean value of each 2x2 block of pixels
+      MEAN: Take the mean value of each 2x2 block of pixels. Integer types
+        truncate the mean toward zero. In 3D, the 2x2 mean of each plane is
+        truncated before the two planes are averaged.
       MIN: Take the minimum value of each 2x2 block of pixels
       MAX: Take the maximum value of each 2x2 block of pixels
     """

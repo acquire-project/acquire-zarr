@@ -1,8 +1,11 @@
 #include "downsampler.hh"
 #include "macros.hh"
 
+#include <array>
 #include <bit>
+#include <cstdint>
 #include <regex>
+#include <type_traits>
 
 namespace {
 ZarrDimension
@@ -43,22 +46,56 @@ decimate4(const T& a, const T& b, const T& c, const T& d)
     return a;
 }
 
+/**
+ * The mean of N integers, truncated toward zero as (a + b + ...) / N is, but
+ * without overflowing T. Types narrower than 64 bits sum in a 64-bit
+ * accumulator. The 64-bit types sum quotients and remainders separately, then
+ * move the result toward zero when the two have opposite signs.
+ */
+template<typename T, size_t N>
+T
+integer_mean(const std::array<T, N>& values)
+{
+    static_assert(std::is_integral_v<T>);
+
+    if constexpr (sizeof(T) < sizeof(int64_t)) {
+        using Wide =
+          std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+        Wide sum = 0;
+        for (const T value : values) {
+            sum += value;
+        }
+        return static_cast<T>(sum / static_cast<Wide>(N));
+    } else {
+        constexpr T n = N;
+        T quotient = 0, remainder = 0;
+        for (const T value : values) {
+            quotient += value / n;
+            remainder += value % n;
+        }
+        quotient += remainder / n;
+        remainder %= n;
+
+        if constexpr (std::is_signed_v<T>) {
+            if (quotient > 0 && remainder < 0) {
+                --quotient;
+            } else if (quotient < 0 && remainder > 0) {
+                ++quotient;
+            }
+        }
+        return quotient;
+    }
+}
+
 template<typename T>
 T
 mean4(const T& a, const T& b, const T& c, const T& d)
 {
-    return (a + b + c + d) / 4;
-}
-
-template<typename T>
-typename std::enable_if<std::is_integral<T>::value, T>::T
-mean4(const T& a, const T& b, const T& c, const T& d)
-{
-    T mask = 3;
-    T result = a / 4 + b / 4 + c / 4 + d / 4;
-    T remainder = ((a & mask) + (b & mask) + (c & mask) + (d & mask)) / 4;
-
-    return result + remainder;
+    if constexpr (std::is_integral_v<T>) {
+        return integer_mean<T, 4>({ a, b, c, d });
+    } else {
+        return (a + b + c + d) / 4;
+    }
 }
 
 template<typename T>
@@ -108,18 +145,11 @@ template<typename T>
 T
 mean2(const T& a, const T& b)
 {
-    return (a + b) / 2;
-}
-
-template<typename T>
-typename std::enable_if<std::is_integral<T>::value, T>::T
-mean2(const T& a, const T& b)
-{
-    T mask = 3;
-    T result = a / 2 + b / 2;
-    T remainder = ((a & mask) + (b & mask)) / 2;
-
-    return result + remainder;
+    if constexpr (std::is_integral_v<T>) {
+        return integer_mean<T, 2>({ a, b });
+    } else {
+        return (a + b) / 2;
+    }
 }
 
 template<typename T>
