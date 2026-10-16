@@ -213,6 +213,12 @@ constexpr EnumEntry kDownsamplingMethods[] = {
     { "max", ZarrDownsamplingMethod_Max },
 };
 
+constexpr EnumEntry kIntermediateGroups[] = {
+    { "if_missing", ZarrIntermediateGroups_IfMissing },
+    { "always", ZarrIntermediateGroups_Always },
+    { "never", ZarrIntermediateGroups_Never },
+};
+
 template<size_t N>
 int
 to_enum(const EnumEntry (&table)[N], const std::string& s, const char* what)
@@ -877,6 +883,13 @@ json_to_settings(const json& doc_in, ZarrStreamSettings* out)
     out->overwrite = doc.contains("overwrite")
                        ? as_bool(doc.at("overwrite"), "overwrite")
                        : false;
+    out->intermediate_groups = static_cast<ZarrIntermediateGroups>(
+      doc.contains("intermediate_groups")
+        ? to_enum(
+            kIntermediateGroups,
+            as_string(doc.at("intermediate_groups"), "intermediate_groups"),
+            "intermediate groups mode")
+        : ZarrIntermediateGroups_IfMissing);
     out->max_threads = doc.contains("max_threads")
                          ? static_cast<unsigned int>(
                              as_uint<uint32_t>(doc.at("max_threads"), "max_threads"))
@@ -937,6 +950,8 @@ settings_to_json(const ZarrStreamSettings* s)
     doc["version"] = kSchemaVersion;
     doc["store_path"] = s->store_path ? s->store_path : "";
     doc["overwrite"] = s->overwrite;
+    doc["intermediate_groups"] = from_enum(
+      kIntermediateGroups, s->intermediate_groups, "intermediate groups mode");
     doc["max_threads"] = s->max_threads;
 
     if (s->s3_settings) {

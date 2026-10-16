@@ -991,6 +991,15 @@ class PyZarrStreamSettings
     bool overwrite() const { return overwrite_; }
     void set_overwrite(bool overwrite) { overwrite_ = overwrite; }
 
+    ZarrIntermediateGroups intermediate_groups() const
+    {
+        return intermediate_groups_;
+    }
+    void set_intermediate_groups(ZarrIntermediateGroups mode)
+    {
+        intermediate_groups_ = mode;
+    }
+
     const std::vector<PyZarrArraySettings>& arrays() const { return arrays_; }
     std::vector<PyZarrArraySettings>& arrays() { return arrays_; }
 
@@ -1014,6 +1023,7 @@ class PyZarrStreamSettings
         settings_.store_path = store_path_.c_str();
         settings_.max_threads = max_threads_;
         settings_.overwrite = static_cast<int>(overwrite_);
+        settings_.intermediate_groups = intermediate_groups_;
 
         if (py_s3_settings_) {
             s3_settings_ = *py_s3_settings_->settings();
@@ -1109,6 +1119,9 @@ class PyZarrStreamSettings
     mutable std::optional<PyZarrS3Settings> py_s3_settings_{ std::nullopt };
     unsigned int max_threads_{ 0 };
     bool overwrite_{ false };
+    ZarrIntermediateGroups intermediate_groups_{
+        ZarrIntermediateGroups_IfMissing
+    };
 
     std::vector<PyZarrArraySettings> arrays_;
     std::vector<PyZarrPlate> plates_;
@@ -1283,6 +1296,7 @@ read_stream_settings(const ZarrStreamSettings& s)
     out.set_store_path(s.store_path ? s.store_path : "");
     out.set_max_threads(s.max_threads);
     out.set_overwrite(s.overwrite);
+    out.set_intermediate_groups(s.intermediate_groups);
 
     if (s.s3_settings) {
         PyZarrS3Settings s3;
@@ -1685,6 +1699,11 @@ PYBIND11_MODULE(acquire_zarr, m)
       .value("MEAN", ZarrDownsamplingMethod_Mean)
       .value("MIN", ZarrDownsamplingMethod_Min)
       .value("MAX", ZarrDownsamplingMethod_Max);
+
+    py::enum_<ZarrIntermediateGroups>(m, "IntermediateGroups")
+      .value("IF_MISSING", ZarrIntermediateGroups_IfMissing)
+      .value("ALWAYS", ZarrIntermediateGroups_Always)
+      .value("NEVER", ZarrIntermediateGroups_Never);
 
     py::enum_<ZarrLogLevel>(m, "LogLevel")
       .value(log_level_to_str(ZarrLogLevel_Debug), ZarrLogLevel_Debug)
@@ -2394,7 +2413,8 @@ PYBIND11_MODULE(acquire_zarr, m)
                        std::optional<unsigned> max_threads,
                        std::optional<bool> overwrite,
                        std::optional<py::list> arrays,
-                       std::optional<py::list> hcs_plates) {
+                       std::optional<py::list> hcs_plates,
+                       std::optional<ZarrIntermediateGroups> groups) {
                PyZarrStreamSettings settings;
                if (store_path) {
                    settings.set_store_path(*store_path);
@@ -2414,6 +2434,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                }
                if (overwrite) {
                    settings.set_overwrite(*overwrite);
+               }
+               if (groups) {
+                   settings.set_intermediate_groups(*groups);
                }
                if (arrays) {
                    auto& arrs = *arrays;
@@ -2443,7 +2466,8 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("max_threads") = std::nullopt,
            py::arg("overwrite") = std::nullopt,
            py::arg("arrays") = std::nullopt,
-           py::arg("hcs_plates") = std::nullopt)
+           py::arg("hcs_plates") = std::nullopt,
+           py::arg("intermediate_groups") = std::nullopt)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
@@ -2498,6 +2522,9 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def_property("overwrite",
                     &PyZarrStreamSettings::overwrite,
                     &PyZarrStreamSettings::set_overwrite)
+      .def_property("intermediate_groups",
+                    &PyZarrStreamSettings::intermediate_groups,
+                    &PyZarrStreamSettings::set_intermediate_groups)
       .def_property(
         "arrays",
         [](PyZarrStreamSettings& self) -> py::object {

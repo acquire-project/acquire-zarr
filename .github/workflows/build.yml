@@ -95,11 +95,6 @@ jobs:
           ./vcpkg integrate install
         shell: bash
 
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
-
       - name: CMake
         run: |
           cmake --preset=default -DVCPKG_TARGET_TRIPLET=${{matrix.vcpkg_triplet}}
@@ -171,7 +166,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: 'pip'
@@ -207,7 +202,6 @@ jobs:
       - name: macOS fixes
         if: startsWith(matrix.platform, 'macos')
         run: |
-          brew install libomp
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             echo "ARCHFLAGS=-arch arm64" >> $GITHUB_ENV
             echo "_PYTHON_HOST_PLATFORM=macosx-15.0-arm64" >> $GITHUB_ENV
@@ -222,7 +216,7 @@ jobs:
 
       - name: Build (manylinux)
         if: startsWith(matrix.platform, 'ubuntu')
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_BUILD: "${{ matrix.cp_ver }}-*"
           CIBW_SKIP: "*-musllinux*"  # Skip musllinux builds

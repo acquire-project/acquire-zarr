@@ -582,6 +582,47 @@ def test_config_dict_round_trip():
     _assert_expected(aqz.StreamSettings.from_dict(d))
 
 
+def test_set_intermediate_groups(settings):
+    assert settings.intermediate_groups == aqz.IntermediateGroups.IF_MISSING
+
+    settings.intermediate_groups = aqz.IntermediateGroups.NEVER
+    assert settings.intermediate_groups == aqz.IntermediateGroups.NEVER
+
+    s = aqz.StreamSettings(intermediate_groups=aqz.IntermediateGroups.ALWAYS)
+    assert s.intermediate_groups == aqz.IntermediateGroups.ALWAYS
+
+
+@pytest.mark.parametrize(
+    ("name", "mode"),
+    [
+        ("if_missing", aqz.IntermediateGroups.IF_MISSING),
+        ("always", aqz.IntermediateGroups.ALWAYS),
+        ("never", aqz.IntermediateGroups.NEVER),
+    ],
+)
+def test_config_intermediate_groups_round_trip(name, mode):
+    s = aqz.StreamSettings.from_string(
+        CONFIGS["yaml"] + f"intermediate_groups: {name}\n"
+    )
+    assert s.intermediate_groups == mode
+
+    d = s.to_dict()
+    assert d["intermediate_groups"] == name
+    assert aqz.StreamSettings.from_dict(d).intermediate_groups == mode
+
+
+def test_config_intermediate_groups_defaults_to_if_missing():
+    s = aqz.StreamSettings.from_string(CONFIGS["yaml"])
+    assert s.intermediate_groups == aqz.IntermediateGroups.IF_MISSING
+
+
+def test_config_rejects_bad_intermediate_groups():
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(
+            CONFIGS["yaml"] + "intermediate_groups: sometimes\n"
+        )
+
+
 def test_yaml_dump_quotes_ambiguous_strings():
     hcs_yaml = """
 version: 2

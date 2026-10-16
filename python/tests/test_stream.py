@@ -2298,3 +2298,62 @@ def test_multiscale_chunk_size_preserved(store_path: Path):
     assert lod1.shape == (4, 24, 32)
     # chunk_size_px=32 must be preserved even though y_array=24 < y_chunk=32
     assert lod1.chunks == (4, 32, 32)
+
+
+def _small_array(output_key: str) -> ArraySettings:
+    return ArraySettings(
+        output_key=output_key,
+        dimensions=[
+            Dimension(
+                name="t",
+                kind=DimensionType.TIME,
+                array_size_px=0,
+                chunk_size_px=1,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="y",
+                kind=DimensionType.SPACE,
+                array_size_px=2,
+                chunk_size_px=2,
+                shard_size_chunks=1,
+            ),
+            Dimension(
+                name="x",
+                kind=DimensionType.SPACE,
+                array_size_px=3,
+                chunk_size_px=3,
+                shard_size_chunks=1,
+            ),
+        ],
+        data_type=np.uint8,
+    )
+
+
+def test_consolidated_metadata_does_not_hide_new_arrays(store_path: Path):
+    """A group that keeps consolidated metadata from before a stream would
+    make a normal open miss a new array, or see an old shape."""
+    root = str(store_path / "consolidated.zarr")
+
+    stream = ZarrStream(
+        StreamSettings(store_path=root, arrays=[_small_array("group/a")])
+    )
+    stream.append(np.ones((1, 2, 3), dtype=np.uint8))
+    stream.close()
+    zarr.consolidate_metadata(root)
+
+    new_a = np.full((3, 2, 3), 2, dtype=np.uint8)
+    new_b = np.full((2, 2, 3), 3, dtype=np.uint8)
+    stream = ZarrStream(
+        StreamSettings(
+            store_path=root,
+            arrays=[_small_array("group/a"), _small_array("group/b")],
+        )
+    )
+    stream.append(new_a, key="group/a")
+    stream.append(new_b, key="group/b")
+    stream.close()
+
+    group = zarr.open_group(root, mode="r")
+    np.testing.assert_array_equal(group["group/a"][:], new_a)
+    np.testing.assert_array_equal(group["group/b"][:], new_b)
