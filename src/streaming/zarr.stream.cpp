@@ -976,12 +976,12 @@ ZarrStream::append(const char* key_,
                    size_t bytes_in,
                    size_t& bytes_out)
 {
+    bytes_out = 0; // bytes written out of the input data
+
     if (!error_.empty()) {
         LOG_ERROR("Cannot append data: ", error_);
         return ZarrStatusCode_InternalError;
     }
-
-    bytes_out = 0; // bytes written out of the input data
 
     // if the key is null and we have only one output array, use that
     std::string key;
