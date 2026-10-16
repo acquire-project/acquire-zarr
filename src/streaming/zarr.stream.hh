@@ -29,7 +29,7 @@ namespace zarr {
 enum class FinalizeResult
 {
     Ok,
-    StreamingError, // recorded by a worker or the frame-queue thread
+    StreamingError, // recorded in error_ while the stream ran
     FinalizeError,  // a failure while closing the arrays
 };
 } // namespace zarr
