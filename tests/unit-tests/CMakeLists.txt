@@ -41,6 +41,7 @@ set(tests
         frame-queue
         downsampler
         downsampler-odd-z
+        downsampler-integer-mean
         plate
 )
 
