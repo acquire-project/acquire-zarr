@@ -101,14 +101,57 @@ extern "C"
         ZarrDimensionTypeCount
     } ZarrDimensionType;
 
+    /**
+     * @brief Method used to downsample frames when building an image
+     *        pyramid.
+     * @note `ZarrDownsamplingMethod_None` is the zero value, so a zeroed
+     *       `ZarrArraySettings` requests no image pyramid.
+     */
     typedef enum
     {
-        ZarrDownsamplingMethod_Decimate = 0,
-        ZarrDownsamplingMethod_Mean,
-        ZarrDownsamplingMethod_Min,
-        ZarrDownsamplingMethod_Max,
-        ZarrDownsamplingMethodCount,
+        ZarrDownsamplingMethod_None = 0, /**< No downsampling. When used with
+                                          * is_ngff=true, produces a single-level
+                                          * OME-NGFF multiscales group. */
+        ZarrDownsamplingMethod_Decimate, /**< Decimate by taking the top-left
+                                          * pixel of each 2x2 (2D) or 2x2x2 (3D)
+                                          * region. */
+        ZarrDownsamplingMethod_Mean, /**< Average all pixels in each 2x2 (2D)
+                                      *   or 2x2x2 (3D) region. Integer types
+                                      *   truncate the mean toward zero. In
+                                      *   3D, the 2x2 mean of each plane is
+                                      *   truncated before the two planes are
+                                      *   averaged. */
+        ZarrDownsamplingMethod_Min,  /**< Take the minimum pixel value in each
+                                      *   2x2 (2D) or 2x2x2 (3D) region. */
+        ZarrDownsamplingMethod_Max,  /**< Take the maximum pixel value in each
+                                      *   2x2 (2D) or 2x2x2 (3D) region. */
+        ZarrDownsamplingMethodCount, /**< Sentinel value, do not use. */
     } ZarrDownsamplingMethod;
+
+    /**
+     * @brief Whether the stream writes `zarr.json` for the generic groups
+     *        above its arrays.
+     * @details Plate and well groups always carry metadata from the stream, so
+     *          they are always written. This setting applies only to the other
+     *          groups between the store root and an array. The stream writes
+     *          these groups when it is created, and not again at close.
+     * @note `ZarrIntermediateGroups_IfMissing` is the zero value, so a zeroed
+     *       `ZarrStreamSettings` keeps metadata that the caller wrote.
+     */
+    typedef enum
+    {
+        ZarrIntermediateGroups_IfMissing = 0, /**< Write a group's `zarr.json`
+                                               * unless a valid Zarr v3 group
+                                               * node is already there. Clear
+                                               * the consolidated metadata of a
+                                               * kept group. When overwrite is
+                                               * set, write it always. */
+        ZarrIntermediateGroups_Always, /**< Always write a group's `zarr.json`,
+                                        * and replace what is there. */
+        ZarrIntermediateGroups_Never,  /**< Never write a group's `zarr.json`.
+                                        * The caller writes the hierarchy. */
+        ZarrIntermediateGroupsCount,   /**< Sentinel value, do not use. */
+    } ZarrIntermediateGroups;
 
     /**
      * @brief Serialization format for stream settings config files.
@@ -122,11 +165,24 @@ extern "C"
 
     /**
      * @brief S3 settings for streaming to Zarr.
+     * @details Credentials are never taken from here; they come from the
+     * environment or an AWS credentials file.
      */
     typedef struct
     {
+        /** Endpoint URL, which must begin with http:// or https://. There is
+         * no default scheme. The scheme and host are matched
+         * case-insensitively, and any path, query or fragment is ignored. */
         const char* endpoint;
+        /** Destination bucket, which must already exist. Requests use
+         * virtual-host addressing for an `*.amazonaws.com` endpoint whose
+         * bucket name is a legal DNS label, and path-style addressing
+         * otherwise; a name containing a dot, an underscore or an upper-case
+         * letter therefore falls back to path style even on AWS. */
         const char* bucket_name;
+        /** Region to sign requests for, or NULL. NULL is signed as
+         * "us-east-1"; endpoints that validate the signing region require this
+         * to be set explicitly to match the server. */
         const char* region;
     } ZarrS3Settings;
 
@@ -254,11 +310,11 @@ extern "C"
         ZarrDimensionProperties* dimensions;
         size_t dimension_count;
         ZarrDataType data_type;
-        bool multiscale;
         ZarrDownsamplingMethod downsampling_method;
         uint32_t max_levels; /**< Maximum number of downsampled levels in the
                                   pyramid. 0 means no limit. */
         const size_t* storage_dimension_order;
+        bool is_ngff;
         ZarrOMERenderingSettings* omero; /**< Optional OME "omero" rendering
                                               metadata for this image. NULL if
                                               not set. */

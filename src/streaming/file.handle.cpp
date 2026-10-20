@@ -1,6 +1,7 @@
 #include "definitions.hh"
 #include "file.handle.hh"
 #include "macros.hh"
+#include "zarr.common.hh"
 
 #include <chrono>
 #include <thread>
@@ -18,14 +19,31 @@ uint64_t
 get_max_active_handles();
 
 void*
-make_flags();
+make_flags(bool direct_io);
 
 void
 destroy_flags(const void*);
 
+namespace {
+bool
+direct_io_enabled()
+{
+    // Latched: setting ZARR_DIRECT_IO mid-stream has no effect.
+    static const bool enabled = [] {
+        const bool value = zarr::resolve_direct_io();
+        if (value) {
+            LOG_INFO("ZARR_DIRECT_IO is set; files will be opened for direct "
+                     "I/O, bypassing the OS page cache.");
+        }
+        return value;
+    }();
+    return enabled;
+}
+} // namespace
+
 zarr::FileHandle::FileHandle(const std::string& filename)
 {
-    const void* flags = make_flags();
+    const void* flags = make_flags(direct_io_enabled());
     handle_ = init_handle(filename, flags);
     destroy_flags(flags);
 }

@@ -16,10 +16,27 @@ get_last_error_as_string()
 }
 
 void*
-make_flags()
+make_flags(bool direct_io)
 {
     auto* flags = new int;
     *flags = O_WRONLY | O_CREAT;
+
+    if (direct_io) {
+        // Opt-in: unaligned shard writes get EINVAL on block-backed
+        // filesystems; NFS accepts them.
+#ifdef O_DIRECT
+        *flags |= O_DIRECT;
+#else
+        // Warn once, not on every open.
+        [[maybe_unused]] static const bool warned = [] {
+            LOG_WARNING("Direct I/O was requested, but O_DIRECT is not "
+                        "available on this platform; writes will go through "
+                        "the OS page cache.");
+            return true;
+        }();
+#endif
+    }
+
     return flags;
 }
 

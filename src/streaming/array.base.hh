@@ -3,7 +3,7 @@
 #include "array.dimensions.hh"
 #include "compression.params.hh"
 #include "file.handle.hh"
-#include "s3.connection.hh"
+#include "s3.client.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 #include "zarr.types.h"
@@ -62,6 +62,7 @@ struct ArrayConfig
                 ZarrDataType dtype,
                 std::optional<ZarrDownsamplingMethod> downsampling_method,
                 uint16_t level_of_detail,
+                bool is_ngff,
                 uint32_t max_levels = 0)
       : store_root(store_root)
       , node_key(group_key)
@@ -69,6 +70,7 @@ struct ArrayConfig
       , compression_params(compression_params)
       , dimensions(std::move(dimensions))
       , dtype(dtype)
+      , is_ngff(is_ngff)
       , downsampling_method(downsampling_method)
       , level_of_detail(level_of_detail)
       , max_levels(max_levels)
@@ -89,6 +91,7 @@ struct ArrayConfig
     std::optional<CompressionParams> compression_params;
     std::shared_ptr<ArrayDimensions> dimensions;
     ZarrDataType dtype;
+    bool is_ngff{ false };
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     uint16_t level_of_detail;
     uint32_t max_levels{ 0 };
@@ -114,7 +117,7 @@ class ArrayBase
     ArrayBase(std::shared_ptr<ArrayConfig> config,
               std::shared_ptr<ThreadPool> thread_pool,
               std::shared_ptr<FileHandlePool> file_handle_pool,
-              std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+              std::shared_ptr<S3Client> s3_client);
     virtual ~ArrayBase() = default;
 
     /**
@@ -129,6 +132,10 @@ class ArrayBase
 
     /**
      * @brief Get the amount of memory currently used by this Array, in bytes.
+     * @details Callable from any thread while frames are being written. Best
+     * effort: a buffer whose lock is held by a writer is omitted rather than
+     * waited for, so the result can under-report and must not be treated as
+     * exact. Never blocks the write path.
      * @return Memory used by this object, in bytes.
      */
     virtual size_t memory_usage() const noexcept = 0;
@@ -158,7 +165,7 @@ class ArrayBase
   protected:
     std::shared_ptr<ArrayConfig> config_;
     std::shared_ptr<ThreadPool> thread_pool_;
-    std::shared_ptr<S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<S3Client> s3_client_;
     std::shared_ptr<FileHandlePool> file_handle_pool_;
 
     // JSON metadata
@@ -180,13 +187,6 @@ class ArrayBase
 
     friend bool finalize_array(std::unique_ptr<ArrayBase>&& array);
 };
-
-std::unique_ptr<ArrayBase>
-make_array(std::shared_ptr<ArrayConfig> config,
-           std::shared_ptr<ThreadPool> thread_pool,
-           std::shared_ptr<FileHandlePool> file_handle_pool,
-           std::shared_ptr<S3ConnectionPool> s3_connection_pool,
-           bool is_hcs_array);
 
 [[nodiscard]] bool
 finalize_array(std::unique_ptr<ArrayBase>&& array);

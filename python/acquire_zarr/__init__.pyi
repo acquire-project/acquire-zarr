@@ -24,6 +24,7 @@ __all__ = [
     "DimensionType",
     "DownsamplingMethod",
     "FieldOfView",
+    "IntermediateGroups",
     "LogLevel",
     "OMEChannel",
     "OMERenderingDefs",
@@ -63,20 +64,22 @@ class Acquisition:
 class ArraySettings:
     """Settings for a single array in the Zarr stream.
 
-    The resulting Zarr hierarchy depends on ``output_key`` and
-    ``downsampling_method``:
+    The resulting Zarr hierarchy depends on ``is_ngff`` and ``downsampling_method``:
 
-    - **No output_key, no downsampling**: A simple array is written directly
-      at ``store_path``.
-    - **output_key set, no downsampling**: A simple array is written at
-      ``store_path / output_key``. Intermediate group directories are created
-      but no OME-NGFF multiscales metadata is written.
-    - **downsampling_method set** (with or without output_key): An OME-NGFF
-      multiscales group is created at ``store_path / output_key`` (or at
-      ``store_path`` if ``output_key`` is empty), with the full-resolution
-      array at level ``0`` and additional downsampled levels. The number of
-      levels is determined automatically from the chunk and array sizes, and
-      can be capped with ``max_levels``.
+    - **is_ngff=False, no downsampling_method**: A simple array node is written.
+    - **is_ngff=True, no downsampling_method**: A single-level OME-NGFF multiscales
+      group is written with no image pyramid.
+    - **downsampling_method set**: An OME-NGFF multiscales group is written with
+      the full-resolution array at level ``0`` plus additional downsampled levels.
+      The number of levels is determined automatically from the chunk and array
+      sizes, and can be capped with ``max_levels``. ``is_ngff`` is coerced to True.
+
+    In every case the node is written at ``store_path / output_key``, or at
+    ``store_path`` if ``output_key`` is empty or omitted. Intermediate group
+    directories are created as needed.
+
+    Arrays belonging to a ``FieldOfView`` are always treated as NGFF regardless
+    of the value of ``is_ngff``.
 
     Attributes:
       output_key: Path within the Zarr store where this array (or multiscales
@@ -95,8 +98,9 @@ class ArraySettings:
         single-resolution array relocates its chunks from
         ``<output_key>/c/...`` to ``<output_key>/0/c/...``.
       downsampling_method: Method used for generating optional multiscale levels
-        (image pyramid). When set, the array is wrapped in an OME-NGFF
-        multiscales group. When None (default), a simple array node is written.
+        (image pyramid). When set, `is_ngff` is also coerced to True and the array
+        is wrapped in an OME-NGFF multiscales group. When None (default), no
+        image pyramid is generated.
       max_levels: Maximum number of downsampled pyramid levels to generate when
         ``downsampling_method`` is set. The number of levels is otherwise
         determined automatically from the chunk and array sizes. Set to 0
@@ -111,6 +115,15 @@ class ArraySettings:
             - The first dimension *may not* be moved to a non-leading position.
             - The last two dimensions *may not* be moved out of the final two positions,
               but MAY be swapped with each other.
+      is_ngff: When True, the array is wrapped in an OME-NGFF multiscales group.
+        When False (default), a simple array node is written. Note that setting
+        `downsampling_method` will coerce this to True regardless, and
+        subsequently setting `is_ngff = False` will have no effect as long as
+        `downsampling_method` is set. The coercion lasts only as long as the
+        downsampling method does: clearing `downsampling_method` restores the
+        value last requested via `is_ngff`. Setting `is_ngff = True` without a
+        downsampling method produces a single-level OME-NGFF multiscales group
+        with no image pyramid.
     """
 
     output_key: str
@@ -121,6 +134,7 @@ class ArraySettings:
     downsampling_method: Optional[DownsamplingMethod]
     max_levels: int
     storage_dimension_order: List[str]
+    is_ngff: bool
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
@@ -299,22 +313,29 @@ class DownsamplingMethod:
     """
     Method used to downsample frames.
 
+    There is deliberately no ``NONE`` member: "no downsampling" is spelled
+    ``None``, since ``ArraySettings.downsampling_method`` is an
+    ``Optional[DownsamplingMethod]``. The C enum does carry a
+    ``ZarrDownsamplingMethod_None`` zero value, which maps to ``None`` here.
+
     Attributes:
       DECIMATE: Take the top left of each 2x2 block of pixels
-      MEAN: Take the mean value of each 2x2 block of pixels
+      MEAN: Take the mean value of each 2x2 block of pixels. Integer types
+        truncate the mean toward zero. In 3D, the 2x2 mean of each plane is
+        truncated before the two planes are averaged.
       MIN: Take the minimum value of each 2x2 block of pixels
       MAX: Take the maximum value of each 2x2 block of pixels
     """
 
     DECIMATE: ClassVar[
         DownsamplingMethod
-    ]  # value = <DownsamplingMethod.DECIMATE: 0>
-    MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 1>
-    MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 2>
-    MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 3>
+    ]  # value = <DownsamplingMethod.DECIMATE: 1>
+    MEAN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MEAN: 2>
+    MIN: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MIN: 3>
+    MAX: ClassVar[DownsamplingMethod]  # value = <DownsamplingMethod.MAX: 4>
     __members__: ClassVar[
         dict[str, DownsamplingMethod]
-    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 0>, 'MEAN': <DownsamplingMethod.MEAN: 1>, 'MIN': <DownsamplingMethod.MIN: 2>, 'MAX': <DownsamplingMethod.MAX: 3>}
+    ]  # value = {'DECIMATE': <DownsamplingMethod.DECIMATE: 1>, 'MEAN': <DownsamplingMethod.MEAN: 2>, 'MIN': <DownsamplingMethod.MIN: 3>, 'MAX': <DownsamplingMethod.MAX: 4>}
 
     def __eq__(self, other: Any) -> bool: ...
     def __getstate__(self) -> int: ...
@@ -337,8 +358,10 @@ class FieldOfView:
     Attributes:
         path: Path to this field of view within the plate structure.
         acquisition_id: Optional ID linking this field of view to a specific acquisition.
-        array_settings: Array configuration for this field of view's data
-            To prevent potential key inconsistency, array_settings.output_key MUST be None.
+        array_settings: Array configuration for this field of view's data.
+            ``output_key`` must be None to prevent key conflicts with the FOV path.
+            The array is always written as an OME-NGFF multiscales group,
+            regardless of ``is_ngff``.
     """
 
     path: str
@@ -347,6 +370,48 @@ class FieldOfView:
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
+
+class IntermediateGroups:
+    """
+    Whether the stream writes ``zarr.json`` for the generic groups above its
+    arrays. Plate and well groups are always written. The stream writes these
+    groups when it is created, and not again at close.
+
+    Attributes:
+      IF_MISSING: Write a group unless a valid Zarr v3 group node is already
+        there. Clear the consolidated metadata of a kept group. With
+        ``overwrite=True``, write it always. The default.
+      ALWAYS: Always write a group, and replace what is there.
+      NEVER: Never write a group. The caller writes the hierarchy.
+    """
+
+    IF_MISSING: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.IF_MISSING: 0>
+    ALWAYS: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.ALWAYS: 1>
+    NEVER: ClassVar[
+        IntermediateGroups
+    ]  # value = <IntermediateGroups.NEVER: 2>
+    __members__: ClassVar[
+        dict[str, IntermediateGroups]
+    ]  # value = {'IF_MISSING': <IntermediateGroups.IF_MISSING: 0>, 'ALWAYS': <IntermediateGroups.ALWAYS: 1>, 'NEVER': <IntermediateGroups.NEVER: 2>}
+
+    def __eq__(self, other: Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
 
 class LogLevel:
     """
@@ -520,7 +585,20 @@ class Plate:
     def __repr__(self) -> str: ...
 
 class S3Settings:
-    """Settings for connecting to and storing data in S3."""
+    """Settings for connecting to and storing data in S3.
+
+    Attributes:
+        bucket_name: Name of the destination bucket, which must already exist.
+            Requests use virtual-host addressing for an "*.amazonaws.com"
+            endpoint whose bucket name is a legal DNS label, and path-style
+            addressing otherwise; a name containing a dot, an underscore or an
+            upper-case letter falls back to path style even on AWS.
+        endpoint: Endpoint URL, which must begin with "http://" or "https://".
+            There is no default scheme.
+        region: Optional region. Defaults to "us-east-1"; endpoints that
+            validate the signing region require it to be set explicitly to
+            match the server.
+    """
 
     bucket_name: str
     endpoint: str
@@ -545,11 +623,15 @@ class StreamSettings:
             auto-detect based on available hardware concurrency.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
+        intermediate_groups: Whether to write ``zarr.json`` for the generic
+            groups above the arrays. Defaults to IntermediateGroups.IF_MISSING.
 
     Note:
-        For S3 storage with endpoint "s3://my-endpoint.com", bucket "my-bucket", and
-        store_path "my-dataset.zarr", the final location will be
-        "s3://my-endpoint.com/my-bucket/my-dataset.zarr".
+        For S3 storage with endpoint "http://localhost:9000", bucket "my-bucket",
+        and store_path "my-dataset.zarr", objects are written under the key prefix
+        "my-dataset.zarr/" in "my-bucket", which that endpoint serves at
+        "http://localhost:9000/my-bucket/my-dataset.zarr/...". The request URL
+        depends on the addressing style; see S3Settings.
     """
 
     arrays: List[ArraySettings]
@@ -559,6 +641,7 @@ class StreamSettings:
     max_threads: int
     overwrite: bool
     ome_version: OMEVersion
+    intermediate_groups: IntermediateGroups
     plates: List[Plate]
 
     def __init__(self, **kwargs) -> None: ...
@@ -611,8 +694,21 @@ class Well:
 
 class ZarrStream:
     def __init__(self, arg0: StreamSettings) -> None: ...
-    def append(self, data: numpy.ndarray, key: str | None = None) -> None: ...
-    def skip(self, n_bytes: int) -> None: ...
+    def append(self, data: numpy.ndarray, key: str | None = None) -> None:
+        """Append data to the array at ``key``.
+
+        Returns once the stream has accepted the data, not once the data is
+        written to the store; compression and I/O run on worker threads. A
+        write failure raises ``RuntimeError``: from this call if the stream
+        stops during the call and this call's data is not all accepted,
+        otherwise from a later call to ``append`` or ``skip``, or from
+        ``close``.
+
+        A stream expects a single producer. The binding releases the GIL
+        while it appends, so do not call ``append`` or ``skip`` on one stream
+        from two Python threads at the same time.
+        """
+    def skip(self, n_bytes: int, key: str | None = None) -> None: ...
     def write_custom_metadata(
         self,
         metadata: str | dict,

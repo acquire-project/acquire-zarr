@@ -32,6 +32,7 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DBUILD_PYTHON=ON",
             "-DBUILD_TESTING=OFF",
+            f"-DPython3_EXECUTABLE={sys.executable}",
         ]
 
         extra_args = [

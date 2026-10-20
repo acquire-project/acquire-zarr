@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acquire-zarr"
-version = "0.9.0"
+version = "0.10.0"
 description = "Performant streaming to Zarr storage, on filesystem or cloud"
 authors = [
     {name = "Alan Liddell", email = "aliddell@chanzuckerberg.com"}
@@ -24,6 +24,9 @@ testing = [
     "dask",
     "mypy",
     "ome-zarr",
+    # also a build requirement; kept here so a bare `cmake -DBUILD_PYTHON=ON`
+    # against .venv can find it the same way the wheel build does
+    "pybind11[global]",
     "pytest>=7",
     "pytest-cov",
     "python-dotenv",

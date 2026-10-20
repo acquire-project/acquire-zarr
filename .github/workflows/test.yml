@@ -10,6 +10,11 @@ on:
 
 env:
   BUILD_TYPE: Release
+  # vcpkg 2026.07.29's portfiles use string(JSON ... STRING_ENCODE), which needs
+  # CMake >= 4. Both the pinned 3.31 (for the VS18 generator) and pip's
+  # "cmake<4.0.0" put an older cmake on PATH, so make vcpkg fetch its own
+  # (4.4.0) for building ports instead of borrowing ours.
+  VCPKG_FORCE_DOWNLOADED_BINARIES: 1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,16 +52,15 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Cache vcpkg binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/vcpkg/archives
@@ -81,17 +85,12 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
           ./vcpkg integrate install
         shell: bash
-
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
 
       # windows-latest ships Visual Studio 18, which CMake 3.31 has no generator
       # for; it falls back to NMake and fails. Set up the MSVC environment and
@@ -130,25 +129,28 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
       MINIO_URL: http://localhost:9000
-      MINIO_ALIAS: myminio
       MINIO_BUCKET: acquire-test
       MINIO_ACCESS_KEY: acquire
       MINIO_SECRET_KEY: 12345678
+      # MinIO removed its community server from every free registry: dl.min.io
+      # answers 410 Gone, the Docker Hub repos are gone, and quay.io now rejects
+      # anonymous pulls ("unauthorized"). Even bitnami/minio has been emptied.
+      # Run the S3 tests against adobe/s3mock instead -- a lightweight S3 API
+      # mock that is still freely pullable and accepts any credentials, so no
+      # root user or service account is needed.
+      S3MOCK_IMAGE: adobe/s3mock:5.2.3
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Cache vcpkg binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/vcpkg/archives
@@ -161,29 +163,43 @@ jobs:
         with:
           cmake-version: "3.31.x"
 
-      - name: Install minio and mcli
+      - name: Start s3mock
         run: |
-          apt update && apt install -y tmux wget
-          wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mcli
-          chmod +x /usr/local/bin/minio
-          chmod +x /usr/local/bin/mcli
+          # s3mock serves the S3 API on 9090 (HTTP); map it to the 9000 the
+          # tests expect. It accepts any credentials, so there is no admin /
+          # service-account step; the bucket is created in the next step.
+          docker run -d --name s3mock -p 9000:9090 \
+            "$S3MOCK_IMAGE"
+          for _ in $(seq 60); do
+            # ready as soon as the server returns any HTTP response
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$MINIO_URL/" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$ready" ]; then
+            docker logs s3mock >&2
+            echo "s3mock did not become ready" >&2
+            exit 1
+          fi
 
-      - name: Start minio in tmux
+      - name: Create the test bucket
         run: |
-          tmux new -d -s minio
-          tmux send-keys -t minio "MINIO_ROOT_USER=$MINIO_ROOT_USER MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD minio server /tmp/minio --console-address :9001" Enter
-          sleep 5
-          mcli alias set $MINIO_ALIAS $MINIO_URL $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
-          mcli admin user svcacct add --access-key $MINIO_ACCESS_KEY --secret-key $MINIO_SECRET_KEY $MINIO_ALIAS $MINIO_ROOT_USER
-
-      - name: Create a bucket
-        run: |
-          mcli mb $MINIO_ALIAS/$MINIO_BUCKET
+          # s3mock does not validate signatures, so a plain path-style PUT
+          # creates the bucket exactly as the library addresses it. Verify it is
+          # visible (HeadBucket) before running the tests.
+          curl -fsS -X PUT "$MINIO_URL/$MINIO_BUCKET"
+          if ! curl -fsS -I "$MINIO_URL/$MINIO_BUCKET" >/dev/null; then
+            docker logs s3mock >&2
+            echo "bucket $MINIO_BUCKET not reachable after create" >&2
+            exit 1
+          fi
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
@@ -214,6 +230,11 @@ jobs:
         run: python -m pip install ".[testing]"
 
       - name: Test Python
+        env:
+          ZARR_S3_ENDPOINT: ${{ env.MINIO_URL }}
+          ZARR_S3_BUCKET_NAME: ${{ env.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ env.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_SECRET_KEY }}
         run: python -m pytest -v -k test_stream_data_to_s3
 
 
@@ -235,22 +256,21 @@ jobs:
       CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          submodules: true
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13.3"
           cache: 'pip'
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Cache vcpkg binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/vcpkg/archives
@@ -261,17 +281,12 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git -b 2025.03.19 --depth 1
+          git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1
           cd vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=${{github.workspace}}/vcpkg" >> $GITHUB_ENV
           echo "${{github.workspace}}/vcpkg" >> $GITHUB_PATH
           ./vcpkg integrate install
         shell: bash
-
-      - name: Install OpenMP
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew install libomp
 
       # see the C/C++ job: VS18 has no CMake 3.31 generator. Set up MSVC and
       # tell scikit-build to drive the build with Ninja via CMAKE_GENERATOR.

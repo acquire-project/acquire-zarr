@@ -10,6 +10,7 @@
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <stack>
 #include <unordered_set>
@@ -17,6 +18,55 @@
 namespace fs = std::filesystem;
 
 namespace {
+/**
+ * @brief Parse @p text as a Zarr v3 group node that a reader can open.
+ * @details Applies the rules of the v3 core spec, as zarr-python 3.4 enforces
+ * them: `zarr_format` is the integer 3, `node_type` is "group", `attributes`
+ * (if present) is an object, and any other key is `consolidated_metadata` or an
+ * extension object with `"must_understand": false`. A document that only names
+ * itself a group, such as one with `"attributes": []`, would be kept and then
+ * fail to open, so it is rejected here and replaced.
+ * @returns The document, or nullopt if it is not such a node, including text
+ * that does not parse.
+ */
+std::optional<nlohmann::json>
+parse_v3_group_node(std::string_view text)
+{
+    auto doc = nlohmann::json::parse(text, nullptr, false);
+    if (!doc.is_object() || !doc.contains("zarr_format") ||
+        !doc.contains("node_type")) {
+        return std::nullopt;
+    }
+
+    for (const auto& [key, value] : doc.items()) {
+        if (key == "zarr_format") {
+            if (!value.is_number_integer() || value != 3) {
+                return std::nullopt;
+            }
+        } else if (key == "node_type") {
+            if (value != "group") {
+                return std::nullopt;
+            }
+        } else if (key == "attributes") {
+            if (!value.is_object()) {
+                return std::nullopt;
+            }
+        } else if (key != "consolidated_metadata") {
+            if (!value.is_object()) {
+                return std::nullopt;
+            }
+            const auto must_understand = value.find("must_understand");
+            if (must_understand == value.end() ||
+                !must_understand->is_boolean() ||
+                must_understand->get<bool>()) {
+                return std::nullopt;
+            }
+        }
+    }
+
+    return doc;
+}
+
 std::optional<zarr::S3Settings>
 make_s3_settings(const ZarrS3Settings* settings)
 {
@@ -40,6 +90,12 @@ validate_s3_settings(const ZarrS3Settings* settings, std::string& error)
 {
     if (zarr::is_empty_string(settings->endpoint, "S3 endpoint is empty")) {
         error = "S3 endpoint is empty";
+        return false;
+    }
+
+    // defer to the client, so validation cannot accept an endpoint the client
+    // would then throw on
+    if (!zarr::is_valid_s3_endpoint(zarr::trim(settings->endpoint), error)) {
         return false;
     }
 
@@ -379,7 +435,8 @@ make_array_config(const ZarrArraySettings* settings,
                   std::optional<std::string> array_key,
                   const std::optional<std::string>& bucket_name,
                   ZarrOMEVersion ome_version,
-                  std::string& error)
+                  std::string& error,
+                  bool force_ngff)
 {
     // remove leading/trailing slashes and whitespace
     std::string key = zarr::regularize_key(settings->output_key);
@@ -401,23 +458,48 @@ make_array_config(const ZarrArraySettings* settings,
       make_array_dimensions(settings);
 
     std::optional<ZarrDownsamplingMethod> downsampling_method = std::nullopt;
-    if (settings->multiscale) {
+    if (settings->downsampling_method > ZarrDownsamplingMethod_None) {
         downsampling_method = settings->downsampling_method;
     }
 
-    auto config = std::make_shared<zarr::ArrayConfig>(store_root,
-                                                      key,
-                                                      bucket_name,
-                                                      compression_params,
-                                                      dimensions,
-                                                      settings->data_type,
-                                                      downsampling_method,
-                                                      0,
-                                                      settings->max_levels);
+    auto config = std::make_shared<zarr::ArrayConfig>(
+      store_root,
+      key,
+      bucket_name,
+      compression_params,
+      dimensions,
+      settings->data_type,
+      downsampling_method,
+      0,
+      // omero rendering metadata lives in OME image group metadata, so it
+      // makes an otherwise flat array an OME image
+      downsampling_method.has_value() || settings->is_ngff || force_ngff ||
+        settings->omero != nullptr,
+      settings->max_levels);
     config->ome_version = ome_version;
     config->omero = make_omero(settings->omero);
 
     return config;
+}
+
+std::unique_ptr<zarr::ArrayBase>
+make_array(std::shared_ptr<zarr::ArrayConfig> config,
+           std::shared_ptr<zarr::ThreadPool> thread_pool,
+           std::shared_ptr<zarr::FileHandlePool> file_handle_pool,
+           std::shared_ptr<zarr::S3Client> s3_client)
+{
+    const auto ngff = config->downsampling_method || config->is_ngff;
+
+    std::unique_ptr<zarr::ArrayBase> array;
+    if (ngff) {
+        array = std::make_unique<zarr::MultiscaleArray>(
+          config, thread_pool, file_handle_pool, s3_client);
+    } else {
+        array = std::make_unique<zarr::Array>(
+          config, thread_pool, file_handle_pool, s3_client);
+    }
+
+    return array;
 }
 
 [[nodiscard]] bool
@@ -559,9 +641,7 @@ validate_array_settings(const ZarrArraySettings* settings,
         }
     }
 
-    // we don't care about downsampling method if not multiscale
-    if (settings->multiscale &&
-        settings->downsampling_method >= ZarrDownsamplingMethodCount) {
+    if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
         error = "Invalid downsampling method: " +
                 std::to_string(settings->downsampling_method);
         return false;
@@ -818,7 +898,7 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
     // check that if the root node is not multiscale, there are no other arrays
     for (auto i = 0; i < arrays.size(); ++i) {
         const auto& array = arrays[i];
-        const bool is_multiscale_array = array->downsampling_method.has_value();
+        const bool is_multiscale_array = array->is_ngff;
 
         const std::string& key = array->node_key;
 
@@ -863,6 +943,11 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
                 std::string segment = segments.top();
                 segments.pop();
 
+                const bool is_last_segment = segments.empty();
+                const auto array_node_type =
+                  is_multiscale_array ? DatasetNodeType::MultiscaleArray
+                                      : DatasetNodeType::Array;
+
                 // check if this segment already exists
                 if (auto it = current_node->children.find(segment);
                     it == current_node->children.end()) {
@@ -871,14 +956,14 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
                     new_node->name = segment;
                     new_node->parent = current_node;
 
-                    if (segments.empty()) { // Last segment
-                        new_node->type = is_multiscale_array
-                                           ? DatasetNodeType::MultiscaleArray
-                                           : DatasetNodeType::Array;
-                    } else {
-                        new_node->type = DatasetNodeType::Directory;
-                    }
+                    new_node->type = is_last_segment
+                                       ? array_node_type
+                                       : DatasetNodeType::Directory;
                     current_node->children.emplace(segment, new_node);
+                } else if (is_last_segment) {
+                    // a longer key processed earlier created this node as a
+                    // placeholder directory, but it is really an array
+                    it->second->type = array_node_type;
                 }
 
                 // Move to the child node
@@ -912,8 +997,8 @@ check_array_structure(std::vector<std::shared_ptr<zarr::ArrayConfig>> arrays,
 
         // if the parent is not multiscale, it must not have any children
         if (!can_have_children && !current_node->children.empty()) {
-            error = "Directory node '" + current_node->name +
-                    "' cannot have children";
+            error =
+              "Array node '" + current_node->name + "' cannot have children";
             return false;
         }
 
@@ -975,7 +1060,7 @@ dimension_type_to_string(ZarrDimensionType type)
 
 /* ZarrStream_s implementation */
 
-ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
+ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)
 {
     EXPECT(validate_settings_(settings), error_);
 
@@ -983,6 +1068,8 @@ ZarrStream::ZarrStream_s(struct ZarrStreamSettings_s* settings)
 
     // commit settings and create the output store
     EXPECT(commit_settings_(settings), error_);
+
+    EXPECT(write_intermediate_metadata_(), error_);
 
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
@@ -994,12 +1081,12 @@ ZarrStream::append(const char* key_,
                    size_t bytes_in,
                    size_t& bytes_out)
 {
+    bytes_out = 0; // bytes written out of the input data
+
     if (!error_.empty()) {
         LOG_ERROR("Cannot append data: ", error_);
         return ZarrStatusCode_InternalError;
     }
-
-    bytes_out = 0; // bytes written out of the input data
 
     // if the key is null and we have only one output array, use that
     std::string key;
@@ -1080,6 +1167,7 @@ ZarrStream::append(const char* key_,
         } else if (bytes_remaining < frame_size_bytes) { // begin partial frame
             if (frame_buffer.empty()) {
                 frame_buffer.resize(frame_size_bytes, 0);
+                output->frame_buffer_bytes.store(frame_buffer.size());
             }
 
             if (data) {
@@ -1160,10 +1248,25 @@ size_t
 ZarrStream_s::get_memory_usage() const noexcept
 {
     size_t usage = frame_queue_->bytes_used();
+
+    // try_lock: finalize_stream holds this across every array's close, and an
+    // estimate must not block on that. Under contention the arrays are omitted,
+    // which matches ArrayBase::memory_usage()'s own best-effort contract.
+    std::unique_lock arrays_lock(arrays_mutex_, std::try_to_lock);
+    if (!arrays_lock.owns_lock()) {
+        return usage;
+    }
+
     for (const auto& [key, output] : arrays_) {
-        const auto frame_buffer_size = output->frame_buffer.size();
-        const auto array_memory_usage = output->array->memory_usage();
-        usage += (frame_buffer_size + array_memory_usage);
+        // frame_buffer is resized on the appending thread, so its size is read
+        // from an atomic rather than from the vector
+        usage += output->frame_buffer_bytes.load();
+
+        // finalize_stream has moved the array out by the time it releases the
+        // lock above, so the slot can legitimately be empty
+        if (output->array) {
+            usage += output->array->memory_usage();
+        }
     }
 
     return usage;
@@ -1193,6 +1296,12 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
     if (settings->ome_version >= ZarrOMEVersionCount) {
         error_ =
           "Invalid OME version: " + std::to_string(settings->ome_version);
+        return false;
+    }
+
+    if (settings->intermediate_groups >= ZarrIntermediateGroupsCount) {
+        error_ = "Invalid intermediate groups mode: " +
+                 std::to_string(settings->intermediate_groups);
         return false;
     }
 
@@ -1238,7 +1347,8 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
                                         std::nullopt,
                                         std::nullopt,
                                         settings->ome_version,
-                                        error_);
+                                        error_,
+                                        false);
         if (!config) {
             return false;
         }
@@ -1320,7 +1430,8 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
                                                     field.path,
                                                     std::nullopt,
                                                     settings->ome_version,
-                                                    error_);
+                                                    error_,
+                                                    true);
                     if (config == nullptr) {
                         return false;
                     }
@@ -1341,20 +1452,21 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
 bool
 ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                const std::string& parent_path,
-                               bool is_hcs_array)
+                               bool force_ngff)
 {
     std::optional<std::string> bucket_name;
     if (s3_settings_) {
         bucket_name = s3_settings_->bucket_name;
     }
 
-    auto config = make_array_config(settings,
-                                    store_path_,
-                                    parent_path,
-                                    std::nullopt,
-                                    bucket_name,
-                                    ome_version_,
-                                    error_);
+    const auto config = make_array_config(settings,
+                                          store_path_,
+                                          parent_path,
+                                          std::nullopt,
+                                          bucket_name,
+                                          ome_version_,
+                                          error_,
+                                          force_ngff);
     if (config == nullptr) {
         return false;
     }
@@ -1373,11 +1485,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                                 0,
                                                 0);
     try {
-        output->array = zarr::make_array(config,
-                                         thread_pool_,
-                                         file_handle_pool_,
-                                         s3_connection_pool_,
-                                         is_hcs_array);
+        output->array =
+          make_array(config, thread_pool_, file_handle_pool_, s3_client_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1472,12 +1581,13 @@ ZarrStream_s::commit_hcs_settings_(const ZarrHCSSettings* hcs_settings)
                 }
                 image_out.path = zarr::regularize_key(image_in.path);
 
-                if (image_in.array_settings) {
-                    image_in.array_settings->output_key = image_in.path;
-                }
+                // the array's key is fully specified by the FOV path, so
+                // supply it on a copy rather than writing back through the
+                // caller's settings (validation guarantees non-null here)
+                ZarrArraySettings fov_array = *image_in.array_settings;
+                fov_array.output_key = image_in.path;
 
-                if (!configure_array_(
-                      image_in.array_settings, well_key, true)) {
+                if (!configure_array_(&fov_array, well_key, true)) {
                     set_error_("Failed to configure array for field of view " +
                                std::to_string(k) + " in well " +
                                std::to_string(j) + " in plate " +
@@ -1515,6 +1625,8 @@ ZarrStream_s::commit_settings_(const ZarrStreamSettings* settings)
 
     std::optional<std::string> bucket_name;
     s3_settings_ = make_s3_settings(settings->s3_settings);
+    overwrite_ = settings->overwrite;
+    intermediate_groups_ = settings->intermediate_groups;
 
     // create the data store
     if (!create_store_(settings->overwrite)) {
@@ -1569,13 +1681,16 @@ bool
 ZarrStream_s::create_store_(bool overwrite)
 {
     if (is_s3_acquisition_()) {
-        // spin up S3 connection pool
         try {
-            s3_connection_pool_ = std::make_shared<zarr::S3ConnectionPool>(
-              std::thread::hardware_concurrency(), *s3_settings_);
+            s3_client_ = std::make_shared<zarr::S3Client>(*s3_settings_);
         } catch (const std::exception& e) {
-            set_error_("Error creating S3 connection pool: " +
-                       std::string(e.what()));
+            set_error_("Error creating S3 client: " + std::string(e.what()));
+            return false;
+        }
+
+        if (!s3_client_->bucket_exists(s3_settings_->bucket_name)) {
+            set_error_("S3 bucket '" + s3_settings_->bucket_name +
+                       "' does not exist or is not accessible.");
             return false;
         }
     } else {
@@ -1626,11 +1741,6 @@ ZarrStream_s::create_store_(bool overwrite)
 bool
 ZarrStream_s::write_intermediate_metadata_()
 {
-    std::optional<std::string> bucket_name;
-    if (s3_settings_) {
-        bucket_name = s3_settings_->bucket_name;
-    }
-
     const nlohmann::json group_metadata = nlohmann::json({
       { "zarr_format", 3 },
       { "consolidated_metadata", nullptr },
@@ -1644,6 +1754,14 @@ ZarrStream_s::write_intermediate_metadata_()
     for (const auto& parent_group_key : intermediate_group_paths_) {
         const std::string relative_path =
           (parent_group_key.empty() ? "" : parent_group_key);
+
+        // root group has an empty relative_path; can't regularize_key the
+        // join because store_path_ may be absolute (#247)
+        std::string sink_path = store_path_;
+        if (!relative_path.empty()) {
+            sink_path += "/" + relative_path;
+        }
+        sink_path += "/" + metadata_key;
 
         if (auto pit = plates_.find(relative_path); // is it a plate?
             pit != plates_.end()) {
@@ -1672,26 +1790,27 @@ ZarrStream_s::write_intermediate_metadata_()
 
             metadata_str = well_metadata.dump(4);
         } else { // generic group
+            // a generic group carries nothing of ours, so the caller decides
+            // whether we write it (#186)
+            if (intermediate_groups_ == ZarrIntermediateGroups_Never) {
+                continue;
+            }
+
             metadata_str = group_metadata.dump(4);
+
+            // with overwrite, the filesystem store starts empty; write
+            // unconditionally so that S3, which is not cleared, matches it
+            if (intermediate_groups_ == ZarrIntermediateGroups_IfMissing &&
+                !overwrite_) {
+                if (!write_group_metadata_if_missing_(sink_path,
+                                                      metadata_str)) {
+                    return false;
+                }
+                continue;
+            }
         }
 
-        ConstByteSpan metadata_span(
-          reinterpret_cast<const uint8_t*>(metadata_str.data()),
-          metadata_str.size());
-
-        const std::string sink_path =
-          store_path_ + "/" + relative_path + "/" + metadata_key;
-        std::unique_ptr<zarr::Sink> metadata_sink;
-        if (is_s3_acquisition_()) {
-            metadata_sink = zarr::make_s3_sink(
-              bucket_name.value(), sink_path, s3_connection_pool_);
-        } else {
-            metadata_sink = zarr::make_file_sink(
-              sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
-        }
-
-        if (!metadata_sink->write(0, metadata_span) ||
-            !zarr::finalize_sink(std::move(metadata_sink))) {
+        if (!write_metadata_object_(sink_path, metadata_str)) {
             set_error_("Failed to write intermediate metadata for group '" +
                        parent_group_key + "'");
             return false;
@@ -1699,6 +1818,129 @@ ZarrStream_s::write_intermediate_metadata_()
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
+                                               const std::string& metadata_str)
+{
+    if (is_s3_acquisition_()) {
+        const auto& bucket_name = s3_settings_->bucket_name;
+        ConstByteSpan metadata_span(
+          reinterpret_cast<const uint8_t*>(metadata_str.data()),
+          metadata_str.size());
+
+        switch (s3_client_->put_object_if_absent(
+          bucket_name, sink_path, metadata_span)) {
+            case zarr::S3Client::PutIfAbsentResult::Stored:
+                return true;
+            case zarr::S3Client::PutIfAbsentResult::Failed:
+                set_error_("Failed to write group metadata at '" + sink_path +
+                           "'");
+                return false;
+            case zarr::S3Client::PutIfAbsentResult::Exists:
+                break;
+        }
+
+        const auto existing = s3_client_->get_object(bucket_name, sink_path);
+        if (!existing) {
+            set_error_("Failed to read existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        if (auto group = parse_v3_group_node(
+              std::string_view(reinterpret_cast<const char*>(existing->data()),
+                               existing->size()))) {
+            return keep_group_metadata_(sink_path, *group);
+        }
+    } else {
+        std::error_code ec;
+        const bool exists = fs::exists(sink_path, ec);
+        if (ec) {
+            set_error_("Failed to check for group metadata at '" + sink_path +
+                       "': " + ec.message());
+            return false;
+        }
+
+        if (!exists) {
+            if (!write_metadata_object_(sink_path, metadata_str)) {
+                set_error_("Failed to write group metadata at '" + sink_path +
+                           "'");
+                return false;
+            }
+            return true;
+        }
+
+        std::ifstream file(sink_path, std::ios::binary);
+        if (!file.is_open()) {
+            set_error_("Failed to open existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        const std::string existing((std::istreambuf_iterator<char>(file)),
+                                   std::istreambuf_iterator<char>());
+        if (file.bad()) {
+            set_error_("Failed to read existing group metadata at '" +
+                       sink_path + "'");
+            return false;
+        }
+        file.close(); // before a replacement opens it for writing
+        if (auto group = parse_v3_group_node(existing)) {
+            return keep_group_metadata_(sink_path, *group);
+        }
+    }
+
+    LOG_WARNING(
+      "Replacing metadata at ", sink_path, " that is not a Zarr v3 group node");
+    if (!write_metadata_object_(sink_path, metadata_str)) {
+        set_error_("Failed to write group metadata at '" + sink_path + "'");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::keep_group_metadata_(const std::string& sink_path,
+                                   nlohmann::json& group)
+{
+    const auto consolidated = group.find("consolidated_metadata");
+    if (consolidated == group.end() || consolidated->is_null()) {
+        LOG_DEBUG("Keeping existing group metadata at ", sink_path);
+        return true;
+    }
+
+    LOG_INFO("Clearing consolidated metadata at ",
+             sink_path,
+             ", which would hide the arrays that this stream writes");
+    *consolidated = nullptr;
+    if (!write_metadata_object_(sink_path, group.dump(4))) {
+        set_error_("Failed to write group metadata at '" + sink_path + "'");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::write_metadata_object_(const std::string& sink_path,
+                                     const std::string& metadata_str)
+{
+    ConstByteSpan metadata_span(
+      reinterpret_cast<const uint8_t*>(metadata_str.data()),
+      metadata_str.size());
+
+    std::unique_ptr<zarr::Sink> metadata_sink;
+    if (is_s3_acquisition_()) {
+        metadata_sink =
+          zarr::make_s3_sink(s3_settings_->bucket_name, sink_path, s3_client_);
+    } else {
+        metadata_sink = zarr::make_file_sink(
+          sink_path, file_handle_pool_, /*truncate_to_fit=*/true);
+    }
+
+    return metadata_sink && metadata_sink->write(0, metadata_span) &&
+           zarr::finalize_sink(std::move(metadata_sink));
 }
 
 bool
@@ -1909,19 +2151,19 @@ finalize_stream(ZarrStream* stream)
         return false;
     }
 
-    for (auto& [key, output] : stream->arrays_) {
-        if (!zarr::finalize_array(std::move(output->array))) {
-            LOG_ERROR(
-              "Error finalizing Zarr stream. Failed to finalize array '",
-              key,
-              "'");
-            return false;
+    {
+        // get_memory_usage() may be polled from another thread right up to
+        // here; keep it out of the slots being emptied
+        std::unique_lock lock(stream->arrays_mutex_);
+        for (auto& [key, output] : stream->arrays_) {
+            if (!zarr::finalize_array(std::move(output->array))) {
+                LOG_ERROR(
+                  "Error finalizing Zarr stream. Failed to finalize array '",
+                  key,
+                  "'");
+                return false;
+            }
         }
-    }
-
-    if (!stream->write_intermediate_metadata_()) {
-        LOG_ERROR(stream->error_);
-        return false;
     }
 
     return true;

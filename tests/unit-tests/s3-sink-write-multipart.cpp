@@ -1,43 +1,15 @@
+#include "s3-test-helper.hh"
 #include "s3.sink.hh"
 #include "unit.test.macros.hh"
 
-#include <miniocpp/client.h>
-
-#include <cstdlib>
-#include <memory>
-
-namespace {
-bool
-get_settings(zarr::S3Settings& settings)
-{
-    char* env = nullptr;
-    if (!(env = std::getenv("ZARR_S3_ENDPOINT"))) {
-        LOG_ERROR("ZARR_S3_ENDPOINT not set.");
-        return false;
-    }
-    settings.endpoint = env;
-
-    if (!(env = std::getenv("ZARR_S3_BUCKET_NAME"))) {
-        LOG_ERROR("ZARR_S3_BUCKET_NAME not set.");
-        return false;
-    }
-    settings.bucket_name = env;
-
-    env = std::getenv("ZARR_S3_REGION");
-    if (env) {
-        settings.region = env;
-    }
-
-    return true;
-}
-} // namespace
+#include <vector>
 
 int
 main()
 {
-    zarr::S3Settings settings;
-    if (!get_settings(settings)) {
-        LOG_WARNING("Failed to get credentials. Skipping test.");
+    const auto settings = test::s3_settings_from_env();
+    if (!settings) {
+        LOG_WARNING("S3 not configured. Skipping test.");
         return 0;
     }
 
@@ -45,45 +17,29 @@ main()
     const std::string object_name = "test-object";
 
     try {
-        auto pool = std::make_shared<zarr::S3ConnectionPool>(1, settings);
+        auto client = std::make_shared<zarr::S3Client>(*settings);
 
-        auto conn = pool->get_connection();
-        CHECK(conn->bucket_exists(settings.bucket_name));
-        CHECK(conn->delete_object(settings.bucket_name, object_name));
-        CHECK(!conn->object_exists(settings.bucket_name, object_name));
+        CHECK(client->bucket_exists(settings->bucket_name));
+        CHECK(client->delete_object(settings->bucket_name, object_name));
+        CHECK(!client->object_exists(settings->bucket_name, object_name));
 
-        pool->return_connection(std::move(conn));
-
-        std::vector<uint8_t> data((5 << 20) + 1, 0);
+        // one byte over the part size, so the sink streams rather than sending a
+        // single request
+        const std::vector<uint8_t> data((5 << 20) + 1, 0);
         {
             auto sink = std::make_unique<zarr::S3Sink>(
-              settings.bucket_name, object_name, pool);
+              settings->bucket_name, object_name, client);
             CHECK(sink->write(0, data));
             CHECK(zarr::finalize_sink(std::move(sink)));
         }
 
-        conn = pool->get_connection();
-        CHECK(conn->object_exists(settings.bucket_name, object_name));
-        pool->return_connection(std::move(conn));
-
-        // Verify the object size.
-        {
-            minio::s3::BaseUrl url(settings.endpoint);
-            url.https = settings.endpoint.starts_with("https://");
-
-            minio::creds::EnvAwsProvider provider;
-            minio::s3::Client client(url, &provider);
-            minio::s3::StatObjectArgs args;
-            args.bucket = settings.bucket_name;
-            args.object = object_name;
-
-            minio::s3::StatObjectResponse resp = client.StatObject(args);
-            EXPECT_EQ(int, data.size(), resp.size);
-        }
+        CHECK(client->object_exists(settings->bucket_name, object_name));
+        EXPECT_EQ(size_t,
+                  data.size(),
+                  get_object_size(*client, settings->bucket_name, object_name));
 
         // cleanup
-        conn = pool->get_connection();
-        CHECK(conn->delete_object(settings.bucket_name, object_name));
+        CHECK(client->delete_object(settings->bucket_name, object_name));
 
         retval = 0;
     } catch (const std::exception& e) {

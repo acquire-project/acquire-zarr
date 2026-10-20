@@ -10,26 +10,13 @@
       "name": "crc32c"
     },
     {
-      "name": "curlpp"
+      "name": "zstd"
     },
     {
-      "name": "inih",
-      "features": [
-        "cpp"
-      ]
+      "name": "yaml-cpp"
     },
     {
-      "name": "nlohmann-json"
-    },
-    {
-      "name": "openssl"
-    },
-    {
-      "name": "pugixml"
-    },
-    {
-      "name": "zlib",
-      "platform": "windows"
+      "name": "aws-crt-cpp"
     },
     {
       "name": "vcpkg-cmake",

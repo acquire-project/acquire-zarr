@@ -57,7 +57,6 @@ setup()
 {
     ZarrArraySettings array = {
         .data_type = ZarrDataType_uint16,
-        .multiscale = true,
         .downsampling_method = ZarrDownsamplingMethod_Mean,
     };
     ZarrStreamSettings settings = {

@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
+  config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
+  default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
+  anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
+  always written (#186, #268)
+
+### Changed
+
+- The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
+  closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
+  `ZarrStream_create` is kept (#186, #268)
+- Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
+  S3 storage (#248)
+- ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
+  `host:port` as plaintext HTTP; neither scheme is a safe default, so a scheme-less endpoint is now rejected at settings
+  validation (#248)
+- S3 requests now use virtual-host addressing for `*.amazonaws.com` endpoints and path-style addressing otherwise. A
+  bucket whose name is not a legal DNS label (a dot, an underscore or an upper-case letter) uses path style even on AWS,
+  since it cannot be prepended to the host. An unset `region` is signed as `us-east-1` instead of being omitted;
+  endpoints that validate the signing region require it to be set explicitly (#248)
+- The bucket is now checked once when the stream is created rather than once per object written (#248)
+- Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
+
+### Fixed
+
+- Mean downsampling of `uint32`, `int32`, `uint64` and `int64` data no longer overflows. The overflow-safe integer
+  path never compiled in, so a 2x2 block or z pair whose sum left the type's range wrapped (unsigned) or was undefined
+  (signed). Results are unchanged for every input that did not overflow: the mean is still truncated toward zero
+  (#265)
+- Fixed a data race in `S3Sink`. `Shard::write_chunk` claims each chunk's offset under a lock but writes outside it, and
+  each chunk is its own thread-pool job, so byte ranges reached the sink concurrently and out of order while it mutated
+  its buffer without synchronization. The sink now stages fragments and appends them in order (#248)
+- Fixed a use-after-free in `ZarrStream_get_current_memory_usage`. `Array::memory_usage()` walked the chunk and shard
+  buffers while the frame thread was freeing them at an append-chunk rollover. Every buffer is now read under its own
+  try-lock, and a busy buffer is omitted from the estimate rather than waited for (#248)
+- Fixed a missed wakeup that could hang stream finalization. Worker threads retired outstanding writes without holding
+  the mutex the closing thread waits under, so a notification could be lost and the close would never wake (#248)
+- `ZarrStream_get_current_memory_usage` no longer dereferences a null array when called concurrently with, or after,
+  stream finalization (#248)
+- Fixed a use-after-free when an array is destroyed without being finalized. Only the close path drained outstanding
+  writes, so an array released on an error path had the state those writes touch destroyed underneath them. The
+  destructor now drains as well (#248)
+- A stream no longer overwrites group metadata that the caller wrote, such as the attributes of the root group
+  (#186, #268)
+- `ZarrStream_close` and `ZarrStream_destroy` no longer let a C++ exception escape into the C caller, and they free the
+  stream even when finalization throws (#268)
+- `Zarr_get_api_version()` now returns the library release version (`0.10.0`), not the stale `0.8.0`. The string is
+  now derived from the CMake project version (#264)
+- `ZarrStream_append` now sets `bytes_out` to 0 when it fails on an earlier stream error. That path returned before it
+  wrote `bytes_out` (#264)
+- The installed CMake package no longer requires OpenMP, which the library stopped using in #266. It now finds
+  `Threads`, which the static library links (#264)
+
+## [0.10.0] - [2026-09-11](https://github.com/acquire-project/acquire-zarr/compare/v0.9.0...v0.10.0)
+
+### Added
+
+- `is_ngff` flag on `ZarrArraySettings` to explicitly request OME-NGFF multiscales wrapping without
+  requiring downsampling (#213)
+- `ZarrDownsamplingMethod_None` sentinel value for explicitly representing "no downsampling" (#213)
+- `ZARR_DIRECT_IO` environment variable: when set, file handles are opened with `O_DIRECT` so writes bypass the OS page
+  cache. Off by default, Linux only, and only valid on filesystems that accept unaligned direct writes, such as NFS
+  (#250)
+
+### Changed
+
+- The numeric values of `ZarrDownsamplingMethod` have shifted by one, because
+  `ZarrDownsamplingMethod_None` was inserted as the new zero value. Config files, which spell the
+  method as a string, and the Python `DownsamplingMethod` members are unaffected; but C code that
+  persisted the raw integers, and Python code unpickling a `DownsamplingMethod` pickled by 0.9.0 or
+  earlier, will read back a different method than it stored (#213)
+- The layout of `ZarrArraySettings` has changed, since `multiscale` was removed and `is_ngff` added,
+  so callers must recompile against the new header rather than relink against the new binary (#213)
+- Setting a downsampling method continues to coerce `is_ngff` to true (#213)
+- The config schema version is now `2`. Version-2 configs use `is_ngff` in place of `multiscale`, and
+  `downsampling_method` gained a `"none"` value. A version-1 config still loads and is translated
+  using version-1 semantics: `multiscale: true` becomes `is_ngff: true`, defaulting
+  `downsampling_method` to `decimate`, and a `downsampling_method` without `multiscale` is ignored. A
+  config that omits `version` is read as the current schema (#213)
+- A version-2 config containing `multiscale` is rejected with an error rather than silently
+  reinterpreted, as is a version-1 config containing `is_ngff` (#213)
+- In a version-2 config, `downsampling_method` is honoured on its own. Previously `downsampling_method`
+  was only read when `multiscale` was true, so a config that set it alone produced a plain array; it
+  now produces an OME-NGFF multiscales group, relocating the data from `<output_key>/` to
+  `<output_key>/0/`. Set `downsampling_method: none` to keep the old plain-array layout (#213)
+
+### Fixed
+
+- An array key that is a strict prefix of another array key (for example `"foo"` alongside `"foo/bar"`) is now
+  rejected regardless of the order in which the keys are declared. Previously, declaring the longer key first was
+  accepted and wrote a group `zarr.json` over the array node, stranding its chunks with no readable array
+  metadata (#213)
+- Clearing `downsampling_method` now restores the previously requested `is_ngff` value instead of leaving it stuck
+  at the coerced `true`, which silently wrote an OME-NGFF group with the data one level deeper than the plain
+  array the caller asked for (#213)
+- `ArraySettings.__repr__` (Python) includes `is_ngff`, which otherwise made a plain array and an OME-NGFF group
+  print identically (#213)
+- Configuring an HCS field of view no longer writes the FOV path back into the caller's
+  `ZarrArraySettings.output_key` (#213)
+- The Python bindings are now built against the interpreter of the environment the wheel is destined for.
+  A PEP 517 build on macOS could resolve to a Homebrew framework Python of a different minor version than
+  the target environment, producing an extension module for the wrong ABI (#251)
+
+### Removed
+
+- `ZarrArraySettings.multiscale` (C) and `ArraySettings.multiscale` (Python), replaced by `is_ngff`.
+  What `multiscale = false` expressed is now the default of `is_ngff = false` with
+  `downsampling_method = ZarrDownsamplingMethod_None` (`None` in Python); what `multiscale = true`
+  expressed is `is_ngff = true`, with or without a downsampling method (#213)
+
 ## [0.9.0] - [2026-08-11](https://github.com/acquire-project/acquire-zarr/compare/v0.8.1...v0.9.0)
 
 ### Added

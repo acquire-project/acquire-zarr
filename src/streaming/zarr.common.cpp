@@ -4,6 +4,8 @@
 #include <blosc.h>
 #include <zstd.h>
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdlib>
 #include <regex>
@@ -33,6 +35,17 @@ zarr::trim(std::string_view s)
                   trimmed.end());
 
     return trimmed;
+}
+
+std::string
+zarr::to_lower(std::string_view s)
+{
+    std::string lowered(s);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    });
+
+    return lowered;
 }
 
 bool
@@ -202,6 +215,29 @@ zarr::resolve_max_threads(uint32_t requested_max_threads)
     }
 
     return parsed;
+}
+
+bool
+zarr::resolve_direct_io()
+{
+    const char* env = std::getenv("ZARR_DIRECT_IO");
+    if (env == nullptr || *env == '\0') {
+        return false;
+    }
+
+    const auto value = to_lower(env);
+
+    if (value == "1" || value == "true" || value == "on" || value == "yes") {
+        return true;
+    }
+
+    if (value == "0" || value == "false" || value == "off" || value == "no") {
+        return false;
+    }
+
+    // Fail closed: enabling this by mistake fails every write with EINVAL.
+    LOG_WARNING("Ignoring invalid ZARR_DIRECT_IO value: '", env, "'");
+    return false;
 }
 
 std::string

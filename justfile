@@ -7,16 +7,20 @@ set shell := ["bash", "-cu"]
 # Global paths - exported to all child processes
 ROOT := justfile_directory()
 BUILD_DIR := ROOT / "build"
-VCPKG_DIR := ROOT / "vcpkg"
+
+# Reuse an existing vcpkg checkout when the caller already has one, rather than
+# cloning a second copy into the repo. Falls back to a repo-local clone that
+# `setup-vcpkg` creates on demand.
+VCPKG_DIR := env_var_or_default("VCPKG_ROOT", ROOT / "vcpkg")
 export VCPKG_ROOT := VCPKG_DIR
 
 # Default recipe
 _default:
     @just --list
 
-# Full development setup: submodules + vcpkg + uv sync
+# Full development setup: vcpkg + uv sync
 # (args are passed to uv sync, e.g.: `just install -p 3.12`)
-install *args: _setup-submodules setup-vcpkg (uv-sync args)
+install *args: setup-vcpkg (uv-sync args)
 
 # Run uv sync (includes testing dependencies, forces C extension rebuild)
 uv-sync *args: _ensure-uv
@@ -44,11 +48,6 @@ setup-vcpkg:
     if [ ! -f "{{VCPKG_DIR}}/vcpkg" ]; then
         echo "Bootstrapping vcpkg..."
         "{{VCPKG_DIR}}/bootstrap-vcpkg.sh" -disableMetrics
-    fi
-    # macOS: install libomp if needed
-    if [ "$(uname)" = "Darwin" ] && ! brew list libomp &>/dev/null; then
-        echo "Installing libomp via Homebrew..."
-        brew install libomp
     fi
 
 [windows]
@@ -103,9 +102,6 @@ clean-all: clean
 [windows]
 clean-all: clean
     if (Test-Path "{{VCPKG_DIR}}") { Remove-Item -Recurse -Force "{{VCPKG_DIR}}" }
-
-_setup-submodules:
-    git -C "{{ROOT}}" submodule update --init --recursive
 
 [unix]
 _ensure-uv:

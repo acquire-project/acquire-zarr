@@ -165,7 +165,11 @@ emit_json(YAML::Emitter& e, const json& doc)
 // Schema version, enum tables, and typed JSON accessors
 // ---------------------------------------------------------------------------
 namespace {
-constexpr int kSchemaVersion = 1;
+// version 1 shipped in 0.9.0 and gated downsampling behind `multiscale`;
+// version 2 replaced that flag with `is_ngff` (#213). Version-1 configs are
+// still accepted and translated in migrate_v1().
+constexpr uint64_t kSchemaVersion = 2;
+constexpr uint64_t kMinSchemaVersion = 1;
 
 struct EnumEntry
 {
@@ -202,6 +206,7 @@ constexpr EnumEntry kCodecs[] = {
 };
 
 constexpr EnumEntry kDownsamplingMethods[] = {
+    { "none", ZarrDownsamplingMethod_None },
     { "decimate", ZarrDownsamplingMethod_Decimate },
     { "mean", ZarrDownsamplingMethod_Mean },
     { "min", ZarrDownsamplingMethod_Min },
@@ -211,6 +216,12 @@ constexpr EnumEntry kDownsamplingMethods[] = {
 constexpr EnumEntry kOMEVersions[] = {
     { "0.5", ZarrOMEVersion_0_5 },
     { "0.6", ZarrOMEVersion_0_6 },
+};
+
+constexpr EnumEntry kIntermediateGroups[] = {
+    { "if_missing", ZarrIntermediateGroups_IfMissing },
+    { "always", ZarrIntermediateGroups_Always },
+    { "never", ZarrIntermediateGroups_Never },
 };
 
 template<size_t N>
@@ -387,6 +398,80 @@ free_array(T* p)
 } // namespace
 
 // ---------------------------------------------------------------------------
+// Schema version 1 -> 2 migration
+// ---------------------------------------------------------------------------
+namespace {
+void
+migrate_array_v1(json& j, const std::string& ctx)
+{
+    if (!j.is_object()) {
+        return; // load_array will report the real problem
+    }
+
+    // migration writes `is_ngff`, so a version-1 config that sets it would
+    // have its value silently discarded
+    if (j.contains("is_ngff")) {
+        fail(ctx + ".is_ngff",
+             "'is_ngff' requires schema version 2; this config declares "
+             "version 1, where the equivalent field is 'multiscale'");
+    }
+
+    const bool multiscale = j.contains("multiscale") &&
+                            as_bool(j.at("multiscale"), ctx + ".multiscale");
+    j.erase("multiscale");
+
+    j["is_ngff"] = multiscale;
+    if (!multiscale) {
+        // version 1 read `downsampling_method` only when `multiscale` was true
+        j["downsampling_method"] = "none";
+    } else if (!j.contains("downsampling_method")) {
+        // version 1's zero value was Decimate
+        j["downsampling_method"] = "decimate";
+    }
+}
+
+void
+migrate_v1(json& doc)
+{
+    if (doc.contains("arrays") && doc.at("arrays").is_array()) {
+        auto& arrays = doc.at("arrays");
+        for (size_t i = 0; i < arrays.size(); ++i) {
+            migrate_array_v1(arrays[i], "arrays[" + std::to_string(i) + "]");
+        }
+    }
+
+    if (!doc.contains("plates") || !doc.at("plates").is_array()) {
+        return;
+    }
+
+    auto& plates = doc.at("plates");
+    for (size_t p = 0; p < plates.size(); ++p) {
+        const auto pctx = "plates[" + std::to_string(p) + "]";
+        if (!plates[p].is_object() || !plates[p].contains("wells") ||
+            !plates[p].at("wells").is_array()) {
+            continue;
+        }
+        auto& wells = plates[p].at("wells");
+        for (size_t w = 0; w < wells.size(); ++w) {
+            const auto wctx = pctx + ".wells[" + std::to_string(w) + "]";
+            if (!wells[w].is_object() || !wells[w].contains("images") ||
+                !wells[w].at("images").is_array()) {
+                continue;
+            }
+            auto& images = wells[w].at("images");
+            for (size_t i = 0; i < images.size(); ++i) {
+                const auto ictx = wctx + ".images[" + std::to_string(i) + "]";
+                if (!images[i].is_object() || !images[i].contains("array")) {
+                    continue;
+                }
+                migrate_array_v1(images[i].at("array"), ictx + ".array");
+            }
+        }
+    }
+}
+} // namespace
+
+// ---------------------------------------------------------------------------
 // JSON -> settings (owning)
 // ---------------------------------------------------------------------------
 namespace {
@@ -431,20 +516,27 @@ load_array(const json& j,
               as_string(require(j, "data_type", ctx), ctx + ".data_type"),
               "data type"));
 
-    arr->multiscale = j.contains("multiscale")
-                        ? as_bool(j.at("multiscale"), ctx + ".multiscale")
-                        : false;
+    if (j.contains("multiscale")) {
+        throw std::runtime_error(
+          ctx +
+          ".multiscale: 'multiscale' has been replaced by 'is_ngff'; set "
+          "'is_ngff' and/or 'downsampling_method' instead, or declare "
+          "'version: 1' to load this config with version-1 semantics");
+    }
+
+    arr->is_ngff =
+      j.contains("is_ngff") ? as_bool(j.at("is_ngff"), ctx + ".is_ngff") : false;
     arr->downsampling_method = static_cast<ZarrDownsamplingMethod>(
       j.contains("downsampling_method")
         ? to_enum(kDownsamplingMethods,
                   as_string(j.at("downsampling_method"),
                             ctx + ".downsampling_method"),
                   "downsampling method")
-        : ZarrDownsamplingMethod_Decimate);
-    arr->max_levels =
-      j.contains("max_levels")
-        ? as_uint<uint32_t>(j.at("max_levels"), ctx + ".max_levels")
-        : 0;
+        : ZarrDownsamplingMethod_None);
+    arr->max_levels = j.contains("max_levels")
+                        ? as_uint<uint32_t>(j.at("max_levels"),
+                                            ctx + ".max_levels")
+                        : 0;
 
     if (j.contains("compression") && !j.at("compression").is_null()) {
         const auto& c = j.at("compression");
@@ -742,10 +834,10 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
         j["output_key"] = a.output_key;
     }
     j["data_type"] = from_enum(kDataTypes, a.data_type, "data type");
-    j["multiscale"] = a.multiscale;
-    if (a.multiscale) {
-        j["downsampling_method"] = from_enum(
-          kDownsamplingMethods, a.downsampling_method, "downsampling method");
+    j["is_ngff"] = a.is_ngff;
+    j["downsampling_method"] = from_enum(
+      kDownsamplingMethods, a.downsampling_method, "downsampling method");
+    if (a.downsampling_method > ZarrDownsamplingMethod_None) {
         j["max_levels"] = a.max_levels;
     }
     if (a.compression_settings) {
@@ -901,29 +993,50 @@ json_to_yaml(const json& doc)
 }
 
 void
-json_to_settings(const json& doc, ZarrStreamSettings* out)
+json_to_settings(const json& doc_in, ZarrStreamSettings* out)
 {
     // zero first so a throw anywhere leaves a struct that is safe to pass to
     // destroy_loaded_settings (free(nullptr) is a no-op; zeroed counts skip)
     std::memset(out, 0, sizeof(*out));
 
-    if (!doc.is_object()) {
+    if (!doc_in.is_object()) {
         fail("", "config root must be a mapping");
     }
-    if (doc.contains("version")) {
-        const auto v = as_uint<uint64_t>(doc.at("version"), "version");
-        if (v != kSchemaVersion) {
+
+    // an absent 'version' means the current schema
+    uint64_t version = kSchemaVersion;
+    if (doc_in.contains("version")) {
+        const auto v = as_uint<uint64_t>(doc_in.at("version"), "version");
+        if (v < kMinSchemaVersion || v > kSchemaVersion) {
             fail("version",
                  "unsupported schema version " + std::to_string(v) +
-                   " (expected " + std::to_string(kSchemaVersion) + ")");
+                   " (supported: " + std::to_string(kMinSchemaVersion) +
+                   " through " + std::to_string(kSchemaVersion) + ")");
         }
+        version = v;
     }
+
+    // rewrite an older config into the current shape, so the loaders below
+    // only ever see one schema
+    json migrated;
+    if (version == 1) {
+        migrated = doc_in;
+        migrate_v1(migrated);
+    }
+    const json& doc = migrated.is_null() ? doc_in : migrated;
 
     out->store_path =
       dup_cstr(as_string(require(doc, "store_path", ""), "store_path"));
     out->overwrite = doc.contains("overwrite")
                        ? as_bool(doc.at("overwrite"), "overwrite")
                        : false;
+    out->intermediate_groups = static_cast<ZarrIntermediateGroups>(
+      doc.contains("intermediate_groups")
+        ? to_enum(
+            kIntermediateGroups,
+            as_string(doc.at("intermediate_groups"), "intermediate_groups"),
+            "intermediate groups mode")
+        : ZarrIntermediateGroups_IfMissing);
     out->max_threads = doc.contains("max_threads")
                          ? static_cast<unsigned int>(as_uint<uint32_t>(
                              doc.at("max_threads"), "max_threads"))
@@ -990,6 +1103,8 @@ settings_to_json(const ZarrStreamSettings* s)
     doc["version"] = kSchemaVersion;
     doc["store_path"] = s->store_path ? s->store_path : "";
     doc["overwrite"] = s->overwrite;
+    doc["intermediate_groups"] = from_enum(
+      kIntermediateGroups, s->intermediate_groups, "intermediate groups mode");
     doc["max_threads"] = s->max_threads;
     doc["ome_version"] = from_enum(kOMEVersions, s->ome_version, "OME version");
 

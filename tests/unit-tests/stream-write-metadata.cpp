@@ -66,7 +66,7 @@ create_stream(const std::optional<std::string>& array_key = std::nullopt,
     }
 
     if (multiscale) {
-        settings.arrays->multiscale = true;
+        settings.arrays->is_ngff = true;
         settings.arrays->downsampling_method = ZarrDownsamplingMethod_Mean;
     }
 

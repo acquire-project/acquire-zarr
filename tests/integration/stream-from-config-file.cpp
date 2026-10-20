@@ -5,6 +5,7 @@
 #include "test.macros.hh"
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -14,7 +15,7 @@ namespace fs = std::filesystem;
 namespace {
 const fs::path store = "config-test.zarr";
 
-auto config_yaml = R"(version: 1
+auto config_yaml = R"(version: 2
 store_path: config-test.zarr
 overwrite: true
 max_threads: 4
@@ -42,7 +43,7 @@ arrays:
 )";
 
 auto config_json = R"({
-  "version": 1,
+  "version": 2,
   "store_path": "config-test.zarr",
   "overwrite": true,
   "max_threads": 4,
@@ -85,7 +86,8 @@ assert_expected(const ZarrStreamSettings& s)
     const auto& a = s.arrays[0];
     CHECK(a.output_key == nullptr);
     EXPECT_EQ(int, a.data_type, ZarrDataType_uint16);
-    CHECK(!a.multiscale);
+    CHECK(!a.is_ngff);
+    EXPECT_EQ(int, a.downsampling_method, ZarrDownsamplingMethod_None);
 
     CHECK(a.omero != nullptr);
     CHECK(a.omero->has_id);
@@ -203,13 +205,42 @@ main()
         // malformed configs are rejected
         ZarrStreamSettings bad{};
         EXPECT(ZarrStreamSettings_load_from_string(
-                 &bad, "version: 1\nstore_path: x\n") != ZarrStatusCode_Success,
+                 &bad, "version: 2\nstore_path: x\n") != ZarrStatusCode_Success,
                "Expected failure: no arrays or plates");
         EXPECT(ZarrStreamSettings_load_from_string(
                  &bad,
                  "store_path: x\narrays:\n  - data_type: float128\n    "
                  "dimensions: []\n") != ZarrStatusCode_Success,
                "Expected failure: bad data_type");
+
+        EXPECT(ZarrStreamSettings_load_from_string(
+                 &bad, "version: 99\nstore_path: x\n") !=
+                 ZarrStatusCode_Success,
+               "Expected failure: unsupported schema version");
+
+        // `multiscale` was replaced by `is_ngff` in schema version 2; a
+        // version 2 config carrying it must be rejected, not reinterpreted
+        std::string legacy(config_yaml);
+        legacy.insert(legacy.find("  - data_type: uint16") +
+                        strlen("  - data_type: uint16"),
+                      "\n    multiscale: true");
+        EXPECT(ZarrStreamSettings_load_from_string(&bad, legacy.c_str()) !=
+                 ZarrStatusCode_Success,
+               "Expected failure: 'multiscale' replaced by 'is_ngff'");
+
+        // the same config declared as version 1 still loads, translated to
+        // version 1 semantics: `multiscale` with no method meant Decimate
+        legacy.replace(
+          legacy.find("version: 2"), strlen("version: 2"), "version: 1");
+        ZarrStreamSettings migrated{};
+        CHECK_OK(
+          ZarrStreamSettings_load_from_string(&migrated, legacy.c_str()));
+        CHECK(migrated.array_count == 1);
+        CHECK(migrated.arrays[0].is_ngff);
+        EXPECT_EQ(int,
+                  migrated.arrays[0].downsampling_method,
+                  ZarrDownsamplingMethod_Decimate);
+        ZarrStreamSettings_destroy_loaded(&migrated);
 
         retval = 0;
     } catch (const std::exception& e) {

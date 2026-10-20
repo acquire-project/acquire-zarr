@@ -1,7 +1,7 @@
 #pragma once
 
 #include "definitions.hh"
-#include "s3.connection.hh"
+#include "s3.client.hh"
 #include "thread.pool.hh"
 #include "array.dimensions.hh"
 
@@ -22,6 +22,13 @@ class Sink
      * @return True if the write was successful, false otherwise.
      */
     [[nodiscard]] virtual bool write(size_t offset, ConstByteSpan data) = 0;
+
+    /**
+     * @brief Bytes the sink is holding that are not yet in storage.
+     * @details Sinks that pass every write straight through report 0.
+     * @return The number of bytes buffered.
+     */
+    virtual size_t memory_usage() const noexcept { return 0; }
 
   protected:
     /**
@@ -77,14 +84,13 @@ make_file_sink(std::string_view file_path,
  * @brief Create a sink from an S3 bucket name and object key.
  * @param bucket_name The name of the bucket in which the object is stored.
  * @param object_key The key of the object to write to.
- * @param connection_pool Pointer to a pool of existing S3 connections.
- * @return Pointer to the sink created, or nullptr if the bucket does not
- * exist.
+ * @param client Pointer to the shared S3 client.
+ * @return Pointer to the sink created.
  * @throws std::runtime_error if the bucket name or object key is not valid,
- * or if there is no connection pool.
+ * or if there is no client.
  */
 std::unique_ptr<Sink>
 make_s3_sink(std::string_view bucket_name,
              std::string_view object_key,
-             std::shared_ptr<S3ConnectionPool> connection_pool);
+             std::shared_ptr<S3Client> client);
 } // namespace zarr

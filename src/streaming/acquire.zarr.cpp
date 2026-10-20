@@ -298,7 +298,7 @@ extern "C"
                 array_usage *= 2;
             }
 
-            if (array.multiscale) {
+            if (array.downsampling_method > ZarrDownsamplingMethod_None) {
                 // we can bound the memory usage of multiscale arrays by
                 // observing that each downsampled level is at most half the
                 // size of the previous level, so the total memory usage is at
@@ -692,7 +692,16 @@ extern "C"
             return ZarrStatusCode_Success;
         }
 
-        const bool ok = finalize_stream(stream);
+        // an exception must not cross the C boundary, and the stream must be
+        // freed either way
+        bool ok = false;
+        try {
+            ok = finalize_stream(stream);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error finalizing Zarr stream: ", e.what());
+        } catch (...) {
+            LOG_ERROR("Unknown error finalizing Zarr stream");
+        }
         delete stream;
 
         return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;

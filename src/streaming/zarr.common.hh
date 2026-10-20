@@ -17,6 +17,15 @@ std::string
 trim(std::string_view s);
 
 /**
+ * @brief Fold a string to lower case.
+ * @param s The string to fold.
+ * @return The string with every ASCII upper-case character lowered.
+ */
+[[nodiscard]]
+std::string
+to_lower(std::string_view s);
+
+/**
  * @brief Check if a string is empty, including whitespace.
  * @param s The string to check.
  * @param err_on_empty The message to log if the string is empty.
@@ -126,4 +135,12 @@ regularize_key(std::string_view key);
  */
 uint32_t
 resolve_max_threads(uint32_t requested_max_threads);
+
+/**
+ * @brief Whether ZARR_DIRECT_IO asks writes to bypass the OS page cache.
+ * Honored on Linux only; ignored on Windows and macOS.
+ * @return true for "1", "true", "on", "yes" (case-insensitive), else false.
+ */
+bool
+resolve_direct_io();
 } // namespace zarr

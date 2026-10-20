@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(acquire-zarr VERSION 0.9.0)
+project(acquire-zarr VERSION 0.10.0)
 cmake_policy(SET CMP0057 NEW) # allows IN_LIST operator (for pybind11)
 cmake_policy(SET CMP0079 NEW) # allows use with targets in other directories
 enable_testing()
@@ -10,15 +10,14 @@ include(cmake/ide.cmake)
 include(cmake/install-prefix.cmake)
 include(cmake/wsl.cmake)
 include(cmake/simd.cmake)
-include(cmake/openmp.cmake)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(blosc CONFIG REQUIRED)
-#find_package(miniocpp CONFIG REQUIRED) # TODO (aliddell): uncomment when minio-cpp pushes a new release to vcpkg
+find_package(aws-crt-cpp CONFIG REQUIRED)
 find_package(Crc32c CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
-find_package(OpenMP REQUIRED)
+find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
@@ -34,7 +33,6 @@ endif()
 
 # Set to static runtime library
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-add_subdirectory(minio-cpp EXCLUDE_FROM_ALL)
 
 add_subdirectory(src)
 if (BUILD_TESTING)
@@ -79,12 +77,6 @@ install(EXPORT acquire-zarrTargets
         FILE acquire-zarrTargets.cmake
         NAMESPACE acquire-zarr::
         DESTINATION lib/cmake/acquire-zarr
-)
-
-install(TARGETS miniocpp
-        EXPORT acquire-zarrTargets
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
 )
 
 install(DIRECTORY examples/

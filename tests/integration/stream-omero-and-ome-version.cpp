@@ -27,8 +27,8 @@ setup(const ZarrOMEVersion ome_version,
 {
     ZarrArraySettings array = {
         .data_type = ZarrDataType_uint16,
-        .multiscale = multiscale,
-        .downsampling_method = ZarrDownsamplingMethod_Mean,
+        .downsampling_method = multiscale ? ZarrDownsamplingMethod_Mean
+                                          : ZarrDownsamplingMethod_None,
         .omero = omero,
     };
     ZarrStreamSettings settings = {

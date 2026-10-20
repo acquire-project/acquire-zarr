@@ -1,5 +1,6 @@
 #include "array.hh"
 #include "macros.hh"
+#include "parallel.for.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
 
@@ -87,8 +88,8 @@ max_compressed_size(size_t uncompressed_size,
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
-                   std::shared_ptr<S3ConnectionPool> s3_connection_pool)
-  : ArrayBase(config, thread_pool, file_handle_pool, s3_connection_pool)
+                   std::shared_ptr<S3Client> s3_client)
+  : ArrayBase(config, thread_pool, file_handle_pool, s3_client)
   , chunk_mutexes_(config->dimensions->number_of_chunks_in_memory())
   , max_bytes_(config->dimensions->max_byte_count())
   , bytes_per_frame_(bytes_of_frame(*config->dimensions, config->dtype))
@@ -135,15 +136,47 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     }
 }
 
+zarr::Array::~Array()
+{
+    // The jobs dispatched by compress_and_flush_* capture `this` and touch
+    // write_counter_* when they retire, and the counter is incremented before
+    // the job is queued, so this covers jobs that have not started yet.
+    // close_() drains them, but it is only reached through finalize_array():
+    // an Array that goes out of scope without it -- on an error path, or in a
+    // unit test -- would otherwise have these members destroyed underneath
+    // still-running jobs. execute_job always runs the job it is given, so the
+    // count cannot be left stranded and this cannot wait forever.
+    std::unique_lock lock(write_counter_mutex_);
+    write_counter_cv_.wait(lock,
+                           [this]() { return write_counter_.load() == 0; });
+}
+
 size_t
 zarr::Array::memory_usage() const noexcept
 {
-    // size_bytes() returns the const allocation budget of each chunk and is
-    // safe to read without locking.
+    // Every lock here is a try_lock: this runs on a caller's thread, concurrent
+    // with the frame thread, and it feeds an estimate that must never block a
+    // write. A slot that is busy is skipped rather than waited for.
     size_t total = 0;
-    for (const auto& chunk : chunks_) {
-        if (chunk) { // slots are empty until lazily allocated on write
-            total += chunk->size_bytes();
+
+    // size_bytes() is a const allocation budget, but the slot holding the chunk
+    // is not: dispatch_chunk_job_ moves it out under the same mutex, and the
+    // Chunk can be destroyed the moment it does.
+    for (size_t i = 0; i < chunks_.size(); ++i) {
+        std::unique_lock chunk_lock(chunk_mutexes_[i], std::try_to_lock);
+        if (chunk_lock.owns_lock() && chunks_[i]) {
+            total += chunks_[i]->size_bytes();
+        }
+    }
+
+    // An S3 shard stages fragments that arrived out of order, which can reach
+    // most of the shard.
+    std::unique_lock shards_lock(shards_mutex_, std::try_to_lock);
+    if (shards_lock.owns_lock()) {
+        for (const auto& shard : shards_) {
+            if (shard) {
+                total += shard->staged_bytes();
+            }
         }
     }
 
@@ -455,7 +488,7 @@ zarr::Array::make_shards_()
             };
 
             shards_[shard_idx] = std::make_shared<Shard>(
-              std::move(cfg), file_handle_pool_, s3_connection_pool_);
+              std::move(cfg), file_handle_pool_, s3_client_);
         }
     }
 }
@@ -467,7 +500,7 @@ zarr::Array::make_data_sink_(std::string_view path) const
 
     if (is_s3_array_()) {
         const auto bucket_name = *config_->bucket_name;
-        sink = make_s3_sink(bucket_name, path, s3_connection_pool_);
+        sink = make_s3_sink(bucket_name, path, s3_client_);
     } else { // assume parent directories exist
         sink = make_file_sink(path, file_handle_pool_);
     }
@@ -565,60 +598,69 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
     // offset within the chunk
     const auto chunk_offset = dimensions->chunk_internal_offset(frame_id);
 
-    size_t bytes_written = 0;
     const auto n_tiles = n_tiles_x * n_tiles_y;
 
     const auto* data_ptr = frame.data();
     const auto data_size = frame.size();
     const auto src_row_stride = static_cast<size_t>(frame_cols) * bytes_per_px;
 
-#pragma omp parallel for reduction(+ : bytes_written)
-    for (auto tile_idx = 0; tile_idx < n_tiles; ++tile_idx) {
-        auto& chunk = chunks_[tile_idx + group_offset];
-        {
-            std::unique_lock lock(chunk_mutexes_[tile_idx + group_offset]);
-            if (chunk == nullptr) {
-                chunk = std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
-            }
-        }
+    // Scatter tiles into their chunk buffers. Each tile targets a distinct chunk
+    // (guarded by its own mutex), so the tiles are independent; parallel_for_reduce
+    // fans the range across a small fixed worker team and sums the bytes written,
+    // falling back to a serial run on the calling thread for small frames.
+    return parallel_for_reduce(
+      static_cast<int>(n_tiles), [&](int tile_begin, int tile_end) -> size_t {
+          size_t bytes_written = 0;
+          for (int tile_idx = tile_begin; tile_idx < tile_end; ++tile_idx) {
+              auto& chunk = chunks_[tile_idx + group_offset];
+              {
+                  std::unique_lock lock(chunk_mutexes_[tile_idx + group_offset]);
+                  if (chunk == nullptr) {
+                      chunk =
+                        std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
+                  }
+              }
 
-        const auto tile_idx_y = tile_idx / n_tiles_x;
-        const auto tile_idx_x = tile_idx % n_tiles_x;
+              const auto tile_idx_y = tile_idx / n_tiles_x;
+              const auto tile_idx_x = tile_idx % n_tiles_x;
 
-        const uint32_t frame_row0 = tile_idx_y * tile_rows;
-        if (frame_row0 >= frame_rows) {
-            continue; // tile lies entirely below the frame: no data to copy
-        }
-        const uint32_t n_rows =
-          std::min<uint32_t>(tile_rows, frame_rows - frame_row0);
+              const uint32_t frame_row0 = tile_idx_y * tile_rows;
+              if (frame_row0 >= frame_rows) {
+                  continue; // tile lies entirely below the frame: no data
+              }
+              const uint32_t n_rows =
+                std::min<uint32_t>(tile_rows, frame_rows - frame_row0);
 
-        const auto frame_col = tile_idx_x * tile_cols;
-        const auto region_width =
-          std::min(frame_col + tile_cols, frame_cols) - frame_col;
-        const auto copy_nbytes = static_cast<size_t>(region_width) * bytes_per_px;
+              const auto frame_col = tile_idx_x * tile_cols;
+              const auto region_width =
+                std::min(frame_col + tile_cols, frame_cols) - frame_col;
+              const auto copy_nbytes =
+                static_cast<size_t>(region_width) * bytes_per_px;
 
-        const auto region_start =
-          bytes_per_px * (static_cast<size_t>(frame_row0) * frame_cols + frame_col);
-        EXPECT(region_start + static_cast<size_t>(n_rows - 1) * src_row_stride +
-                   copy_nbytes <=
-                 data_size,
-               "Buffer overflow in frame. region_start: ",
-               region_start,
-               ", data size: ",
-               data_size);
+              const auto region_start =
+                bytes_per_px *
+                (static_cast<size_t>(frame_row0) * frame_cols + frame_col);
+              EXPECT(region_start +
+                         static_cast<size_t>(n_rows - 1) * src_row_stride +
+                         copy_nbytes <=
+                       data_size,
+                     "Buffer overflow in frame. region_start: ",
+                     region_start,
+                     ", data size: ",
+                     data_size);
 
-        // Copy frame rows straight into the chunk buffer; no intermediate
-        // per-tile allocation, zero-fill, or second memcpy.
-        chunk->write_tile_rows(chunk_offset,
-                               data_ptr + region_start,
-                               src_row_stride,
-                               copy_nbytes,
-                               bytes_per_tile_row,
-                               n_rows);
-        bytes_written += copy_nbytes * n_rows;
-    }
-
-    return bytes_written;
+              // Copy frame rows straight into the chunk buffer; no intermediate
+              // per-tile allocation, zero-fill, or second memcpy.
+              chunk->write_tile_rows(chunk_offset,
+                                     data_ptr + region_start,
+                                     src_row_stride,
+                                     copy_nbytes,
+                                     bytes_per_tile_row,
+                                     n_rows);
+              bytes_written += copy_nbytes * n_rows;
+          }
+          return bytes_written;
+      });
 }
 
 void
@@ -626,8 +668,9 @@ zarr::Array::dispatch_skip_job_(std::shared_ptr<Shard> shard,
                                 uint32_t internal_idx,
                                 uint32_t shard_idx)
 {
+    // no notify: the only waiter's predicate is write_counter_ == 0, which an
+    // increment can never satisfy
     write_counter_.fetch_add(1);
-    write_counter_cv_.notify_all();
 
     auto job = [this, shard, internal_idx, shard_idx](
                  std::string& err) -> ThreadPool::TaskResult {
@@ -646,8 +689,7 @@ zarr::Array::dispatch_skip_job_(std::shared_ptr<Shard> shard,
             result = ThreadPool::TaskResult::Fatal;
         }
 
-        write_counter_.fetch_sub(1);
-        write_counter_cv_.notify_all();
+        finish_write_();
         return result;
     };
 
@@ -677,8 +719,9 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
         chunk = std::move(chunks_[chunk_idx - chunk_offset]);
     }
 
+    // no notify: the only waiter's predicate is write_counter_ == 0, which an
+    // increment can never satisfy
     write_counter_.fetch_add(1);
-    write_counter_cv_.notify_all();
 
     auto job = [this,
                 shard,
@@ -740,8 +783,7 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
             result = ThreadPool::TaskResult::Fatal;
         }
 
-        write_counter_.fetch_sub(1);
-        write_counter_cv_.notify_all();
+        finish_write_();
         return result;
     };
 
@@ -966,8 +1008,34 @@ zarr::Array::finalize_shards_()
 void
 zarr::Array::close_sinks_()
 {
-    data_paths_.clear();
-    shards_.clear();
+    // rollover_ calls this on the frame thread while memory_usage() may be
+    // walking shards_ from a caller's thread, so the vector cannot be cleared
+    // unlocked -- its try_lock would succeed and it would read a freed buffer.
+    decltype(shards_) dead;
+    {
+        std::unique_lock lock(shards_mutex_);
+        dead.swap(shards_);
+        data_paths_.clear();
+    }
+
+    // dead's destructors finalize each shard (table write, S3 completion).
+    // Leaving that outside the lock keeps memory_usage() from failing its
+    // try_lock -- and silently dropping the shard term -- for a whole flush.
+}
+
+void
+zarr::Array::finish_write_()
+{
+    // Both of these must happen under the mutex the waiters evaluate their
+    // predicate under. The decrement, because a notify landing between that
+    // evaluation and the wait's atomic release-and-block is lost, and if this
+    // was the last outstanding write the waiter would never wake. The notify,
+    // because ~Array is one of those waiters: notifying after releasing the
+    // lock would let it return and destroy the condition variable while this
+    // thread was still inside notify_all.
+    std::lock_guard lock(write_counter_mutex_);
+    write_counter_.fetch_sub(1);
+    write_counter_cv_.notify_all();
 }
 
 size_t

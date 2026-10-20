@@ -35,10 +35,21 @@ get_last_error_as_string()
 }
 
 void*
-make_flags()
+make_flags(bool direct_io)
 {
     auto* flags = new DWORD;
     *flags = FILE_FLAG_OVERLAPPED;
+
+    if (direct_io) {
+        // Unsupported on Windows: FILE_FLAG_NO_BUFFERING demands
+        // sector-aligned offsets, which shard writes can't satisfy.
+        [[maybe_unused]] static const bool warned = [] {
+            LOG_WARNING("Direct I/O was requested, but is not supported on "
+                        "Windows; writes will go through the OS cache.");
+            return true;
+        }();
+    }
+
     return flags;
 }
 

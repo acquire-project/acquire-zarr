@@ -8,12 +8,13 @@
 #include "frame.queue.hh"
 #include "multiscale.array.hh"
 #include "plate.hh"
-#include "s3.connection.hh"
+#include "s3.client.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef> // size_t
 #include <memory>  // unique_ptr
@@ -26,7 +27,7 @@
 struct ZarrStream_s
 {
   public:
-    ZarrStream_s(struct ZarrStreamSettings_s* settings);
+    explicit ZarrStream_s(const ZarrStreamSettings_s* settings);
 
     /**
      * @brief Append data to the stream with a specific key.
@@ -71,6 +72,10 @@ struct ZarrStream_s
         size_t max_array_size_bytes;
         size_t bytes_written;
         uint64_t frames_queued;
+        // frame_buffer.size(), published so get_memory_usage() can read it from
+        // a thread other than the appending one. Last, and default-initialized,
+        // so the positional initialization of the members above still lines up.
+        std::atomic<size_t> frame_buffer_bytes{ 0 };
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
@@ -78,12 +83,20 @@ struct ZarrStream_s
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
     ZarrOMEVersion ome_version_{ ZarrOMEVersion_0_5 };
+    bool overwrite_{ false };
+    ZarrIntermediateGroups intermediate_groups_{
+        ZarrIntermediateGroups_IfMissing
+    };
 
     // maps of plates and wells, key by their paths relative to the store root
     std::unordered_map<std::string, zarr::Plate> plates_;
     std::unordered_map<std::string, const zarr::Well&> wells_;
 
     std::unordered_map<std::string, std::unique_ptr<OutputArray>> arrays_;
+    // Held only where the arrays themselves are retired, so that
+    // get_memory_usage() -- which any thread may call, including during close
+    // -- cannot read an array slot while finalize_stream is moving out of it.
+    mutable std::mutex arrays_mutex_;
     std::vector<std::string> intermediate_group_paths_;
 
     std::mutex frame_queue_mutex_;
@@ -96,7 +109,7 @@ struct ZarrStream_s
     std::unique_ptr<zarr::FrameQueue> frame_queue_;
 
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
-    std::shared_ptr<zarr::S3ConnectionPool> s3_connection_pool_;
+    std::shared_ptr<zarr::S3Client> s3_client_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
 
     bool is_s3_acquisition_() const;
@@ -113,13 +126,13 @@ struct ZarrStream_s
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
      * @param parent_path Path to the parent group of the array.
-     * @param is_hcs_array Whether this array is an HCS array and must be
-     * treated as multiscale even if no downsampling method is supplied.
+     * @param force_ngff Treat the array as OME-NGFF regardless of @p settings.
+     * True for HCS fields of view, which are always multiscales groups.
      * @return True if the array was configured successfully, false otherwise.
      */
     [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings,
                                         const std::string& parent_path,
-                                        bool is_hcs_array);
+                                        bool force_ngff);
 
     /**
      * @brief Commit HCS settings to the stream.
@@ -127,8 +140,7 @@ struct ZarrStream_s
      * @return True if the HCS settings were committed successfully, false
      * otherwise.
      */
-    [[nodiscard]] bool commit_hcs_settings_(
-      const ZarrHCSSettings* hcs_settings);
+    [[nodiscard]] bool commit_hcs_settings_(const ZarrHCSSettings* hcs_settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.
@@ -160,9 +172,47 @@ struct ZarrStream_s
     /**
      * @brief Write intermediate group metadata to the store, including HCS
      * metadata (if applicable).
+     * @details Called once, when the stream is created. Every path and all HCS
+     * metadata are known then, and a reader can navigate the hierarchy while
+     * frames arrive. The stream does not write these groups again at close, so
+     * metadata that the caller writes after create is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();
+
+    /**
+     * @brief Write one generic group's metadata unless a Zarr v3 group node is
+     * already at @p sink_path.
+     * @details An existing file that is not a v3 group that a reader can open
+     * (an array node left by an earlier run, a file truncated by a crash, or a
+     * group with malformed fields) is replaced, with a warning. A kept group
+     * loses its consolidated metadata; see keep_group_metadata_(). On S3 the
+     * write is conditional, so the check and the write are one request.
+     * @return True if the group is now in place, otherwise false.
+     */
+    [[nodiscard]] bool write_group_metadata_if_missing_(
+      const std::string& sink_path,
+      const std::string& metadata_str);
+
+    /**
+     * @brief Keep an existing group node, but clear its consolidated metadata.
+     * @details Consolidated metadata caches the metadata of the nodes below the
+     * group. This stream adds or changes arrays below it, so a reader that
+     * trusts the cache would miss a new array or see an old shape. A group with
+     * no consolidated metadata is kept byte for byte; otherwise it is written
+     * again with `consolidated_metadata` set to null, and nothing else changed.
+     * @param group The parsed group node. Modified if it is written again.
+     * @return True if the group is in place, otherwise false.
+     */
+    [[nodiscard]] bool keep_group_metadata_(const std::string& sink_path,
+                                            nlohmann::json& group);
+
+    /**
+     * @brief Write @p metadata_str to @p sink_path, replacing what is there.
+     * @return True if the metadata was written, otherwise false.
+     */
+    [[nodiscard]] bool write_metadata_object_(const std::string& sink_path,
+                                              const std::string& metadata_str);
 
     /** @brief Initialize the frame queue. */
     [[nodiscard]] bool init_frame_queue_();

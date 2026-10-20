@@ -58,7 +58,8 @@ make_array()
                                                       array_dims,
                                                       dtype,
                                                       std::nullopt,
-                                                      0);
+                                                      0,
+                                                      false);
     auto thread_pool = std::make_shared<zarr::ThreadPool>(0, err_callback);
     auto fh_pool = std::make_shared<zarr::FileHandlePool>();
 

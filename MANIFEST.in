@@ -6,7 +6,6 @@ include cmake/*
 recursive-include src *
 recursive-include include *
 recursive-include python *
-recursive-include minio-cpp *
 include LICENSE
 include README.md
 include python/**/*.pyi

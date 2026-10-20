@@ -30,7 +30,7 @@ main()
     ZarrArraySettings array = {
         .compression_settings = &compression,
         .data_type = ZarrDataType_uint16,
-        .multiscale = true,
+        .downsampling_method = ZarrDownsamplingMethod_Mean,
     };
     ZarrStreamSettings settings = {
         .store_path = "output_compressed_multiscale_s3.zarr",

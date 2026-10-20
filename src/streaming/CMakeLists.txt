@@ -27,8 +27,10 @@ add_library(${tgt}
         compression.params.hh
         thread.pool.hh
         thread.pool.cpp
-        s3.connection.hh
-        s3.connection.cpp
+        parallel.for.hh
+        parallel.for.cpp
+        s3.client.hh
+        s3.client.cpp
         file.handle.hh
         file.handle.cpp
         sink.hh
@@ -64,17 +66,25 @@ target_include_directories(${tgt}
 
 target_link_libraries(${tgt} PRIVATE
         blosc_static
-        miniocpp::miniocpp
+        AWS::aws-crt-cpp
         Crc32c::crc32c
         nlohmann_json::nlohmann_json
         yaml-cpp::yaml-cpp
         $<IF:$<TARGET_EXISTS:zstd::libzstd_static>,zstd::libzstd_static,zstd::libzstd_shared>
-        OpenMP::OpenMP_CXX
+        Threads::Threads
 )
 
 target_compile_definitions(${tgt} PRIVATE
-        "ACQUIRE_ZARR_API_VERSION=\"0.8.0\""
+        "ACQUIRE_ZARR_API_VERSION=\"${PROJECT_VERSION}\""
 )
+
+# Benchmark/A-B aid: build the per-frame tile scatter serially (no worker team),
+# to measure the fan-out's contribution. Off by default; not a shipped knob.
+option(ACQUIRE_ZARR_SERIAL_TILE_COPY
+        "Run the tile scatter serially instead of the fixed fan-out (benchmark only)" OFF)
+if (ACQUIRE_ZARR_SERIAL_TILE_COPY)
+    target_compile_definitions(${tgt} PRIVATE ACQUIRE_ZARR_SERIAL_TILE_COPY)
+endif ()
 
 set_target_properties(${tgt} PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"

@@ -14,7 +14,8 @@ This library supports chunked, compressed, multiscale streaming to [Zarr][] [ver
 
 This code builds targets for Python and C.
 
-**For complete documentation, please visit the [Acquire documentation site](https://acquire-project.github.io/acquire-docs/).**
+**For complete documentation, please visit
+the [Acquire documentation site](https://acquire-project.github.io/acquire-docs/).**
 
 ## Installing
 
@@ -77,8 +78,10 @@ This library has the following dependencies:
 
 - [c-blosc](https://github.com/Blosc/c-blosc) v1.21.5
 - [nlohmann-json](https://github.com/nlohmann/json) v3.11.3
-- [minio-cpp](https://github.com/minio/minio-cpp) v0.3.0
+- [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) v0.43.0
 - [crc32c](https://github.com/google/crc32c) v1.1.2
+- [zstd](https://github.com/facebook/zstd) v1.5.5
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp) v0.8.0
 
 We use [vcpkg] to install them, as it integrates well with CMake.
 To install vcpkg, clone the repository and bootstrap it:
@@ -101,12 +104,6 @@ EOF
 If you're using Windows, learn how to set environment
 variables [here](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.4#set-environment-variables-in-the-system-control-panel).
 You will need to set both the `VCPKG_ROOT` and `PATH` variables in the system control panel.
-
-On the Mac, you will also need to install OpenMP using Homebrew:
-
-```bash
-brew install libomp
-```
 
 ### Configuring
 
@@ -192,13 +189,22 @@ ZarrStream* stream = ZarrStream_create(&settings);
 // You can now safely free the dimensions array
 ZarrArraySettings_destroy_dimension_array(&array);
 
-size_t bytes_written;
-ZarrStream_append(stream,
-                  my_frame_data,
-                  my_frame_size,
-                  &bytes_written,
-                  "my-array"); // if you have just one array configured, this can be NULL
-assert(bytes_written == my_frame_size);
+size_t bytes_out;
+ZarrStatusCode status =
+  ZarrStream_append(stream,
+                    my_frame_data,
+                    my_frame_size,
+                    &bytes_out,
+                    "my-array"); // if you have just one array configured, this can be NULL
+if (status != ZarrStatusCode_Success || bytes_out != my_frame_size) {
+    // the stream did not accept all of the frame
+}
+
+// Wait for all writes to finish and free the stream. Check the status:
+// ZarrStream_destroy does the same work but does not report a failed flush.
+if (ZarrStream_close(stream) != ZarrStatusCode_Success) {
+    // the store is incomplete
+}
 ```
 
 Look at [acquire.zarr.h](include/acquire.zarr.h) for more details.
@@ -218,7 +224,7 @@ settings.arrays = [
     aqz.ArraySettings(
         output_key="array1",
         data_type=np.uint16,
-        dimensions = [
+        dimensions=[
             aqz.Dimension(
                 name="t",
                 kind=aqz.DimensionType.TIME,
@@ -265,15 +271,15 @@ stream.close()
 
 ### Understanding the output hierarchy
 
-The Zarr hierarchy produced by a stream depends on `output_key` and
+The Zarr hierarchy produced by a stream depends on `is_ngff` and
 `downsampling_method`:
 
-| `output_key` | `downsampling_method` | Result at `store_path` |
-|---|---|---|
-| `""` (empty) | `None` | Simple array at `store_path/` |
-| `"myarray"` | `None` | Simple array at `store_path/myarray/` |
-| `""` (empty) | set (e.g. `MEAN`) | OME-NGFF multiscales group at `store_path/`, array at `store_path/0/` |
-| `"myarray"` | set (e.g. `MEAN`) | OME-NGFF multiscales group at `store_path/myarray/`, array at `store_path/myarray/0/` |
+| `downsampling_method` | Array belongs to `FieldOfView` | `is_ngff` | Result                                                              |
+|-----------------------|--------------------------------|-----------|---------------------------------------------------------------------|
+| `None`                | No                             | `False`   | Simple array node                                                   |
+| `None`                | No                             | `True`    | Single-level OME-NGFF multiscales group, no image pyramid           |
+| `None`                | Yes                            | (coerced) | Single-level OME-NGFF multiscales group, no image pyramid           |
+| set (e.g. `MEAN`)     | Either                         | (coerced) | OME-NGFF multiscales group with image pyramid starting at level `0` |
 
 When `downsampling_method` is set, an OME-NGFF multiscales group is created
 at `store_path/output_key/` (or at `store_path/` if `output_key` is empty),
@@ -383,6 +389,34 @@ The `overwrite` parameter controls whether existing data at the `store_path` is 
 When set to `true`, the entire directory specified by `store_path` will be removed if it exists.
 When set to `false`, the stream will use the existing directory if it exists, or create a new one if it doesn't.
 
+### Writing the groups above your arrays
+
+An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream is created,
+it writes a `zarr.json` for each of these groups, so a reader can navigate the hierarchy during the acquisition. The
+stream does not write these groups again at close, so metadata that you write after `ZarrStream_create` is kept. The
+`intermediate_groups` setting controls the write at create:
+
+| C                                  | Python                          | Effect                                                                                                                                   |
+|------------------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| `ZarrIntermediateGroups_IfMissing` | `IntermediateGroups.IF_MISSING` | The default. Keep a Zarr v3 group node that is already there, such as one you wrote with your own attributes. Replace anything else. |
+| `ZarrIntermediateGroups_Always`    | `IntermediateGroups.ALWAYS`     | Write an empty group, and replace what is there.                                                                                         |
+| `ZarrIntermediateGroups_Never`     | `IntermediateGroups.NEVER`      | Write nothing. You write the hierarchy.                                                                                                  |
+
+With `overwrite` set, `IfMissing` writes every group, as `Always` does. A filesystem store is empty after the overwrite,
+but an S3 prefix is not cleared, so this keeps the two backends the same.
+
+`IfMissing` keeps a group only if a reader can open it: `zarr_format` is the integer 3, `node_type` is `"group"`,
+`attributes` is an object, and any other key is `consolidated_metadata` or an extension with `"must_understand": false`.
+A kept group loses its consolidated metadata. That cache describes the arrays below the group, and the stream adds or
+changes those arrays, so a reader that trusts it would miss a new array or see an old shape. The stream sets
+`consolidated_metadata` to null and changes nothing else. With `Never`, the stream does not touch the groups, so clear or
+update any consolidated metadata yourself.
+
+Plate and well groups carry HCS metadata from the stream, so the stream always writes them.
+
+On S3, `IfMissing` uses a conditional write (`If-None-Match: *`). A server that ignores this header replaces existing
+group metadata.
+
 ### Writing custom metadata
 
 Custom metadata can be written to any array in the stream using
@@ -453,7 +487,8 @@ flushed to disk when the stream is closed.
 
 ### High-content screening workflows
 
-The library supports high-content screening (HCS) datasets following the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) specification.
+The library supports high-content screening (HCS) datasets following
+the [OME-NGFF 0.5](https://ngff.openmicroscopy.org/0.5/) (Next-Generation File Format) specification.
 HCS data is organized into plates, wells, and fields of view, with automatic generation of appropriate metadata.
 
 Here's an example of creating an HCS dataset in Python:
@@ -476,10 +511,10 @@ well_a1 = aqz.Well(
     column_name="1",
     images=[
         aqz.FieldOfView(
-            path="fov1", # Relative to the well: plate/A/1/fov1
+            path="fov1",  # Relative to the well: plate/A/1/fov1
             acquisition_id=0,
             array_settings=aqz.ArraySettings(
-                output_key=None, # must be None for an FOV array; path is specified as a member of FieldOfView 
+                output_key=None,  # must be None for an FOV array; path is specified as a member of FieldOfView 
                 data_type=np.uint16,
                 dimensions=[
                     aqz.Dimension(
@@ -536,7 +571,7 @@ settings = aqz.StreamSettings(
 stream = aqz.ZarrStream(settings)
 
 # Write data to specific field of view
-frame_data = np.random.randint(0, 2**16, (3, 512, 512), dtype=np.uint16)
+frame_data = np.random.randint(0, 2 ** 16, (3, 512, 512), dtype=np.uint16)
 stream.append(frame_data, key="experiment_plate/A/1/fov1")
 
 # Close when done
@@ -572,7 +607,7 @@ settings = aqz.StreamSettings(
     store_path="mixed_experiment.zarr",
     overwrite=True,
     arrays=[labels_array],  # Flat arrays
-    hcs_plates=[plate]      # HCS structure
+    hcs_plates=[plate]  # HCS structure
 )
 
 stream = aqz.ZarrStream(settings)
@@ -692,17 +727,25 @@ ZarrStream* stream = ZarrStream_create(&settings);
 // Write data
 uint16_t* frame_data = /* your image data */;
 size_t frame_size = 3 * 512 * 512 * sizeof(uint16_t);
-size_t bytes_written;
+size_t bytes_out;
 
-ZarrStream_append(stream, frame_data, frame_size, &bytes_written, "experiment_plate/A/1/fov1");
+ZarrStatusCode status = ZarrStream_append(
+  stream, frame_data, frame_size, &bytes_out, "experiment_plate/A/1/fov1");
+if (status != ZarrStatusCode_Success || bytes_out != frame_size) {
+    // the stream did not accept all of the frame
+}
 
-// Cleanup
-ZarrStream_destroy(stream);
+// Cleanup: ZarrStream_close reports a failed flush, ZarrStream_destroy does not
+if (ZarrStream_close(stream) != ZarrStatusCode_Success) {
+    // the store is incomplete
+}
 ZarrHCSPlate_destroy_well_array(&plate);
 ZarrArraySettings_destroy_dimension_array(&fov_array);
 ```
 
-The resulting dataset will include proper OME-NGFF metadata for [plates](https://ngff.openmicroscopy.org/latest/#plate-md) and [wells](https://ngff.openmicroscopy.org/latest/#well-md).
+The resulting dataset will include proper OME-NGFF metadata
+for [plates](https://ngff.openmicroscopy.org/latest/#plate-md)
+and [wells](https://ngff.openmicroscopy.org/latest/#well-md).
 
 ### S3
 
@@ -714,13 +757,18 @@ If you are using environment variables, set the following:
 - `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
 - `AWS_SESSION_TOKEN`: Optional session token for temporary credentials
 
-These must be set in the environment where your application runs.
+These must be set in the environment where your application runs, before the
+stream is created.
 
-**Important Note:** You should ensure these environment variables are set *before* running your application or importing
-the library or Python module.
-They will not be available if set after the library is loaded.
-Configuration requires specifying the endpoint, bucket
-name, and region:
+Configuration requires specifying the endpoint and bucket name. The endpoint
+must begin with `http://` or `https://`; there is no default scheme. The region
+is optional and defaults to `us-east-1`; endpoints that validate the signing
+region require it to be set explicitly, so set it to match your server.
+
+Requests use virtual-host addressing for `*.amazonaws.com` endpoints and
+path-style addressing otherwise. A bucket whose name is not a legal DNS label —
+because it contains a dot, an underscore or an upper-case letter — uses path
+style even on AWS, since it cannot be prepended to the host:
 
 ```c
 // ensure your environment is set up for S3 access before running your program
@@ -749,7 +797,7 @@ settings = aqz.StreamSettings()
 
 # Configure S3 storage
 s3_settings = aqz.S3Settings(
-    endpoint="s3.amazonaws.com",
+    endpoint="https://s3.amazonaws.com",
     bucket_name="my-zarr-data",
     region="us-east-1"
 )
@@ -769,6 +817,31 @@ set to a positive integer, or otherwise auto-detect based on hardware concurrenc
 - An invalid `ZARR_MAX_THREADS` value (non-numeric, zero, or negative) is ignored, with a
   warning logged, and auto-detection is used instead.
 
+### Direct I/O
+
+On Linux, setting the `ZARR_DIRECT_IO` environment variable opens files for writing with
+`O_DIRECT`, so written bytes bypass the OS page cache. A streaming writer never
+reads back what it wrote, so cached write data is pure overhead; on a large sustained write
+it can fill the page cache and exhaust the host's supply of free high-order (contiguous)
+memory blocks, starving unrelated drivers that need them.
+
+- Off by default.
+- **Only safe on filesystems that accept unaligned direct writes.** NFS is the tested case:
+  the client turns direct writes into WRITE RPCs without imposing a block-alignment check.
+  Sharded stores pack variable-length compressed chunks at arbitrary offsets and append a
+  small index footer, so on a block-backed filesystem (ext4, xfs, NVMe) every write fails
+  with `EINVAL`. Do not enable it there.
+- Linux only. The request is ignored, with a warning logged once, on Windows (where
+  `FILE_FLAG_NO_BUFFERING` requires sector-aligned offsets and lengths with no NFS-style
+  exemption) and on platforms without `O_DIRECT`, such as macOS.
+- S3-backed streams are unaffected.
+- Recognized true values are `1`, `true`, `on`, and `yes` (case-insensitive). Unset, empty,
+  `0`, `false`, `off`, and `no` disable it. Any other value is ignored, with a warning
+  logged, and direct I/O stays off.
+- The value is read once, at the first file open in the process, so setting it after
+  streaming has begun has no effect. When it resolves to enabled, a message is logged at
+  info level.
+
 ### Anaconda GLIBCXX issue
 
 If you encounter the error `GLIBCXX_3.4.30 not found` when working with the library in Python, it may be due to a
@@ -779,7 +852,9 @@ manifests like so:
 ImportError: /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libstdc++.so.6: version `GLIBCXX_3.4.30` not found (required by /home/eggbert/anaconda3/envs/myenv/lib/python3.10/site-packages/acquire_zarr/../../../lib/libacquire_zarr.so)
 ```
 
-To resolve this, you can [install](https://stackoverflow.com/questions/48453497/anaconda-libstdc-so-6-version-glibcxx-3-4-20-not-found/73101774#73101774) the `libstdcxx-ng` package from conda-forge:
+To resolve this, you
+can [install](https://stackoverflow.com/questions/48453497/anaconda-libstdc-so-6-version-glibcxx-3-4-20-not-found/73101774#73101774)
+the `libstdcxx-ng` package from conda-forge:
 
 ```bash
 conda install -c conda-forge libstdcxx-ng

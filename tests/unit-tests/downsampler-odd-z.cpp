@@ -37,7 +37,8 @@ test_odd_z_multi_tc_no_bleed()
                                           dims,
                                           ZarrDataType_uint16,
                                           ZarrDownsamplingMethod_Mean,
-                                          0);
+                                          0,
+                                          true);
 
     zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);
 
@@ -153,7 +154,8 @@ main()
                                           dims,
                                           ZarrDataType_uint8,
                                           ZarrDownsamplingMethod_Mean,
-                                          0);
+                                          0,
+                                          true);
 
     try {
         zarr::Downsampler downsampler(config, ZarrDownsamplingMethod_Mean);

@@ -8,16 +8,16 @@
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
                            std::shared_ptr<FileHandlePool> file_handle_pool,
-                           std::shared_ptr<S3ConnectionPool> s3_connection_pool)
+                           std::shared_ptr<S3Client> s3_client)
   : config_(config)
   , thread_pool_(thread_pool)
-  , s3_connection_pool_(s3_connection_pool)
+  , s3_client_(s3_client)
   , file_handle_pool_(file_handle_pool)
 {
     CHECK(config_);      // required
     CHECK(thread_pool_); // required
-    EXPECT(s3_connection_pool_ != nullptr || file_handle_pool_ != nullptr,
-           "Either S3 connection pool or file handle pool must be provided.");
+    EXPECT(s3_client_ != nullptr || file_handle_pool_ != nullptr,
+           "Either an S3 client or a file handle pool must be provided.");
 }
 
 bool
@@ -75,7 +75,7 @@ zarr::ArrayBase::make_metadata_sink_()
         const std::string path = node_path_() + "/" + metadata_path_;
         auto sink =
           config_->bucket_name
-            ? make_s3_sink(*config_->bucket_name, path, s3_connection_pool_)
+            ? make_s3_sink(*config_->bucket_name, path, s3_client_)
             : make_file_sink(path, file_handle_pool_, /*truncate_to_fit=*/true);
         if (!sink) {
             LOG_ERROR("Failed to create metadata sink for path: ", path);
@@ -114,28 +114,6 @@ zarr::ArrayBase::write_metadata_()
     }
 
     return true;
-}
-
-std::unique_ptr<zarr::ArrayBase>
-zarr::make_array(std::shared_ptr<ArrayConfig> config,
-                 std::shared_ptr<ThreadPool> thread_pool,
-                 std::shared_ptr<FileHandlePool> file_handle_pool,
-                 std::shared_ptr<S3ConnectionPool> s3_connection_pool,
-                 bool is_hcs_array)
-{
-    const auto is_ome_group = config->downsampling_method.has_value() ||
-                              config->omero.has_value() || is_hcs_array;
-
-    std::unique_ptr<ArrayBase> array;
-    if (is_ome_group) {
-        array = std::make_unique<MultiscaleArray>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
-    } else {
-        array = std::make_unique<Array>(
-          config, thread_pool, file_handle_pool, s3_connection_pool);
-    }
-
-    return array;
 }
 
 bool

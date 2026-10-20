@@ -5,6 +5,7 @@ set(tests
         stream-write-metadata
         metadata-shrink-stale-bytes
         create-stream-simple-array-root
+        create-stream-array-key-order
         array-dimensions-chunk-lattice-index
         array-dimensions-tile-group-offset
         array-dimensions-chunk-internal-offset
@@ -12,12 +13,16 @@ set(tests
         array-dimensions-shard-internal-index
         array-dimensions-courtesy-flush
         thread-pool-push-to-job-queue
+        parallel-for-reduce
         resolve-max-threads
+        resolve-direct-io
         construct-data-paths
-        s3-connection-bucket-exists
-        s3-connection-object-exists-check-false-positives
-        s3-connection-put-object
-        s3-connection-upload-multipart-object
+        endpoint-request-target
+        s3-client-bucket-exists
+        s3-client-object-exists-check-false-positives
+        s3-client-put-object
+        s3-client-put-object-if-absent
+        s3-client-streaming-upload
         file-sink-write
         file-sink-close-on-destroy
         file-sink-reopen-after-close
@@ -25,14 +30,18 @@ set(tests
         shard-finalize
         s3-sink-write
         s3-sink-write-multipart
+        s3-sink-write-out-of-order
         array-write-even
         array-write-ragged-append-dim
         array-write-ragged-internal-dim
         array-write-fixed-size
         zarr-stream-partial-append
+        zarr-stream-append-error-bytes-out
+        api-version
         frame-queue
         downsampler
         downsampler-odd-z
+        downsampler-integer-mean
         plate
 )
 
@@ -47,10 +56,10 @@ foreach (name ${tests})
             ${PROJECT_SOURCE_DIR}/include
             ${PROJECT_SOURCE_DIR}/src/logger
             ${PROJECT_SOURCE_DIR}/src/streaming
+            ${PROJECT_SOURCE_DIR}/tests
     )
     target_link_libraries(${tgt} PRIVATE
             acquire-zarr
-            miniocpp::miniocpp
             Crc32c::crc32c
     )
 
@@ -68,3 +77,7 @@ foreach (name ${tests})
 
     set_tests_properties(test-${tgt} PROPERTIES LABELS "${test_labels}")
 endforeach ()
+
+target_compile_definitions(${project}-unit-test-api-version PRIVATE
+        "EXPECTED_API_VERSION=\"${PROJECT_VERSION}\""
+)

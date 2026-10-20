@@ -4,7 +4,7 @@
 #include "chunk.hh"
 #include "definitions.hh"
 #include "file.sink.hh"
-#include "s3.connection.hh"
+#include "s3.client.hh"
 #include "shard.hh"
 #include "thread.pool.hh"
 
@@ -17,7 +17,10 @@ class Array : public ArrayBase
     Array(std::shared_ptr<ArrayConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<FileHandlePool> file_handle_pool,
-          std::shared_ptr<S3ConnectionPool> s3_connection_pool);
+          std::shared_ptr<S3Client> s3_client);
+
+    // Waits for outstanding writes, which hold `this`, before members go away.
+    ~Array() override;
 
     size_t memory_usage() const noexcept override;
 
@@ -31,7 +34,7 @@ class Array : public ArrayBase
     mutable std::vector<std::mutex> chunk_mutexes_;
 
     std::vector<std::shared_ptr<Shard>> shards_;
-    std::mutex shards_mutex_;
+    mutable std::mutex shards_mutex_;
 
     std::atomic<size_t> write_counter_;
     std::mutex write_counter_mutex_;
@@ -89,6 +92,9 @@ class Array : public ArrayBase
     void dispatch_skip_job_(std::shared_ptr<Shard> shard,
                             uint32_t internal_idx,
                             uint32_t shard_idx);
+
+    // Retire one outstanding write and wake close_() if it was the last.
+    void finish_write_();
 
     void rollover_();
     void close_sinks_();
