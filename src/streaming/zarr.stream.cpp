@@ -2021,8 +2021,19 @@ finalize_stream(ZarrStream* stream)
         return zarr::FinalizeResult::Ok;
     }
 
-    // clear out the frame queue first
-    stream->finalize_frame_queue_();
+    // clear out the frame queue first. If the drain throws, process_frames_ is
+    // already false, so await_stop still joins the frame-queue job once it
+    // drains, and an error recorded while streaming is still reported as one.
+    try {
+        stream->finalize_frame_queue_();
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Error waiting for the frame queue to drain: ",
+                  exc.what(),
+                  "; continuing to finalize");
+    } catch (...) {
+        LOG_ERROR("Unknown error waiting for the frame queue to drain; "
+                  "continuing to finalize");
+    }
 
     // shut down the thread pool, let everything after this run in the main
     // thread
