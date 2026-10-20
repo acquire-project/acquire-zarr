@@ -330,19 +330,23 @@ extern "C"
     /**
      * @brief Finalize and close a Zarr stream, reporting failures.
      * @details This function waits for all pending writes to complete, flushes
-     * all data durably to storage, and frees the memory allocated for the Zarr
-     * stream. Unlike ZarrStream_destroy, it returns a status code so callers can
-     * detect a failed flush (e.g. an I/O error on a network filesystem) instead
-     * of silently producing a corrupt store. The stream is destroyed and the
+     * all data durably to storage if the stream recorded no error while it was
+     * running, and frees the memory allocated for the Zarr stream. Unlike
+     * ZarrStream_destroy, it returns a status code so callers can detect a
+     * failed flush (e.g. an I/O error on a network filesystem) instead of
+     * silently producing a corrupt store. The stream is destroyed and the
      * pointer is invalid after this call returns, regardless of the status.
      * @param stream The Zarr stream struct to close.
      * @return ZarrStatusCode_Success on success.
      * ZarrStatusCode_InternalError if the stream recorded an error while it
      * was running, before or while close drained the queue; this is the code
-     * ZarrStream_append returns for that error. The final array metadata is
-     * then not written, and the store is incomplete. ZarrStatusCode_IOError if
-     * finalization itself failed: the last flush, a shard index, or a
-     * metadata write.
+     * ZarrStream_append returns for that error. The arrays are then not
+     * finalized: buffered data and the final metadata are not written, shards
+     * that are already open are closed on a best-effort basis, and the store
+     * is incomplete. ZarrStatusCode_IOError if finalization itself failed: the
+     * last flush, a shard index, or a metadata write. A chunk write that fails
+     * during the last flush is logged but not reported, so close can return
+     * ZarrStatusCode_Success after it.
      */
     ZarrStatusCode ZarrStream_close(ZarrStream* stream);
 
