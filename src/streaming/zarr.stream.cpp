@@ -978,8 +978,8 @@ ZarrStream::append(const char* key_,
 {
     bytes_out = 0; // bytes written out of the input data
 
-    if (!error_.empty()) {
-        LOG_ERROR("Cannot append data: ", error_);
+    if (const auto err = get_error_(); !err.empty()) {
+        LOG_ERROR("Cannot append data: ", err);
         return ZarrStatusCode_InternalError;
     }
 
@@ -1558,8 +1558,18 @@ ZarrStream_s::set_error_(const std::string& msg)
 {
     // never store an empty error: callers key "did something fail?" off a
     // non-empty error_, so an empty message would read as a clean close
-    error_ = msg.empty() ? "Unspecified error during streaming" : msg;
+    {
+        std::lock_guard lock(error_mutex_);
+        error_ = msg.empty() ? "Unspecified error during streaming" : msg;
+    }
     frame_queue_processing_done_ = true;
+}
+
+std::string
+ZarrStream_s::get_error_() const
+{
+    std::lock_guard lock(error_mutex_);
+    return error_;
 }
 
 bool
@@ -2030,8 +2040,8 @@ finalize_stream(ZarrStream* stream)
 
     // a worker job (e.g. a shard flush during streaming) may have failed
     // asynchronously; surface it rather than reporting a clean close
-    if (!stream->error_.empty()) {
-        LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
+    if (const auto err = stream->get_error_(); !err.empty()) {
+        LOG_ERROR("Error finalizing Zarr stream: ", err);
         return false;
     }
 
