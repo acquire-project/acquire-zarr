@@ -40,6 +40,10 @@ class Array : public ArrayBase
     std::mutex write_counter_mutex_;
     std::condition_variable write_counter_cv_;
 
+    // set when a chunk or skip job that ran inline failed; a job on a pool
+    // worker reports through the pool's error handler instead
+    std::atomic<bool> inline_job_failed_{ false };
+
     std::vector<std::string> data_paths_;
 
     const uint64_t max_bytes_;       // max number of bytes that can be written

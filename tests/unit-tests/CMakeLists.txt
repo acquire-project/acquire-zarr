@@ -37,6 +37,7 @@ set(tests
         array-write-fixed-size
         zarr-stream-partial-append
         zarr-stream-append-error-bytes-out
+        array-inline-chunk-failure
         api-version
         frame-queue
         downsampler
