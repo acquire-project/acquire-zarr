@@ -103,7 +103,7 @@ main()
 
         status = ZarrStream_close(stream);
         stream = nullptr;
-        CHECK(status != ZarrStatusCode_Success);
+        EXPECT_EQ(int, status, ZarrStatusCode_InternalError);
 
         retval = 0;
     } catch (const std::exception& exception) {

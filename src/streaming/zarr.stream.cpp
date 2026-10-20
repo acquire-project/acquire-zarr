@@ -2013,16 +2013,27 @@ ZarrStream_s::finalize_frame_queue_()
     }
 }
 
-bool
+zarr::FinalizeResult
 finalize_stream(ZarrStream* stream)
 {
     if (stream == nullptr) {
         LOG_INFO("Stream is null. Nothing to finalize.");
-        return true;
+        return zarr::FinalizeResult::Ok;
     }
 
-    // clear out the frame queue first
-    stream->finalize_frame_queue_();
+    // clear out the frame queue first. If the drain throws, process_frames_ is
+    // already false, so await_stop still joins the frame-queue job once it
+    // drains, and an error recorded while streaming is still reported as one.
+    try {
+        stream->finalize_frame_queue_();
+    } catch (const std::exception& exc) {
+        LOG_ERROR("Error waiting for the frame queue to drain: ",
+                  exc.what(),
+                  "; continuing to finalize");
+    } catch (...) {
+        LOG_ERROR("Unknown error waiting for the frame queue to drain; "
+                  "continuing to finalize");
+    }
 
     // shut down the thread pool, let everything after this run in the main
     // thread
@@ -2032,7 +2043,7 @@ finalize_stream(ZarrStream* stream)
     // asynchronously; surface it rather than reporting a clean close
     if (!stream->error_.empty()) {
         LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
-        return false;
+        return zarr::FinalizeResult::StreamingError;
     }
 
     {
@@ -2045,12 +2056,12 @@ finalize_stream(ZarrStream* stream)
                   "Error finalizing Zarr stream. Failed to finalize array '",
                   key,
                   "'");
-                return false;
+                return zarr::FinalizeResult::FinalizeError;
             }
         }
     }
 
-    return true;
+    return zarr::FinalizeResult::Ok;
 }
 
 uint32_t

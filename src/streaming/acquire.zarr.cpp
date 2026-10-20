@@ -655,9 +655,9 @@ extern "C"
 
         // an exception must not cross the C boundary, and the stream must be
         // freed either way
-        bool ok = false;
+        auto result = zarr::FinalizeResult::FinalizeError;
         try {
-            ok = finalize_stream(stream);
+            result = finalize_stream(stream);
         } catch (const std::exception& e) {
             LOG_ERROR("Error finalizing Zarr stream: ", e.what());
         } catch (...) {
@@ -665,7 +665,16 @@ extern "C"
         }
         delete stream;
 
-        return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;
+        switch (result) {
+            case zarr::FinalizeResult::Ok:
+                return ZarrStatusCode_Success;
+            case zarr::FinalizeResult::StreamingError:
+                // the same code ZarrStream_append returns for this error
+                return ZarrStatusCode_InternalError;
+            case zarr::FinalizeResult::FinalizeError:
+                break;
+        }
+        return ZarrStatusCode_IOError;
     }
 
     void ZarrStream_destroy(struct ZarrStream_s* stream)
