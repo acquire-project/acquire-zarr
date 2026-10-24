@@ -82,6 +82,7 @@ struct ZarrStream_s
 
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
+    ZarrOMEVersion ome_version_{ ZarrOMEVersion_0_5 };
     bool overwrite_{ false };
     ZarrIntermediateGroups intermediate_groups_{
         ZarrIntermediateGroups_IfMissing
