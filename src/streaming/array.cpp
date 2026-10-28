@@ -699,6 +699,7 @@ zarr::Array::dispatch_skip_job_(std::shared_ptr<Shard> shard,
         if (!thread_pool_->execute_job(std::move(job))) {
             LOG_ERROR(
               "Failed to skip chunk ", internal_idx, " of shard ", shard_idx);
+            inline_job_failed_ = true;
         }
     }
 }
@@ -797,6 +798,7 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                       internal_idx,
                       ") of shard ",
                       shard_idx);
+            inline_job_failed_ = true;
         }
     }
 }
@@ -849,7 +851,7 @@ zarr::Array::compress_and_flush_data_()
         ++current_layer_;
     }
 
-    return true;
+    return !inline_job_failed_;
 }
 
 bool
@@ -898,7 +900,7 @@ zarr::Array::compress_and_flush_band_(uint32_t band_idx, uint32_t n_bands)
         }
     }
 
-    return true;
+    return !inline_job_failed_;
 }
 
 bool
