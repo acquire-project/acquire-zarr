@@ -19,6 +19,58 @@ dimension_type_to_string(ZarrDimensionType type)
             return "(unknown)";
     }
 }
+
+nlohmann::json
+omero_to_json(const zarr::OMERendering& omero)
+{
+    nlohmann::json j;
+    if (omero.id.has_value()) {
+        j["id"] = *omero.id;
+    }
+    if (omero.name.has_value()) {
+        j["name"] = *omero.name;
+    }
+
+    nlohmann::json channels = nlohmann::json::array();
+    for (const auto& c : omero.channels) {
+        nlohmann::json channel;
+        if (c.label.has_value()) {
+            channel["label"] = *c.label;
+        }
+        if (c.color.has_value()) {
+            channel["color"] = *c.color;
+        }
+        channel["window"] = {
+            { "min", c.window.min },
+            { "max", c.window.max },
+            { "start", c.window.start },
+            { "end", c.window.end },
+        };
+        channel["active"] = c.active;
+        if (c.family.has_value()) {
+            channel["family"] = *c.family;
+        }
+        if (c.coefficient.has_value()) {
+            channel["coefficient"] = *c.coefficient;
+        }
+        channel["inverted"] = c.inverted;
+        channels.push_back(std::move(channel));
+    }
+    j["channels"] = std::move(channels);
+
+    if (omero.has_rdefs) {
+        nlohmann::json rdefs = {
+            { "defaultT", omero.default_t },
+            { "defaultZ", omero.default_z },
+        };
+        if (omero.model.has_value()) {
+            rdefs["model"] = *omero.model;
+        }
+        j["rdefs"] = std::move(rdefs);
+    }
+
+    return j;
+}
 } // namespace
 
 zarr::MultiscaleArray::MultiscaleArray(
@@ -162,9 +214,13 @@ nlohmann::json
 zarr::MultiscaleArray::get_ome_metadata_() const
 {
     nlohmann::json ome;
-    ome["version"] = "0.5";
+    ome["version"] = ome_version_to_string(config_->ome_version);
     ome["name"] = "/";
     ome["multiscales"] = make_multiscales_metadata_();
+
+    if (config_->omero.has_value()) {
+        ome["omero"] = omero_to_json(*config_->omero);
+    }
 
     return ome;
 }

@@ -364,7 +364,7 @@ validate_plate_metadata()
     CHECK(ome.contains("plate"));
     const auto& plate = ome["plate"];
 
-    EXPECT(plate.size() == 7, "Expected 7 fields in plate, got ", plate.size());
+    EXPECT(plate.size() == 6, "Expected 6 fields in plate, got ", plate.size());
 
     // plate field 1: name
     CHECK(plate.contains("name"));
@@ -372,11 +372,8 @@ validate_plate_metadata()
            "Expected plate name to be 'Test Plate', got ",
            plate["name"].get<std::string>());
 
-    // plate field 2: version
-    CHECK(plate.contains("version"));
-    EXPECT(plate["version"] == "0.5",
-           "Expected plate version to be '0.5', got ",
-           plate["version"].get<std::string>());
+    // the version lives at ome.version, not inside the plate dict
+    CHECK(!plate.contains("version"));
 
     // plate field 3: field_count
     CHECK(plate.contains("field_count"));
@@ -552,12 +549,10 @@ validate_well_metadata()
         CHECK(ome.contains("well"));
         const auto& well = ome["well"];
         EXPECT(
-          well.size() == 2, "Expected 2 fields in well, got ", well.size());
+          well.size() == 1, "Expected 1 field in well, got ", well.size());
 
-        CHECK(well.contains("version"));
-        EXPECT(well["version"] == "0.5",
-               "Expected well version to be '0.5', got ",
-               well["version"].get<std::string>());
+        // the version lives at ome.version, not inside the well dict
+        CHECK(!well.contains("version"));
 
         CHECK(well.contains("images"));
         const auto& images = well["images"];

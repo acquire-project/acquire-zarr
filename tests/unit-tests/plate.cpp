@@ -119,6 +119,10 @@ check_dense_plate()
 
     auto json = plate.to_json();
 
+    // the version lives at ome.version, not inside the plate dict
+    EXPECT(!json.contains("version"),
+           "Plate JSON should not carry its own 'version' key");
+
     EXPECT(json.contains("name"), "Plate JSON missing 'name' key");
     EXPECT(json["name"] == name,
            "Plate JSON 'name' key mismatch: Expected ",
