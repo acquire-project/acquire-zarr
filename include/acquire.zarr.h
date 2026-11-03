@@ -398,20 +398,34 @@ extern "C"
                                      const char* key);
 
     /**
-     * @brief Write custom metadata to an array.
+     * @brief Write custom metadata to a node of the stream.
+     * @details The node can be an array, a group that the stream writes (the
+     * root, a plate, a well, or a group between the root and an array), or a
+     * level of detail of a multiscale array (`<array_key>/<level>`, e.g.
+     * `"plate/A/1/0/1"`). The metadata is held in memory and written to the
+     * node's zarr.json when the stream is closed. A group is then written
+     * again: its whole zarr.json is replaced by the group as the stream wrote
+     * or kept it at create, with the custom attributes added. A change that
+     * anything else made to that group after create is lost. A generic group
+     * (the root, an HCS row group, or any group that is not a plate or a well)
+     * is not addressable when `intermediate_groups` is
+     * ZarrIntermediateGroups_Never, because the stream does not write it.
      * @param stream The Zarr stream struct.
-     * @param array_key Optional key of the array to write the metadata to.
-     * Metadata will be written to <array_key>/zarr.json. If array_key is empty
-     * or NULL, metadata will be written to the root zarr.json.
+     * @param node_key Key of the node to write the metadata to, relative to
+     * the store root. An empty key is the root. If NULL, the stream's only
+     * array; NULL is an error if the stream has more than one array.
      * @param metadata_key Key under 'attributes' to write the metadata to. If
      * metadata_key is empty or NULL, metadata will be written directly under
      * 'attributes'. Note: the 'ome' key is disallowed. Passing 'ome' will
      * return an error.
      * @param metadata JSON-formatted metadata to be written to the dataset.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @return ZarrStatusCode_Success on success, ZarrStatusCode_KeyNotFound if
+     * no node has the key, ZarrStatusCode_InvalidArgument if the node is not
+     * addressable or the metadata is not valid, or another error code on
+     * failure.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
-                                                    const char* array_key,
+                                                    const char* node_key,
                                                     const char* metadata_key,
                                                     const char* metadata);
 

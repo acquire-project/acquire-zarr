@@ -21,8 +21,10 @@ zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
 }
 
 bool
-zarr::ArrayBase::write_custom_metadata(const std::string& key,
-                                       const nlohmann::json& metadata)
+zarr::merge_custom_metadata(
+  std::unordered_map<std::string, nlohmann::json>& attributes,
+  const std::string& key,
+  const nlohmann::json& metadata)
 {
     const std::vector<std::string> reserved_keys{ "ome" };
 
@@ -38,9 +40,8 @@ zarr::ArrayBase::write_custom_metadata(const std::string& key,
             }
         }
 
-        std::unique_lock lock(metadata_mutex_);
         for (const auto& [k, value] : metadata.items()) {
-            custom_metadata_[k] = value;
+            attributes[k] = value;
         }
     } else {
         if (const auto it = std::ranges::find(reserved_keys, key);
@@ -49,12 +50,19 @@ zarr::ArrayBase::write_custom_metadata(const std::string& key,
             return false;
         }
 
-        // store custom metadata in memory until we write it out in close()
-        std::unique_lock lock(metadata_mutex_);
-        custom_metadata_[key] = metadata;
+        attributes[key] = metadata;
     }
 
     return true;
+}
+
+bool
+zarr::ArrayBase::write_custom_metadata(const std::string& key,
+                                       const nlohmann::json& metadata)
+{
+    // store custom metadata in memory until we write it out in close()
+    std::unique_lock lock(metadata_mutex_);
+    return merge_custom_metadata(custom_metadata_, key, metadata);
 }
 
 std::string

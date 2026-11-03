@@ -44,14 +44,20 @@ struct ZarrStream_s
                           size_t& bytes_out);
 
     /**
-     * @brief Write custom metadata to the stream.
-     * @param array_key Key of the array to write the metadata to.
+     * @brief Write custom metadata to a node of the stream.
+     * @details The node is, in order of lookup: an array; a level of detail,
+     * `<multiscale array key>/<level>`; or a group that the stream writes (the
+     * root, a plate, a well, or a generic group). The kinds cannot overlap,
+     * because a multiscale array has no numeric children and a plain array has
+     * no children.
+     * @param node_key Key of the node to write the metadata to. If not set,
+     * the only array of the stream.
      * @param metadata_key Key under 'attributes' to write the metadata to.
      * @param metadata JSON-formatted custom metadata to write.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
     ZarrStatusCode write_custom_metadata(
-      const std::optional<std::string>& array_key,
+      const std::optional<std::string>& node_key,
       std::string_view metadata_key,
       std::string_view metadata);
 
@@ -97,6 +103,18 @@ struct ZarrStream_s
     // -- cannot read an array slot while finalize_stream is moving out of it.
     mutable std::mutex arrays_mutex_;
     std::vector<std::string> intermediate_group_paths_;
+
+    struct OutputGroup
+    {
+        nlohmann::json document; // as written or kept at create
+        std::unordered_map<std::string, nlohmann::json> custom_metadata;
+    };
+
+    // the groups this stream wrote or kept at create, keyed by their paths
+    // relative to the store root; a generic group skipped under
+    // ZarrIntermediateGroups_Never is not here
+    std::unordered_map<std::string, OutputGroup> groups_;
+    std::mutex groups_mutex_;
 
     std::mutex frame_queue_mutex_;
     std::atomic<bool> process_frames_{ true };
@@ -173,11 +191,31 @@ struct ZarrStream_s
      * metadata (if applicable).
      * @details Called once, when the stream is created. Every path and all HCS
      * metadata are known then, and a reader can navigate the hierarchy while
-     * frames arrive. The stream does not write these groups again at close, so
-     * metadata that the caller writes after create is kept.
+     * frames arrive. Each group written or kept is recorded in groups_. The
+     * stream writes a group again at close only if the caller gave it custom
+     * metadata (write_group_custom_metadata_()), so metadata that the caller
+     * writes after create to any other group is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();
+
+    /**
+     * @brief Write each group that has custom metadata again: the document
+     * recorded at create, with the custom attributes added, replaces the
+     * whole `zarr.json`.
+     * @return True if every such group was written, otherwise false.
+     */
+    [[nodiscard]] bool write_group_custom_metadata_();
+
+    /**
+     * @brief Find a level of detail of a multiscale array by its key,
+     * `<multiscale array key>/<level>`.
+     * @return The level's array, or nullptr if @p key names no level.
+     */
+    zarr::ArrayBase* find_level_(const std::string& key) const;
+
+    /** @brief The path of the `zarr.json` of the group at @p relative_path. */
+    std::string group_sink_path_(const std::string& relative_path) const;
 
     /**
      * @brief Write one generic group's metadata unless a Zarr v3 group node is
@@ -187,11 +225,13 @@ struct ZarrStream_s
      * group with malformed fields) is replaced, with a warning. A kept group
      * loses its consolidated metadata; see keep_group_metadata_(). On S3 the
      * write is conditional, so the check and the write are one request.
+     * @param[in, out] document The group to write; set to the existing group
+     * if that is kept.
      * @return True if the group is now in place, otherwise false.
      */
     [[nodiscard]] bool write_group_metadata_if_missing_(
       const std::string& sink_path,
-      const std::string& metadata_str);
+      nlohmann::json& document);
 
     /**
      * @brief Keep an existing group node, but clear its consolidated metadata.

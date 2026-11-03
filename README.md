@@ -419,19 +419,28 @@ group metadata.
 
 ### Writing custom metadata
 
-Custom metadata can be written to any array in the stream using
+Custom metadata can be written to any node in the stream using
 `ZarrStream_write_custom_metadata` (C) or `stream.write_custom_metadata`
-(Python). Metadata is written under the `attributes` key of the target array's
+(Python). Metadata is written under the `attributes` key of the target node's
 `zarr.json` file, which is the standard location for user-defined metadata in
 Zarr v3.
 
 The function takes three parameters:
 
-- **`array_key`**: The key of the array to write metadata to, matching the
-  `output_key` set when configuring the array (see the array configuration
-  examples above). If `NULL` (C) or `None` (Python) and the stream has only one
-  array, that array is targeted automatically. Required when the stream has
-  multiple arrays.
+- **`node_key`**: The key of the node to write metadata to, relative to the
+  store root. The node can be:
+  - an array, matching the `output_key` set when configuring the array (see the
+    array configuration examples above);
+  - a group that the stream writes: the root (`""`), an HCS plate or well, or a
+    group between the root and an array. A generic group (the root, an HCS row
+    group, or any group that is not a plate or a well) is not addressable with
+    `ZarrIntermediateGroups_Never`, because the stream does not write it;
+  - a level of detail of a multiscale array, `<output_key>/<level>`, for
+    example `"my-array/1"`.
+
+  If `NULL` (C) or `None` (Python) and the stream has only one array, that
+  array is targeted automatically. Required when the stream has multiple
+  arrays.
 - **`metadata_key`**: An optional key under `attributes` to nest the metadata
   under. If `NULL`/`None` or empty, metadata is written directly under
   `attributes`.
@@ -447,7 +456,7 @@ In C:
 ```c
 // Write directly under 'attributes'
 ZarrStream_write_custom_metadata(stream,
-                                 "my-array",   // array_key
+                                 "my-array",   // node_key
                                  NULL,          // metadata_key: write under 'attributes'
                                  "{\"device\": \"motor-1\", \"position\": 42}");
 
@@ -465,25 +474,28 @@ import json
 # Write as a dict directly under 'attributes'
 stream.write_custom_metadata(
     {"device": "motor-1", "position": 42},
-    array_key="my-array"
+    node_key="my-array"
 )
 
 # Write as a string directly under 'attributes'
 stream.write_custom_metadata(
     json.dumps({"device": "motor-1", "position": 42}),
-    array_key="my-array"
+    node_key="my-array"
 )
 
 # Write under 'attributes/device'
 stream.write_custom_metadata(
     {"name": "motor-1", "position": 42},
-    array_key="my-array",
+    node_key="my-array",
     metadata_key="device"
 )
 ```
 
 Metadata can be written at any point while the stream is active and will be
-flushed to disk when the stream is closed.
+flushed to disk when the stream is closed. A group that receives custom
+metadata is written again at close: its whole `zarr.json` is replaced by the
+group as the stream wrote or kept it at create, with the custom attributes
+added. A change that anything else made to that group after create is lost.
 
 ### High-content screening workflows
 

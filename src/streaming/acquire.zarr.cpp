@@ -696,7 +696,7 @@ extern "C"
     }
 
     ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,
-                                                    const char* array_key,
+                                                    const char* node_key,
                                                     const char* metadata_key,
                                                     const char* metadata)
     {
@@ -704,8 +704,8 @@ extern "C"
         EXPECT_VALID_ARGUMENT(metadata, "Null pointer: metadata");
 
         std::optional<std::string> key = std::nullopt;
-        if (array_key) {
-            key = zarr::regularize_key(array_key);
+        if (node_key) {
+            key = zarr::regularize_key(node_key);
         }
 
         const std::string meta_key = metadata_key ? metadata_key : "";

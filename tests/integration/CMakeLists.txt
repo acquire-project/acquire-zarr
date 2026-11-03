@@ -22,6 +22,7 @@ set(tests
         stream-from-config-file
         stream-keep-existing-group-metadata
         stream-keep-existing-group-metadata-s3
+        stream-custom-metadata-any-node
 )
 
 foreach (name ${tests})

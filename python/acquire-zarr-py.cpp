@@ -1511,7 +1511,7 @@ class PyZarrStream
     }
 
     bool write_custom_metadata(py::object metadata,
-                               const std::optional<std::string>& array_key,
+                               const std::optional<std::string>& node_key,
                                const std::optional<std::string>& metadata_key)
     {
         if (!is_active()) {
@@ -1531,13 +1531,13 @@ class PyZarrStream
             throw py::error_already_set();
         }
 
-        const char* array_cstr =
-          array_key.has_value() ? array_key->c_str() : nullptr;
+        const char* node_cstr =
+          node_key.has_value() ? node_key->c_str() : nullptr;
         const char* meta_cstr =
           metadata_key.has_value() ? metadata_key->c_str() : nullptr;
 
         auto status = ZarrStream_write_custom_metadata(
-          stream_.get(), array_cstr, meta_cstr, metadata_str.c_str());
+          stream_.get(), node_cstr, meta_cstr, metadata_str.c_str());
 
         if (status != ZarrStatusCode_Success) {
             std::string err = "Failed to write custom metadata: " +
@@ -2649,7 +2649,7 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,
            py::arg("metadata"),
-           py::arg("array_key") = std::nullopt,
+           py::arg("node_key") = std::nullopt,
            py::arg("metadata_key") = std::nullopt)
       .def("is_active", &PyZarrStream::is_active)
       .def("get_current_memory_usage",

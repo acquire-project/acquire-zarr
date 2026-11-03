@@ -14,12 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
   anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
   always written (#186, #268)
+- `ZarrStream_write_custom_metadata` (`ZarrStream.write_custom_metadata` in Python) can address every node that the
+  stream writes, not only arrays: the root group (`""`), plate and well groups, the generic groups between the root and
+  an array, and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives custom
+  metadata is written again at close. Generic groups are not addressable under `ZarrIntermediateGroups_Never`
 
 ### Changed
 
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
-  `ZarrStream_create` is kept (#186, #268)
+  `ZarrStream_create` is kept, unless the caller also gives that group custom metadata through
+  `ZarrStream_write_custom_metadata`: the stream then replaces the group's `zarr.json` at close (#186, #268)
+- ⚠️ **Breaking:** the Python keyword `array_key` of `ZarrStream.write_custom_metadata` is renamed `node_key`, because
+  the key can now name a group or a level of detail. The C parameter has the same new name; C callers are not affected
+- `ZarrStream_write_custom_metadata` returns `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when the
+  metadata uses the reserved key `ome`
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less

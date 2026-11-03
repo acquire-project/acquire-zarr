@@ -35,6 +35,7 @@ from acquire_zarr import (
     Well,
     FieldOfView,
     Acquisition,
+    IntermediateGroups,
     set_log_level,
     get_log_level,
 )
@@ -803,7 +804,7 @@ def test_write_custom_metadata(
 
     metadata_dict = {"foo": "bar"}
     assert stream.write_custom_metadata(
-        metadata_dict, array_key=array_key, metadata_key=metadata_key
+        metadata_dict, node_key=array_key, metadata_key=metadata_key
     )
 
     stream.close()
@@ -1888,6 +1889,71 @@ def test_pure_hcs_acquisition(store_path: Path):
     validate_plate_metadata(store_path / "test.zarr")
     validate_well_metadata(store_path / "test.zarr")
     check_hcs_multiscale_arrays(store_path / "test.zarr")
+
+
+@pytest.mark.parametrize(
+    "intermediate_groups",
+    [IntermediateGroups.IF_MISSING, IntermediateGroups.NEVER],
+)
+def test_write_custom_metadata_to_hcs_nodes(
+    store_path: Path, intermediate_groups: IntermediateGroups
+):
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=[],
+        hcs_plates=[create_hcs_settings()],
+        intermediate_groups=intermediate_groups,
+    )
+    stream = ZarrStream(settings)
+
+    # generic groups, which the stream does not write under NEVER
+    generic_groups = ["", "test_plate/C"]
+    nodes = [
+        "test_plate",  # plate
+        "test_plate/C/5",  # well
+        "test_plate/C/5/fov1",  # field of view
+        "test_plate/C/5/fov1/0",  # level of detail
+    ]
+    if intermediate_groups == IntermediateGroups.NEVER:
+        for node in generic_groups:
+            with pytest.raises(RuntimeError):
+                stream.write_custom_metadata({}, node_key=node)
+    else:
+        nodes += generic_groups
+
+    for node in nodes:
+        assert stream.write_custom_metadata(
+            {"node": node}, node_key=node, metadata_key="custom"
+        )
+
+    with pytest.raises(RuntimeError):
+        stream.write_custom_metadata(
+            {}, node_key="test_plate", metadata_key="ome"
+        )
+    with pytest.raises(RuntimeError):
+        stream.write_custom_metadata({}, node_key="test_plate/Z")
+
+    stream.append(
+        np.zeros((640, 480), dtype=np.uint8), key="test_plate/C/5/fov1"
+    )
+    stream.append(
+        np.zeros((640, 480), dtype=np.uint16), key="test_plate/C/5/fov2"
+    )
+    stream.append(
+        np.zeros((512, 512), dtype=np.uint16), key="test_plate/D/7/fov1"
+    )
+    stream.close()
+
+    base_path = Path(settings.store_path)
+    for node in nodes:
+        with open(base_path / node / "zarr.json", "r") as fh:
+            attributes = json.load(fh)["attributes"]
+        assert attributes["custom"] == {"node": node}
+
+    # the stream's own metadata is kept
+    validate_plate_metadata(base_path)
+    validate_well_metadata(base_path)
 
 
 def test_mixed_flat_and_hcs_acquisition(store_path: Path):

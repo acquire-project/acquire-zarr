@@ -11,8 +11,25 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <unordered_map>
 
 namespace zarr {
+/**
+ * @brief Merge custom metadata into the custom attributes of a node.
+ * @details With an empty @p key, each top-level key of @p metadata becomes an
+ * attribute. Otherwise @p metadata is stored under @p key. Shared by arrays
+ * and groups so that every node applies the same reserved-key rule.
+ * @param[in, out] attributes The node's custom attributes.
+ * @param key The attribute key, or empty.
+ * @param metadata The JSON value to merge.
+ * @return True on success, false if the merge would write a reserved key.
+ */
+[[nodiscard]] bool
+merge_custom_metadata(
+  std::unordered_map<std::string, nlohmann::json>& attributes,
+  const std::string& key,
+  const nlohmann::json& metadata);
+
 struct ArrayConfig
 {
     ArrayConfig() = default;

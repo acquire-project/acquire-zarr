@@ -22,6 +22,14 @@ class MultiscaleArray : public ArrayBase
                                           uint64_t frame_id) override;
     size_t max_bytes() const override;
 
+    /**
+     * @brief Get the array for a level of detail.
+     * @param level The level of detail, where 0 is full resolution.
+     * @return The array at `<node>/<level>`, or nullptr if there is no such
+     * level.
+     */
+    ArrayBase* level(size_t level) const;
+
   protected:
     std::unique_ptr<Downsampler> downsampler_;
     std::vector<std::unique_ptr<Array>> arrays_;
