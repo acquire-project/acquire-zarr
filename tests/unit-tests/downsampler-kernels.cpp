@@ -5,11 +5,14 @@
 #include "unit.test.macros.hh"
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <random>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -39,6 +42,40 @@ dtype_of()
         return ZarrDataType_float64;
 }
 
+/**
+ * The mean of 2 or 4 integers, truncated toward zero, computed exactly with a
+ * portable 128-bit two's-complement sum (hi:lo) and a shift. Independent of
+ * the library's quotient-and-remainder method for 64-bit types.
+ */
+template<typename T>
+T
+exact_integer_mean(std::initializer_list<T> values)
+{
+    const size_t n = values.size();
+    EXPECT(n == 2 || n == 4, "Unsupported count: ", n);
+    const unsigned shift = n == 2 ? 1 : 2;
+
+    uint64_t lo = 0;
+    int64_t hi = 0;
+    for (T v : values) {
+        const auto v_lo = static_cast<uint64_t>(v);
+        const int64_t v_hi = std::is_signed_v<T> && v < 0 ? -1 : 0;
+        const uint64_t sum_lo = lo + v_lo;
+        hi += v_hi + (sum_lo < lo ? 1 : 0);
+        lo = sum_lo;
+    }
+
+    // divide the magnitude, so the result truncates toward zero
+    const bool negative = hi < 0;
+    uint64_t mag_lo = lo, mag_hi = static_cast<uint64_t>(hi);
+    if (negative) {
+        mag_lo = ~mag_lo + 1;
+        mag_hi = ~mag_hi + (mag_lo == 0 ? 1 : 0);
+    }
+    const uint64_t q = (mag_lo >> shift) | (mag_hi << (64 - shift));
+    return negative ? static_cast<T>(0 - q) : static_cast<T>(q);
+}
+
 // mean truncated toward zero, without overflow
 template<typename T>
 T
@@ -50,12 +87,7 @@ ref_mean(std::initializer_list<T> values)
             sum += v;
         return sum / static_cast<T>(values.size());
     } else {
-        // 128-bit integers are exact here; integer division truncates toward
-        // zero
-        __int128 sum = 0;
-        for (T v : values)
-            sum += v;
-        return static_cast<T>(sum / static_cast<__int128>(values.size()));
+        return exact_integer_mean<T>(values);
     }
 }
 
