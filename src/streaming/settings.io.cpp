@@ -544,6 +544,25 @@ load_array(const json& j,
                         : 0;
     }
 
+    if (j.contains("jpeg") && !j.at("jpeg").is_null()) {
+        const auto& c = j.at("jpeg");
+        const auto jctx = ctx + ".jpeg";
+        auto* js = alloc_zeroed<ZarrJpegSettings>(1);
+        arr->jpeg_settings = js;
+        js->quality =
+          as_uint<uint8_t>(require(c, "quality", jctx), jctx + ".quality");
+        js->first_level =
+          c.contains("first_level")
+            ? as_uint<uint32_t>(c.at("first_level"), jctx + ".first_level")
+            : 1;
+        js->window_min = c.contains("window_min")
+                           ? as_double(c.at("window_min"), jctx + ".window_min")
+                           : 0.0;
+        js->window_max = c.contains("window_max")
+                           ? as_double(c.at("window_max"), jctx + ".window_max")
+                           : 0.0;
+    }
+
     const auto& dims = require(j, "dimensions", ctx);
     if (!dims.is_array() || dims.empty()) {
         fail(ctx + ".dimensions", "expected a non-empty list");
@@ -748,6 +767,15 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
             { "codec", from_enum(kCodecs, c.codec, "codec") },
             { "level", c.level },
             { "shuffle", c.shuffle },
+        };
+    }
+    if (a.jpeg_settings) {
+        const auto& c = *a.jpeg_settings;
+        j["jpeg"] = {
+            { "quality", c.quality },
+            { "first_level", c.first_level },
+            { "window_min", c.window_min },
+            { "window_max", c.window_max },
         };
     }
     j["dimensions"] = json::array();
@@ -991,6 +1019,7 @@ free_array_contents(ZarrArraySettings* a)
     }
     free_cstr(a->output_key);
     std::free(a->compression_settings);
+    std::free(a->jpeg_settings);
     std::free(const_cast<size_t*>(a->storage_dimension_order));
     if (a->dimensions) {
         for (size_t i = 0; i < a->dimension_count; ++i) {

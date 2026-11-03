@@ -9,6 +9,7 @@
 
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
+#include <cmath>     // isfinite
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -413,7 +414,7 @@ make_array_config(const ZarrArraySettings* settings,
         downsampling_method = settings->downsampling_method;
     }
 
-    return std::make_shared<zarr::ArrayConfig>(
+    auto config = std::make_shared<zarr::ArrayConfig>(
       store_root,
       key,
       bucket_name,
@@ -424,6 +425,18 @@ make_array_config(const ZarrArraySettings* settings,
       0,
       downsampling_method.has_value() || settings->is_ngff || force_ngff,
       settings->max_levels);
+
+    if (const auto* jpeg = settings->jpeg_settings) {
+        config->jpeg_params = zarr::JpegParams{
+            .quality = jpeg->quality,
+            .first_level = jpeg->first_level,
+            .window_min = jpeg->window_min,
+            .window_max = jpeg->window_max,
+            .source_dtype = settings->data_type,
+        };
+    }
+
+    return config;
 }
 
 std::unique_ptr<zarr::ArrayBase>
@@ -479,6 +492,86 @@ validate_dimension(const ZarrDimensionProperties* dimension,
 
     if (dimension->scale < 0.0) {
         error = "Scale must be non-negative";
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Check that the JPEG levels can be encoded. Each inner chunk becomes
+ * one grayscale image: the storage-order last chunk dimension gives the width,
+ * and the product of the other chunk dimensions gives the height. JPEG stores
+ * each as 16 bits, and grayscale blocks are 8x8. All levels have the same
+ * chunk shape, so one check covers the whole pyramid.
+ */
+[[nodiscard]] bool
+validate_jpeg_settings(const ZarrArraySettings* settings, std::string& error)
+{
+    const auto* jpeg = settings->jpeg_settings;
+    if (jpeg == nullptr) {
+        return true;
+    }
+
+    if (settings->downsampling_method == ZarrDownsamplingMethod_None) {
+        error = "JPEG settings require a downsampling method";
+        return false;
+    }
+
+    if (jpeg->first_level < 1) {
+        error = "JPEG first level must be at least 1; level 0 stays lossless";
+        return false;
+    }
+
+    if (jpeg->quality < 1 || jpeg->quality > 100) {
+        error = "Invalid JPEG quality: " + std::to_string(jpeg->quality) +
+                ". Must be 1-100";
+        return false;
+    }
+
+    if (settings->data_type != ZarrDataType_uint8 &&
+        !(std::isfinite(jpeg->window_min) && std::isfinite(jpeg->window_max) &&
+          jpeg->window_min < jpeg->window_max)) {
+        error = "JPEG window must be finite, with window_min < window_max";
+        return false;
+    }
+
+    const size_t ndims = settings->dimension_count;
+    const auto* dims = settings->dimensions;
+
+    for (size_t i = ndims - 2; i < ndims; ++i) {
+        if (dims[i].chunk_size_px % 8 != 0) {
+            error = "JPEG needs the chunk size of dimension '" +
+                    std::string(dims[i].name) +
+                    "' to be a multiple of 8, but it is " +
+                    std::to_string(dims[i].chunk_size_px);
+            return false;
+        }
+    }
+
+    const size_t width_idx = settings->storage_dimension_order
+                               ? settings->storage_dimension_order[ndims - 1]
+                               : ndims - 1;
+    if (width_idx >= ndims) {
+        error = "Invalid storage dimension order";
+        return false;
+    }
+    const uint64_t width = dims[width_idx].chunk_size_px;
+    uint64_t height = 1;
+    for (size_t i = 0; i < ndims; ++i) {
+        if (i != width_idx) {
+            height *= dims[i].chunk_size_px;
+        }
+    }
+
+    constexpr uint64_t max_jpeg_dim = 65535;
+    if (width > max_jpeg_dim || height > max_jpeg_dim) {
+        error = "JPEG images are at most 65535 x 65535. Each chunk becomes "
+                "one image of " +
+                std::to_string(height) +
+                " rows (the product of all chunk "
+                "sizes except the last) and " +
+                std::to_string(width) + " columns. Reduce a chunk size";
         return false;
     }
 
@@ -543,6 +636,10 @@ validate_array_settings(const ZarrArraySettings* settings,
     if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
         error = "Invalid downsampling method: " +
                 std::to_string(settings->downsampling_method);
+        return false;
+    }
+
+    if (!validate_jpeg_settings(settings, error)) {
         return false;
     }
 

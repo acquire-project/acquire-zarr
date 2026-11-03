@@ -23,6 +23,10 @@
     {
       "name": "yaml-cpp",
       "version>=": "0.8.0"
+    },
+    {
+      "name": "libjpeg-turbo",
+      "version>=": "3.0.0"
     }
   ]
 }

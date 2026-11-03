@@ -187,6 +187,23 @@ extern "C"
     } ZarrCompressionSettings;
 
     /**
+     * @brief Settings to store the downsampled levels of an image pyramid as
+     * JPEG.
+     * @detail Levels from @p first_level up are stored as uint8 arrays with
+     * the `reshape` and `jpeg` codecs (zarr-extensions PR #66). Level 0 keeps
+     * its data type and compression. Data of another type is mapped linearly
+     * from [window_min, window_max] to [0, 255], with clamping.
+     */
+    typedef struct
+    {
+        uint8_t quality;      /**< JPEG quality, 1-100 */
+        uint32_t first_level; /**< First pyramid level to store as JPEG; at
+                                   least 1 */
+        double window_min;    /**< Value that maps to 0. Ignored for uint8. */
+        double window_max;    /**< Value that maps to 255. Ignored for uint8. */
+    } ZarrJpegSettings;
+
+    /**
      * @brief Properties of a dimension of a Zarr array.
      */
     typedef struct
@@ -232,6 +249,8 @@ extern "C"
                                   pyramid. 0 means no limit. */
         const size_t* storage_dimension_order;
         bool is_ngff;
+        ZarrJpegSettings* jpeg_settings; /**< JPEG for the downsampled levels,
+                                              or NULL */
     } ZarrArraySettings;
 
     /**

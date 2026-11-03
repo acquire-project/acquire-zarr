@@ -3,6 +3,32 @@
 #include "zarr.common.hh"
 
 namespace {
+/**
+ * @brief A copy of @p config for a level stored as JPEG: uint8 samples, no
+ * blosc or zstd. The downsampler keeps the native-type configuration, so the
+ * next level is still made from native-type data.
+ */
+std::shared_ptr<zarr::ArrayConfig>
+make_jpeg_level_config(const zarr::ArrayConfig& config,
+                       const zarr::JpegParams& params)
+{
+    const auto& dims = *config.dimensions;
+    std::vector<ZarrDimension> level_dims;
+    for (size_t i = dims.is_2d() ? 1 : 0; i < dims.ndims(); ++i) {
+        level_dims.push_back(dims.at(i));
+    }
+
+    auto level_config = std::make_shared<zarr::ArrayConfig>(config);
+    level_config->dimensions = std::make_shared<ArrayDimensions>(
+      std::move(level_dims), ZarrDataType_uint8);
+    level_config->dtype = ZarrDataType_uint8;
+    level_config->compression_params = std::nullopt;
+    level_config->jpeg_params = params;
+    return level_config;
+}
+} // namespace
+
+namespace {
 std::string
 dimension_type_to_string(ZarrDimensionType type)
 {
@@ -143,9 +169,21 @@ zarr::MultiscaleArray::create_arrays_()
         const auto& configs = downsampler_->writer_configurations();
         arrays_.resize(configs.size());
 
+        const auto& jpeg = config_->jpeg_params;
+        if (jpeg && jpeg->first_level >= configs.size()) {
+            LOG_WARNING("JPEG first level ",
+                        jpeg->first_level,
+                        " exceeds the last pyramid level ",
+                        configs.size() - 1,
+                        "; no level is stored as JPEG");
+        }
+
         for (const auto& [lod, config] : configs) {
+            const auto level_config = jpeg && lod >= jpeg->first_level
+                                        ? make_jpeg_level_config(*config, *jpeg)
+                                        : config;
             arrays_[lod] = std::make_unique<Array>(
-              config, thread_pool_, file_handle_pool_, s3_client_);
+              level_config, thread_pool_, file_handle_pool_, s3_client_);
         }
     } else {
         const auto config = make_base_array_config_();
@@ -304,6 +342,12 @@ zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& frame)
         if (std::vector<uint8_t> downsampled_frame;
             downsampler_->take_frame(i, downsampled_frame)) {
             auto& frame_id = array_frame_ids_[i];
+
+            const auto& jpeg = config_->jpeg_params;
+            if (jpeg && i >= jpeg->first_level) {
+                downsampled_frame =
+                  convert_to_uint8(downsampled_frame, config_->dtype, *jpeg);
+            }
 
             size_t n_bytes;
             if (const auto result = arrays_[i]->write_frame(
