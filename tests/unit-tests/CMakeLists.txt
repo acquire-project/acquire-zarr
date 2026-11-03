@@ -39,6 +39,7 @@ set(tests
         zarr-stream-append-error-bytes-out
         api-version
         zarr-stream-worker-error
+        zarr-stream-append-null-zeros
         frame-queue
         downsampler
         downsampler-odd-z
