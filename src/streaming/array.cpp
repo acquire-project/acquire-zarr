@@ -324,20 +324,14 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
         }
     }
 
-    // no standard field records how a JPEG level relates to level 0
-    if (const auto& jpeg = config_->jpeg_params;
-        jpeg && jpeg->source_dtype != ZarrDataType_uint8) {
-        attributes["acquire_zarr"]["jpeg_window"] = {
-            { "source_data_type", sample_type_to_dtype(jpeg->source_dtype) },
-            { "min", jpeg->window_min },
-            { "max", jpeg->window_max },
-        };
-    }
-
     meta_tmp["zarr_format"] = 3;
     meta_tmp["node_type"] = "array";
     meta_tmp["storage_transformers"] = json::array();
-    meta_tmp["data_type"] = sample_type_to_dtype(config_->dtype);
+    // a JPEG level stores uint8 but declares the data type of level 0; its
+    // codec chain converts between the two
+    meta_tmp["data_type"] = sample_type_to_dtype(
+      config_->jpeg_params ? config_->jpeg_params->source_dtype
+                           : config_->dtype);
     meta_tmp["storage_transformers"] = json::array();
 
     // Skip phantom dimension (index 0) for 2D arrays in dimension names
@@ -375,7 +369,7 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
 
     if (config_->jpeg_params) {
         configuration["codecs"] =
-          jpeg_inner_codecs(chunk_shape.size(), config_->jpeg_params->quality);
+          jpeg_inner_codecs(chunk_shape.size(), *config_->jpeg_params);
     } else if (config_->compression_params) {
         auto compression_codec = std::visit(
           [this](const auto& params) -> json {

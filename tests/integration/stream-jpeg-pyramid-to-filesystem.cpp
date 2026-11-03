@@ -215,13 +215,8 @@ verify_level1()
 {
     const auto level = fs::path(test_path) / "1";
     const auto meta = read_json(level / "zarr.json");
-    EXPECT_STR_EQ(meta["data_type"].get<std::string>().c_str(), "uint8");
-
-    const auto window = meta["attributes"]["acquire_zarr"]["jpeg_window"];
-    EXPECT_STR_EQ(window["source_data_type"].get<std::string>().c_str(),
-                  "uint16");
-    EXPECT_EQ(double, window["min"].get<double>(), 0.0);
-    EXPECT_EQ(double, window["max"].get<double>(), window_max);
+    // the level declares the data type of level 0; the chain maps it to uint8
+    EXPECT_STR_EQ(meta["data_type"].get<std::string>().c_str(), "uint16");
 
     const auto& sharding = meta["codecs"][0]["configuration"];
     const auto chunk_shape = sharding["chunk_shape"];
@@ -229,21 +224,24 @@ verify_level1()
            "Unexpected chunk shape: ",
            chunk_shape.dump());
 
-    const auto codecs = sharding["codecs"];
-    EXPECT_EQ(size_t, codecs.size(), 2);
-    EXPECT_STR_EQ(codecs[0]["name"].get<std::string>().c_str(), "reshape");
-    EXPECT(codecs[0]["configuration"]["shape"] ==
-             nlohmann::json::parse("[[0, 1, 2, 3], [4]]"),
-           "Unexpected reshape: ",
-           codecs[0].dump());
-    EXPECT_STR_EQ(codecs[1]["name"].get<std::string>().c_str(), "jpeg");
-    const auto& jc = codecs[1]["configuration"];
-    EXPECT_EQ(int, jc["quality"].get<int>(), 90);
-    EXPECT_STR_EQ(jc["encoded_color_space"].get<std::string>().c_str(),
-                  "grayscale");
-    EXPECT(jc["subsampling"] == nlohmann::json::parse("[[1, 1]]"),
-           "Unexpected subsampling: ",
-           jc.dump());
+    const auto expected_codecs = nlohmann::json::parse(R"([
+      {"name": "cast_value", "configuration": {"data_type": "float32"}},
+      {"name": "scale_offset", "configuration": {"offset": 0.0}},
+      {"name": "cast_value", "configuration": {
+        "data_type": "uint8", "rounding": "nearest-even",
+        "out_of_range": "clamp"}},
+      {"name": "reshape", "configuration": {"shape": [[0, 1, 2, 3], [4]]}},
+      {"name": "jpeg", "configuration": {
+        "quality": 90, "encoded_color_space": "grayscale",
+        "subsampling": [[1, 1]]}}
+    ])");
+    auto codecs = sharding["codecs"];
+
+    // the scale is 255 / 4095 rounded to float32
+    const double scale = codecs[1]["configuration"]["scale"].get<double>();
+    EXPECT_EQ(float, scale, 255.0f / static_cast<float>(window_max));
+    codecs[1]["configuration"].erase("scale");
+    EXPECT(codecs == expected_codecs, "Unexpected codecs: ", codecs.dump());
 
     // decode the chunk at t = 0 and compare with the downsampled input
     const auto jpeg = read_single_chunk_shard(level / "c/0/0/0/0/0");

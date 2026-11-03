@@ -19,14 +19,34 @@ struct JpegParams
     ZarrDataType source_dtype{ ZarrDataType_uint8 };
 };
 
+struct JpegScaleOffset
+{
+    double offset;
+    double scale;
+};
+
 /**
- * @brief Map each sample of @p src linearly from [window_min, window_max] to
- * [0, 255], with rounding and clamping. uint8 data is copied unchanged.
+ * @brief The floating-point type in which the window is applied: float32
+ * where it represents every source value exactly, float64 otherwise.
+ */
+ZarrDataType
+jpeg_intermediate_type(ZarrDataType source);
+
+/**
+ * @brief The `scale_offset` parameters that map [window_min, window_max] to
+ * [0, 255], rounded to the intermediate type.
+ */
+JpegScaleOffset
+jpeg_scale_offset(const JpegParams& params);
+
+/**
+ * @brief Map each sample of @p src, of type @p params.source_dtype, to uint8
+ * as the codec chain from jpeg_inner_codecs() describes. uint8 data is copied
+ * unchanged.
+ * @throws std::runtime_error on a NaN or infinite sample.
  */
 std::vector<uint8_t>
-convert_to_uint8(std::span<const uint8_t> src,
-                 ZarrDataType dtype,
-                 const JpegParams& params);
+convert_to_uint8(std::span<const uint8_t> src, const JpegParams& params);
 
 /**
  * @brief Encode @p src, a C-order uint8 grayscale image of @p height rows and
@@ -42,10 +62,12 @@ encode_jpeg(std::span<const uint8_t> src,
             std::string& error);
 
 /**
- * @brief The inner codecs of a JPEG level: `reshape` (for 3 or more
- * dimensions) followed by `jpeg`, as in zarr-extensions PR #66 at fc04227.
+ * @brief The inner codecs of a JPEG level: for data other than uint8,
+ * `cast_value`, `scale_offset` and `cast_value` to uint8; then `reshape` (for
+ * 3 or more dimensions); then `jpeg`, as in zarr-extensions PR #66 at
+ * fc04227.
  * @param ndims The number of dimensions in the array metadata.
  */
 nlohmann::json
-jpeg_inner_codecs(size_t ndims, uint8_t quality);
+jpeg_inner_codecs(size_t ndims, const JpegParams& params);
 } // namespace zarr

@@ -341,8 +341,7 @@ zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& frame)
 
             const auto& jpeg = config_->jpeg_params;
             if (jpeg) {
-                downsampled_frame =
-                  convert_to_uint8(downsampled_frame, config_->dtype, *jpeg);
+                downsampled_frame = convert_to_uint8(downsampled_frame, *jpeg);
             }
 
             size_t n_bytes;
