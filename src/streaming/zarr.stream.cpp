@@ -429,7 +429,6 @@ make_array_config(const ZarrArraySettings* settings,
     if (const auto* jpeg = settings->jpeg_settings) {
         config->jpeg_params = zarr::JpegParams{
             .quality = jpeg->quality,
-            .first_level = jpeg->first_level,
             .window_min = jpeg->window_min,
             .window_max = jpeg->window_max,
             .source_dtype = settings->data_type,
@@ -518,11 +517,6 @@ validate_jpeg_settings(const ZarrArraySettings* settings, std::string& error)
         return false;
     }
 
-    if (jpeg->first_level < 1) {
-        error = "JPEG first level must be at least 1; level 0 stays lossless";
-        return false;
-    }
-
     if (jpeg->quality < 1 || jpeg->quality > 100) {
         error = "Invalid JPEG quality: " + std::to_string(jpeg->quality) +
                 ". Must be 1-100";
@@ -539,14 +533,24 @@ validate_jpeg_settings(const ZarrArraySettings* settings, std::string& error)
     const size_t ndims = settings->dimension_count;
     const auto* dims = settings->dimensions;
 
-    for (size_t i = ndims - 2; i < ndims; ++i) {
-        if (dims[i].chunk_size_px % 8 != 0) {
-            error = "JPEG needs the chunk size of dimension '" +
-                    std::string(dims[i].name) +
-                    "' to be a multiple of 8, but it is " +
-                    std::to_string(dims[i].chunk_size_px);
-            return false;
-        }
+    // the other chunk sizes need no check: they multiply the image height,
+    // which stays a multiple of 8, and each 8x8 block stays in one Y-X plane
+    const auto& y_dim = dims[ndims - 2];
+    if (y_dim.chunk_size_px % 8 != 0) {
+        error = "JPEG needs the chunk size of dimension '" +
+                std::string(y_dim.name) +
+                "' to be a multiple of 8, but it is " +
+                std::to_string(y_dim.chunk_size_px);
+        return false;
+    }
+
+    const auto& x_dim = dims[ndims - 1];
+    if (x_dim.chunk_size_px % 8 != 0) {
+        error = "JPEG needs the chunk size of dimension '" +
+                std::string(x_dim.name) +
+                "' to be a multiple of 8, but it is " +
+                std::to_string(x_dim.chunk_size_px);
+        return false;
     }
 
     const size_t width_idx = settings->storage_dimension_order

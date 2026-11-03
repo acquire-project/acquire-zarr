@@ -170,18 +170,14 @@ zarr::MultiscaleArray::create_arrays_()
         arrays_.resize(configs.size());
 
         const auto& jpeg = config_->jpeg_params;
-        if (jpeg && jpeg->first_level >= configs.size()) {
-            LOG_WARNING("JPEG first level ",
-                        jpeg->first_level,
-                        " exceeds the last pyramid level ",
-                        configs.size() - 1,
-                        "; no level is stored as JPEG");
+        if (jpeg && configs.size() < 2) {
+            LOG_WARNING("The pyramid has only level 0; no level is stored as "
+                        "JPEG");
         }
 
         for (const auto& [lod, config] : configs) {
-            const auto level_config = jpeg && lod >= jpeg->first_level
-                                        ? make_jpeg_level_config(*config, *jpeg)
-                                        : config;
+            const auto level_config =
+              jpeg && lod > 0 ? make_jpeg_level_config(*config, *jpeg) : config;
             arrays_[lod] = std::make_unique<Array>(
               level_config, thread_pool_, file_handle_pool_, s3_client_);
         }
@@ -344,7 +340,7 @@ zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& frame)
             auto& frame_id = array_frame_ids_[i];
 
             const auto& jpeg = config_->jpeg_params;
-            if (jpeg && i >= jpeg->first_level) {
+            if (jpeg) {
                 downsampled_frame =
                   convert_to_uint8(downsampled_frame, config_->dtype, *jpeg);
             }

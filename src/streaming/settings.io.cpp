@@ -551,10 +551,6 @@ load_array(const json& j,
         arr->jpeg_settings = js;
         js->quality =
           as_uint<uint8_t>(require(c, "quality", jctx), jctx + ".quality");
-        js->first_level =
-          c.contains("first_level")
-            ? as_uint<uint32_t>(c.at("first_level"), jctx + ".first_level")
-            : 1;
         js->window_min = c.contains("window_min")
                            ? as_double(c.at("window_min"), jctx + ".window_min")
                            : 0.0;
@@ -773,7 +769,6 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
         const auto& c = *a.jpeg_settings;
         j["jpeg"] = {
             { "quality", c.quality },
-            { "first_level", c.first_level },
             { "window_min", c.window_min },
             { "window_max", c.window_max },
         };

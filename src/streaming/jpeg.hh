@@ -14,7 +14,6 @@ namespace zarr {
 struct JpegParams
 {
     uint8_t quality{ 0 };
-    uint32_t first_level{ 0 };
     double window_min{ 0.0 };
     double window_max{ 0.0 };
     ZarrDataType source_dtype{ ZarrDataType_uint8 };

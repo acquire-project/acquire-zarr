@@ -33,7 +33,6 @@ sample(uint32_t t, uint32_t z, uint32_t y, uint32_t x)
 
 ZarrJpegSettings jpeg_settings = {
     .quality = 90,
-    .first_level = 1,
     .window_min = 0.0,
     .window_max = window_max,
 };
@@ -122,13 +121,6 @@ test_validation()
                                   ZarrDownsamplingMethod_None));
 
     ZarrJpegSettings bad = jpeg_settings;
-    bad.first_level = 0;
-    expect_rejected("first level 0",
-                    create_stream(ZarrDataType_uint16,
-                                  five_dims(1, chunk_z, chunk_y, chunk_x),
-                                  &bad));
-
-    bad = jpeg_settings;
     bad.quality = 0;
     expect_rejected("quality 0",
                     create_stream(ZarrDataType_uint16,
@@ -151,7 +143,7 @@ store_path: jpeg-config-test.zarr
 arrays:
   - data_type: uint16
     downsampling_method: mean
-    jpeg: {quality: 85, first_level: 2, window_min: 100, window_max: 4000}
+    jpeg: {quality: 85, window_min: 100, window_max: 4000}
     dimensions:
       - {name: z, type: space, array_size_px: 0, chunk_size_px: 8, shard_size_chunks: 1}
       - {name: y, type: space, array_size_px: 256, chunk_size_px: 64, shard_size_chunks: 1}
@@ -163,7 +155,6 @@ arrays:
     const auto* js = settings.arrays[0].jpeg_settings;
     CHECK(js);
     EXPECT_EQ(int, js->quality, 85);
-    EXPECT_EQ(uint32_t, js->first_level, 2);
     EXPECT_EQ(double, js->window_min, 100.0);
     EXPECT_EQ(double, js->window_max, 4000.0);
 
@@ -176,7 +167,6 @@ arrays:
 
     const auto& jpeg = dumped["arrays"][0]["jpeg"];
     EXPECT_EQ(int, jpeg["quality"].get<int>(), 85);
-    EXPECT_EQ(int, jpeg["first_level"].get<int>(), 2);
     EXPECT_EQ(double, jpeg["window_min"].get<double>(), 100.0);
     EXPECT_EQ(double, jpeg["window_max"].get<double>(), 4000.0);
 }
