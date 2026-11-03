@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - "prep-for-*"
+  pull_request:  # TEMPORARY: test cibuildwheel builds; revert before merge
+    branches:
+      - main
 
 env:
   # vcpkg 2026.07.29's portfiles use string(JSON ... STRING_ENCODE), which needs
@@ -15,6 +18,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request'  # TEMPORARY
     name: Build on ${{ matrix.platform }} with ${{ matrix.build_type }} configuration
     strategy:
       matrix:
@@ -114,10 +118,7 @@ jobs:
     name: Build Python ${{ matrix.python }} wheel on ${{ matrix.platform }}
     strategy:
       matrix:
-        platform:
-          - "windows-latest"
-          - "macos-latest" # arm
-          - "macos-15-intel" # x86_64
+        platform:  # TEMPORARY: cibuildwheel platforms only
           - "ubuntu-22.04"
           - "ubuntu-22.04-arm"
         python:
@@ -127,12 +128,6 @@ jobs:
           - "3.13"
           - "3.14"
         include:
-          - platform: "windows-latest"
-            arch: "x86_64"
-          - platform: "macos-latest"
-            arch: "aarch64"
-          - platform: "macos-15-intel"
-            arch: "x86_64"
           - platform: "ubuntu-22.04"
             arch: "x86_64"
           - platform: "ubuntu-22.04-arm"
