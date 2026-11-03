@@ -25,6 +25,7 @@ __all__ = [
     "DownsamplingMethod",
     "FieldOfView",
     "IntermediateGroups",
+    "JpegSettings",
     "LogLevel",
     "Plate",
     "S3Settings",
@@ -112,6 +113,9 @@ class ArraySettings:
         value last requested via `is_ngff`. Setting `is_ngff = True` without a
         downsampling method produces a single-level OME-NGFF multiscales group
         with no image pyramid.
+      jpeg: Store pyramid levels 1 and up as uint8 JPEG (zarr-extensions
+        PR #66). Level 0 keeps its data type and compression. Requires a
+        downsampling method. Experimental.
     """
 
     output_key: str
@@ -122,6 +126,7 @@ class ArraySettings:
     max_levels: int
     storage_dimension_order: List[str]
     is_ngff: bool
+    jpeg: Optional[JpegSettings]
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
@@ -168,6 +173,25 @@ class CompressionSettings:
     compressor: Compressor
     level: int
     shuffle: int
+
+    def __init__(self, **kwargs) -> None: ...
+    def __repr__(self) -> str: ...
+
+class JpegSettings:
+    """Settings to store the downsampled pyramid levels as JPEG.
+
+    Attributes:
+      quality: JPEG quality, 1-100. Default 95.
+      window_min: Value that maps to 0 in the uint8 levels. Ignored for uint8
+        data.
+      window_max: Value that maps to 255 in the uint8 levels. Ignored for
+        uint8 data. Values outside the window are clamped. The window is
+        required for every data type except uint8.
+    """
+
+    quality: int
+    window_min: float
+    window_max: float
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
