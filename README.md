@@ -433,8 +433,9 @@ The function takes three parameters:
   array, that array is targeted automatically. Required when the stream has
   multiple arrays.
 - **`metadata_key`**: An optional key under `attributes` to nest the metadata
-  under. If `NULL`/`None` or empty, metadata is written directly under
-  `attributes`.
+  under. If `NULL`/`None`, empty, or only slashes and whitespace, each key of
+  the metadata is written directly under `attributes`, so the metadata must be
+  a JSON object.
 - **`metadata`**: A JSON-formatted string containing the metadata to write.
 
 > [!NOTE]

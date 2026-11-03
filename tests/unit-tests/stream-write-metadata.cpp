@@ -204,6 +204,53 @@ test_nonexistent_array_key()
     ZarrStream_destroy(stream);
     return true;
 }
+
+bool
+test_non_object_without_metadata_key()
+{
+    auto* stream = create_stream();
+    if (!stream) {
+        LOG_ERROR("Failed to create stream.");
+        return false;
+    }
+
+    for (const char* metadata_key : { (const char*)nullptr, "", "/", "  " }) {
+        for (const char* metadata :
+             { "5", R"("s")", "true", "[1, 2]", "null" }) {
+            const auto status = ZarrStream_write_custom_metadata(
+              stream, nullptr, metadata_key, metadata);
+            EXPECT(status == ZarrStatusCode_InvalidArgument,
+                   "Expected '",
+                   metadata,
+                   "' with metadata key '",
+                   metadata_key ? metadata_key : "(NULL)",
+                   "' to be refused, got ",
+                   Zarr_get_status_message(status));
+        }
+    }
+
+    // a value that is not an object is fine under a metadata key
+    CHECK(ZarrStatusCode_Success ==
+          ZarrStream_write_custom_metadata(stream, nullptr, "baz", "5"));
+
+    ZarrStream_destroy(stream);
+
+    // a refused call wrote nothing; only 'baz' is there
+    const auto metadata_path = base_dir / "zarr.json";
+    CHECK(fs::is_regular_file(metadata_path));
+    nlohmann::json metadata;
+    {
+        std::ifstream metadata_file(metadata_path);
+        metadata_file >> metadata;
+    }
+    const auto& attributes = metadata["attributes"];
+    EXPECT(attributes.size() == 1 && attributes["baz"] == 5,
+           "Unexpected attributes: ",
+           attributes.dump());
+
+    CHECK(destroy_directory());
+    return true;
+}
 } // namespace
 
 int
@@ -222,6 +269,10 @@ main()
         // test that writing custom metadata with an array key that doesn't
         // exist returns the expected error code
         test_nonexistent_array_key();
+
+        // test that metadata that is not a JSON object is refused when there
+        // is no metadata key to put it under
+        test_non_object_without_metadata_key();
 
         // test various combinations of array key and metadata key
         // presence/absence

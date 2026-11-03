@@ -832,6 +832,29 @@ def test_write_custom_metadata(
     assert container.get("foo") == "bar"
 
 
+@pytest.mark.parametrize("metadata", ["5", '"s"', "true", "[1, 2]", "null"])
+@pytest.mark.parametrize("metadata_key", [None, "", "/", "  "])
+def test_write_custom_metadata_requires_object_without_key(
+    settings: StreamSettings,
+    store_path: Path,
+    metadata: str,
+    metadata_key: str | None,
+):
+    settings.store_path = str(store_path / "test.zarr")
+    stream = ZarrStream(settings)
+
+    with pytest.raises(RuntimeError, match="Invalid argument"):
+        stream.write_custom_metadata(metadata, metadata_key=metadata_key)
+
+    # under a metadata key, any JSON value is fine
+    assert stream.write_custom_metadata(metadata, metadata_key="value")
+    stream.close()
+
+    with open(Path(settings.store_path) / "zarr.json", "r") as fh:
+        attributes = json.load(fh)["attributes"]
+    assert attributes == {"value": json.loads(metadata)}
+
+
 def test_write_transposed_array(
     store_path: Path,
 ):
