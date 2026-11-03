@@ -48,9 +48,11 @@ decimate4(const T& a, const T& b, const T& c, const T& d)
 
 /**
  * The mean of N integers, truncated toward zero as (a + b + ...) / N is, but
- * without overflowing T. Types narrower than 64 bits sum in a 64-bit
- * accumulator. The 64-bit types sum quotients and remainders separately, then
- * move the result toward zero when the two have opposite signs.
+ * without overflowing T. 8- and 16-bit types sum in a 32-bit accumulator (N is
+ * at most 4, so the sum fits) and 32-bit types in a 64-bit one; the narrower
+ * accumulator lets the compiler use wider vector lanes. The 64-bit types sum
+ * quotients and remainders separately, then move the result toward zero when
+ * the two have opposite signs.
  */
 template<typename T, size_t N>
 T
@@ -59,8 +61,11 @@ integer_mean(const std::array<T, N>& values)
     static_assert(std::is_integral_v<T>);
 
     if constexpr (sizeof(T) < sizeof(int64_t)) {
-        using Wide =
-          std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+        static_assert(N <= 4);
+        using Wide = std::conditional_t<
+          sizeof(T) <= 2,
+          std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>,
+          std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>>;
         Wide sum = 0;
         for (const T value : values) {
             sum += value;
@@ -136,13 +141,6 @@ max4(const T& a, const T& b, const T& c, const T& d)
 
 template<typename T>
 T
-decimate2(const T& a, const T& b)
-{
-    return a;
-}
-
-template<typename T>
-T
 mean2(const T& a, const T& b)
 {
     if constexpr (std::is_integral_v<T>) {
@@ -166,6 +164,35 @@ max2(const T& a, const T& b)
     return a > b ? a : b;
 }
 
+/**
+ * Reduce each 2x2 block of @p src to one pixel of @p dst. An odd final row or
+ * column is paired with itself. @p reduce is a template parameter, not a
+ * function pointer, so it inlines and the inner loop can vectorize.
+ */
+template<typename T, typename Reduce4>
+void
+scale_rows(const T* src, T* dst, size_t width, size_t height, Reduce4 reduce)
+{
+    const size_t width_out = (width + 1) / 2;
+    const size_t full_pairs = width / 2;
+
+    for (size_t row = 0; row < height; row += 2) {
+        const T* top = src + row * width;
+        const T* bottom = row + 1 < height ? top + width : top;
+        T* out = dst + (row / 2) * width_out;
+
+        for (size_t i = 0; i < full_pairs; ++i) {
+            out[i] = reduce(
+              top[2 * i], top[2 * i + 1], bottom[2 * i], bottom[2 * i + 1]);
+        }
+        if (full_pairs < width_out) {
+            const size_t col = width - 1;
+            out[full_pairs] =
+              reduce(top[col], top[col], bottom[col], bottom[col]);
+        }
+    }
+}
+
 template<typename T>
 [[nodiscard]] ByteVector
 scale_image(ConstByteSpan src,
@@ -173,24 +200,6 @@ scale_image(ConstByteSpan src,
             size_t& height,
             ZarrDownsamplingMethod method)
 {
-    T (*scale_fun)(const T&, const T&, const T&, const T&) = nullptr;
-    switch (method) {
-        case ZarrDownsamplingMethod_Decimate:
-            scale_fun = decimate4<T>;
-            break;
-        case ZarrDownsamplingMethod_Mean:
-            scale_fun = mean4<T>;
-            break;
-        case ZarrDownsamplingMethod_Min:
-            scale_fun = min4<T>;
-            break;
-        case ZarrDownsamplingMethod_Max:
-            scale_fun = max4<T>;
-            break;
-        default:
-            throw std::runtime_error("Invalid downsampling method");
-    }
-
     const auto bytes_of_src = src.size();
     const auto bytes_of_frame = width * height * sizeof(T);
 
@@ -200,39 +209,59 @@ scale_image(ConstByteSpan src,
            " bytes, got ",
            bytes_of_src);
 
-    const int downscale = 2;
-    constexpr auto bytes_of_type = sizeof(T);
-    const uint32_t factor = 4;
+    const size_t width_out = (width + 1) / 2;
+    const size_t height_out = (height + 1) / 2;
 
-    const auto w_pad = width + (width % downscale);
-    const auto h_pad = height + (height % downscale);
-    const auto size_downscaled = w_pad * h_pad * bytes_of_type / factor;
-
-    ByteVector dst(size_downscaled, 0);
+    ByteVector dst(width_out * height_out * sizeof(T), 0);
     auto* dst_as_T = reinterpret_cast<T*>(dst.data());
-    auto* src_as_T = reinterpret_cast<const T*>(src.data());
+    const auto* src_as_T = reinterpret_cast<const T*>(src.data());
 
-    size_t dst_idx = 0;
-    for (auto row = 0; row < height; row += downscale) {
-        const bool pad_height = (row == height - 1 && height != h_pad);
-
-        for (auto col = 0; col < width; col += downscale) {
-            size_t src_idx = row * width + col;
-            const bool pad_width = (col == width - 1 && width != w_pad);
-
-            T here = src_as_T[src_idx];
-            T right = src_as_T[src_idx + !pad_width];
-            T down = src_as_T[src_idx + width * (!pad_height)];
-            T diag = src_as_T[src_idx + width * (!pad_height) + (!pad_width)];
-
-            dst_as_T[dst_idx++] = scale_fun(here, right, down, diag);
-        }
+    switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            scale_rows(
+              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
+                  return decimate4<T>(a, b, c, d);
+              });
+            break;
+        case ZarrDownsamplingMethod_Mean:
+            scale_rows(
+              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
+                  return mean4<T>(a, b, c, d);
+              });
+            break;
+        case ZarrDownsamplingMethod_Min:
+            scale_rows(
+              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
+                  return min4<T>(a, b, c, d);
+              });
+            break;
+        case ZarrDownsamplingMethod_Max:
+            scale_rows(
+              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
+                  return max4<T>(a, b, c, d);
+              });
+            break;
+        default:
+            throw std::runtime_error("Invalid downsampling method");
     }
 
-    width = w_pad / downscale;
-    height = h_pad / downscale;
+    width = width_out;
+    height = height_out;
 
     return dst;
+}
+
+/**
+ * Combine @p src into @p dst pixel by pixel. @p reduce is a template parameter
+ * so it inlines.
+ */
+template<typename T, typename Reduce2>
+void
+combine_frames(T* dst, const T* src, size_t num_pixels, Reduce2 reduce)
+{
+    for (size_t i = 0; i < num_pixels; ++i) {
+        dst[i] = reduce(dst[i], src[i]);
+    }
 }
 
 template<typename T>
@@ -241,24 +270,6 @@ average_two_frames(ByteVector& dst,
                    ConstByteSpan src,
                    ZarrDownsamplingMethod method)
 {
-    T (*average_fun)(const T&, const T&) = nullptr;
-    switch (method) {
-        case ZarrDownsamplingMethod_Decimate:
-            average_fun = decimate2<T>;
-            break;
-        case ZarrDownsamplingMethod_Mean:
-            average_fun = mean2<T>;
-            break;
-        case ZarrDownsamplingMethod_Min:
-            average_fun = min2<T>;
-            break;
-        case ZarrDownsamplingMethod_Max:
-            average_fun = max2<T>;
-            break;
-        default:
-            throw std::runtime_error("Invalid downsampling method");
-    }
-
     const auto bytes_of_dst = dst.size();
     const auto bytes_of_src = src.size();
     EXPECT(bytes_of_dst == bytes_of_src,
@@ -268,10 +279,28 @@ average_two_frames(ByteVector& dst,
 
     T* dst_as_T = reinterpret_cast<T*>(dst.data());
     const T* src_as_T = reinterpret_cast<const T*>(src.data());
-
     const auto num_pixels = bytes_of_src / sizeof(T);
-    for (auto i = 0; i < num_pixels; ++i) {
-        dst_as_T[i] = average_fun(dst_as_T[i], src_as_T[i]);
+
+    switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            break; // decimation keeps dst
+        case ZarrDownsamplingMethod_Mean:
+            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
+                return mean2<T>(a, b);
+            });
+            break;
+        case ZarrDownsamplingMethod_Min:
+            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
+                return min2<T>(a, b);
+            });
+            break;
+        case ZarrDownsamplingMethod_Max:
+            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
+                return max2<T>(a, b);
+            });
+            break;
+        default:
+            throw std::runtime_error("Invalid downsampling method");
     }
 }
 } // namespace
@@ -402,7 +431,7 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
             auto it = partial_scaled_frames_.find(level);
             if (it != partial_scaled_frames_.end()) {
                 // average2_fun_ writes to next_level_frame
-                // swap here so that decimate2 can take it->second
+                // swap here so that decimation keeps the earlier frame
                 next_level_frame.swap(it->second);
                 average2_fun_(next_level_frame, it->second, method_);
                 emplace_downsampled_frame_(level, next_level_frame);
