@@ -38,6 +38,7 @@ class MultiscaleArray : public ArrayBase
     size_t bytes_per_frame_;
 
     bool make_metadata_(nlohmann::json& metadata) override;
+    nlohmann::json library_ome_metadata_() const override;
     bool close_() override;
 
     /** @brief Create array writers. */

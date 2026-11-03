@@ -1169,8 +1169,10 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
     // held in memory, and written when the node is closed
     const bool merged =
       array ? array->write_custom_metadata(meta_key, metadata_json)
-            : zarr::merge_custom_metadata(
-                group->custom_metadata, meta_key, metadata_json);
+            : zarr::merge_custom_metadata(group->custom_metadata,
+                                          meta_key,
+                                          metadata_json,
+                                          group->library_ome);
     if (!merged) {
         LOG_ERROR("Error writing custom metadata for '", key, "'");
         return ZarrStatusCode_InvalidArgument;
@@ -1754,8 +1756,15 @@ ZarrStream_s::write_intermediate_metadata_()
                        relative_path + "'");
             return false;
         }
+
+        // plates and wells carry our `ome`; a generic group carries none. A
+        // kept group (above) carries none of ours either, so its own `ome`
+        // keys are the caller's and are not protected
+        nlohmann::json library_ome =
+          document["attributes"].value("ome", nlohmann::json(nullptr));
         groups_.emplace(relative_path,
-                        OutputGroup{ .document = std::move(document) });
+                        OutputGroup{ .document = std::move(document),
+                                     .library_ome = std::move(library_ome) });
     }
 
     return true;
@@ -1774,9 +1783,7 @@ ZarrStream_s::write_group_custom_metadata_()
         if (!attributes.is_object()) {
             attributes = nlohmann::json::object();
         }
-        for (const auto& [key, value] : group.custom_metadata) {
-            attributes[key] = value;
-        }
+        zarr::apply_custom_metadata(attributes, group.custom_metadata);
 
         if (!write_metadata_object_(group_sink_path_(relative_path),
                                     group.document.dump(4))) {

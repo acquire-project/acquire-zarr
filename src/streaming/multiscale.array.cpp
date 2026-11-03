@@ -54,6 +54,12 @@ zarr::MultiscaleArray::memory_usage() const noexcept
     return total;
 }
 
+nlohmann::json
+zarr::MultiscaleArray::library_ome_metadata_() const
+{
+    return arrays_.empty() ? nlohmann::json(nullptr) : get_ome_metadata_();
+}
+
 zarr::ArrayBase*
 zarr::MultiscaleArray::level(size_t level) const
 {
@@ -97,18 +103,15 @@ zarr::MultiscaleArray::make_metadata_(nlohmann::json& metadata)
 
     auto& attributes = meta_tmp["attributes"];
 
-    // write custom metadata, if any
-    {
-        std::unique_lock lock(metadata_mutex_);
-        if (!custom_metadata_.empty()) {
-            for (const auto& [key, value] : custom_metadata_) {
-                attributes[key] = value;
-            }
-        }
-    }
-
     if (!arrays_.empty()) {
         attributes["ome"] = get_ome_metadata_();
+    }
+
+    // write custom metadata, if any; custom `ome` keys merge with ours, and
+    // write_custom_metadata refused any that would replace one of ours
+    {
+        std::unique_lock lock(metadata_mutex_);
+        apply_custom_metadata(attributes, custom_metadata_);
     }
 
     metadata = std::move(meta_tmp);

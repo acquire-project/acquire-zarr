@@ -18,17 +18,36 @@ namespace zarr {
  * @brief Merge custom metadata into the custom attributes of a node.
  * @details With an empty @p key, each top-level key of @p metadata becomes an
  * attribute. Otherwise @p metadata is stored under @p key. Shared by arrays
- * and groups so that every node applies the same reserved-key rule.
+ * and groups so that every node applies the same rules for `ome`:
+ * - `ome` must be a JSON object, given with @p key `ome` or as a top-level key
+ *   of @p metadata. A @p key that begins with `ome/` is refused, because a key
+ *   is not a path.
+ * - `ome.multiscales` is refused on every node. The stream writes it.
+ * - A key that the stream writes under `ome` on this node (@p library_ome) is
+ *   refused, except `version` with the same value.
  * @param[in, out] attributes The node's custom attributes.
  * @param key The attribute key, or empty.
  * @param metadata The JSON value to merge.
- * @return True on success, false if the merge would write a reserved key.
+ * @param library_ome The object that the stream writes under `ome` on this
+ * node, or null if it writes none.
+ * @return True on success, false if a rule above refuses the metadata.
  */
 [[nodiscard]] bool
 merge_custom_metadata(
   std::unordered_map<std::string, nlohmann::json>& attributes,
   const std::string& key,
-  const nlohmann::json& metadata);
+  const nlohmann::json& metadata,
+  const nlohmann::json& library_ome);
+
+/**
+ * @brief Write a node's custom attributes into its `attributes` object.
+ * @details `ome` is merged key by key into the `ome` already in
+ * @p attributes; any other key replaces what is there.
+ */
+void
+apply_custom_metadata(
+  nlohmann::json& attributes,
+  const std::unordered_map<std::string, nlohmann::json>& custom_metadata);
 
 struct ArrayConfig
 {
@@ -150,6 +169,12 @@ class ArrayBase
 
     std::string node_path_() const;
     [[nodiscard]] virtual bool make_metadata_(nlohmann::json& metadata) = 0;
+
+    /**
+     * @brief The object that this node writes under `ome`, or null if it
+     * writes none.
+     */
+    [[nodiscard]] virtual nlohmann::json library_ome_metadata_() const;
     [[nodiscard]] bool make_metadata_sink_();
     [[nodiscard]] bool write_metadata_();
 
