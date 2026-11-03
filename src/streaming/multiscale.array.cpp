@@ -4,24 +4,15 @@
 
 namespace {
 /**
- * @brief A copy of @p config for a level stored as JPEG: uint8 samples, no
- * blosc or zstd. The downsampler keeps the native-type configuration, so the
- * next level is still made from native-type data.
+ * @brief A copy of @p config for a level stored as JPEG instead of blosc or
+ * zstd. The chunk buffers keep the native type; each chunk job converts its
+ * chunk to uint8 and encodes it, so the conversion runs on the thread pool.
  */
 std::shared_ptr<zarr::ArrayConfig>
 make_jpeg_level_config(const zarr::ArrayConfig& config,
                        const zarr::JpegParams& params)
 {
-    const auto& dims = *config.dimensions;
-    std::vector<ZarrDimension> level_dims;
-    for (size_t i = dims.is_2d() ? 1 : 0; i < dims.ndims(); ++i) {
-        level_dims.push_back(dims.at(i));
-    }
-
     auto level_config = std::make_shared<zarr::ArrayConfig>(config);
-    level_config->dimensions = std::make_shared<ArrayDimensions>(
-      std::move(level_dims), ZarrDataType_uint8);
-    level_config->dtype = ZarrDataType_uint8;
     level_config->compression_params = std::nullopt;
     level_config->jpeg_params = params;
     return level_config;
@@ -338,11 +329,6 @@ zarr::MultiscaleArray::write_multiscale_frames_(std::vector<uint8_t>& frame)
         if (std::vector<uint8_t> downsampled_frame;
             downsampler_->take_frame(i, downsampled_frame)) {
             auto& frame_id = array_frame_ids_[i];
-
-            const auto& jpeg = config_->jpeg_params;
-            if (jpeg) {
-                downsampled_frame = convert_to_uint8(downsampled_frame, *jpeg);
-            }
 
             size_t n_bytes;
             if (const auto result = arrays_[i]->write_frame(

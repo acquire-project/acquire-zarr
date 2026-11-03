@@ -327,11 +327,7 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
     meta_tmp["zarr_format"] = 3;
     meta_tmp["node_type"] = "array";
     meta_tmp["storage_transformers"] = json::array();
-    // a JPEG level stores uint8 but declares the data type of level 0; its
-    // codec chain converts between the two
-    meta_tmp["data_type"] = sample_type_to_dtype(
-      config_->jpeg_params ? config_->jpeg_params->source_dtype
-                           : config_->dtype);
+    meta_tmp["data_type"] = sample_type_to_dtype(config_->dtype);
     meta_tmp["storage_transformers"] = json::array();
 
     // Skip phantom dimension (index 0) for 2D arrays in dimension names
@@ -715,12 +711,12 @@ zarr::Array::encode_jpeg_chunk_(const JpegParams& params,
                                 std::vector<uint8_t>& data,
                                 std::string& error) const
 {
-    const auto& dims = config_->dimensions;
-    const size_t width = dims->width_dim().chunk_size_px;
-    const size_t height = width > 0 ? data.size() / width : 0;
+    const auto samples = convert_to_uint8(data, params);
+    const size_t width = config_->dimensions->width_dim().chunk_size_px;
+    const size_t height = width > 0 ? samples.size() / width : 0;
 
     std::vector<uint8_t> encoded;
-    if (!encode_jpeg(data, width, height, params.quality, encoded, error)) {
+    if (!encode_jpeg(samples, width, height, params.quality, encoded, error)) {
         return false;
     }
 

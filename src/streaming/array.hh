@@ -81,10 +81,11 @@ class Array : public ArrayBase
                                                 uint32_t n_bands);
 
     /**
-     * @brief Replace @p data, one uint8 inner chunk in C order, with its JPEG
-     * encoding. The storage-order last dimension is the image width; the
-     * other dimensions are merged into the height, as the `reshape` codec in
-     * the metadata describes.
+     * @brief Replace @p data, one inner chunk in C order, with its JPEG
+     * encoding: convert to uint8 as the codec chain describes, then encode.
+     * The storage-order last dimension is the image width; the other
+     * dimensions are merged into the height, as the `reshape` codec describes.
+     * @throws std::runtime_error on a NaN or infinite sample.
      */
     [[nodiscard]] bool encode_jpeg_chunk_(const JpegParams& params,
                                           std::vector<uint8_t>& data,
