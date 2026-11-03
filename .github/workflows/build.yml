@@ -223,7 +223,7 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_BEFORE_BUILD: >-
-            yum install -y ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd &&
+            yum install -y zip unzip ninja-build gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ perl-IPC-Cmd perl-Time-Piece &&
             source /opt/rh/gcc-toolset-11/enable &&
             git clone https://github.com/microsoft/vcpkg.git -b 2026.07.29 --depth 1 &&
             cd vcpkg &&
