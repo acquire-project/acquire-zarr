@@ -430,17 +430,18 @@ std::unique_ptr<zarr::ArrayBase>
 make_array(std::shared_ptr<zarr::ArrayConfig> config,
            std::shared_ptr<zarr::ThreadPool> thread_pool,
            std::shared_ptr<zarr::FileHandlePool> file_handle_pool,
-           std::shared_ptr<zarr::S3Client> s3_client)
+           std::shared_ptr<zarr::S3Client> s3_client,
+           std::shared_ptr<ByteCounter> bytes_stored)
 {
     const auto ngff = config->downsampling_method || config->is_ngff;
 
     std::unique_ptr<zarr::ArrayBase> array;
     if (ngff) {
         array = std::make_unique<zarr::MultiscaleArray>(
-          config, thread_pool, file_handle_pool, s3_client);
+          config, thread_pool, file_handle_pool, s3_client, bytes_stored);
     } else {
         array = std::make_unique<zarr::Array>(
-          config, thread_pool, file_handle_pool, s3_client);
+          config, thread_pool, file_handle_pool, s3_client, bytes_stored);
     }
 
     return array;
@@ -1174,6 +1175,12 @@ ZarrStream_s::get_memory_usage() const noexcept
     return usage;
 }
 
+uint64_t
+ZarrStream_s::bytes_stored() const noexcept
+{
+    return bytes_stored_->load(std::memory_order_relaxed);
+}
+
 bool
 ZarrStream_s::is_s3_acquisition_() const
 {
@@ -1214,10 +1221,15 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
     }
 
     if (settings->s3_settings != nullptr) {
+        if (zarr::is_discard_path(zarr::trim(store_path))) {
+            error_ = "A discard:// store path cannot be used with S3 settings";
+            return false;
+        }
         if (!validate_s3_settings(settings->s3_settings, error_)) {
             return false;
         }
-    } else if (!validate_filesystem_store_path(store_path, error_)) {
+    } else if (!zarr::is_discard_path(zarr::trim(store_path)) &&
+               !validate_filesystem_store_path(store_path, error_)) {
         return false;
     }
 
@@ -1378,8 +1390,8 @@ ZarrStream_s::configure_array_(const ZarrArraySettings* settings,
                                                 0,
                                                 0);
     try {
-        output->array =
-          make_array(config, thread_pool_, file_handle_pool_, s3_client_);
+        output->array = make_array(
+          config, thread_pool_, file_handle_pool_, s3_client_, bytes_stored_);
     } catch (const std::exception& exc) {
         set_error_(exc.what());
     }
@@ -1594,6 +1606,10 @@ ZarrStream_s::create_store_(bool overwrite)
             return false;
         }
 
+        if (zarr::is_discard_path(store_path_)) {
+            return true;
+        }
+
         if (!overwrite) {
             if (fs::is_directory(store_path_)) {
                 return true;
@@ -1746,7 +1762,8 @@ ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
         }
     } else {
         std::error_code ec;
-        const bool exists = fs::exists(sink_path, ec);
+        const bool exists =
+          !zarr::is_discard_path(sink_path) && fs::exists(sink_path, ec);
         if (ec) {
             set_error_("Failed to check for group metadata at '" + sink_path +
                        "': " + ec.message());

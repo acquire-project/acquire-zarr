@@ -13,7 +13,8 @@ class MultiscaleArray : public ArrayBase
     MultiscaleArray(std::shared_ptr<ArrayConfig> config,
                     std::shared_ptr<ThreadPool> thread_pool,
                     std::shared_ptr<FileHandlePool> file_handle_pool,
-                    std::shared_ptr<S3Client> s3_client);
+                    std::shared_ptr<S3Client> s3_client,
+                    std::shared_ptr<ByteCounter> bytes_stored = nullptr);
 
     size_t memory_usage() const noexcept override;
 

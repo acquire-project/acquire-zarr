@@ -37,6 +37,8 @@ add_library(${tgt}
         sink.cpp
         file.sink.hh
         file.sink.cpp
+        discard.sink.hh
+        discard.sink.cpp
         ${PLATFORM_CPP}
         s3.sink.hh
         s3.sink.cpp

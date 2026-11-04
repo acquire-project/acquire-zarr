@@ -8,11 +8,13 @@
 zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
                            std::shared_ptr<ThreadPool> thread_pool,
                            std::shared_ptr<FileHandlePool> file_handle_pool,
-                           std::shared_ptr<S3Client> s3_client)
+                           std::shared_ptr<S3Client> s3_client,
+                           std::shared_ptr<ByteCounter> bytes_stored)
   : config_(config)
   , thread_pool_(thread_pool)
   , s3_client_(s3_client)
   , file_handle_pool_(file_handle_pool)
+  , bytes_stored_(std::move(bytes_stored))
 {
     CHECK(config_);      // required
     CHECK(thread_pool_); // required

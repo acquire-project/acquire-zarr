@@ -649,9 +649,21 @@ extern "C"
 
     ZarrStatusCode ZarrStream_close(struct ZarrStream_s* stream)
     {
+        return ZarrStream_close_and_get_bytes_written(stream, nullptr);
+    }
+
+    ZarrStatusCode ZarrStream_close_and_get_bytes_written(
+      struct ZarrStream_s* stream,
+      uint64_t* bytes_written)
+    {
+        if (bytes_written != nullptr) {
+            *bytes_written = 0;
+        }
         if (stream == nullptr) {
             return ZarrStatusCode_Success;
         }
+
+        const auto counter = stream->byte_counter();
 
         // an exception must not cross the C boundary, and the stream must be
         // freed either way
@@ -664,6 +676,9 @@ extern "C"
             LOG_ERROR("Unknown error finalizing Zarr stream");
         }
         delete stream;
+        if (bytes_written != nullptr) {
+            *bytes_written = counter->load(std::memory_order_relaxed);
+        }
 
         return ok ? ZarrStatusCode_Success : ZarrStatusCode_IOError;
     }
@@ -734,6 +749,16 @@ extern "C"
             return ZarrStatusCode_InternalError;
         }
 
+        return ZarrStatusCode_Success;
+    }
+
+    ZarrStatusCode ZarrStream_get_bytes_written(const ZarrStream* stream,
+                                                uint64_t* bytes_written)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(bytes_written, "Null pointer: bytes_written");
+
+        *bytes_written = stream->bytes_stored();
         return ZarrStatusCode_Success;
     }
 }

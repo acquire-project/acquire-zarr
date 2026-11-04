@@ -23,7 +23,11 @@ extern "C"
     typedef struct ZarrStreamSettings_s
     {
         const char* store_path; /**< Path to the store. Filesystem path or S3
-                                   key prefix. */
+                                   key prefix. A path that starts with
+                                   "discard://" writes nothing: the stream
+                                   compresses and serializes every chunk and
+                                   discards the bytes. Use it to benchmark
+                                   the library without storage. */
         ZarrS3Settings* s3_settings; /**< Optional S3 settings for the store. */
         ZarrVersion version;         /**< The version of the Zarr format to use.
                                         Reserved for Zarr v4. */
@@ -343,6 +347,23 @@ extern "C"
     ZarrStatusCode ZarrStream_close(ZarrStream* stream);
 
     /**
+     * @brief Close a Zarr stream as ZarrStream_close does, and report the
+     * total number of bytes that it gave to storage.
+     * @details The count is final only after close, because close writes the
+     * last shards and their indexes. See ZarrStream_get_bytes_written for what
+     * the count includes. The stream is destroyed and the pointer is invalid
+     * after this call returns, regardless of the status.
+     * @param stream The Zarr stream struct to close.
+     * @param[out] bytes_written The total bytes given to storage. Set also when
+     * the close fails; then it counts what the stream gave to storage before
+     * it stopped. May be NULL.
+     * @return The same status as ZarrStream_close.
+     */
+    ZarrStatusCode ZarrStream_close_and_get_bytes_written(
+      ZarrStream* stream,
+      uint64_t* bytes_written);
+
+    /**
      * @brief Destroy a Zarr stream.
      * @details This function waits for all pending writes to complete and frees
      * the memory allocated for the Zarr stream. Any failure during finalization
@@ -423,6 +444,25 @@ extern "C"
      */
     ZarrStatusCode ZarrStream_get_current_memory_usage(const ZarrStream* stream,
                                                        size_t* usage);
+
+    /**
+     * @brief Get the number of bytes that the stream has given to storage so
+     * far.
+     * @details The count is the compressed chunk data and the shard indexes,
+     * for every array and every pyramid level. It does not include metadata
+     * documents, or chunks that are all zero, which are not stored. A sink
+     * that buffers (S3) counts a write when it accepts it, not when it uploads
+     * it. The count is the same for every store, including a "discard://"
+     * store. Input bytes divided by this count is the storage ratio of the
+     * whole stream; with downsampling it is lower than the compression ratio
+     * of level 0. The count grows during the stream; use
+     * ZarrStream_close_and_get_bytes_written for the final total.
+     * @param[in] stream The Zarr stream struct.
+     * @param[out] bytes_written The number of bytes given to storage so far.
+     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     */
+    ZarrStatusCode ZarrStream_get_bytes_written(const ZarrStream* stream,
+                                                uint64_t* bytes_written);
 
 #ifdef __cplusplus
 }

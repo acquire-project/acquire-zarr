@@ -491,6 +491,9 @@ class StreamSettings:
         arrays: List of ArraySettings defining the structure and properties of each array in the dataset.
         store_path: Path to the store. Can be a filesystem path or S3 key prefix.
             For S3, this becomes the key prefix within the specified bucket.
+            A path that starts with ``discard://`` writes nothing: the stream
+            compresses and serializes every chunk and discards the bytes. Use
+            it to benchmark the library without storage.
         s3: Optional S3 settings for cloud storage. If None, writes to local filesystem.
         max_threads: Maximum number of threads for parallel processing. Defaults to 0,
             meaning: use the ZARR_MAX_THREADS environment variable if set, otherwise

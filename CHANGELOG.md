@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
   anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
   always written (#186, #268)
+- A store path that starts with `discard://` gives a store that writes nothing. The stream still tiles, compresses,
+  downsamples and serializes every chunk, shard index and metadata document, and it does not touch the filesystem.
+  Use it to measure the library's CPU and memory cost apart from storage. It cannot be combined with S3 settings
+- `ZarrStream_get_bytes_written` and `ZarrStream_close_and_get_bytes_written` (C) report the bytes of chunk data and
+  shard indexes given to storage, for every array and pyramid level. Metadata and all-zero chunks, which are not
+  stored, are excluded. The count is the same for every store, including `discard://`, so input bytes divided by it is
+  the storage ratio of the stream without a read-back. The total is final only at close
 
 ### Changed
 

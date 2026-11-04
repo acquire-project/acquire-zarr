@@ -61,6 +61,23 @@ struct ZarrStream_s
      */
     size_t get_memory_usage() const noexcept;
 
+    /**
+     * @brief Bytes given to the shard sinks so far: compressed chunk data and
+     * shard indexes, for every array and every pyramid level. Metadata is not
+     * counted, because it is rewritten at each shard rollover.
+     */
+    uint64_t bytes_stored() const noexcept;
+
+    /**
+     * @brief The counter behind bytes_stored().
+     * @details Outlives the stream, so a caller can read it after `delete`,
+     * when the destructors of unfinalized shards have written their indexes.
+     */
+    std::shared_ptr<const ByteCounter> byte_counter() const noexcept
+    {
+        return bytes_stored_;
+    }
+
   private:
     struct OutputArray
     {
@@ -110,6 +127,8 @@ struct ZarrStream_s
     std::shared_ptr<zarr::ThreadPool> thread_pool_;
     std::shared_ptr<zarr::S3Client> s3_client_;
     std::shared_ptr<zarr::FileHandlePool> file_handle_pool_;
+    std::shared_ptr<ByteCounter> bytes_stored_{ std::make_shared<ByteCounter>(
+      0) };
 
     bool is_s3_acquisition_() const;
 
