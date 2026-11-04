@@ -12,7 +12,8 @@ constexpr uint64_t kUnwrittenSentinel = std::numeric_limits<uint64_t>::max();
 
 zarr::Shard::Shard(const ShardConfig& config,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
-                   std::shared_ptr<S3Client> s3_client)
+                   std::shared_ptr<S3Client> s3_client,
+                   std::shared_ptr<ByteCounter> bytes_stored)
   : offsets_(config.chunks_per_shard, kUnwrittenSentinel)
   , extents_(config.chunks_per_shard, kUnwrittenSentinel)
   , table_flushed_(false)
@@ -20,6 +21,7 @@ zarr::Shard::Shard(const ShardConfig& config,
   , file_offset_(0)
   , file_handle_pool_(std::move(file_handle_pool))
   , s3_client_(std::move(s3_client))
+  , bytes_stored_(std::move(bytes_stored))
   , path_(config.path)
   , bucket_name_(config.bucket_name)
 {
@@ -92,6 +94,7 @@ zarr::Shard::write_chunk(uint32_t internal_index,
         LOG_ERROR("Failed to write chunk");
         return false;
     }
+    count_stored_(buffer.size());
 
     CHECK(unwritten_chunks_ > 0);
 
@@ -153,6 +156,14 @@ zarr::Shard::make_sink_()
     }
 }
 
+void
+zarr::Shard::count_stored_(size_t nbytes) noexcept
+{
+    if (bytes_stored_) {
+        bytes_stored_->fetch_add(nbytes, std::memory_order_relaxed);
+    }
+}
+
 bool
 zarr::Shard::write_table_()
 {
@@ -172,7 +183,11 @@ zarr::Shard::write_table_()
     auto* checksum = reinterpret_cast<uint32_t*>(table_ptr + table_size_bytes);
     *checksum = crc32c::Crc32c(table_ptr, table_size_bytes);
 
-    return table_flushed_ = sink_->write(file_offset_, table);
+    table_flushed_ = sink_->write(file_offset_, table);
+    if (table_flushed_) {
+        count_stored_(table.size());
+    }
+    return table_flushed_;
 }
 
 bool

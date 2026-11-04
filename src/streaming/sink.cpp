@@ -1,4 +1,5 @@
 #include "sink.hh"
+#include "discard.sink.hh"
 #include "file.sink.hh"
 #include "s3.sink.hh"
 #include "macros.hh"
@@ -27,12 +28,20 @@ zarr::finalize_sink(std::unique_ptr<zarr::Sink>&& sink)
     return true;
 }
 
+bool
+zarr::is_discard_path(std::string_view path) noexcept
+{
+    return path.starts_with("discard://");
+}
+
 std::vector<std::string>
 zarr::construct_data_paths(std::string_view base_path,
                            const ArrayDimensions& dimensions,
                            const DimensionPartsFun& parts_along_dimension,
                            bool make_directories)
 {
+    make_directories = make_directories && !is_discard_path(base_path);
+
     std::queue<std::string> paths_queue;
     paths_queue.emplace(base_path);
 
@@ -87,6 +96,10 @@ zarr::make_file_sink(std::string_view file_path,
                      std::shared_ptr<FileHandlePool> file_handle_pool,
                      bool truncate_to_fit)
 {
+    if (is_discard_path(file_path)) {
+        return std::make_unique<DiscardSink>(truncate_to_fit);
+    }
+
     if (file_path.starts_with("file://")) {
         file_path = file_path.substr(7);
     }

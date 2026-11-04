@@ -17,7 +17,8 @@ class Array : public ArrayBase
     Array(std::shared_ptr<ArrayConfig> config,
           std::shared_ptr<ThreadPool> thread_pool,
           std::shared_ptr<FileHandlePool> file_handle_pool,
-          std::shared_ptr<S3Client> s3_client);
+          std::shared_ptr<S3Client> s3_client,
+          std::shared_ptr<ByteCounter> bytes_stored = nullptr);
 
     // Waits for outstanding writes, which hold `this`, before members go away.
     ~Array() override;

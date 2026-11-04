@@ -74,7 +74,8 @@ class ArrayBase
     ArrayBase(std::shared_ptr<ArrayConfig> config,
               std::shared_ptr<ThreadPool> thread_pool,
               std::shared_ptr<FileHandlePool> file_handle_pool,
-              std::shared_ptr<S3Client> s3_client);
+              std::shared_ptr<S3Client> s3_client,
+              std::shared_ptr<ByteCounter> bytes_stored = nullptr);
     virtual ~ArrayBase() = default;
 
     /**
@@ -124,6 +125,7 @@ class ArrayBase
     std::shared_ptr<ThreadPool> thread_pool_;
     std::shared_ptr<S3Client> s3_client_;
     std::shared_ptr<FileHandlePool> file_handle_pool_;
+    std::shared_ptr<ByteCounter> bytes_stored_; // may be null
 
     // JSON metadata
     const std::string metadata_path_{ "zarr.json" };

@@ -88,8 +88,13 @@ max_compressed_size(size_t uncompressed_size,
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
                    std::shared_ptr<FileHandlePool> file_handle_pool,
-                   std::shared_ptr<S3Client> s3_client)
-  : ArrayBase(config, thread_pool, file_handle_pool, s3_client)
+                   std::shared_ptr<S3Client> s3_client,
+                   std::shared_ptr<ByteCounter> bytes_stored)
+  : ArrayBase(config,
+              thread_pool,
+              file_handle_pool,
+              s3_client,
+              std::move(bytes_stored))
   , chunk_mutexes_(config->dimensions->number_of_chunks_in_memory())
   , max_bytes_(config->dimensions->max_byte_count())
   , bytes_per_frame_(bytes_of_frame(*config->dimensions, config->dtype))
@@ -488,7 +493,7 @@ zarr::Array::make_shards_()
             };
 
             shards_[shard_idx] = std::make_shared<Shard>(
-              std::move(cfg), file_handle_pool_, s3_client_);
+              std::move(cfg), file_handle_pool_, s3_client_, bytes_stored_);
         }
     }
 }

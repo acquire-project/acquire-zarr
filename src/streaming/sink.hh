@@ -52,6 +52,15 @@ bool
 finalize_sink(std::unique_ptr<Sink>&& sink);
 
 /**
+ * @brief Test whether @p path selects the discard store.
+ * @details A store path that starts with `discard://` writes nothing. Every
+ * sink under it is a DiscardSink, and the stream does not touch the
+ * filesystem.
+ */
+bool
+is_discard_path(std::string_view path) noexcept;
+
+/**
  * @brief Construct paths for data sinks, given the dimensions and a function
  * to determine the number of parts along a dimension.
  * @param base_path The base path for the dataset.
@@ -72,7 +81,7 @@ construct_data_paths(std::string_view base_path,
  * @param file_path The path to the file.
  * @param file_handle_pool Pointer to a pool of file handles.
  * @return Pointer to the sink created, or nullptr if the file cannot be
- * opened.
+ * opened. A DiscardSink if @p file_path satisfies is_discard_path().
  * @throws std::runtime_error if the file path is not valid.
  */
 std::unique_ptr<Sink>

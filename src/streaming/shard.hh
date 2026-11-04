@@ -32,7 +32,8 @@ class Shard
   public:
     Shard(const ShardConfig& config,
           std::shared_ptr<FileHandlePool> file_handle_pool,
-          std::shared_ptr<S3Client> s3_client);
+          std::shared_ptr<S3Client> s3_client,
+          std::shared_ptr<ByteCounter> bytes_stored = nullptr);
     ~Shard();
 
     [[nodiscard]] bool write_chunk(uint32_t internal_index,
@@ -76,12 +77,14 @@ class Shard
 
     std::shared_ptr<FileHandlePool> file_handle_pool_;
     std::shared_ptr<S3Client> s3_client_;
+    std::shared_ptr<ByteCounter> bytes_stored_;
 
     std::string path_;
     std::optional<std::string> bucket_name_;
     std::unique_ptr<Sink> sink_;
 
     void make_sink_();
+    void count_stored_(size_t nbytes) noexcept;
     [[nodiscard]] bool write_table_();
 
     // Caller must hold mutex_.

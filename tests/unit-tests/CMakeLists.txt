@@ -27,6 +27,7 @@ set(tests
         file-sink-close-on-destroy
         file-sink-reopen-after-close
         file-sink-reopen-retry-recovers
+        discard-sink-write
         shard-finalize
         s3-sink-write
         s3-sink-write-multipart
