@@ -189,10 +189,11 @@ extern "C"
     /**
      * @brief Settings to store the downsampled levels of an image pyramid as
      * JPEG.
-     * @detail Levels 1 and up are stored as uint8 arrays with
-     * the `reshape` and `jpeg` codecs (zarr-extensions PR #66). Level 0 keeps
-     * its data type and compression. Data of another type is mapped linearly
-     * from [window_min, window_max] to [0, 255], with clamping.
+     * @detail Levels 1 and up are stored with the zarr-extensions `jpeg`
+     * codec, behind `reshape`. Each level keeps the data type of level 0;
+     * data of another type than uint8 is mapped linearly from
+     * [window_min, window_max] to [0, 255], with clamping, by `cast_value` and
+     * `scale_offset` codecs in the chain. Level 0 keeps its compression.
      */
     typedef struct
     {

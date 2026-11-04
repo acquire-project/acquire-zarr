@@ -509,7 +509,7 @@ class PyZarrJpegSettings
     }
 
   private:
-    uint8_t quality_{ 95 }; // the default that zarr-extensions PR #66 suggests
+    uint8_t quality_{ 95 }; // the zarr-extensions jpeg spec suggests 95
     double window_min_{ 0.0 };
     double window_max_{ 0.0 };
 };

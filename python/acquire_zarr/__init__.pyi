@@ -113,9 +113,10 @@ class ArraySettings:
         value last requested via `is_ngff`. Setting `is_ngff = True` without a
         downsampling method produces a single-level OME-NGFF multiscales group
         with no image pyramid.
-      jpeg: Store pyramid levels 1 and up as uint8 JPEG (zarr-extensions
-        PR #66). Level 0 keeps its data type and compression. Requires a
-        downsampling method. Experimental.
+      jpeg: Store pyramid levels 1 and up with the zarr-extensions `jpeg`
+        codec. Each level keeps the data type of level 0; the codec chain maps
+        it to uint8 with the window in JpegSettings. Level 0 keeps its
+        compression. Requires a downsampling method. Experimental.
     """
 
     output_key: str
