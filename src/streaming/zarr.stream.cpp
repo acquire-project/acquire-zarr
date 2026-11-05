@@ -953,6 +953,76 @@ dimension_type_to_string(ZarrDimensionType type)
 }
 } // namespace
 
+size_t
+zarr::estimate_array_chunk_memory(const ZarrArraySettings* settings,
+                                  uint32_t n_threads)
+{
+    // Shards and names do not change the chunk memory, so an estimate made
+    // before they are set stays possible: work on a copy with a shard size of
+    // at least 1 and no null names. A zero chunk size has no layout.
+    std::vector<ZarrDimensionProperties> dim_copy(
+      settings->dimensions, settings->dimensions + settings->dimension_count);
+    for (auto& dim : dim_copy) {
+        if (dim.chunk_size_px == 0) {
+            throw std::invalid_argument("Chunk size must be nonzero");
+        }
+        dim.shard_size_chunks = std::max(dim.shard_size_chunks, 1u);
+        if (dim.name == nullptr) {
+            dim.name = "";
+        }
+    }
+    ZarrArraySettings copy = *settings;
+    copy.dimensions = dim_copy.data();
+    settings = &copy;
+
+    const auto compression =
+      make_compression_params(settings->compression_settings);
+    const auto dims = make_array_dimensions(settings);
+
+    std::optional<ZarrDownsamplingMethod> method;
+    if (settings->downsampling_method > ZarrDownsamplingMethod_None) {
+        method = settings->downsampling_method;
+    }
+
+    // the downsampler needs the full-resolution node key, ".../0"
+    auto config = std::make_shared<ArrayConfig>("",
+                                                "estimate/0",
+                                                std::nullopt,
+                                                compression,
+                                                dims,
+                                                settings->data_type,
+                                                method,
+                                                0,
+                                                method.has_value(),
+                                                settings->max_levels);
+
+    std::vector<std::shared_ptr<ArrayConfig>> levels{ config };
+    if (method) {
+        const Downsampler downsampler(config, *method);
+        for (const auto& [lod, level] : downsampler.writer_configurations()) {
+            if (lod > 0) {
+                levels.push_back(level);
+            }
+        }
+    }
+
+    size_t usage = 0;
+    for (const auto& level : levels) {
+        usage += chunk_layer_bytes(*level->dimensions) +
+                 chunk_inflight_budget(
+                   *level->dimensions, n_threads, level->level_of_detail);
+    }
+
+    // the workers are shared by the levels, and chunks keep their size
+    if (compression) {
+        const size_t workers = std::max<uint32_t>(n_threads, 2) - 1;
+        usage +=
+          workers * max_compressed_size(dims->bytes_per_chunk(), compression);
+    }
+
+    return usage;
+}
+
 /* ZarrStream_s implementation */
 
 ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)

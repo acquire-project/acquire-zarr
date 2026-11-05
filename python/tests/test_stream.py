@@ -461,6 +461,7 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     s = StreamSettings()
     s.store_path = str(store_path / "intermediate.zarr")
     s.overwrite = True
+    s.max_threads = 2  # one worker on any host
     s.arrays = [arr]
 
     itemsize = np.dtype(dtype).itemsize
@@ -471,8 +472,11 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     # frame queue: 256 MiB clamped to [16, 512] frames
     frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
 
-    # the maximum reflects a single z band, not the whole volume
-    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    # the maximum reflects z bands, not the whole volume: one band in the chunk
+    # slots, and in compression the larger of two bands and four chunks for
+    # the one worker (a band is one chunk here)
+    inflight_bytes = max(2 * band_bytes, 4 * 1 * band_bytes)
+    expected_max = frame_queue_bytes + band_bytes + inflight_bytes + frame_bytes
     assert s.get_maximum_memory_usage() == expected_max
 
     stream = ZarrStream(s)
@@ -496,9 +500,16 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
 
     stream.close()
 
-    # band-by-band flushing keeps live memory well under the full inner volume
-    assert peak < int(full_inner_volume * 0.75), (
-        f"peak memory {peak} not bounded below the full inner volume "
+    # the stream stays within its estimate, and band-by-band flushing keeps the
+    # chunk memory in that estimate well under the full inner volume. The frame
+    # queue does not depend on the volume (here it alone is half of it), so it
+    # is left out of the second check.
+    assert peak <= expected_max, (
+        f"peak memory {peak} above the estimate {expected_max}"
+    )
+    chunk_bound = expected_max - frame_queue_bytes
+    assert chunk_bound < int(full_inner_volume * 0.75), (
+        f"chunk memory bound {chunk_bound} not below the full inner volume "
         f"{full_inner_volume}"
     )
 

@@ -9,6 +9,36 @@
 #include "thread.pool.hh"
 
 namespace zarr {
+/**
+ * @brief The largest buffer that compressing @p uncompressed_size bytes with
+ * @p params can need.
+ */
+size_t
+max_compressed_size(size_t uncompressed_size,
+                    const std::optional<CompressionParams>& params);
+
+/**
+ * @brief Bytes of one layer of chunk slots: one dim-1 band when the array
+ * flushes band by band (@see czbiohub-sf/livescreen-acquisition#210).
+ */
+size_t
+chunk_layer_bytes(const ArrayDimensions& dims);
+
+/**
+ * @brief Uncompressed chunk bytes that may wait in, or run as, chunk jobs.
+ * @details Two layers (two bands when banding). A full-resolution array gets
+ * at least four chunks per worker as well, so that small layers or bands do
+ * not leave workers idle; one pool thread is the frame thread, so it is not a
+ * worker. Downsampled levels keep two layers. The bound is still independent
+ * of the array size along dim 1, which is what banding protects.
+ * ZarrStreamSettings_estimate_max_memory_usage calls this for every level, so
+ * the estimate and the stream use one rule.
+ */
+size_t
+chunk_inflight_budget(const ArrayDimensions& dims,
+                      uint32_t n_threads,
+                      uint16_t level_of_detail);
+
 class MultiscaleArray;
 
 class Array : public ArrayBase
@@ -39,6 +69,12 @@ class Array : public ArrayBase
     std::atomic<size_t> write_counter_;
     std::mutex write_counter_mutex_;
     std::condition_variable write_counter_cv_;
+
+    // Uncompressed bytes held by dispatched chunk jobs. Changed under
+    // write_counter_mutex_; read without it by memory_usage().
+    std::atomic<size_t> inflight_bytes_{ 0 };
+    // chunk_inflight_budget()
+    const size_t inflight_budget_;
 
     std::vector<std::string> data_paths_;
 
@@ -93,8 +129,19 @@ class Array : public ArrayBase
                             uint32_t internal_idx,
                             uint32_t shard_idx);
 
-    // Retire one outstanding write and wake close_() if it was the last.
-    void finish_write_();
+    /**
+     * @brief Count one outstanding write that holds @p nbytes of chunk data.
+     * @details Blocks while the bytes in flight would exceed the budget, so a
+     * compressor or a sink that is slower than the frame thread slows the
+     * frame thread, then the frame queue, then append(). Jobs in the pool
+     * always run (the pool drains its queue even after a fatal error), so
+     * the wait ends. The budget is at least two chunks; the wait also ends
+     * when nothing is in flight, so that no chunk can wait forever.
+     */
+    void begin_write_(size_t nbytes);
+
+    // Retire one outstanding write, release its bytes, and wake the waiters.
+    void finish_write_(size_t nbytes = 0);
 
     void rollover_();
     void close_sinks_();

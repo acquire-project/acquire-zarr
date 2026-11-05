@@ -1,11 +1,13 @@
 #include "acquire.zarr.h"
 #include "macros.hh"
 #include "zarr.common.hh"
+#include "thread.pool.hh"
 #include "zarr.stream.hh"
 
 #include <algorithm> // std::clamp, std::max
 #include <bit>       // bit_ceil
 #include <cstdint>   // uint32_t
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -221,9 +223,10 @@ extern "C"
         EXPECT_VALID_ARGUMENT(settings->arrays,
                               "Null pointer: settings->arrays");
 
-        for (auto i = 1; i < settings->array_count; ++i) {
-            EXPECT_VALID_ARGUMENT(
-              settings->arrays + i, "Null pointer: settings for array ", i);
+        for (auto i = 0; i < settings->array_count; ++i) {
+            EXPECT_VALID_ARGUMENT(settings->arrays[i].dimensions,
+                                  "Null pointer: dimensions for array ",
+                                  i);
             for (auto j = 0; j < settings->arrays[i].dimension_count; ++j) {
                 EXPECT_VALID_ARGUMENT(settings->arrays[i].dimensions + j,
                                       "Null pointer: dimension ",
@@ -249,6 +252,14 @@ extern "C"
               std::max(max_frame_size_bytes, frame_size_bytes);
         }
 
+        // size the pool the way the stream does
+        unsigned int n_threads =
+          zarr::resolve_max_threads(settings->max_threads);
+        if (n_threads == 0) {
+            n_threads = std::max(std::thread::hardware_concurrency(), 1u);
+        }
+        n_threads = zarr::ThreadPool::effective_thread_count(n_threads);
+
         constexpr uint64_t frame_queue_budget_bytes = 256ULL << 20;
         if (max_frame_size_bytes > 0) {
             const auto frame_count = std::clamp<uint64_t>(
@@ -269,45 +280,13 @@ extern "C"
                                             dims[ndims - 1].array_size_px;
 
             *usage += frame_size_bytes; // each array has a frame buffer
-
-            // banding bounds memory to one dim-1 band; mirror
-            // supports_dim1_banding (no transposition) to stay an upper bound
-            // @see czbiohub-sf/livescreen-acquisition#210
-            const bool banded = dims[0].chunk_size_px == 1 && ndims >= 4 &&
-                                array.storage_dimension_order == nullptr;
-
-            size_t array_usage = bytes_of_type * dims[0].chunk_size_px;
-            for (auto j = 1; j < ndims; ++j) {
-                const auto& dim = dims[j];
-
-                // arrays may be ragged, so we need to account for fill values
-                const auto nchunks = zarr::parts_along_dimension(
-                  dim.array_size_px, dim.chunk_size_px);
-                size_t padded_array_size_px = nchunks * dim.chunk_size_px;
-
-                if (banded && j == 1) {
-                    array_usage *= dim.chunk_size_px;
-                } else {
-                    array_usage *= padded_array_size_px;
-                }
+            try {
+                *usage += zarr::estimate_array_chunk_memory(&array, n_threads);
+            } catch (const std::exception& exc) {
+                LOG_ERROR(
+                  "Cannot estimate memory for array ", i, ": ", exc.what());
+                return ZarrStatusCode_InvalidArgument;
             }
-
-            // compression can instantaneously double memory usage in the worst
-            // case, so we account for that here
-            if (array.compression_settings) {
-                array_usage *= 2;
-            }
-
-            if (array.downsampling_method > ZarrDownsamplingMethod_None) {
-                // we can bound the memory usage of multiscale arrays by
-                // observing that each downsampled level is at most half the
-                // size of the previous level, so the total memory usage is at
-                // most twice the size of the full-resolution, i.e.,
-                // sum(1/2^n)_{n=0}^{inf} = 2
-                array_usage *= 2;
-            }
-
-            *usage += array_usage;
         }
 
         return ZarrStatusCode_Success;

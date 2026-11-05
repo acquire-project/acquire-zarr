@@ -35,6 +35,7 @@ set(tests
         array-write-ragged-append-dim
         array-write-ragged-internal-dim
         array-write-fixed-size
+        array-write-backpressure
         zarr-stream-partial-append
         zarr-stream-append-error-bytes-out
         api-version
