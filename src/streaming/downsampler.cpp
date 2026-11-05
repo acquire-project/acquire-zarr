@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <regex>
 #include <type_traits>
+#include <tuple>
+#include <utility>
 
 namespace {
 ZarrDimension
@@ -193,12 +195,14 @@ scale_rows(const T* src, T* dst, size_t width, size_t height, Reduce4 reduce)
     }
 }
 
-template<typename T>
+/**
+ * Reduce each 2x2 block of a frame with the kernel @p Reduce. The kernel is a
+ * template argument, so the call is direct and inlines; the Downsampler picks
+ * one specialization per data type and method when it is constructed.
+ */
+template<typename T, T (*Reduce)(const T&, const T&, const T&, const T&)>
 [[nodiscard]] ByteVector
-scale_image(ConstByteSpan src,
-            size_t& width,
-            size_t& height,
-            ZarrDownsamplingMethod method)
+scale_image(ConstByteSpan src, size_t& width, size_t& height)
 {
     const auto bytes_of_src = src.size();
     const auto bytes_of_frame = width * height * sizeof(T);
@@ -213,37 +217,11 @@ scale_image(ConstByteSpan src,
     const size_t height_out = (height + 1) / 2;
 
     ByteVector dst(width_out * height_out * sizeof(T), 0);
-    auto* dst_as_T = reinterpret_cast<T*>(dst.data());
-    const auto* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    switch (method) {
-        case ZarrDownsamplingMethod_Decimate:
-            scale_rows(
-              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
-                  return decimate4<T>(a, b, c, d);
-              });
-            break;
-        case ZarrDownsamplingMethod_Mean:
-            scale_rows(
-              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
-                  return mean4<T>(a, b, c, d);
-              });
-            break;
-        case ZarrDownsamplingMethod_Min:
-            scale_rows(
-              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
-                  return min4<T>(a, b, c, d);
-              });
-            break;
-        case ZarrDownsamplingMethod_Max:
-            scale_rows(
-              src_as_T, dst_as_T, width, height, [](T a, T b, T c, T d) {
-                  return max4<T>(a, b, c, d);
-              });
-            break;
-        default:
-            throw std::runtime_error("Invalid downsampling method");
-    }
+    scale_rows(reinterpret_cast<const T*>(src.data()),
+               reinterpret_cast<T*>(dst.data()),
+               width,
+               height,
+               [](T a, T b, T c, T d) { return Reduce(a, b, c, d); });
 
     width = width_out;
     height = height_out;
@@ -251,54 +229,58 @@ scale_image(ConstByteSpan src,
     return dst;
 }
 
-/**
- * Combine @p src into @p dst pixel by pixel. @p reduce is a template parameter
- * so it inlines.
- */
-template<typename T, typename Reduce2>
 void
-combine_frames(T* dst, const T* src, size_t num_pixels, Reduce2 reduce)
+expect_same_size(const ByteVector& dst, ConstByteSpan src)
 {
-    for (size_t i = 0; i < num_pixels; ++i) {
-        dst[i] = reduce(dst[i], src[i]);
-    }
+    EXPECT(dst.size() == src.size(),
+           "Expecting ",
+           src.size(),
+           " bytes in destination, got ",
+           dst.size());
 }
 
-template<typename T>
+/**
+ * Combine @p src into @p dst pixel by pixel with the kernel @p Reduce, a
+ * template argument so that it inlines.
+ */
+template<typename T, T (*Reduce)(const T&, const T&)>
 void
-average_two_frames(ByteVector& dst,
-                   ConstByteSpan src,
-                   ZarrDownsamplingMethod method)
+average_two_frames(ByteVector& dst, ConstByteSpan src)
 {
-    const auto bytes_of_dst = dst.size();
-    const auto bytes_of_src = src.size();
-    EXPECT(bytes_of_dst == bytes_of_src,
-           "Expecting %zu bytes in destination, got %zu",
-           bytes_of_src,
-           bytes_of_dst);
+    expect_same_size(dst, src);
 
     T* dst_as_T = reinterpret_cast<T*>(dst.data());
     const T* src_as_T = reinterpret_cast<const T*>(src.data());
-    const auto num_pixels = bytes_of_src / sizeof(T);
+    const auto num_pixels = src.size() / sizeof(T);
+    for (size_t i = 0; i < num_pixels; ++i) {
+        dst_as_T[i] = Reduce(dst_as_T[i], src_as_T[i]);
+    }
+}
 
+/** Decimation keeps the earlier frame, which is already in @p dst. */
+void
+keep_earlier_frame(ByteVector& dst, ConstByteSpan src)
+{
+    expect_same_size(dst, src);
+}
+
+using ScaleFn = ByteVector (*)(ConstByteSpan, size_t&, size_t&);
+using CombineFn = void (*)(ByteVector&, ConstByteSpan);
+
+template<typename T>
+std::pair<ScaleFn, CombineFn>
+kernels_for(ZarrDownsamplingMethod method)
+{
     switch (method) {
         case ZarrDownsamplingMethod_Decimate:
-            break; // decimation keeps dst
+            return { scale_image<T, decimate4<T>>, keep_earlier_frame };
         case ZarrDownsamplingMethod_Mean:
-            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
-                return mean2<T>(a, b);
-            });
-            break;
+            return { scale_image<T, mean4<T>>,
+                     average_two_frames<T, mean2<T>> };
         case ZarrDownsamplingMethod_Min:
-            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
-                return min2<T>(a, b);
-            });
-            break;
+            return { scale_image<T, min4<T>>, average_two_frames<T, min2<T>> };
         case ZarrDownsamplingMethod_Max:
-            combine_frames(dst_as_T, src_as_T, num_pixels, [](T a, T b) {
-                return max2<T>(a, b);
-            });
-            break;
+            return { scale_image<T, max4<T>>, average_two_frames<T, max2<T>> };
         default:
             throw std::runtime_error("Invalid downsampling method");
     }
@@ -310,57 +292,48 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
 {
     make_writer_configurations_(config);
 
+    EXPECT(method > ZarrDownsamplingMethod_None,
+           "Cannot construct downsampler with DownsamplingMethod: None");
+    EXPECT(method < ZarrDownsamplingMethodCount,
+           "Invalid downsampling method: ",
+           static_cast<int>(method));
+
     switch (config->dtype) {
         case ZarrDataType_uint8:
-            scale_fun_ = scale_image<uint8_t>;
-            average2_fun_ = average_two_frames<uint8_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint8_t>(method);
             break;
         case ZarrDataType_uint16:
-            scale_fun_ = scale_image<uint16_t>;
-            average2_fun_ = average_two_frames<uint16_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint16_t>(method);
             break;
         case ZarrDataType_uint32:
-            scale_fun_ = scale_image<uint32_t>;
-            average2_fun_ = average_two_frames<uint32_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint32_t>(method);
             break;
         case ZarrDataType_uint64:
-            scale_fun_ = scale_image<uint64_t>;
-            average2_fun_ = average_two_frames<uint64_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint64_t>(method);
             break;
         case ZarrDataType_int8:
-            scale_fun_ = scale_image<int8_t>;
-            average2_fun_ = average_two_frames<int8_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int8_t>(method);
             break;
         case ZarrDataType_int16:
-            scale_fun_ = scale_image<int16_t>;
-            average2_fun_ = average_two_frames<int16_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int16_t>(method);
             break;
         case ZarrDataType_int32:
-            scale_fun_ = scale_image<int32_t>;
-            average2_fun_ = average_two_frames<int32_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int32_t>(method);
             break;
         case ZarrDataType_int64:
-            scale_fun_ = scale_image<int64_t>;
-            average2_fun_ = average_two_frames<int64_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int64_t>(method);
             break;
         case ZarrDataType_float32:
-            scale_fun_ = scale_image<float>;
-            average2_fun_ = average_two_frames<float>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<float>(method);
             break;
         case ZarrDataType_float64:
-            scale_fun_ = scale_image<double>;
-            average2_fun_ = average_two_frames<double>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<double>(method);
             break;
         default:
             throw std::runtime_error("Invalid data type: " +
                                      std::to_string(config->dtype));
     }
 
-    EXPECT(method > ZarrDownsamplingMethod_None,
-           "Cannot construct downsampler with DownsamplingMethod: None");
-    EXPECT(method < ZarrDownsamplingMethodCount,
-           "Invalid downsampling method: ",
-           static_cast<int>(method));
     method_ = method;
 }
 
@@ -401,7 +374,7 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
         // only downsample if this level's XY size is smaller than the last
         if (next_width < prev_width || next_height < prev_height) {
             next_level_frame =
-              scale_fun_(current_frame, frame_width, frame_height, method_);
+              scale_fun_(current_frame, frame_width, frame_height);
         } else {
             next_level_frame.assign(current_frame.begin(), current_frame.end());
         }
@@ -433,7 +406,7 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
                 // average2_fun_ writes to next_level_frame
                 // swap here so that decimation keeps the earlier frame
                 next_level_frame.swap(it->second);
-                average2_fun_(next_level_frame, it->second, method_);
+                average2_fun_(next_level_frame, it->second);
                 emplace_downsampled_frame_(level, next_level_frame);
 
                 // clean up this LOD
