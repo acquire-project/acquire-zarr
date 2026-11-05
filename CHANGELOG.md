@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZarrStream_write_custom_metadata` (`ZarrStream.write_custom_metadata` in Python) can address every node that the
   stream writes, not only arrays: the root group (`""`), plate and well groups, the generic groups between the root and
   an array, and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives custom
-  metadata is written again at close. Generic groups are not addressable under `ZarrIntermediateGroups_Never`
+  metadata is written each time it receives some, and again at close, so a reader sees it during the acquisition.
+  Generic groups are not addressable under `ZarrIntermediateGroups_Never`
 - Custom metadata can be written under `ome`, for OME-NGFF metadata that the stream does not write, such as `omero`.
   The custom keys merge with the stream's own `ome` keys. `ome.multiscales` is refused on every node, and so is any
   other key that the stream writes under `ome` on the node (`version` and `name` on a multiscale group, `version` and
@@ -28,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
   `ZarrStream_create` is kept, unless the caller also gives that group custom metadata through
-  `ZarrStream_write_custom_metadata`: the stream then replaces the group's `zarr.json` at close (#186, #268)
+  `ZarrStream_write_custom_metadata`: the stream then replaces the group's `zarr.json` each time (#186, #268)
 - ⚠️ **Breaking:** the Python keyword `array_key` of `ZarrStream.write_custom_metadata` is renamed `node_key`, because
   the key can now name a group or a level of detail. The C parameter has the same new name; C callers are not affected
 - `ZarrStream_write_custom_metadata` returns `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when it

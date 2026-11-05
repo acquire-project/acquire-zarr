@@ -1948,6 +1948,14 @@ def test_write_custom_metadata_to_hcs_nodes(
     with pytest.raises(RuntimeError):
         stream.write_custom_metadata({}, node_key="test_plate/Z")
 
+    # plate and well groups are written at once, before any frame or close
+    base_path = Path(settings.store_path)
+    for node in ["test_plate", "test_plate/C/5"]:
+        with open(base_path / node / "zarr.json", "r") as fh:
+            attributes = json.load(fh)["attributes"]
+        assert attributes["custom"] == {"node": node}
+        assert "ome" in attributes
+
     stream.append(
         np.zeros((640, 480), dtype=np.uint8), key="test_plate/C/5/fov1"
     )
@@ -1959,7 +1967,6 @@ def test_write_custom_metadata_to_hcs_nodes(
     )
     stream.close()
 
-    base_path = Path(settings.store_path)
     for node in nodes:
         with open(base_path / node / "zarr.json", "r") as fh:
             attributes = json.load(fh)["attributes"]

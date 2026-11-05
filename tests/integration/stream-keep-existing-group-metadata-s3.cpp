@@ -341,6 +341,13 @@ main()
                   stream.get(), key, "custom", metadata.c_str()));
             }
 
+            // groups are written at once, so a reader sees them while the
+            // stream is open
+            auto open_to = nlohmann::json::parse(get(to_key));
+            EXPECT(open_to["attributes"]["custom"]["node"] == "path/to",
+                   "Expected custom metadata before close: ",
+                   open_to.dump());
+
             const ZarrStatusCode status = ZarrStream_close(stream.release());
             EXPECT(status == ZarrStatusCode_Success,
                    "Failed to close stream: ",

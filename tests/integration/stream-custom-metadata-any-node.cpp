@@ -174,6 +174,19 @@ test_every_node_is_addressable()
         expect_status(
           stream.get(), "/foo/bar/", "extra", "1", ZarrStatusCode_Success);
 
+        // groups are written at once, so a reader sees their metadata while
+        // the stream is open; each write keeps the earlier custom keys
+        for (const std::string key : { "", "foo", "foo/bar" }) {
+            auto metadata = read_metadata(key);
+            EXPECT(metadata["attributes"]["custom"]["node"] == key,
+                   "Expected custom metadata on group '",
+                   key,
+                   "' before close, got ",
+                   metadata.dump());
+        }
+        EXPECT(read_metadata("foo/bar")["attributes"].value("extra", 0) == 1,
+               "Expected 'extra' on foo/bar before close");
+
         append_frames(stream.get());
     }
 
@@ -184,7 +197,7 @@ test_every_node_is_addressable()
                                    "foo/bar/baz/0",
                                    "foo/bar/baz/1",
                                    "foo/qux" }) {
-        const auto metadata = read_metadata(key);
+        auto metadata = read_metadata(key);
         EXPECT(metadata["attributes"]["custom"]["node"] == key,
                "Expected custom metadata on '",
                key,
@@ -193,18 +206,18 @@ test_every_node_is_addressable()
     }
 
     // the stream's own metadata is still there
-    const auto root = read_metadata("");
+    auto root = read_metadata("");
     EXPECT(root["node_type"] == "group", "Root is not a group");
     EXPECT(root["consolidated_metadata"].is_null(),
            "Root has consolidated metadata");
 
-    const auto bar = read_metadata("foo/bar");
+    auto bar = read_metadata("foo/bar");
     EXPECT(bar["attributes"]["extra"] == 1, "Expected 'extra' on foo/bar");
 
-    const auto baz = read_metadata("foo/bar/baz");
+    auto baz = read_metadata("foo/bar/baz");
     EXPECT(baz["attributes"].contains("ome"), "Multiscale group lost 'ome'");
 
-    const auto level = read_metadata("foo/bar/baz/1");
+    auto level = read_metadata("foo/bar/baz/1");
     EXPECT(level["node_type"] == "array", "Level 1 is not an array");
 }
 
@@ -317,7 +330,7 @@ test_ome_rules()
     }
 
     // a refused call leaves what was accepted before it
-    const auto foo = read_metadata("foo");
+    auto foo = read_metadata("foo");
     EXPECT(foo["attributes"]["ome"]["omero"]["channels"].is_array(),
            "Expected 'ome.omero' on foo: ",
            foo.dump());
@@ -328,14 +341,14 @@ test_ome_rules()
            "A refused call wrote 'partial' on foo: ",
            foo.dump());
 
-    const auto qux = read_metadata("foo/qux");
+    auto qux = read_metadata("foo/qux");
     EXPECT(qux["attributes"]["ome"]["version"] == "0.6",
            "Expected 'ome.version' on foo/qux: ",
            qux.dump());
 
     // the custom keys merge with the stream's own
-    const auto baz = read_metadata("foo/bar/baz");
-    const auto& ome = baz["attributes"]["ome"];
+    auto baz = read_metadata("foo/bar/baz");
+    auto& ome = baz["attributes"]["ome"];
     EXPECT(ome["version"] == "0.5", "Unexpected version: ", baz.dump());
     EXPECT(ome["multiscales"].is_array() && ome["multiscales"].size() == 1,
            "Expected the stream's multiscales: ",
@@ -401,17 +414,54 @@ test_kept_group_keeps_its_attributes()
         append_frames(stream.get());
     }
 
-    const auto foo = read_metadata("foo");
+    auto foo = read_metadata("foo");
     EXPECT(foo["attributes"]["written_by"] == "caller",
            "Kept group lost its attributes: ",
            foo.dump());
     EXPECT(foo["attributes"]["added_by"] == "stream",
            "Kept group has no custom metadata: ",
            foo.dump());
-    const auto& ome = foo["attributes"]["ome"];
+    auto& ome = foo["attributes"]["ome"];
     EXPECT(ome["kept"] == true && ome["added"] == true &&
              ome["version"] == "0.6",
            "Unexpected 'ome' on the kept group: ",
+           foo.dump());
+}
+void
+test_failed_group_write()
+{
+    LOG_INFO("Case: a failed group write");
+    remove_test_path();
+
+    {
+        StreamPtr stream(create_stream(ZarrIntermediateGroups_IfMissing, true),
+                         &ZarrStream_destroy);
+        EXPECT(stream != nullptr, "Failed to create stream");
+
+        expect_status(stream.get(), "foo", "a", "1", ZarrStatusCode_Success);
+
+        // a directory where the group's zarr.json goes makes the write fail
+        const fs::path foo_metadata = test_path / "foo" / "zarr.json";
+        fs::remove(foo_metadata);
+        fs::create_directory(foo_metadata);
+        expect_status(stream.get(), "foo", "b", "2", ZarrStatusCode_IOError);
+
+        // the stream continues, and keeps what was accepted before
+        fs::remove(foo_metadata);
+        expect_status(stream.get(), "foo", "c", "3", ZarrStatusCode_Success);
+        append_frames(stream.get());
+
+        const ZarrStatusCode status = ZarrStream_close(stream.release());
+        EXPECT(status == ZarrStatusCode_Success,
+               "Failed to close stream: ",
+               Zarr_get_status_message(status));
+    }
+
+    auto foo = read_metadata("foo");
+    auto& attributes = foo["attributes"];
+    EXPECT(attributes.value("a", 0) == 1 && attributes.value("c", 0) == 3 &&
+             !attributes.contains("b"),
+           "Unexpected attributes after a failed write: ",
            foo.dump());
 }
 } // namespace
@@ -427,6 +477,7 @@ main()
         test_ome_rules();
         test_never_groups_are_not_addressable();
         test_kept_group_keeps_its_attributes();
+        test_failed_group_write();
 
         retval = 0;
     } catch (const std::exception& e) {

@@ -393,8 +393,9 @@ When set to `false`, the stream will use the existing directory if it exists, or
 
 An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream is created,
 it writes a `zarr.json` for each of these groups, so a reader can navigate the hierarchy during the acquisition. The
-stream does not write these groups again at close, so metadata that you write after `ZarrStream_create` is kept. The
-`intermediate_groups` setting controls the write at create:
+stream does not write these groups again, so metadata that you write after `ZarrStream_create` is kept, unless you give
+a group custom metadata through `write_custom_metadata` (see below). The `intermediate_groups` setting controls the write
+at create:
 
 | C                                  | Python                          | Effect                                                                                                                                   |
 |------------------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
@@ -501,11 +502,15 @@ stream.write_custom_metadata(
 )
 ```
 
-Metadata can be written at any point while the stream is active and will be
-flushed to disk when the stream is closed. A group that receives custom
-metadata is written again at close: its whole `zarr.json` is replaced by the
-group as the stream wrote or kept it at create, with the custom attributes
-added. A change that anything else made to that group after create is lost.
+Metadata can be written at any point while the stream is active. Metadata for
+an array, a level of detail, or a multiscale image group (for example an HCS
+field of view) is flushed to disk with the array's metadata, at the latest when
+the stream is closed. Any other group is written at once, so a reader sees its
+metadata during the acquisition, and again at close: its whole `zarr.json` is
+replaced by the group as the stream wrote or kept it at create, with all of its
+custom attributes added. A change that anything else made to that group after
+create is lost. On a filesystem the file is rewritten in place, so a reader
+that opens it during the write can see an incomplete document.
 
 ### High-content screening workflows
 

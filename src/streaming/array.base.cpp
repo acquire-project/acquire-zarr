@@ -121,7 +121,7 @@ bool
 zarr::ArrayBase::write_custom_metadata(const std::string& key,
                                        const nlohmann::json& metadata)
 {
-    // store custom metadata in memory until we write it out in close()
+    // held in memory, and written with the array's metadata
     std::unique_lock lock(metadata_mutex_);
     return merge_custom_metadata(
       custom_metadata_, key, metadata, library_ome_metadata_());
