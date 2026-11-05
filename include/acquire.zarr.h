@@ -402,13 +402,21 @@ extern "C"
      * @details The node can be an array, a group that the stream writes (the
      * root, a plate, a well, or a group between the root and an array), or a
      * level of detail of a multiscale array (`<array_key>/<level>`, e.g.
-     * `"plate/A/1/0/1"`). The metadata is held in memory and written to the
-     * node's zarr.json when the stream is closed. A group is then written
-     * again: its whole zarr.json is replaced by the group as the stream wrote
-     * or kept it at create, with the custom attributes added. A change that
-     * anything else made to that group after create is lost. A generic group
-     * (the root, an HCS row group, or any group that is not a plate or a well)
-     * is not addressable when `intermediate_groups` is
+     * `"plate/A/1/0/1"`). For an array, a level of detail, or a multiscale
+     * image group (for example an HCS field of view), the metadata is held in
+     * memory and written with the array's metadata, at the latest when the
+     * stream is closed. Any other group is written at once, so a reader sees
+     * the metadata during the acquisition, and again at close: its whole
+     * zarr.json is replaced by the group as the stream wrote or kept it at
+     * create, with all of its custom attributes added. A change that anything
+     * else made to that group after create is lost. On a filesystem the file
+     * is rewritten in place, so a reader that opens it during the write can
+     * see an incomplete document, as for array metadata. If the write fails,
+     * the call returns ZarrStatusCode_IOError and the stream keeps the
+     * group's earlier custom metadata; the file is undefined until a later
+     * call or the close writes it again. The stream continues. A generic
+     * group (the root, an HCS row group, or any group that is not a plate or a
+     * well) is not addressable when `intermediate_groups` is
      * ZarrIntermediateGroups_Never, because the stream does not write it.
      * @param stream The Zarr stream struct.
      * @param node_key Key of the node to write the metadata to, relative to
@@ -428,8 +436,8 @@ extern "C"
      * @param metadata JSON-formatted metadata to be written to the dataset.
      * @return ZarrStatusCode_Success on success, ZarrStatusCode_KeyNotFound if
      * no node has the key, ZarrStatusCode_InvalidArgument if the node is not
-     * addressable or the metadata is not valid, or another error code on
-     * failure.
+     * addressable or the metadata is not valid, ZarrStatusCode_IOError if a
+     * group cannot be written, or another error code on failure.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
                                                     const char* node_key,

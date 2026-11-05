@@ -193,20 +193,30 @@ struct ZarrStream_s
      * @details Called once, when the stream is created. Every path and all HCS
      * metadata are known then, and a reader can navigate the hierarchy while
      * frames arrive. Each group written or kept is recorded in groups_. The
-     * stream writes a group again at close only if the caller gave it custom
-     * metadata (write_group_custom_metadata_()), so metadata that the caller
-     * writes after create to any other group is kept.
+     * stream writes a group again only when the caller gives it custom
+     * metadata (write_group_()), and at close if it has any, so metadata that
+     * the caller writes after create to any other group is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();
 
     /**
-     * @brief Write each group that has custom metadata again: the document
-     * recorded at create, with the custom attributes added, replaces the
-     * whole `zarr.json`.
+     * @brief Write each group that has custom metadata, at close.
      * @return True if every such group was written, otherwise false.
      */
-    [[nodiscard]] bool write_group_custom_metadata_();
+    [[nodiscard]] bool write_groups_with_custom_metadata_();
+
+    /**
+     * @brief Write a group: @p document, as recorded at create, with
+     * @p custom_metadata added, replaces the whole `zarr.json`.
+     * @details Does not set the stream's error: a failed write fails only the
+     * call that asked for it.
+     * @return True if the group was written, otherwise false.
+     */
+    [[nodiscard]] bool write_group_(
+      const std::string& relative_path,
+      const nlohmann::json& document,
+      const std::unordered_map<std::string, nlohmann::json>& custom_metadata);
 
     /**
      * @brief Find a level of detail of a multiscale array by its key,

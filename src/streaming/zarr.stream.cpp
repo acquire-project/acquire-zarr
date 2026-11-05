@@ -1166,17 +1166,29 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
         return ZarrStatusCode_InvalidArgument;
     }
 
-    // held in memory, and written when the node is closed
-    const bool merged =
-      array ? array->write_custom_metadata(meta_key, metadata_json)
-            : zarr::merge_custom_metadata(group->custom_metadata,
-                                          meta_key,
-                                          metadata_json,
-                                          group->library_ome);
-    if (!merged) {
+    if (array) {
+        // held in memory, and written with the array's metadata
+        if (!array->write_custom_metadata(meta_key, metadata_json)) {
+            LOG_ERROR("Error writing custom metadata for '", key, "'");
+            return ZarrStatusCode_InvalidArgument;
+        }
+        return ZarrStatusCode_Success;
+    }
+
+    // a group is written now, so that a reader sees its metadata during the
+    // acquisition; the merge is kept only if the write succeeds
+    auto custom_metadata = group->custom_metadata;
+    if (!zarr::merge_custom_metadata(
+          custom_metadata, meta_key, metadata_json, group->library_ome)) {
         LOG_ERROR("Error writing custom metadata for '", key, "'");
         return ZarrStatusCode_InvalidArgument;
     }
+
+    if (!write_group_(key, group->document, custom_metadata)) {
+        LOG_ERROR("Failed to write custom metadata for group '", key, "'");
+        return ZarrStatusCode_IOError;
+    }
+    group->custom_metadata = std::move(custom_metadata);
 
     return ZarrStatusCode_Success;
 }
@@ -1771,22 +1783,16 @@ ZarrStream_s::write_intermediate_metadata_()
 }
 
 bool
-ZarrStream_s::write_group_custom_metadata_()
+ZarrStream_s::write_groups_with_custom_metadata_()
 {
     std::unique_lock lock(groups_mutex_);
-    for (auto& [relative_path, group] : groups_) {
+    for (const auto& [relative_path, group] : groups_) {
         if (group.custom_metadata.empty()) {
             continue;
         }
 
-        auto& attributes = group.document["attributes"];
-        if (!attributes.is_object()) {
-            attributes = nlohmann::json::object();
-        }
-        zarr::apply_custom_metadata(attributes, group.custom_metadata);
-
-        if (!write_metadata_object_(group_sink_path_(relative_path),
-                                    group.document.dump(4))) {
+        if (!write_group_(
+              relative_path, group.document, group.custom_metadata)) {
             set_error_("Failed to write custom metadata for group '" +
                        relative_path + "'");
             return false;
@@ -1794,6 +1800,22 @@ ZarrStream_s::write_group_custom_metadata_()
     }
 
     return true;
+}
+
+bool
+ZarrStream_s::write_group_(
+  const std::string& relative_path,
+  const nlohmann::json& document,
+  const std::unordered_map<std::string, nlohmann::json>& custom_metadata)
+{
+    nlohmann::json out(document);
+    auto& attributes = out["attributes"];
+    if (!attributes.is_object()) {
+        attributes = nlohmann::json::object();
+    }
+    zarr::apply_custom_metadata(attributes, custom_metadata);
+
+    return write_metadata_object_(group_sink_path_(relative_path), out.dump(4));
 }
 
 std::string
@@ -2164,7 +2186,9 @@ finalize_stream(ZarrStream* stream)
         }
     }
 
-    if (!stream->write_group_custom_metadata_()) {
+    // a group is written each time it gets custom metadata; write it once more
+    // so that a write that failed part-way does not leave it broken
+    if (!stream->write_groups_with_custom_metadata_()) {
         LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
         return false;
     }

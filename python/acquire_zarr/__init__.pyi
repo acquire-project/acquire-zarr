@@ -362,7 +362,8 @@ class IntermediateGroups:
     """
     Whether the stream writes ``zarr.json`` for the generic groups above its
     arrays. Plate and well groups are always written. The stream writes these
-    groups when it is created, and not again at close.
+    groups when it is created, and again only when it is given custom
+    metadata for one of them.
 
     Attributes:
       IF_MISSING: Write a group unless a valid Zarr v3 group node is already
@@ -591,8 +592,10 @@ class ZarrStream:
     ) -> bool:
         """Write custom metadata to a node of the stream.
 
-        The metadata is written to the node's ``zarr.json`` when the stream
-        is closed.
+        For an array, a level of detail, or a multiscale image group, the
+        metadata is written with the array's ``zarr.json``, at the latest when
+        the stream is closed. Any other group's ``zarr.json`` is written at
+        once, and again at close.
 
         Args:
             metadata: JSON object, as a dict or a string.
