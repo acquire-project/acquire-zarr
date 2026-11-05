@@ -80,6 +80,19 @@ class Array : public ArrayBase
     [[nodiscard]] bool compress_and_flush_band_(uint32_t band_idx,
                                                 uint32_t n_bands);
 
+    /**
+     * @brief Replace @p data, one inner chunk in C order, with its JPEG
+     * encoding: convert to uint8 as the codec chain describes, then encode.
+     * The storage-order last dimension is the image width; the other
+     * dimensions are merged into the height, as the `reshape` codec describes.
+     * @return False, with @p error set, if TurboJPEG fails.
+     * @throws std::runtime_error on a sample that cannot be mapped to uint8
+     * (NaN, infinite, or overflowing the window arithmetic).
+     */
+    [[nodiscard]] bool encode_jpeg_chunk_(const JpegParams& params,
+                                          std::vector<uint8_t>& data,
+                                          std::string& error) const;
+
     // Compress and write (or skip-if-empty) one chunk, freeing its slot.
     void dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                              uint32_t chunk_idx,

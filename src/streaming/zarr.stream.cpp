@@ -1,5 +1,6 @@
 #include "acquire.zarr.h"
 #include "array.base.hh"
+#include "jpeg.hh"
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
@@ -9,6 +10,8 @@
 
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
+#include <cmath>     // isfinite
+#include <cstdint>   // integer limits
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -413,7 +416,7 @@ make_array_config(const ZarrArraySettings* settings,
         downsampling_method = settings->downsampling_method;
     }
 
-    return std::make_shared<zarr::ArrayConfig>(
+    auto config = std::make_shared<zarr::ArrayConfig>(
       store_root,
       key,
       bucket_name,
@@ -424,6 +427,17 @@ make_array_config(const ZarrArraySettings* settings,
       0,
       downsampling_method.has_value() || settings->is_ngff || force_ngff,
       settings->max_levels);
+
+    if (const auto* jpeg = settings->jpeg_settings) {
+        config->jpeg_params = zarr::JpegParams{
+            .quality = jpeg->quality,
+            .window_min = jpeg->window_min,
+            .window_max = jpeg->window_max,
+            .source_dtype = settings->data_type,
+        };
+    }
+
+    return config;
 }
 
 std::unique_ptr<zarr::ArrayBase>
@@ -479,6 +493,149 @@ validate_dimension(const ZarrDimensionProperties* dimension,
 
     if (dimension->scale < 0.0) {
         error = "Scale must be non-negative";
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Check that the JPEG levels can be encoded. Each inner chunk becomes
+ * one grayscale image: the storage-order last chunk dimension gives the width,
+ * and the product of the other chunk dimensions gives the height. JPEG stores
+ * each as 16 bits, and grayscale blocks are 8x8. All levels have the same
+ * chunk shape, so one check covers the whole pyramid.
+ */
+[[nodiscard]] bool
+validate_jpeg_settings(const ZarrArraySettings* settings, std::string& error)
+{
+    const auto* jpeg = settings->jpeg_settings;
+    if (jpeg == nullptr) {
+        return true;
+    }
+
+    if (settings->downsampling_method == ZarrDownsamplingMethod_None) {
+        error = "JPEG settings require a downsampling method";
+        return false;
+    }
+
+    if (jpeg->quality < 1 || jpeg->quality > 100) {
+        error = "Invalid JPEG quality: " + std::to_string(jpeg->quality) +
+                ". Must be 1-100";
+        return false;
+    }
+
+    if (settings->data_type != ZarrDataType_uint8) {
+        if (!(std::isfinite(jpeg->window_min) &&
+              std::isfinite(jpeg->window_max) &&
+              jpeg->window_min < jpeg->window_max)) {
+            error = "JPEG window must be finite, with window_min < window_max";
+            return false;
+        }
+
+        // window_min is the fill value of the JPEG levels, so it must be a
+        // value of the data type
+        double type_min = 0, type_max = 0;
+        switch (settings->data_type) {
+            case ZarrDataType_int8:
+                type_min = INT8_MIN, type_max = INT8_MAX;
+                break;
+            case ZarrDataType_uint16:
+                type_max = UINT16_MAX;
+                break;
+            case ZarrDataType_int16:
+                type_min = INT16_MIN, type_max = INT16_MAX;
+                break;
+            case ZarrDataType_uint32:
+                type_max = UINT32_MAX;
+                break;
+            case ZarrDataType_int32:
+                type_min = INT32_MIN, type_max = INT32_MAX;
+                break;
+            case ZarrDataType_uint64:
+                type_max = static_cast<double>(UINT64_MAX);
+                break;
+            case ZarrDataType_int64:
+                type_min = static_cast<double>(INT64_MIN);
+                type_max = static_cast<double>(INT64_MAX);
+                break;
+            default: // float32, float64
+                type_min = -INFINITY, type_max = INFINITY;
+        }
+        const bool is_integer = std::isfinite(type_max);
+        if (is_integer &&
+            (std::floor(jpeg->window_min) != jpeg->window_min ||
+             jpeg->window_min < type_min || jpeg->window_min >= type_max + 1)) {
+            error = "JPEG window_min must be an integer within the range of "
+                    "the data type, because it is the fill value of the JPEG "
+                    "levels";
+            return false;
+        }
+
+        const auto so = zarr::jpeg_scale_offset(zarr::JpegParams{
+          .quality = jpeg->quality,
+          .window_min = jpeg->window_min,
+          .window_max = jpeg->window_max,
+          .source_dtype = settings->data_type,
+        });
+        if (!(std::isfinite(so.offset) && std::isfinite(so.scale) &&
+              so.scale > 0)) {
+            error = "JPEG window is not representable in the arithmetic of "
+                    "the codec chain";
+            return false;
+        }
+    }
+
+    const size_t ndims = settings->dimension_count;
+    const auto* dims = settings->dimensions;
+
+    // a policy, not a requirement of the jpeg spec (which says SHOULD): with Y
+    // and X chunk sizes that are multiples of 8, no 8x8 block pads the image
+    // edge or spans two planes of the last two storage dimensions, which are
+    // always the spatial ones. The other chunk sizes only multiply the height.
+    const auto& y_dim = dims[ndims - 2];
+    if (y_dim.chunk_size_px % 8 != 0) {
+        error = "acquire-zarr requires the chunk size of dimension '" +
+                std::string(y_dim.name) +
+                "' to be a multiple of 8 (the JPEG block size) for JPEG "
+                "levels, but it is " +
+                std::to_string(y_dim.chunk_size_px);
+        return false;
+    }
+
+    const auto& x_dim = dims[ndims - 1];
+    if (x_dim.chunk_size_px % 8 != 0) {
+        error = "acquire-zarr requires the chunk size of dimension '" +
+                std::string(x_dim.name) +
+                "' to be a multiple of 8 (the JPEG block size) for JPEG "
+                "levels, but it is " +
+                std::to_string(x_dim.chunk_size_px);
+        return false;
+    }
+
+    const size_t width_idx = settings->storage_dimension_order
+                               ? settings->storage_dimension_order[ndims - 1]
+                               : ndims - 1;
+    if (width_idx >= ndims) {
+        error = "Invalid storage dimension order";
+        return false;
+    }
+    const uint64_t width = dims[width_idx].chunk_size_px;
+    uint64_t height = 1;
+    for (size_t i = 0; i < ndims; ++i) {
+        if (i != width_idx) {
+            height *= dims[i].chunk_size_px;
+        }
+    }
+
+    constexpr uint64_t max_jpeg_dim = 65535;
+    if (width > max_jpeg_dim || height > max_jpeg_dim) {
+        error = "JPEG images are at most 65535 x 65535. Each chunk becomes "
+                "one image of " +
+                std::to_string(height) +
+                " rows (the product of all chunk "
+                "sizes except the last) and " +
+                std::to_string(width) + " columns. Reduce a chunk size";
         return false;
     }
 
@@ -543,6 +700,10 @@ validate_array_settings(const ZarrArraySettings* settings,
     if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {
         error = "Invalid downsampling method: " +
                 std::to_string(settings->downsampling_method);
+        return false;
+    }
+
+    if (!validate_jpeg_settings(settings, error)) {
         return false;
     }
 

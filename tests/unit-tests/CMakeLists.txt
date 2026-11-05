@@ -45,6 +45,7 @@ set(tests
         downsampler-integer-mean
         downsampler-kernels
         plate
+        jpeg-convert-to-uint8
 )
 
 foreach (name ${tests})

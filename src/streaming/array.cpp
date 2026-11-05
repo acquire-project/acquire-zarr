@@ -309,7 +309,9 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
         json::object({ { "separator", "/" } }),
       },
     });
-    meta_tmp["fill_value"] = 0;
+    // a JPEG level's fill value must survive its codec chain
+    meta_tmp["fill_value"] =
+      config_->jpeg_params ? jpeg_fill_value(*config_->jpeg_params) : json(0);
 
     meta_tmp["attributes"] = json::object();
     auto& attributes = meta_tmp["attributes"];
@@ -363,7 +365,10 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
     configuration["index_location"] = "end";
     configuration["codecs"] = json::array({ codec });
 
-    if (config_->compression_params) {
+    if (config_->jpeg_params) {
+        configuration["codecs"] =
+          jpeg_inner_codecs(chunk_shape.size(), *config_->jpeg_params);
+    } else if (config_->compression_params) {
         auto compression_codec = std::visit(
           [this](const auto& params) -> json {
               using T = std::decay_t<decltype(params)>;
@@ -703,6 +708,24 @@ zarr::Array::dispatch_skip_job_(std::shared_ptr<Shard> shard,
     }
 }
 
+bool
+zarr::Array::encode_jpeg_chunk_(const JpegParams& params,
+                                std::vector<uint8_t>& data,
+                                std::string& error) const
+{
+    const auto samples = convert_to_uint8(data, params);
+    const size_t width = config_->dimensions->width_dim().chunk_size_px;
+    const size_t height = width > 0 ? samples.size() / width : 0;
+
+    std::vector<uint8_t> encoded;
+    if (!encode_jpeg(samples, width, height, params.quality, encoded, error)) {
+        return false;
+    }
+
+    data = std::move(encoded);
+    return true;
+}
+
 void
 zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                                  uint32_t chunk_idx,
@@ -729,7 +752,8 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                 chunk_idx,
                 shard_idx,
                 chunk = std::move(chunk),
-                params = config_->compression_params](
+                params = config_->compression_params,
+                jpeg = config_->jpeg_params](
                  std::string& err) -> ThreadPool::TaskResult {
         ThreadPool::TaskResult result;
 
@@ -763,10 +787,17 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                 }
             } else {
                 std::vector<uint8_t> compressed;
+                std::string jpeg_err;
                 if (!chunk->compress_and_take_buffer(params, compressed)) {
                     err = "Failed to compress chunk " +
                           std::to_string(chunk_idx) + " of shard " +
                           std::to_string(shard_idx);
+                    result = ThreadPool::TaskResult::Fatal;
+                } else if (jpeg &&
+                           !encode_jpeg_chunk_(*jpeg, compressed, jpeg_err)) {
+                    err = "Failed to JPEG-encode chunk " +
+                          std::to_string(chunk_idx) + " of shard " +
+                          std::to_string(shard_idx) + ": " + jpeg_err;
                     result = ThreadPool::TaskResult::Fatal;
                 } else if (try_write([&] {
                                return shard->write_chunk(internal_idx,

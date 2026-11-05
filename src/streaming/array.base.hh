@@ -3,6 +3,7 @@
 #include "array.dimensions.hh"
 #include "compression.params.hh"
 #include "file.handle.hh"
+#include "jpeg.hh"
 #include "s3.client.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -57,6 +58,10 @@ struct ArrayConfig
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     uint16_t level_of_detail;
     uint32_t max_levels{ 0 };
+
+    /** On a multiscale group: the JPEG settings for its pyramid. On an array:
+     * set when this array is stored as JPEG. */
+    std::optional<JpegParams> jpeg_params;
 };
 
 enum class WriteResult

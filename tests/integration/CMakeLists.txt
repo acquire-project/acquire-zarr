@@ -23,6 +23,7 @@ set(tests
         stream-keep-existing-group-metadata
         stream-keep-existing-group-metadata-s3
         stream-multiscale-append-space-dim
+        stream-jpeg-pyramid-to-filesystem
 )
 
 foreach (name ${tests})
@@ -43,6 +44,12 @@ foreach (name ${tests})
             nlohmann_json::nlohmann_json
             Crc32c::crc32c
     )
+
+    if (name MATCHES ".*jpeg.*")
+        target_link_libraries(${tgt} PRIVATE
+                $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg-static>,libjpeg-turbo::turbojpeg-static,libjpeg-turbo::turbojpeg>
+        )
+    endif ()
 
     add_test(NAME test-${tgt} COMMAND ${tgt})
 

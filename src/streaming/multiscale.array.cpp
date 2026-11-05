@@ -3,6 +3,23 @@
 #include "zarr.common.hh"
 
 namespace {
+/**
+ * @brief A copy of @p config for a level stored as JPEG instead of blosc or
+ * zstd. The chunk buffers keep the native type; each chunk job converts its
+ * chunk to uint8 and encodes it, so the conversion runs on the thread pool.
+ */
+std::shared_ptr<zarr::ArrayConfig>
+make_jpeg_level_config(const zarr::ArrayConfig& config,
+                       const zarr::JpegParams& params)
+{
+    auto level_config = std::make_shared<zarr::ArrayConfig>(config);
+    level_config->compression_params = std::nullopt;
+    level_config->jpeg_params = params;
+    return level_config;
+}
+} // namespace
+
+namespace {
 std::string
 dimension_type_to_string(ZarrDimensionType type)
 {
@@ -143,9 +160,17 @@ zarr::MultiscaleArray::create_arrays_()
         const auto& configs = downsampler_->writer_configurations();
         arrays_.resize(configs.size());
 
+        const auto& jpeg = config_->jpeg_params;
+        if (jpeg && configs.size() < 2) {
+            LOG_WARNING("The pyramid has only level 0; no level is stored as "
+                        "JPEG");
+        }
+
         for (const auto& [lod, config] : configs) {
+            const auto level_config =
+              jpeg && lod > 0 ? make_jpeg_level_config(*config, *jpeg) : config;
             arrays_[lod] = std::make_unique<Array>(
-              config, thread_pool_, file_handle_pool_, s3_client_);
+              level_config, thread_pool_, file_handle_pool_, s3_client_);
         }
     } else {
         const auto config = make_base_array_config_();

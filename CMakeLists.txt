@@ -17,6 +17,7 @@ find_package(aws-crt-cpp CONFIG REQUIRED)
 find_package(Crc32c CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
+find_package(libjpeg-turbo CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 11)
