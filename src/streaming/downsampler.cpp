@@ -621,6 +621,12 @@ zarr::Downsampler::make_writer_configurations_(
             down_dims[ndims - 1] = x_dim;
         }
 
+        // ArrayDimensions re-adds and hides the phantom dimension of a 2D array
+        // only when it is given two dimensions
+        if (prev_dims->is_2d()) {
+            down_dims.erase(down_dims.begin());
+        }
+
         auto down_config = std::make_shared<ArrayConfig>(
           prev_config->store_root,
           // the new node key has the same parent as the current, but
