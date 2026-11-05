@@ -167,8 +167,10 @@ emit_json(YAML::Emitter& e, const json& doc)
 namespace {
 // version 1 shipped in 0.9.0 and gated downsampling behind `multiscale`;
 // version 2 replaced that flag with `is_ngff` (#213). Version-1 configs are
-// still accepted and translated in migrate_v1().
-constexpr uint64_t kSchemaVersion = 2;
+// still accepted and translated in migrate_v1(). Version 3 removed `plates`
+// with the typed HCS settings; a config of any version that has `plates` is
+// refused with a message.
+constexpr uint64_t kSchemaVersion = 3;
 constexpr uint64_t kMinSchemaVersion = 1;
 
 struct EnumEntry
@@ -423,35 +425,6 @@ migrate_v1(json& doc)
             migrate_array_v1(arrays[i], "arrays[" + std::to_string(i) + "]");
         }
     }
-
-    if (!doc.contains("plates") || !doc.at("plates").is_array()) {
-        return;
-    }
-
-    auto& plates = doc.at("plates");
-    for (size_t p = 0; p < plates.size(); ++p) {
-        const auto pctx = "plates[" + std::to_string(p) + "]";
-        if (!plates[p].is_object() || !plates[p].contains("wells") ||
-            !plates[p].at("wells").is_array()) {
-            continue;
-        }
-        auto& wells = plates[p].at("wells");
-        for (size_t w = 0; w < wells.size(); ++w) {
-            const auto wctx = pctx + ".wells[" + std::to_string(w) + "]";
-            if (!wells[w].is_object() || !wells[w].contains("images") ||
-                !wells[w].at("images").is_array()) {
-                continue;
-            }
-            auto& images = wells[w].at("images");
-            for (size_t i = 0; i < images.size(); ++i) {
-                const auto ictx = wctx + ".images[" + std::to_string(i) + "]";
-                if (!images[i].is_object() || !images[i].contains("array")) {
-                    continue;
-                }
-                migrate_array_v1(images[i].at("array"), ictx + ".array");
-            }
-        }
-    }
 }
 } // namespace
 
@@ -485,13 +458,9 @@ load_dimension(const json& j,
 }
 
 void
-load_array(const json& j,
-           ZarrArraySettings* arr,
-           const std::string& ctx,
-           bool allow_output_key)
+load_array(const json& j, ZarrArraySettings* arr, const std::string& ctx)
 {
-    if (allow_output_key && j.contains("output_key") &&
-        !j.at("output_key").is_null()) {
+    if (j.contains("output_key") && !j.at("output_key").is_null()) {
         arr->output_key =
           dup_cstr(as_string(j.at("output_key"), ctx + ".output_key"));
     }
@@ -572,138 +541,6 @@ load_array(const json& j,
     }
 }
 
-void
-load_acquisition(const json& j, ZarrHCSAcquisition* acq, const std::string& ctx)
-{
-    acq->id = as_uint<uint32_t>(require(j, "id", ctx), ctx + ".id");
-    if (j.contains("name") && !j.at("name").is_null()) {
-        acq->name = dup_cstr(as_string(j.at("name"), ctx + ".name"));
-    }
-    if (j.contains("description") && !j.at("description").is_null()) {
-        acq->description =
-          dup_cstr(as_string(j.at("description"), ctx + ".description"));
-    }
-    if (j.contains("start_time") && !j.at("start_time").is_null()) {
-        acq->start_time = as_uint<uint64_t>(j.at("start_time"), ctx + ".start_time");
-        acq->has_start_time = true;
-    }
-    if (j.contains("end_time") && !j.at("end_time").is_null()) {
-        acq->end_time = as_uint<uint64_t>(j.at("end_time"), ctx + ".end_time");
-        acq->has_end_time = true;
-    }
-}
-
-void
-load_fov(const json& j, ZarrHCSFieldOfView* fov, const std::string& ctx)
-{
-    fov->path = dup_cstr(as_string(require(j, "path", ctx), ctx + ".path"));
-    if (j.contains("acquisition_id") && !j.at("acquisition_id").is_null()) {
-        fov->acquisition_id =
-          as_uint<uint32_t>(j.at("acquisition_id"), ctx + ".acquisition_id");
-        fov->has_acquisition_id = true;
-    }
-    fov->array_settings = alloc_zeroed<ZarrArraySettings>(1);
-    load_array(
-      require(j, "array", ctx), fov->array_settings, ctx + ".array", false);
-}
-
-void
-load_well(const json& j, ZarrHCSWell* well, const std::string& ctx)
-{
-    well->row_name =
-      dup_cstr(as_string(require(j, "row_name", ctx), ctx + ".row_name"));
-    well->column_name =
-      dup_cstr(as_string(require(j, "column_name", ctx), ctx + ".column_name"));
-
-    const auto& images = require(j, "images", ctx);
-    if (!images.is_array()) {
-        fail(ctx + ".images", "expected a list");
-    }
-    well->image_count = images.size();
-    well->images = alloc_zeroed<ZarrHCSFieldOfView>(images.size());
-    for (size_t i = 0; i < images.size(); ++i) {
-        load_fov(images[i],
-                 &well->images[i],
-                 ctx + ".images[" + std::to_string(i) + "]");
-    }
-}
-
-std::vector<std::string>
-as_string_list(const json& j, const std::string& ctx)
-{
-    if (!j.is_array()) {
-        fail(ctx, "expected a list");
-    }
-    std::vector<std::string> out;
-    out.reserve(j.size());
-    for (const auto& e : j) {
-        out.push_back(as_string(e, ctx));
-    }
-    return out;
-}
-
-const char**
-dup_string_list(const std::vector<std::string>& src)
-{
-    auto* arr = alloc_zeroed<const char*>(src.size());
-    for (size_t i = 0; i < src.size(); ++i) {
-        try {
-            arr[i] = dup_cstr(src[i]);
-        } catch (...) {
-            for (size_t k = 0; k < i; ++k) {
-                free_cstr(arr[k]);
-            }
-            std::free(arr);
-            throw;
-        }
-    }
-    return arr;
-}
-
-void
-load_plate(const json& j, ZarrHCSPlate* plate, const std::string& ctx)
-{
-    plate->path = dup_cstr(as_string(require(j, "path", ctx), ctx + ".path"));
-    if (j.contains("name") && !j.at("name").is_null()) {
-        plate->name = dup_cstr(as_string(j.at("name"), ctx + ".name"));
-    }
-
-    const auto rows =
-      as_string_list(require(j, "row_names", ctx), ctx + ".row_names");
-    plate->row_names = dup_string_list(rows);
-    plate->row_count = rows.size();
-
-    const auto cols =
-      as_string_list(require(j, "column_names", ctx), ctx + ".column_names");
-    plate->column_names = dup_string_list(cols);
-    plate->column_count = cols.size();
-
-    const auto& wells = require(j, "wells", ctx);
-    if (!wells.is_array()) {
-        fail(ctx + ".wells", "expected a list");
-    }
-    plate->well_count = wells.size();
-    plate->wells = alloc_zeroed<ZarrHCSWell>(wells.size());
-    for (size_t i = 0; i < wells.size(); ++i) {
-        load_well(wells[i],
-                  &plate->wells[i],
-                  ctx + ".wells[" + std::to_string(i) + "]");
-    }
-
-    if (j.contains("acquisitions") && !j.at("acquisitions").is_null()) {
-        const auto& acqs = j.at("acquisitions");
-        if (!acqs.is_array()) {
-            fail(ctx + ".acquisitions", "expected a list");
-        }
-        plate->acquisition_count = acqs.size();
-        plate->acquisitions = alloc_zeroed<ZarrHCSAcquisition>(acqs.size());
-        for (size_t i = 0; i < acqs.size(); ++i) {
-            load_acquisition(acqs[i],
-                             &plate->acquisitions[i],
-                             ctx + ".acquisitions[" + std::to_string(i) + "]");
-        }
-    }
-}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -727,10 +564,10 @@ dump_dimension(const ZarrDimensionProperties& d)
 }
 
 json
-dump_array(const ZarrArraySettings& a, bool include_output_key)
+dump_array(const ZarrArraySettings& a)
 {
     json j;
-    if (include_output_key && a.output_key) {
+    if (a.output_key) {
         j["output_key"] = a.output_key;
     }
     j["data_type"] = from_enum(kDataTypes, a.data_type, "data type");
@@ -764,67 +601,6 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
     return j;
 }
 
-json
-dump_plate(const ZarrHCSPlate& p)
-{
-    json j;
-    j["path"] = p.path ? p.path : "";
-    if (p.name) {
-        j["name"] = p.name;
-    }
-    j["row_names"] = json::array();
-    for (size_t i = 0; i < p.row_count; ++i) {
-        j["row_names"].push_back(p.row_names[i] ? p.row_names[i] : "");
-    }
-    j["column_names"] = json::array();
-    for (size_t i = 0; i < p.column_count; ++i) {
-        j["column_names"].push_back(p.column_names[i] ? p.column_names[i] : "");
-    }
-    if (p.acquisition_count) {
-        auto acqs = json::array();
-        for (size_t i = 0; i < p.acquisition_count; ++i) {
-            const auto& a = p.acquisitions[i];
-            json aj;
-            aj["id"] = a.id;
-            if (a.name) {
-                aj["name"] = a.name;
-            }
-            if (a.description) {
-                aj["description"] = a.description;
-            }
-            if (a.has_start_time) {
-                aj["start_time"] = a.start_time;
-            }
-            if (a.has_end_time) {
-                aj["end_time"] = a.end_time;
-            }
-            acqs.push_back(aj);
-        }
-        j["acquisitions"] = acqs;
-    }
-    j["wells"] = json::array();
-    for (size_t i = 0; i < p.well_count; ++i) {
-        const auto& w = p.wells[i];
-        json wj;
-        wj["row_name"] = w.row_name ? w.row_name : "";
-        wj["column_name"] = w.column_name ? w.column_name : "";
-        wj["images"] = json::array();
-        for (size_t k = 0; k < w.image_count; ++k) {
-            const auto& fov = w.images[k];
-            json fj;
-            fj["path"] = fov.path ? fov.path : "";
-            if (fov.has_acquisition_id) {
-                fj["acquisition_id"] = fov.acquisition_id;
-            }
-            if (fov.array_settings) {
-                fj["array"] = dump_array(*fov.array_settings, false);
-            }
-            wj["images"].push_back(fj);
-        }
-        j["wells"].push_back(wj);
-    }
-    return j;
-}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -867,6 +643,14 @@ json_to_settings(const json& doc_in, ZarrStreamSettings* out)
                    " through " + std::to_string(kSchemaVersion) + ")");
         }
         version = v;
+    }
+
+    if (doc_in.contains("plates")) {
+        fail("plates",
+             "HCS plate settings were removed in schema version 3. Configure "
+             "each field of view as an array with output_key "
+             "'<plate>/<row>/<column>/<field>' and is_ngff set, and write the "
+             "plate and well metadata with write_custom_metadata");
     }
 
     // rewrite an older config into the current shape, so the loaders below
@@ -916,30 +700,13 @@ json_to_settings(const json& doc_in, ZarrStreamSettings* out)
         out->array_count = arrays.size();
         out->arrays = alloc_zeroed<ZarrArraySettings>(arrays.size());
         for (size_t i = 0; i < arrays.size(); ++i) {
-            load_array(arrays[i],
-                       &out->arrays[i],
-                       "arrays[" + std::to_string(i) + "]",
-                       true);
+            load_array(
+              arrays[i], &out->arrays[i], "arrays[" + std::to_string(i) + "]");
         }
     }
 
-    if (doc.contains("plates") && !doc.at("plates").is_null()) {
-        const auto& plates = doc.at("plates");
-        if (!plates.is_array()) {
-            fail("plates", "expected a list");
-        }
-        auto* hcs = alloc_zeroed<ZarrHCSSettings>(1);
-        out->hcs_settings = hcs;
-        hcs->plate_count = plates.size();
-        hcs->plates = alloc_zeroed<ZarrHCSPlate>(plates.size());
-        for (size_t i = 0; i < plates.size(); ++i) {
-            load_plate(
-              plates[i], &hcs->plates[i], "plates[" + std::to_string(i) + "]");
-        }
-    }
-
-    if (!out->arrays && !out->hcs_settings) {
-        fail("", "config must define 'arrays' and/or 'plates'");
+    if (!out->arrays) {
+        fail("", "config must define 'arrays'");
     }
 }
 
@@ -968,14 +735,7 @@ settings_to_json(const ZarrStreamSettings* s)
     if (s->arrays && s->array_count) {
         doc["arrays"] = json::array();
         for (size_t i = 0; i < s->array_count; ++i) {
-            doc["arrays"].push_back(dump_array(s->arrays[i], true));
-        }
-    }
-
-    if (s->hcs_settings && s->hcs_settings->plate_count) {
-        doc["plates"] = json::array();
-        for (size_t i = 0; i < s->hcs_settings->plate_count; ++i) {
-            doc["plates"].push_back(dump_plate(s->hcs_settings->plates[i]));
+            doc["arrays"].push_back(dump_array(s->arrays[i]));
         }
     }
 
@@ -1023,45 +783,6 @@ destroy_loaded_settings(ZarrStreamSettings* s)
             free_array_contents(&s->arrays[i]);
         }
         std::free(s->arrays);
-    }
-
-    if (s->hcs_settings) {
-        for (size_t p = 0; p < s->hcs_settings->plate_count; ++p) {
-            auto& plate = s->hcs_settings->plates[p];
-            free_cstr(plate.path);
-            free_cstr(plate.name);
-            if (plate.row_names) {
-                for (size_t i = 0; i < plate.row_count; ++i) {
-                    free_cstr(plate.row_names[i]);
-                }
-                std::free(const_cast<const char**>(plate.row_names));
-            }
-            if (plate.column_names) {
-                for (size_t i = 0; i < plate.column_count; ++i) {
-                    free_cstr(plate.column_names[i]);
-                }
-                std::free(const_cast<const char**>(plate.column_names));
-            }
-            for (size_t i = 0; i < plate.acquisition_count; ++i) {
-                free_cstr(plate.acquisitions[i].name);
-                free_cstr(plate.acquisitions[i].description);
-            }
-            std::free(plate.acquisitions);
-            for (size_t i = 0; i < plate.well_count; ++i) {
-                auto& well = plate.wells[i];
-                free_cstr(well.row_name);
-                free_cstr(well.column_name);
-                for (size_t k = 0; k < well.image_count; ++k) {
-                    free_cstr(well.images[k].path);
-                    free_array_contents(well.images[k].array_settings);
-                    std::free(well.images[k].array_settings);
-                }
-                std::free(well.images);
-            }
-            std::free(plate.wells);
-        }
-        std::free(s->hcs_settings->plates);
-        std::free(s->hcs_settings);
     }
 
     std::memset(s, 0, sizeof(*s));

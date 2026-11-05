@@ -1,5 +1,6 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
+#include "hcs-test-helper.hh"
 
 #include <nlohmann/json.hpp>
 
@@ -12,207 +13,14 @@ namespace fs = std::filesystem;
 ZarrStream*
 make_hcs_stream()
 {
-    ZarrHCSWell c5 = {
-        .row_name = "C",
-        .column_name = "5",
-    };
+    ZarrArraySettings fields[hcs::field_count];
+    hcs::configure_fields(fields);
 
-    CHECK(ZarrHCSWell_create_image_array(&c5, 2) == ZarrStatusCode_Success);
-    CHECK(c5.images != nullptr);
-    CHECK(c5.image_count == 2);
-
-    ZarrArraySettings c5_fov1{
-        .data_type = ZarrDataType_uint8,
-    };
-    CHECK(ZarrArraySettings_create_dimension_array(&c5_fov1, 3) ==
-          ZarrStatusCode_Success);
-    CHECK(c5_fov1.dimensions != nullptr);
-    CHECK(c5_fov1.dimension_count == 3);
-    c5_fov1.dimensions[0] = {
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 0,
-        .chunk_size_px = 1,
-        .shard_size_chunks = 1,
-    };
-    c5_fov1.dimensions[1] = {
-        .name = "y",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 480,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-    c5_fov1.dimensions[2] = {
-        .name = "x",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 640,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-
-    c5.images[0] = {
-        .path = "fov1", // full path: test_plate/C/5/fov1
-        .acquisition_id = 0,
-        .has_acquisition_id = true,
-        .array_settings = &c5_fov1,
-    };
-
-    ZarrArraySettings c5_fov2{
-        .data_type = ZarrDataType_uint16,
-    };
-    CHECK(ZarrArraySettings_create_dimension_array(&c5_fov2, 3) ==
-          ZarrStatusCode_Success);
-    CHECK(c5_fov2.dimensions != nullptr);
-    CHECK(c5_fov2.dimension_count == 3);
-    c5_fov2.dimensions[0] = {
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 0,
-        .chunk_size_px = 1,
-        .shard_size_chunks = 1,
-    };
-    c5_fov2.dimensions[1] = {
-        .name = "y",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 480,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-    c5_fov2.dimensions[2] = {
-        .name = "x",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 640,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-
-    c5.images[1] = {
-        .path = "fov2", // full path: test_plate/C/5/fov2
-        .acquisition_id = 1,
-        .has_acquisition_id = true,
-        .array_settings = &c5_fov2,
-    };
-
-    ZarrHCSWell d7 = {
-        .row_name = "D",
-        .column_name = "7",
-    };
-
-    CHECK(ZarrHCSWell_create_image_array(&d7, 1) == ZarrStatusCode_Success);
-    CHECK(d7.images != nullptr);
-    CHECK(d7.image_count == 1);
-
-    ZarrArraySettings d7_fov1{
-        .data_type = ZarrDataType_uint16,
-    };
-    CHECK(ZarrArraySettings_create_dimension_array(&d7_fov1, 5) ==
-          ZarrStatusCode_Success);
-    CHECK(d7_fov1.dimensions != nullptr);
-    CHECK(d7_fov1.dimension_count == 5);
-    d7_fov1.dimensions[0] = {
-        .name = "t",
-        .type = ZarrDimensionType_Time,
-        .array_size_px = 10,
-        .chunk_size_px = 1,
-        .shard_size_chunks = 1,
-    };
-    d7_fov1.dimensions[1] = {
-        .name = "c",
-        .type = ZarrDimensionType_Channel,
-        .array_size_px = 3,
-        .chunk_size_px = 1,
-        .shard_size_chunks = 1,
-    };
-    d7_fov1.dimensions[2] = {
-        .name = "z",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 5,
-        .chunk_size_px = 1,
-        .shard_size_chunks = 1,
-    };
-    d7_fov1.dimensions[3] = {
-        .name = "y",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 512,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-    d7_fov1.dimensions[4] = {
-        .name = "x",
-        .type = ZarrDimensionType_Space,
-        .array_size_px = 512,
-        .chunk_size_px = 256,
-        .shard_size_chunks = 4,
-    };
-
-    d7.images[0] = {
-        .path = "fov1", // full path: test_plate/D/7/fov1
-        .acquisition_id = 0,
-        .has_acquisition_id = true,
-        .array_settings = &d7_fov1,
-    };
-
-    ZarrHCSPlate plate{
-        .path = "test_plate",
-        .name = "Test Plate",
-    };
-    CHECK(ZarrHCSPlate_create_row_name_array(&plate, 8) ==
-          ZarrStatusCode_Success);
-    CHECK(plate.row_names != nullptr);
-    CHECK(plate.row_count == 8);
-
-    std::vector<std::string> row_names = { "A", "B", "C", "D",
-                                           "E", "F", "G", "H" };
-    for (size_t i = 0; i < row_names.size(); ++i) {
-        plate.row_names[i] = row_names[i].c_str();
-    }
-
-    CHECK(ZarrHCSPlate_create_column_name_array(&plate, 12) ==
-          ZarrStatusCode_Success);
-    CHECK(plate.column_names != nullptr);
-    CHECK(plate.column_count == 12);
-
-    std::vector<std::string> column_names = { "1", "2", "3", "4",  "5",  "6",
-                                              "7", "8", "9", "10", "11", "12" };
-    for (size_t i = 0; i < column_names.size(); ++i) {
-        plate.column_names[i] = column_names[i].c_str();
-    }
-
-    CHECK(ZarrHCSPlate_create_well_array(&plate, 2) == ZarrStatusCode_Success);
-    CHECK(plate.wells != nullptr);
-    CHECK(plate.well_count == 2);
-    plate.wells[0] = c5;
-    plate.wells[1] = d7;
-
-    CHECK(ZarrHCSPlate_create_acquisition_array(&plate, 2) ==
-          ZarrStatusCode_Success);
-    CHECK(plate.acquisitions != nullptr);
-    CHECK(plate.acquisition_count == 2);
-
-    plate.acquisitions[0] = {
-        .id = 0,
-        .name = "Meas_01(2012-07-31_10-41-12)",
-        .start_time = 1343731272000ULL,
-        .has_start_time = true,
-    };
-
-    plate.acquisitions[1] = {
-        .id = 1,
-        .name = "Meas_02(2012-07-31_10-45-12)",
-        .start_time = 1343735801000ULL,
-        .has_start_time = true,
-        .end_time = 1343737645000ULL,
-        .has_end_time = true,
-    };
-
-    ZarrHCSSettings hcs_settings = {
-        .plates = &plate,
-        .plate_count = 1,
-    };
     ZarrStreamSettings settings = {
         .store_path = TEST ".zarr",
         .overwrite = true,
-        .hcs_settings = &hcs_settings,
+        .arrays = fields,
+        .array_count = hcs::field_count,
     };
 
     size_t n_arrays = ZarrStreamSettings_get_array_count(&settings);
@@ -246,8 +54,10 @@ make_hcs_stream()
     }
 
     ZarrStream* stream = ZarrStream_create(&settings);
+    hcs::destroy_fields(fields);
+    EXPECT(stream != nullptr, "Failed to create stream");
 
-    ZarrHCSPlate_destroy_well_array(&plate);
+    hcs::write_metadata(stream);
 
     return stream;
 }
@@ -364,19 +174,13 @@ validate_plate_metadata()
     CHECK(ome.contains("plate"));
     const auto& plate = ome["plate"];
 
-    EXPECT(plate.size() == 7, "Expected 7 fields in plate, got ", plate.size());
+    EXPECT(plate.size() == 6, "Expected 6 fields in plate, got ", plate.size());
 
     // plate field 1: name
     CHECK(plate.contains("name"));
     EXPECT(plate["name"] == "Test Plate",
            "Expected plate name to be 'Test Plate', got ",
            plate["name"].get<std::string>());
-
-    // plate field 2: version
-    CHECK(plate.contains("version"));
-    EXPECT(plate["version"] == "0.5",
-           "Expected plate version to be '0.5', got ",
-           plate["version"].get<std::string>());
 
     // plate field 3: field_count
     CHECK(plate.contains("field_count"));
@@ -551,13 +355,7 @@ validate_well_metadata()
 
         CHECK(ome.contains("well"));
         const auto& well = ome["well"];
-        EXPECT(
-          well.size() == 2, "Expected 2 fields in well, got ", well.size());
-
-        CHECK(well.contains("version"));
-        EXPECT(well["version"] == "0.5",
-               "Expected well version to be '0.5', got ",
-               well["version"].get<std::string>());
+        EXPECT(well.size() == 1, "Expected 1 field in well, got ", well.size());
 
         CHECK(well.contains("images"));
         const auto& images = well["images"];
@@ -606,6 +404,21 @@ check_arrays_exist()
     for (const auto& path : paths) {
         EXPECT(
           fs::exists(path / "zarr.json"), "Missing array: ", path.string());
+
+        // is_ngff makes each field of view a multiscales group, with its
+        // full-resolution array at level 0
+        std::ifstream ifs(path / "zarr.json");
+        nlohmann::json metadata;
+        ifs >> metadata;
+        EXPECT(metadata["node_type"] == "group",
+               "Expected a group at ",
+               path.string());
+        EXPECT(metadata["attributes"]["ome"].contains("multiscales"),
+               "Expected multiscales at ",
+               path.string());
+        EXPECT(fs::exists(path / "0" / "zarr.json"),
+               "Missing level 0 at ",
+               path.string());
     }
 }
 
@@ -616,6 +429,12 @@ main()
 
     try {
         ZarrStream* stream = make_hcs_stream();
+
+        // plate and well metadata are written at once, so a reader can open
+        // the plate during the acquisition
+        validate_plate_metadata();
+        validate_well_metadata();
+
         append_some_data(stream);
         ZarrStream_destroy(stream);
 

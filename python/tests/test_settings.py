@@ -506,39 +506,23 @@ def test_load_settings_migrates_v1_multiscale():
     assert s.arrays[0].downsampling_method is None
 
     # dumping always writes the current schema version
-    assert s.to_dict()["version"] == 2
+    assert s.to_dict()["version"] == 3
 
 
-def test_load_settings_migrates_v1_hcs_arrays():
-    # the migration must also reach field-of-view arrays nested under plates
-    hcs_v1 = """
-version: 1
-store_path: plate.zarr
-plates:
-  - path: test_plate
-    name: Test Plate
-    row_names: [A]
-    column_names: ["1"]
-    wells:
-      - row_name: A
-        column_name: "1"
-        images:
-          - path: fov1
-            array:
-              data_type: uint16
-              multiscale: true
-              downsampling_method: mean
-              dimensions:
-                - {name: z, type: space, array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
-                - {name: y, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
-                - {name: x, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
-"""
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_load_settings_rejects_plates(version: int):
+    # HCS plate settings were removed in schema version 3; a config of any
+    # version that has them is refused, not partly loaded
+    config = (
+        CONFIGS["yaml"].replace("version: 2", f"version: {version}")
+        + "plates:\n  - path: test_plate\n"
+    )
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(config)
 
-    s = aqz.StreamSettings.from_string(hcs_v1)
-    fov = s.hcs_plates[0].wells[0].images[0]
-    assert fov.array_settings.is_ngff is True
-    assert (
-        fov.array_settings.downsampling_method == aqz.DownsamplingMethod.MEAN
+    # without them, the same config loads
+    aqz.StreamSettings.from_string(
+        CONFIGS["yaml"].replace("version: 2", f"version: {version}")
     )
 
 
@@ -556,7 +540,7 @@ def test_load_settings_rejects_is_ngff_in_v1():
 def test_load_settings_rejects_unsupported_version():
     with pytest.raises(ValueError):
         aqz.StreamSettings.from_string(
-            CONFIGS["yaml"].replace("version: 2", "version: 3")
+            CONFIGS["yaml"].replace("version: 2", "version: 4")
         )
 
 
@@ -624,34 +608,24 @@ def test_config_rejects_bad_intermediate_groups():
 
 
 def test_yaml_dump_quotes_ambiguous_strings():
-    hcs_yaml = """
-version: 2
+    config = """
+version: 3
 store_path: plate.zarr
-plates:
-  - path: test_plate
-    name: Test Plate
-    row_names: [C]
-    column_names: ["5"]
-    wells:
-      - row_name: C
-        column_name: "5"
-        images:
-          - path: fov1
-            array:
-              data_type: uint16
-              dimensions:
-                - {name: z, type: space, array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
-                - {name: y, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
-                - {name: x, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+arrays:
+  - output_key: "5"
+    data_type: uint16
+    dimensions:
+      - {name: z, type: space, array_size_px: 0,  chunk_size_px: 1,  shard_size_chunks: 1}
+      - {name: y, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
+      - {name: x, type: space, array_size_px: 64, chunk_size_px: 64, shard_size_chunks: 1}
 """
 
-    s = aqz.StreamSettings.from_string(hcs_yaml)
-    assert s.hcs_plates[0].wells[0].column_name == "5"
+    s = aqz.StreamSettings.from_string(config)
+    assert s.arrays[0].output_key == "5"
 
     yaml = s.to_yaml()
     # numeric-looking names are emitted quoted so they reload as strings
     assert '"5"' in yaml
 
     reloaded = aqz.StreamSettings.from_string(yaml)
-    assert reloaded.hcs_plates[0].wells[0].column_name == "5"
-    assert list(reloaded.hcs_plates[0].column_names) == ["5"]
+    assert reloaded.arrays[0].output_key == "5"

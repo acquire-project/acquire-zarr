@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 namespace {
 const fs::path store = "config-test.zarr";
 
-auto config_yaml = R"(version: 2
+auto config_yaml = R"(version: 3
 store_path: config-test.zarr
 overwrite: true
 max_threads: 4
@@ -34,7 +34,7 @@ arrays:
 )";
 
 auto config_json = R"({
-  "version": 2,
+  "version": 3,
   "store_path": "config-test.zarr",
   "overwrite": true,
   "max_threads": 4,
@@ -60,7 +60,6 @@ assert_expected(const ZarrStreamSettings& s)
     EXPECT_EQ(unsigned, s.max_threads, 4u);
     EXPECT_EQ(size_t, s.array_count, 1u);
     CHECK(s.s3_settings == nullptr);
-    CHECK(s.hcs_settings == nullptr);
 
     const auto& a = s.arrays[0];
     CHECK(a.output_key == nullptr);
@@ -148,7 +147,7 @@ main()
         ZarrStreamSettings bad{};
         EXPECT(ZarrStreamSettings_load_from_string(
                  &bad, "version: 2\nstore_path: x\n") != ZarrStatusCode_Success,
-               "Expected failure: no arrays or plates");
+               "Expected failure: no arrays");
         EXPECT(ZarrStreamSettings_load_from_string(
                  &bad,
                  "store_path: x\narrays:\n  - data_type: float128\n    "
@@ -160,9 +159,33 @@ main()
                  ZarrStatusCode_Success,
                "Expected failure: unsupported schema version");
 
+        // HCS plate settings were removed in schema version 3; a config of
+        // any version that has them is refused, not partly loaded
+        for (const char* version :
+             { "version: 1", "version: 2", "version: 3" }) {
+            std::string with_plates(config_yaml);
+            with_plates.replace(
+              with_plates.find("version: 3"), strlen("version: 3"), version);
+            with_plates += "plates:\n  - path: p\n";
+            EXPECT(ZarrStreamSettings_load_from_string(
+                     &bad, with_plates.c_str()) != ZarrStatusCode_Success,
+                   "Expected failure: 'plates' in a config declaring ",
+                   version);
+        }
+
+        // a version 2 config without plates still loads
+        std::string version_2(config_yaml);
+        version_2.replace(
+          version_2.find("version: 3"), strlen("version: 3"), "version: 2");
+        ZarrStreamSettings from_v2{};
+        CHECK_OK(
+          ZarrStreamSettings_load_from_string(&from_v2, version_2.c_str()));
+        assert_expected(from_v2);
+        ZarrStreamSettings_destroy_loaded(&from_v2);
+
         // `multiscale` was replaced by `is_ngff` in schema version 2; a
         // version 2 config carrying it must be rejected, not reinterpreted
-        std::string legacy(config_yaml);
+        std::string legacy(version_2);
         legacy.insert(legacy.find("  - data_type: uint16") +
                         strlen("  - data_type: uint16"),
                       "\n    multiscale: true");

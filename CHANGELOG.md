@@ -10,30 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
-  config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
+  config file) controls whether the stream writes `zarr.json` for the groups above its arrays. `IfMissing`, the
   default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
-  anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
-  always written (#186, #268)
+  anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller (#186, #268)
 - `ZarrStream_write_custom_metadata` (`ZarrStream.write_custom_metadata` in Python) can address every node that the
-  stream writes, not only arrays: the root group (`""`), plate and well groups, the generic groups between the root and
-  an array, and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives custom
-  metadata is written each time it receives some, and again at close, so a reader sees it during the acquisition.
-  Generic groups are not addressable under `ZarrIntermediateGroups_Never`
+  stream writes, not only arrays: the root group (`""`), the groups between the root and an array (such as HCS plate,
+  row and well groups), and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives
+  custom metadata is written each time it receives some, and again at close, so a reader sees it during the
+  acquisition. Groups are not addressable under `ZarrIntermediateGroups_Never`
 - Custom metadata can be written under `ome`, for OME-NGFF metadata that the stream does not write, such as `omero`.
   The custom keys merge with the stream's own `ome` keys. `ome.multiscales` is refused on every node, and so is any
-  other key that the stream writes under `ome` on the node (`version` and `name` on a multiscale group, `version` and
-  `plate` or `well` on a plate or well), except `version` with the same value
+  other key that the stream writes under `ome` on the node (`version` and `name` on a multiscale group), except
+  `version` with the same value
 
 ### Changed
 
-- The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
-  closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
-  `ZarrStream_create` is kept, unless the caller also gives that group custom metadata through
-  `ZarrStream_write_custom_metadata`: the stream then replaces the group's `zarr.json` each time (#186, #268)
+- The stream writes the intermediate group metadata when it is created, not when it closes. A reader can navigate the
+  hierarchy during the acquisition, and group metadata that the caller writes after `ZarrStream_create` is kept,
+  unless the caller also gives that group custom metadata through `ZarrStream_write_custom_metadata`: the stream then
+  replaces the group's `zarr.json` each time (#186, #268)
 - ⚠️ **Breaking:** the Python keyword `array_key` of `ZarrStream.write_custom_metadata` is renamed `node_key`, because
   the key can now name a group or a level of detail. The C parameter has the same new name; C callers are not affected
 - `ZarrStream_write_custom_metadata` returns `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when it
   refuses the metadata
+- ⚠️ **Breaking:** the config-file schema is now version 3. A config of any version that has `plates` is refused
+  with a message. Versions 1 and 2 without `plates` still load, and a dump writes version 3
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
@@ -45,6 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints that validate the signing region require it to be set explicitly (#248)
 - The bucket is now checked once when the stream is created rather than once per object written (#248)
 - Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
+
+### Removed
+
+- ⚠️ **Breaking:** the typed HCS settings: `ZarrHCSSettings`, `ZarrHCSPlate`, `ZarrHCSWell`,
+  `ZarrHCSFieldOfView`, `ZarrHCSAcquisition`, `ZarrStreamSettings.hcs_settings` and their create/destroy functions in
+  C, and `Plate`, `Well`, `FieldOfView`, `Acquisition` and `StreamSettings.hcs_plates` in Python. Configure each field
+  of view as an array with `output_key` `<plate>/<row>/<column>/<field>` and `is_ngff` set, and write the plate and
+  well metadata with `write_custom_metadata` under `ome`. The plate, row and well groups now follow
+  `intermediate_groups`: under `Never` the stream does not write them. See "High-content screening workflows" in the
+  README and `examples/python/stream_hcs_plate.py`
 
 ### Fixed
 

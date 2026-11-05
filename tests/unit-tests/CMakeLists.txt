@@ -43,7 +43,6 @@ set(tests
         downsampler
         downsampler-odd-z
         downsampler-integer-mean
-        plate
 )
 
 foreach (name ${tests})
