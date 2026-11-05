@@ -168,8 +168,8 @@ namespace {
 // version 1 shipped in 0.9.0 and gated downsampling behind `multiscale`;
 // version 2 replaced that flag with `is_ngff` (#213). Version-1 configs are
 // still accepted and translated in migrate_v1(). Version 3 removed `plates`
-// with the typed HCS settings; a config of any version that has `plates` is
-// refused with a message.
+// with the typed HCS settings, and added `custom_metadata`; a config of any
+// version that has `plates` is refused with a message.
 constexpr uint64_t kSchemaVersion = 3;
 constexpr uint64_t kMinSchemaVersion = 1;
 
@@ -541,6 +541,26 @@ load_array(const json& j, ZarrArraySettings* arr, const std::string& ctx)
     }
 }
 
+void
+load_custom_metadata(const json& j,
+                     ZarrCustomMetadata* entry,
+                     const std::string& ctx)
+{
+    if (!j.is_object()) {
+        fail(ctx, "expected a mapping");
+    }
+    if (j.contains("node_key") && !j.at("node_key").is_null()) {
+        entry->node_key =
+          dup_cstr(as_string(j.at("node_key"), ctx + ".node_key"));
+    }
+    if (j.contains("metadata_key") && !j.at("metadata_key").is_null()) {
+        entry->metadata_key =
+          dup_cstr(as_string(j.at("metadata_key"), ctx + ".metadata_key"));
+    }
+
+    // any JSON value; the stream checks it at create
+    entry->metadata = dup_cstr(require(j, "metadata", ctx).dump());
+}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -649,8 +669,9 @@ json_to_settings(const json& doc_in, ZarrStreamSettings* out)
         fail("plates",
              "HCS plate settings were removed in schema version 3. Configure "
              "each field of view as an array with output_key "
-             "'<plate>/<row>/<column>/<field>' and is_ngff set, and write the "
-             "plate and well metadata with write_custom_metadata");
+             "'<plate>/<row>/<column>/<field>' and is_ngff set, and give the "
+             "plate and well metadata under 'custom_metadata' (see "
+             "examples/config/hcs.yaml)");
     }
 
     // rewrite an older config into the current shape, so the loaders below
@@ -705,10 +726,57 @@ json_to_settings(const json& doc_in, ZarrStreamSettings* out)
         }
     }
 
+    if (doc.contains("custom_metadata") &&
+        !doc.at("custom_metadata").is_null()) {
+        // a reader of an earlier schema would ignore the key and lose the
+        // metadata, so a config that has it must declare the schema that does
+        if (version < 3) {
+            fail("custom_metadata",
+                 "'custom_metadata' requires schema version 3; this config "
+                 "declares version " +
+                   std::to_string(version));
+        }
+        const auto& entries = doc.at("custom_metadata");
+        if (!entries.is_array()) {
+            fail("custom_metadata", "expected a list");
+        }
+        out->custom_metadata_count = entries.size();
+        out->custom_metadata = alloc_zeroed<ZarrCustomMetadata>(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i) {
+            load_custom_metadata(entries[i],
+                                 &out->custom_metadata[i],
+                                 "custom_metadata[" + std::to_string(i) + "]");
+        }
+    }
+
     if (!out->arrays) {
         fail("", "config must define 'arrays'");
     }
 }
+
+namespace {
+json
+dump_custom_metadata(const ZarrCustomMetadata& entry, const std::string& ctx)
+{
+    json j = json::object();
+    if (entry.node_key) {
+        j["node_key"] = entry.node_key;
+    }
+    if (entry.metadata_key) {
+        j["metadata_key"] = entry.metadata_key;
+    }
+
+    // text that is not JSON has no faithful form in the file: as a YAML
+    // string it would reload as a valid JSON string, so refuse it
+    auto metadata =
+      json::parse(entry.metadata ? entry.metadata : "", nullptr, false, true);
+    if (metadata.is_discarded()) {
+        fail(ctx, "metadata is not valid JSON");
+    }
+    j["metadata"] = std::move(metadata);
+    return j;
+}
+} // namespace
 
 json
 settings_to_json(const ZarrStreamSettings* s)
@@ -736,6 +804,15 @@ settings_to_json(const ZarrStreamSettings* s)
         doc["arrays"] = json::array();
         for (size_t i = 0; i < s->array_count; ++i) {
             doc["arrays"].push_back(dump_array(s->arrays[i]));
+        }
+    }
+
+    if (s->custom_metadata && s->custom_metadata_count) {
+        doc["custom_metadata"] = json::array();
+        for (size_t i = 0; i < s->custom_metadata_count; ++i) {
+            doc["custom_metadata"].push_back(dump_custom_metadata(
+              s->custom_metadata[i],
+              "custom_metadata[" + std::to_string(i) + "]"));
         }
     }
 
@@ -783,6 +860,15 @@ destroy_loaded_settings(ZarrStreamSettings* s)
             free_array_contents(&s->arrays[i]);
         }
         std::free(s->arrays);
+    }
+
+    if (s->custom_metadata) {
+        for (size_t i = 0; i < s->custom_metadata_count; ++i) {
+            free_cstr(s->custom_metadata[i].node_key);
+            free_cstr(s->custom_metadata[i].metadata_key);
+            free_cstr(s->custom_metadata[i].metadata);
+        }
+        std::free(s->custom_metadata);
     }
 
     std::memset(s, 0, sizeof(*s));

@@ -37,6 +37,16 @@ extern "C"
         ZarrIntermediateGroups
           intermediate_groups; /**< Whether to write the generic groups
                                   above the arrays. */
+        ZarrCustomMetadata* custom_metadata; /**< Optional custom metadata to
+                                                write at create, in order. If
+                                                an entry fails, create fails.
+                                                Each entry's node, JSON and
+                                                keys are checked before the
+                                                store is changed; a level of
+                                                detail that does not exist is
+                                                found only after. */
+        size_t custom_metadata_count;        /**< The number of custom metadata
+                                                entries. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -124,11 +134,12 @@ extern "C"
     /**
      * @brief Populate stream settings from a YAML or JSON config file.
      * @details JSON is a subset of YAML, so both formats are accepted. All
-     * arrays, dimensions, and strings referenced by @p settings are allocated
+     * arrays, dimensions, custom metadata entries, and strings referenced by
+     * @p settings are allocated
      * and owned by the loader; free them with
-     * ZarrStreamSettings_destroy_loaded (NOT the piecemeal destroy_* functions).
-     * Secrets (e.g. AWS credentials) are never read from the file; provide them
-     * via the environment.
+     * ZarrStreamSettings_destroy_loaded (NOT the piecemeal destroy_*
+     * functions). Secrets (e.g. AWS credentials) are never read from the file;
+     * provide them via the environment.
      * @param[out] settings The stream settings struct to populate.
      * @param path Path to the config file.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
@@ -152,7 +163,7 @@ extern "C"
     /**
      * @brief Free settings populated by ZarrStreamSettings_load_from_file or
      * ZarrStreamSettings_load_from_string, including all loader-owned strings,
-     * arrays and dimensions.
+     * arrays, dimensions and custom metadata entries.
      * @param[in, out] settings The loader-populated stream settings struct.
      */
     void ZarrStreamSettings_destroy_loaded(ZarrStreamSettings* settings);

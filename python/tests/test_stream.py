@@ -32,6 +32,7 @@ from acquire_zarr import (
     LogLevel,
     DownsamplingMethod,
     IntermediateGroups,
+    CustomMetadata,
     set_log_level,
     get_log_level,
 )
@@ -2003,6 +2004,54 @@ def test_hcs_groups_not_addressable_under_never(store_path: Path):
     base_path = Path(settings.store_path)
     for node in ["", "test_plate", "test_plate/C", "test_plate/C/5"]:
         assert not (base_path / node / "zarr.json").exists()
+
+
+def test_hcs_metadata_from_settings(store_path: Path):
+    # the plate and well metadata given in the settings exist when create
+    # returns, with no write_custom_metadata call
+    fields, metadata = create_hcs_plate()
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=fields,
+        custom_metadata=[
+            CustomMetadata(ome, node_key=node, metadata_key="ome")
+            for node, ome in metadata.items()
+        ],
+    )
+    stream = ZarrStream(settings)
+    validate_plate_metadata(store_path / "test.zarr")
+    validate_well_metadata(store_path / "test.zarr")
+    stream.close()
+
+
+def test_failed_custom_metadata_fails_create(store_path: Path):
+    fields, metadata = create_hcs_plate()
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=fields,
+    )
+    stream = ZarrStream(settings)
+    write_hcs_metadata(stream, metadata)
+    stream.append(
+        np.zeros((640, 480), dtype=np.uint8), key="test_plate/C/5/fov1"
+    )
+    stream.close()
+
+    # an entry with an unknown node fails create before the store changes, so
+    # the store above, which overwrite would remove, is intact
+    settings.custom_metadata = [
+        CustomMetadata({"a": 1}, node_key="test_plate"),
+        CustomMetadata({"a": 1}, node_key="test_plate/Z"),
+    ]
+    with pytest.raises(RuntimeError):
+        ZarrStream(settings)
+
+    base_path = store_path / "test.zarr"
+    assert (base_path / "test_plate/C/5/fov1/0/zarr.json").exists()
+    with open(base_path / "test_plate" / "zarr.json") as fh:
+        assert "a" not in json.load(fh)["attributes"]
 
 
 def test_mixed_flat_and_hcs_acquisition(store_path: Path):

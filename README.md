@@ -596,6 +596,14 @@ In C, the steps are the same: set `output_key` and `is_ngff` on each field's
 `ZarrArraySettings`, then call `ZarrStream_write_custom_metadata(stream,
 "plate", "ome", plate_json)` and the same for each well.
 
+You can also give the plate and well metadata in the settings, as
+`StreamSettings.custom_metadata` (a list of `CustomMetadata(metadata,
+node_key=..., metadata_key=...)`; `ZarrStreamSettings.custom_metadata` in C).
+The stream writes these entries, in order, before `ZarrStream_create`
+returns, and creating the stream fails if an entry fails. A config file can
+give the same list under `custom_metadata`, so a whole HCS store can be
+described in one file: see `examples/config/hcs.yaml`.
+
 Releases up to 0.10 had typed HCS settings (`ZarrHCSSettings`,
 `ZarrHCSPlate`, `ZarrHCSWell`, `ZarrHCSFieldOfView`, `ZarrHCSAcquisition`, and
 `Plate`, `Well`, `FieldOfView` and `Acquisition` in Python). They are removed.

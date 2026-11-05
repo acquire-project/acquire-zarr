@@ -181,6 +181,14 @@ struct ZarrStream_s
     [[nodiscard]] bool write_intermediate_metadata_();
 
     /**
+     * @brief Write the custom metadata entries of @p settings, in order, as
+     * write_custom_metadata does. Called once, at create.
+     * @return True if every entry was written, otherwise false.
+     */
+    [[nodiscard]] bool write_initial_custom_metadata_(
+      const ZarrStreamSettings* settings);
+
+    /**
      * @brief Write each group that has custom metadata, at close.
      * @return True if every such group was written, otherwise false.
      */

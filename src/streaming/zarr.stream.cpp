@@ -754,6 +754,102 @@ dimension_type_to_string(ZarrDimensionType type)
             return "(unknown)";
     }
 }
+/// Check each custom metadata entry without writing anything: the node exists
+/// and is addressable, the metadata is JSON, and no reserved key is used. A
+/// level's index is checked when the entry is written, because the number of
+/// levels is known only when the arrays exist.
+[[nodiscard]] bool
+check_custom_metadata_entries(
+  const ZarrStreamSettings* settings,
+  const std::vector<std::shared_ptr<zarr::ArrayConfig>>& arrays,
+  const std::vector<std::string>& group_paths,
+  ZarrIntermediateGroups intermediate_groups,
+  std::string& error)
+{
+    // the keys that a multiscale group writes under `ome`
+    const nlohmann::json multiscale_ome = {
+        { "version", zarr::MultiscaleArray::ome_version },
+        { "name", nullptr },
+        { "multiscales", nullptr },
+    };
+
+    for (size_t i = 0; i < settings->custom_metadata_count; ++i) {
+        const auto& entry = settings->custom_metadata[i];
+        const std::string ctx = "custom_metadata[" + std::to_string(i) + "]";
+
+        std::string key;
+        if (entry.node_key) {
+            key = zarr::regularize_key(entry.node_key);
+        } else if (arrays.size() == 1) {
+            key = arrays.front()->node_key;
+        } else {
+            error = ctx + ": a node key is required when there are multiple "
+                          "arrays";
+            return false;
+        }
+
+        bool found = false;
+        nlohmann::json library_ome = nullptr;
+        for (const auto& array : arrays) {
+            if (array->node_key == key) {
+                found = true;
+                if (array->is_ngff) {
+                    library_ome = multiscale_ome;
+                }
+            }
+        }
+
+        if (!found) { // a level of detail?
+            const auto slash = key.find_last_of('/');
+            const std::string parent =
+              slash == std::string::npos ? "" : key.substr(0, slash);
+            const std::string level =
+              slash == std::string::npos ? key : key.substr(slash + 1);
+            found = is_numeric_string(level) &&
+                    std::ranges::any_of(arrays, [&](const auto& array) {
+                        return array->node_key == parent && array->is_ngff;
+                    });
+        }
+
+        if (!found &&
+            std::ranges::find(group_paths, key) != group_paths.end()) {
+            if (intermediate_groups == ZarrIntermediateGroups_Never) {
+                error = ctx + ": group '" + key +
+                        "' is not written by this stream (intermediate "
+                        "groups: never)";
+                return false;
+            }
+            found = true;
+        }
+
+        if (!found) {
+            error = ctx + ": '" + key +
+                    "' is not an array, a group, or a level of detail in this "
+                    "stream";
+            return false;
+        }
+
+        nlohmann::json metadata;
+        if (!validate_custom_metadata(entry.metadata ? entry.metadata : "",
+                                      metadata)) {
+            error = ctx + ": metadata is not valid JSON";
+            return false;
+        }
+
+        std::unordered_map<std::string, nlohmann::json> scratch;
+        if (!zarr::merge_custom_metadata(
+              scratch,
+              zarr::regularize_key(entry.metadata_key ? entry.metadata_key
+                                                      : ""),
+              metadata,
+              library_ome)) {
+            error = ctx + ": metadata refused for '" + key + "' (see the log)";
+            return false;
+        }
+    }
+
+    return true;
+}
 } // namespace
 
 /* ZarrStream_s implementation */
@@ -768,6 +864,8 @@ ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)
     EXPECT(commit_settings_(settings), error_);
 
     EXPECT(write_intermediate_metadata_(), error_);
+
+    EXPECT(write_initial_custom_metadata_(settings), error_);
 
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
@@ -1081,6 +1179,12 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
         return false;
     }
 
+    if (settings->custom_metadata_count > 0 &&
+        settings->custom_metadata == nullptr) {
+        error_ = "Null pointer: custom_metadata";
+        return false;
+    }
+
     if (settings->intermediate_groups >= ZarrIntermediateGroupsCount) {
         error_ = "Invalid intermediate groups mode: " +
                  std::to_string(settings->intermediate_groups);
@@ -1129,6 +1233,16 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
 
     // validate the arrays as a collection
     if (!check_array_structure(arrays, intermediate_group_paths_, error_)) {
+        return false;
+    }
+
+    // before the store is touched, so that a mistake fails create without
+    // changing the store
+    if (!check_custom_metadata_entries(settings,
+                                       arrays,
+                                       intermediate_group_paths_,
+                                       settings->intermediate_groups,
+                                       error_)) {
         return false;
     }
 
@@ -1332,6 +1446,32 @@ ZarrStream_s::write_intermediate_metadata_()
 
         groups_.emplace(relative_path,
                         OutputGroup{ .document = std::move(document) });
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::write_initial_custom_metadata_(const ZarrStreamSettings* settings)
+{
+    for (size_t i = 0; i < settings->custom_metadata_count; ++i) {
+        const auto& entry = settings->custom_metadata[i];
+
+        std::optional<std::string> node_key;
+        if (entry.node_key) {
+            node_key = entry.node_key;
+        }
+
+        const auto status =
+          write_custom_metadata(node_key,
+                                entry.metadata_key ? entry.metadata_key : "",
+                                entry.metadata ? entry.metadata : "");
+        if (status != ZarrStatusCode_Success) {
+            set_error_("Failed to write custom_metadata[" + std::to_string(i) +
+                       "] to '" + node_key.value_or("(NULL)") +
+                       "': " + Zarr_get_status_message(status));
+            return false;
+        }
     }
 
     return true;

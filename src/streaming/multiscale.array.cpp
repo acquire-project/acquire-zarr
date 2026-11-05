@@ -171,7 +171,7 @@ nlohmann::json
 zarr::MultiscaleArray::get_ome_metadata_() const
 {
     nlohmann::json ome;
-    ome["version"] = "0.5";
+    ome["version"] = ome_version;
     ome["name"] = "/";
     ome["multiscales"] = make_multiscales_metadata_();
 

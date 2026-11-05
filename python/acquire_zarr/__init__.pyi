@@ -18,6 +18,7 @@ __all__ = [
     "CompressionCodec",
     "CompressionSettings",
     "Compressor",
+    "CustomMetadata",
     "DataType",
     "Dimension",
     "DimensionType",
@@ -173,6 +174,38 @@ class Compressor:
     def name(self) -> str: ...
     @property
     def value(self) -> int: ...
+
+class CustomMetadata:
+    """Custom metadata that the stream writes when it is created.
+
+    The stream writes each entry of ``StreamSettings.custom_metadata`` in
+    order, as ``ZarrStream.write_custom_metadata`` does, before the stream is
+    returned. If an entry fails, creating the stream fails. Each entry's node,
+    JSON and keys are checked before the store is changed; a level of detail
+    that does not exist is found only after.
+
+    Attributes:
+        metadata: The metadata. A ``str`` is taken as JSON text, as in
+            ``write_custom_metadata``; any other value is serialized with
+            ``json.dumps``. Reading it gives the parsed value.
+        node_key: Key of the node, as for ``write_custom_metadata``. None is
+            the stream's only array.
+        metadata_key: Key under ``attributes``, or None to write each key of
+            ``metadata`` there.
+    """
+
+    metadata: Any
+    node_key: Optional[str]
+    metadata_key: Optional[str]
+
+    def __init__(
+        self,
+        metadata: Any,
+        *,
+        node_key: Optional[str] = None,
+        metadata_key: Optional[str] = None,
+    ) -> None: ...
+    def __repr__(self) -> str: ...
 
 class DataType:
     """
@@ -427,7 +460,8 @@ class StreamSettings:
         max_threads: Maximum number of threads for parallel processing. Defaults to 0,
             meaning: use the ZARR_MAX_THREADS environment variable if set, otherwise
             auto-detect based on available hardware concurrency.
-        custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
+        custom_metadata: Custom metadata that the stream writes when it is
+            created, in order. See CustomMetadata.
         overwrite: If True, removes any existing data at store_path before writing.
         intermediate_groups: Whether to write ``zarr.json`` for the groups
             above the arrays. Defaults to IntermediateGroups.IF_MISSING.
@@ -441,7 +475,7 @@ class StreamSettings:
     """
 
     arrays: List[ArraySettings]
-    custom_metadata: Optional[str]
+    custom_metadata: List[CustomMetadata]
     s3: Optional[S3Settings]
     store_path: str
     max_threads: int
