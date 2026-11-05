@@ -229,6 +229,23 @@ struct ZarrStream_s
 bool
 finalize_stream(ZarrStream* stream);
 
+namespace zarr {
+/**
+ * @brief Upper bound on the chunk memory of one array: for every level, one
+ * layer of chunk slots plus chunk_inflight_budget(), and with compression one
+ * compressed buffer per worker.
+ * @details Builds the dimensions and the pyramid levels the way the stream
+ * does, so the bound follows the stream's geometry (2D arrays, banding,
+ * transposition, levels that keep their size along x and y).
+ * @param settings The array's settings.
+ * @param n_threads The pool's thread count, from
+ * ThreadPool::effective_thread_count.
+ */
+size_t
+estimate_array_chunk_memory(const ZarrArraySettings* settings,
+                            uint32_t n_threads);
+} // namespace zarr
+
 /** @brief Get the number of threads in the stream's thread pool. Exposed for
  * testing. */
 uint32_t

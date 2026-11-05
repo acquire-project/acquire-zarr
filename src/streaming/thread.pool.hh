@@ -28,6 +28,15 @@ class ThreadPool
     // the failing job and is logged to the error stream by the Zarr driver when
     // the next call to `append()` is made.
     ThreadPool(unsigned int n_threads, ErrorCallback&& err);
+
+    /**
+     * @brief The number of threads a pool asked for @p requested threads runs.
+     * @details One on a single-core host; otherwise clamped to [2, cores], so
+     * that one thread can run the frame queue and at least one other can run
+     * chunk jobs. ZarrStreamSettings_estimate_max_memory_usage uses it to size
+     * the chunk budget the way the stream does.
+     */
+    static unsigned int effective_thread_count(unsigned int requested) noexcept;
     ~ThreadPool() noexcept;
 
     /**

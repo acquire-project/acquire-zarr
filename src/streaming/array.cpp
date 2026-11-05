@@ -63,10 +63,11 @@ shuffle_to_string(uint8_t shuffle)
                                      std::to_string(shuffle));
     }
 }
+} // namespace
 
 size_t
-max_compressed_size(size_t uncompressed_size,
-                    const std::optional<zarr::CompressionParams>& params)
+zarr::max_compressed_size(size_t uncompressed_size,
+                          const std::optional<CompressionParams>& params)
 {
     if (!params) {
         return uncompressed_size;
@@ -83,7 +84,28 @@ max_compressed_size(size_t uncompressed_size,
       },
       *params);
 }
-} // namespace
+
+size_t
+zarr::chunk_layer_bytes(const ArrayDimensions& dims)
+{
+    const size_t chunks = dims.supports_dim1_banding()
+                            ? dims.chunks_per_dim1_band()
+                            : dims.number_of_chunks_in_memory();
+    return dims.bytes_per_chunk() * chunks;
+}
+
+size_t
+zarr::chunk_inflight_budget(const ArrayDimensions& dims,
+                            uint32_t n_threads,
+                            uint16_t level_of_detail)
+{
+    const size_t layer = chunk_layer_bytes(dims);
+    if (level_of_detail > 0) {
+        return 2 * layer;
+    }
+    const size_t workers = std::max<uint32_t>(n_threads, 2) - 1;
+    return std::max(2 * layer, 4 * workers * dims.bytes_per_chunk());
+}
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<ThreadPool> thread_pool,
@@ -91,6 +113,9 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                    std::shared_ptr<S3Client> s3_client)
   : ArrayBase(config, thread_pool, file_handle_pool, s3_client)
   , chunk_mutexes_(config->dimensions->number_of_chunks_in_memory())
+  , inflight_budget_(chunk_inflight_budget(*config->dimensions,
+                                           thread_pool->n_threads(),
+                                           config->level_of_detail))
   , max_bytes_(config->dimensions->max_byte_count())
   , bytes_per_frame_(bytes_of_frame(*config->dimensions, config->dtype))
   , total_bytes_written_{ 0 }
@@ -168,6 +193,11 @@ zarr::Array::memory_usage() const noexcept
             total += chunks_[i]->size_bytes();
         }
     }
+
+    // chunks moved out of their slots into jobs that have not finished. A
+    // chunk is counted here just before it leaves its slot, so for a moment it
+    // can be counted twice; over by one chunk is safer than under.
+    total += inflight_bytes_.load(std::memory_order_relaxed);
 
     // An S3 shard stages fragments that arrived out of order, which can reach
     // most of the shard.
@@ -712,6 +742,20 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                                  size_t bytes_per_chunk,
                                  size_t bytes_per_px)
 {
+    // a one-thread pool runs every job inline on this thread, which holds
+    // nothing back, so it does not wait for budget. When push_job fails below
+    // (the pool has stopped), the job also runs inline, after the wait; the
+    // pool has drained by then, so the wait does not block.
+    const bool runs_inline = thread_pool_->n_threads() == 1;
+
+    size_t nbytes = 0;
+    if (!runs_inline) {
+        std::unique_lock lock(chunk_mutexes_[chunk_idx - chunk_offset]);
+        const auto& slot = chunks_[chunk_idx - chunk_offset];
+        nbytes = slot ? slot->size_bytes() : 0;
+    }
+    begin_write_(nbytes);
+
     std::shared_ptr<Chunk> chunk;
     {
         // take the chunk out of its slot; the next layer reallocates lazily
@@ -719,15 +763,12 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
         chunk = std::move(chunks_[chunk_idx - chunk_offset]);
     }
 
-    // no notify: the only waiter's predicate is write_counter_ == 0, which an
-    // increment can never satisfy
-    write_counter_.fetch_add(1);
-
     auto job = [this,
                 shard,
                 internal_idx,
                 chunk_idx,
                 shard_idx,
+                nbytes,
                 chunk = std::move(chunk),
                 params = config_->compression_params](
                  std::string& err) -> ThreadPool::TaskResult {
@@ -783,7 +824,7 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
             result = ThreadPool::TaskResult::Fatal;
         }
 
-        finish_write_();
+        finish_write_(nbytes);
         return result;
     };
 
@@ -1024,7 +1065,23 @@ zarr::Array::close_sinks_()
 }
 
 void
-zarr::Array::finish_write_()
+zarr::Array::begin_write_(size_t nbytes)
+{
+    std::unique_lock lock(write_counter_mutex_);
+    if (nbytes > 0) {
+        write_counter_cv_.wait(lock, [&] {
+            const auto held = inflight_bytes_.load(std::memory_order_relaxed);
+            return held == 0 || held + nbytes <= inflight_budget_;
+        });
+        inflight_bytes_.fetch_add(nbytes, std::memory_order_relaxed);
+    }
+    // no notify: the waiters' predicates (write_counter_ == 0, budget free)
+    // cannot become true from an increment
+    write_counter_.fetch_add(1);
+}
+
+void
+zarr::Array::finish_write_(size_t nbytes)
 {
     // Both of these must happen under the mutex the waiters evaluate their
     // predicate under. The decrement, because a notify landing between that
@@ -1034,6 +1091,7 @@ zarr::Array::finish_write_()
     // lock would let it return and destroy the condition variable while this
     // thread was still inside notify_all.
     std::lock_guard lock(write_counter_mutex_);
+    inflight_bytes_.fetch_sub(nbytes, std::memory_order_relaxed);
     write_counter_.fetch_sub(1);
     write_counter_cv_.notify_all();
 }

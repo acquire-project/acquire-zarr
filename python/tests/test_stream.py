@@ -461,6 +461,7 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     s = StreamSettings()
     s.store_path = str(store_path / "intermediate.zarr")
     s.overwrite = True
+    s.max_threads = 2  # one worker on any host
     s.arrays = [arr]
 
     itemsize = np.dtype(dtype).itemsize
@@ -471,8 +472,11 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     # frame queue: 256 MiB clamped to [16, 512] frames
     frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
 
-    # the maximum reflects a single z band, not the whole volume
-    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    # the maximum reflects z bands, not the whole volume: one band in the chunk
+    # slots, and in compression the larger of two bands and four chunks for
+    # the one worker (a band is one chunk here)
+    inflight_bytes = max(2 * band_bytes, 4 * 1 * band_bytes)
+    expected_max = frame_queue_bytes + band_bytes + inflight_bytes + frame_bytes
     assert s.get_maximum_memory_usage() == expected_max
 
     stream = ZarrStream(s)
