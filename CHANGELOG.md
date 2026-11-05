@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A multiscale array whose append dimension is spatial no longer crashes on x86_64 (integer division by zero in the
+  OME `scale` computation). The append dimension keeps its base scale at every level
 - Mean downsampling of `uint32`, `int32`, `uint64` and `int64` data no longer overflows. The overflow-safe integer
   path never compiled in, so a 2x2 block or z pair whose sum left the type's range wrapped (unsigned) or was undefined
   (signed). Results are unchanged for every input that did not overflow: the mean is still truncated toward zero
