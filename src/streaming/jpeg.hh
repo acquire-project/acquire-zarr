@@ -65,8 +65,8 @@ encode_jpeg(std::span<const uint8_t> src,
  * @brief The inner codecs of a JPEG level: for data other than uint8,
  * `cast_value`, `scale_offset` and `cast_value` to uint8; then `reshape` (for
  * 3 or more dimensions); then `jpeg`, as specified in zarr-extensions
- * (codecs/jpeg, merged as 96a2509). The grayscale `subsampling` is written
- * explicitly; the spec allows it, and zarr-ext-jpeg 0.2.0 requires it.
+ * (codecs/jpeg, merged as 96a2509). `subsampling` is omitted: the spec says
+ * so for grayscale, whose default is [[1, 1]].
  * @param ndims The number of dimensions in the array metadata.
  */
 nlohmann::json

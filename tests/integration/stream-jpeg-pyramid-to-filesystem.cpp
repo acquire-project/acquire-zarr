@@ -232,8 +232,7 @@ verify_level1()
         "out_of_range": "clamp"}},
       {"name": "reshape", "configuration": {"shape": [[0, 1, 2, 3], [4]]}},
       {"name": "jpeg", "configuration": {
-        "quality": 90, "encoded_color_space": "grayscale",
-        "subsampling": [[1, 1]]}}
+        "quality": 90, "encoded_color_space": "grayscale"}}
     ])");
     auto codecs = sharding["codecs"];
 

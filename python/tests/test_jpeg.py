@@ -158,7 +158,6 @@ def test_stream_jpeg_pyramid(store_path: Path):
     assert codecs[4]["configuration"] == {
         "quality": 90,
         "encoded_color_space": "grayscale",
-        "subsampling": [[1, 1]],
     }
 
     # decode one chunk without a zarr JPEG plugin

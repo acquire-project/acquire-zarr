@@ -252,7 +252,6 @@ zarr::jpeg_inner_codecs(size_t ndims, const JpegParams& params)
         {
           { "quality", params.quality },
           { "encoded_color_space", "grayscale" },
-          { "subsampling", { { 1, 1 } } },
         } },
     });
 
