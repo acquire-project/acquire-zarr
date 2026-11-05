@@ -603,7 +603,13 @@ class ZarrStream:
                 If None, the stream's only array.
             metadata_key: Key under ``attributes`` to write to. If None,
                 each top-level key of ``metadata`` is written under
-                ``attributes``. The key ``ome`` is reserved.
+                ``attributes``. OME-NGFF metadata goes under ``ome``, as an
+                object, and merges with the stream's own ``ome`` keys. A
+                later custom ``ome`` replaces an earlier one.
+                ``ome.multiscales`` is refused, and so is any other key that
+                the stream writes under ``ome`` on the node (``version`` and
+                ``name`` on a multiscale group; ``version`` and ``plate`` or
+                ``well`` on a plate or well), except an equal ``version``.
 
         Raises:
             RuntimeError: If the node is not found or not addressable, or the

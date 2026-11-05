@@ -447,10 +447,20 @@ The function takes three parameters:
 - **`metadata`**: A JSON-formatted string containing the metadata to write.
 
 > [!NOTE]
-> The `ome` key under `attributes` is reserved for OME-NGFF metadata and
-> cannot be used as a `metadata_key`. Passing `"ome"` or, if no metadata key is
-> provided, if any child of the metadata object has a key of `"ome"`, the function
-> will return an error.
+> The `ome` key under `attributes` holds OME-NGFF metadata. You can write it,
+> as a JSON object, with `metadata_key` `"ome"` or as a top-level key of the
+> metadata. Its keys merge with the `ome` keys that the stream writes on that
+> node, for example `omero` next to the stream's `multiscales`. A later custom
+> `ome` replaces an earlier one, as for any other attribute. The function
+> returns an error for:
+>
+> - `ome.multiscales`, on any node: the stream writes it;
+> - any other key that the stream writes under `ome` on that node, except
+>   `version` with the same value: `version` and `name` on a multiscale group,
+>   and `version` and `plate` or `well` on a plate or well group;
+> - an `ome` value that is not an object;
+> - a `metadata_key` that begins with `"ome/"`. A metadata key is not a path:
+>   write an object with `metadata_key` `"ome"` instead.
 
 In C:
 ```c

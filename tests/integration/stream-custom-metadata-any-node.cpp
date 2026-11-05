@@ -234,27 +234,115 @@ test_unknown_keys_are_rejected()
 }
 
 void
-test_ome_is_reserved_on_groups()
+test_ome_rules()
 {
-    LOG_INFO("Case: 'ome' is reserved on groups");
+    LOG_INFO("Case: custom 'ome' metadata");
     remove_test_path();
 
-    StreamPtr stream(create_stream(ZarrIntermediateGroups_IfMissing, true),
-                     &ZarrStream_destroy);
-    EXPECT(stream != nullptr, "Failed to create stream");
+    const char* omero = R"({"omero": {"channels": []}})";
+    {
+        StreamPtr stream(create_stream(ZarrIntermediateGroups_IfMissing, true),
+                         &ZarrStream_destroy);
+        EXPECT(stream != nullptr, "Failed to create stream");
 
-    expect_status(
-      stream.get(), "foo", "ome", "{}", ZarrStatusCode_InvalidArgument);
-    expect_status(stream.get(),
-                  "foo",
-                  nullptr,
-                  R"({"ome": {}})",
-                  ZarrStatusCode_InvalidArgument);
-    expect_status(stream.get(),
-                  "foo",
-                  "custom",
-                  "not json",
-                  ZarrStatusCode_InvalidArgument);
+        // `ome` is allowed on every node, as an object
+        expect_status(
+          stream.get(), "foo", "ome", omero, ZarrStatusCode_Success);
+        expect_status(stream.get(),
+                      "foo/qux",
+                      nullptr,
+                      R"({"ome": {"version": "0.6"}})",
+                      ZarrStatusCode_Success);
+        expect_status(stream.get(),
+                      "foo/bar/baz",
+                      "ome",
+                      R"({"version": "0.5", "omero": {"channels": []}})",
+                      ZarrStatusCode_Success);
+
+        // `ome.multiscales` is refused on every node
+        for (const char* key : { "", "foo", "foo/bar/baz", "foo/bar/baz/0" }) {
+            expect_status(stream.get(),
+                          key,
+                          "ome",
+                          R"({"multiscales": []})",
+                          ZarrStatusCode_InvalidArgument);
+            expect_status(stream.get(),
+                          key,
+                          nullptr,
+                          R"({"ome": {"multiscales": []}})",
+                          ZarrStatusCode_InvalidArgument);
+        }
+
+        // a key that the stream writes on that node is refused, except an
+        // equal version
+        expect_status(stream.get(),
+                      "foo/bar/baz",
+                      "ome",
+                      R"({"version": "0.6"})",
+                      ZarrStatusCode_InvalidArgument);
+        expect_status(stream.get(),
+                      "foo/bar/baz",
+                      "ome",
+                      R"({"name": "image"})",
+                      ZarrStatusCode_InvalidArgument);
+
+        // a refused call writes none of its keys
+        expect_status(stream.get(),
+                      "foo",
+                      nullptr,
+                      R"({"ome": {"multiscales": []}, "partial": 1})",
+                      ZarrStatusCode_InvalidArgument);
+
+        // not an object, and not a path
+        expect_status(
+          stream.get(), "foo", "ome", "[]", ZarrStatusCode_InvalidArgument);
+        expect_status(stream.get(),
+                      "foo",
+                      nullptr,
+                      R"({"ome": 1})",
+                      ZarrStatusCode_InvalidArgument);
+        expect_status(stream.get(),
+                      "foo",
+                      "ome/omero",
+                      "{}",
+                      ZarrStatusCode_InvalidArgument);
+
+        expect_status(stream.get(),
+                      "foo",
+                      "custom",
+                      "not json",
+                      ZarrStatusCode_InvalidArgument);
+
+        append_frames(stream.get());
+    }
+
+    // a refused call leaves what was accepted before it
+    const auto foo = read_metadata("foo");
+    EXPECT(foo["attributes"]["ome"]["omero"]["channels"].is_array(),
+           "Expected 'ome.omero' on foo: ",
+           foo.dump());
+    EXPECT(!foo["attributes"]["ome"].contains("multiscales"),
+           "Unexpected 'ome.multiscales' on foo: ",
+           foo.dump());
+    EXPECT(!foo["attributes"].contains("partial"),
+           "A refused call wrote 'partial' on foo: ",
+           foo.dump());
+
+    const auto qux = read_metadata("foo/qux");
+    EXPECT(qux["attributes"]["ome"]["version"] == "0.6",
+           "Expected 'ome.version' on foo/qux: ",
+           qux.dump());
+
+    // the custom keys merge with the stream's own
+    const auto baz = read_metadata("foo/bar/baz");
+    const auto& ome = baz["attributes"]["ome"];
+    EXPECT(ome["version"] == "0.5", "Unexpected version: ", baz.dump());
+    EXPECT(ome["multiscales"].is_array() && ome["multiscales"].size() == 1,
+           "Expected the stream's multiscales: ",
+           baz.dump());
+    EXPECT(ome["omero"]["channels"].is_array(),
+           "Expected 'ome.omero' on foo/bar/baz: ",
+           baz.dump());
 }
 
 void
@@ -286,7 +374,10 @@ test_kept_group_keeps_its_attributes()
     write_file(test_path / "foo" / "zarr.json", R"({
         "zarr_format": 3,
         "node_type": "group",
-        "attributes": { "written_by": "caller" }
+        "attributes": {
+            "written_by": "caller",
+            "ome": { "version": "0.5", "kept": true }
+        }
     })");
 
     {
@@ -299,6 +390,14 @@ test_kept_group_keeps_its_attributes()
                       nullptr,
                       R"({"added_by": "stream"})",
                       ZarrStatusCode_Success);
+
+        // the kept group's `ome` is the caller's, so no key of it is refused;
+        // the custom keys merge into it
+        expect_status(stream.get(),
+                      "foo",
+                      "ome",
+                      R"({"version": "0.6", "added": true})",
+                      ZarrStatusCode_Success);
         append_frames(stream.get());
     }
 
@@ -308,6 +407,11 @@ test_kept_group_keeps_its_attributes()
            foo.dump());
     EXPECT(foo["attributes"]["added_by"] == "stream",
            "Kept group has no custom metadata: ",
+           foo.dump());
+    const auto& ome = foo["attributes"]["ome"];
+    EXPECT(ome["kept"] == true && ome["added"] == true &&
+             ome["version"] == "0.6",
+           "Unexpected 'ome' on the kept group: ",
            foo.dump());
 }
 } // namespace
@@ -320,7 +424,7 @@ main()
     try {
         test_every_node_is_addressable();
         test_unknown_keys_are_rejected();
-        test_ome_is_reserved_on_groups();
+        test_ome_rules();
         test_never_groups_are_not_addressable();
         test_kept_group_keeps_its_attributes();
 

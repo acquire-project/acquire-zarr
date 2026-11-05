@@ -1927,10 +1927,24 @@ def test_write_custom_metadata_to_hcs_nodes(
             {"node": node}, node_key=node, metadata_key="custom"
         )
 
-    with pytest.raises(RuntimeError):
-        stream.write_custom_metadata(
-            {}, node_key="test_plate", metadata_key="ome"
-        )
+    # the stream writes `ome.version` and `ome.plate` / `ome.well` here
+    for node, ome in [
+        ("test_plate", {"plate": {}}),
+        ("test_plate", {"version": "0.6"}),
+        ("test_plate/C/5", {"well": {}}),
+        ("test_plate/C/5/fov1", {"multiscales": []}),
+        ("test_plate/C/5/fov1/0", {"multiscales": []}),
+    ]:
+        with pytest.raises(RuntimeError):
+            stream.write_custom_metadata(
+                ome, node_key=node, metadata_key="ome"
+            )
+    assert stream.write_custom_metadata(
+        {"version": "0.5", "extra": 1},
+        node_key="test_plate/C/5/fov1",
+        metadata_key="ome",
+    )
+
     with pytest.raises(RuntimeError):
         stream.write_custom_metadata({}, node_key="test_plate/Z")
 
@@ -1951,9 +1965,13 @@ def test_write_custom_metadata_to_hcs_nodes(
             attributes = json.load(fh)["attributes"]
         assert attributes["custom"] == {"node": node}
 
-    # the stream's own metadata is kept
+    # the stream's own metadata is kept, and the custom `ome` keys merge in
     validate_plate_metadata(base_path)
     validate_well_metadata(base_path)
+    with open(base_path / "test_plate/C/5/fov1" / "zarr.json", "r") as fh:
+        ome = json.load(fh)["attributes"]["ome"]
+    assert ome["extra"] == 1
+    assert len(ome["multiscales"]) == 1
 
 
 def test_mixed_flat_and_hcs_acquisition(store_path: Path):

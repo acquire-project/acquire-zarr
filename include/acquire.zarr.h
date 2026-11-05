@@ -416,8 +416,15 @@ extern "C"
      * array; NULL is an error if the stream has more than one array.
      * @param metadata_key Key under 'attributes' to write the metadata to. If
      * metadata_key is empty or NULL, metadata will be written directly under
-     * 'attributes'. Note: the 'ome' key is disallowed. Passing 'ome' will
-     * return an error.
+     * 'attributes'. OME-NGFF metadata goes under the 'ome' key, as a JSON
+     * object, given either with metadata_key "ome" or as a top-level key of
+     * @p metadata. Its keys merge with the 'ome' keys that the stream writes
+     * on the node. A later custom 'ome' replaces an earlier one, as for any
+     * other attribute. 'ome.multiscales' is refused on every node, and so is
+     * any other key that the stream writes under 'ome' on the node ('version'
+     * and 'name' on a multiscale group, 'version' and 'plate' or 'well' on a
+     * plate or well), except 'version' with the same value. A metadata_key
+     * that begins with "ome/" is refused: a metadata key is not a path.
      * @param metadata JSON-formatted metadata to be written to the dataset.
      * @return ZarrStatusCode_Success on success, ZarrStatusCode_KeyNotFound if
      * no node has the key, ZarrStatusCode_InvalidArgument if the node is not

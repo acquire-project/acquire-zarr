@@ -20,33 +20,79 @@ zarr::ArrayBase::ArrayBase(std::shared_ptr<ArrayConfig> config,
            "Either an S3 client or a file handle pool must be provided.");
 }
 
+namespace {
+const std::string ome_key = "ome";
+
+bool
+check_custom_ome(const nlohmann::json& ome, const nlohmann::json& library_ome)
+{
+    if (!ome.is_object()) {
+        LOG_ERROR("Custom '", ome_key, "' metadata must be a JSON object");
+        return false;
+    }
+
+    if (ome.contains("multiscales")) {
+        LOG_ERROR(
+          "Key '", ome_key, "/multiscales' is reserved: the stream writes it");
+        return false;
+    }
+
+    if (!library_ome.is_object()) {
+        return true;
+    }
+
+    for (const auto& [key, value] : ome.items()) {
+        if (!library_ome.contains(key)) {
+            continue;
+        }
+
+        // the stream's version describes the keys it writes
+        if (key == "version" && value == library_ome[key]) {
+            continue;
+        }
+
+        LOG_ERROR("Key '",
+                  ome_key,
+                  "/",
+                  key,
+                  "' is written by the stream on this node, as ",
+                  library_ome[key].dump());
+        return false;
+    }
+
+    return true;
+}
+} // namespace
+
 bool
 zarr::merge_custom_metadata(
   std::unordered_map<std::string, nlohmann::json>& attributes,
   const std::string& key,
-  const nlohmann::json& metadata)
+  const nlohmann::json& metadata,
+  const nlohmann::json& library_ome)
 {
-    const std::vector<std::string> reserved_keys{ "ome" };
-
     // write immediately under 'attributes'
     if (key.empty()) {
-        // check every reserved key to avoid collisions with custom metadata
-        // keys
-        for (const auto& reserved_key : reserved_keys) {
-            if (metadata.contains(reserved_key)) {
-                LOG_ERROR(
-                  "Key '", reserved_key, "' is reserved and cannot be used");
-                return false;
-            }
+        if (metadata.is_object() && metadata.contains(ome_key) &&
+            !check_custom_ome(metadata[ome_key], library_ome)) {
+            return false;
         }
 
         for (const auto& [k, value] : metadata.items()) {
             attributes[k] = value;
         }
     } else {
-        if (const auto it = std::ranges::find(reserved_keys, key);
-            it != reserved_keys.end()) {
-            LOG_ERROR("Key '", key, "' is reserved and cannot be used.");
+        if (key == ome_key) {
+            if (!check_custom_ome(metadata, library_ome)) {
+                return false;
+            }
+        } else if (key.starts_with(ome_key + "/")) {
+            LOG_ERROR("Key '",
+                      key,
+                      "' is not allowed: a metadata key is not a path. Write "
+                      "an object with the metadata key '",
+                      ome_key,
+                      "'.");
             return false;
         }
 
@@ -56,13 +102,35 @@ zarr::merge_custom_metadata(
     return true;
 }
 
+void
+zarr::apply_custom_metadata(
+  nlohmann::json& attributes,
+  const std::unordered_map<std::string, nlohmann::json>& custom_metadata)
+{
+    for (const auto& [key, value] : custom_metadata) {
+        if (key == ome_key && value.is_object() &&
+            attributes.contains(ome_key) && attributes[ome_key].is_object()) {
+            attributes[ome_key].update(value);
+        } else {
+            attributes[key] = value;
+        }
+    }
+}
+
 bool
 zarr::ArrayBase::write_custom_metadata(const std::string& key,
                                        const nlohmann::json& metadata)
 {
     // store custom metadata in memory until we write it out in close()
     std::unique_lock lock(metadata_mutex_);
-    return merge_custom_metadata(custom_metadata_, key, metadata);
+    return merge_custom_metadata(
+      custom_metadata_, key, metadata, library_ome_metadata_());
+}
+
+nlohmann::json
+zarr::ArrayBase::library_ome_metadata_() const
+{
+    return nullptr;
 }
 
 std::string

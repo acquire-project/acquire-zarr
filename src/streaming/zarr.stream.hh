@@ -106,7 +106,8 @@ struct ZarrStream_s
 
     struct OutputGroup
     {
-        nlohmann::json document; // as written or kept at create
+        nlohmann::json document;    // as written or kept at create
+        nlohmann::json library_ome; // what the stream writes under `ome`
         std::unordered_map<std::string, nlohmann::json> custom_metadata;
     };
 

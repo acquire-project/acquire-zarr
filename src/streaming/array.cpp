@@ -317,11 +317,7 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
     // write custom metadata, if any
     {
         std::unique_lock lock(metadata_mutex_);
-        if (!custom_metadata_.empty()) {
-            for (const auto& [key, value] : custom_metadata_) {
-                attributes[key] = value;
-            }
-        }
+        apply_custom_metadata(attributes, custom_metadata_);
     }
 
     meta_tmp["zarr_format"] = 3;
