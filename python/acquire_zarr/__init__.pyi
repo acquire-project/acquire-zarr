@@ -586,9 +586,29 @@ class ZarrStream:
         self,
         metadata: str | dict,
         *,
-        array_key: str | None = None,
+        node_key: str | None = None,
         metadata_key: str | None = None,
-    ) -> bool: ...
+    ) -> bool:
+        """Write custom metadata to a node of the stream.
+
+        The metadata is written to the node's ``zarr.json`` when the stream
+        is closed.
+
+        Args:
+            metadata: JSON object, as a dict or a string.
+            node_key: Key of the node, relative to the store root: an array,
+                a group that the stream writes (the root ``""``, a plate, a
+                well, or a group between the root and an array), or a level
+                of detail of a multiscale array (``"<array key>/<level>"``).
+                If None, the stream's only array.
+            metadata_key: Key under ``attributes`` to write to. If None,
+                each top-level key of ``metadata`` is written under
+                ``attributes``. The key ``ome`` is reserved.
+
+        Raises:
+            RuntimeError: If the node is not found or not addressable, or the
+                metadata is not valid.
+        """
     def is_active(self) -> bool: ...
     def close(self) -> None: ...
     def get_current_memory_usage(self) -> int:

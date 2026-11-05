@@ -9,6 +9,7 @@
 
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
+#include <charconv>  // from_chars
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -1109,41 +1110,108 @@ ZarrStream::append(const char* key_,
 }
 
 ZarrStatusCode
-ZarrStream_s::write_custom_metadata(const std::optional<std::string>& array_key,
+ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
                                     std::string_view metadata_key,
                                     std::string_view metadata)
 {
 
     std::string key;
-    if (array_key.has_value()) {
-        key = zarr::regularize_key(*array_key);
+    if (node_key.has_value()) {
+        key = zarr::regularize_key(*node_key);
     } else if (arrays_.size() == 1) {
         key = arrays_.begin()->first;
     } else {
-        LOG_ERROR(
-          "Array key is required when there are multiple output arrays");
+        LOG_ERROR("Node key is required when there are multiple output arrays");
         return ZarrStatusCode_InvalidArgument;
     }
     const std::string meta_key = zarr::regularize_key(metadata_key);
 
-    if (const auto it = arrays_.find(key); it == arrays_.end()) {
-        LOG_ERROR("Array key '", key, "' not found in output arrays");
-        return ZarrStatusCode_KeyNotFound;
-    } else {
-        nlohmann::json metadata_json;
-        if (!validate_custom_metadata(metadata, metadata_json)) {
-            LOG_ERROR("Invalid custom metadata: '", metadata, "'");
-            return ZarrStatusCode_InvalidArgument;
-        }
+    // parsed before the group lock is taken; reported after the lookup, so
+    // that an unknown key is reported first
+    nlohmann::json metadata_json;
+    const bool metadata_is_valid =
+      validate_custom_metadata(metadata, metadata_json);
 
-        if (const auto& output = it->second;
-            !output->array->write_custom_metadata(meta_key, metadata_json)) {
-            LOG_ERROR("Error writing custom metadata for array '", key, "'");
-            return ZarrStatusCode_IOError;
+    zarr::ArrayBase* array = nullptr;
+    if (const auto it = arrays_.find(key); it != arrays_.end()) {
+        array = it->second->array.get();
+    } else {
+        array = find_level_(key);
+    }
+
+    std::unique_lock groups_lock(groups_mutex_, std::defer_lock);
+    OutputGroup* group = nullptr;
+    if (!array) {
+        groups_lock.lock();
+        if (const auto it = groups_.find(key); it != groups_.end()) {
+            group = &it->second;
+        } else if (std::ranges::find(intermediate_group_paths_, key) !=
+                   intermediate_group_paths_.end()) {
+            LOG_ERROR("Group '",
+                      key,
+                      "' is not written by this stream (intermediate groups: "
+                      "never), so it cannot take custom metadata");
+            return ZarrStatusCode_InvalidArgument;
+        } else {
+            LOG_ERROR("Key '",
+                      key,
+                      "' is not an array, a group, or a level of detail in "
+                      "this stream");
+            return ZarrStatusCode_KeyNotFound;
         }
     }
 
+    if (!metadata_is_valid) {
+        LOG_ERROR("Invalid custom metadata: '", metadata, "'");
+        return ZarrStatusCode_InvalidArgument;
+    }
+
+    // held in memory, and written when the node is closed
+    const bool merged =
+      array ? array->write_custom_metadata(meta_key, metadata_json)
+            : zarr::merge_custom_metadata(
+                group->custom_metadata, meta_key, metadata_json);
+    if (!merged) {
+        LOG_ERROR("Error writing custom metadata for '", key, "'");
+        return ZarrStatusCode_InvalidArgument;
+    }
+
     return ZarrStatusCode_Success;
+}
+
+zarr::ArrayBase*
+ZarrStream_s::find_level_(const std::string& key) const
+{
+    const auto slash = key.find_last_of('/');
+    const std::string parent_key =
+      slash == std::string::npos ? "" : key.substr(0, slash);
+    const std::string level_name =
+      slash == std::string::npos ? key : key.substr(slash + 1);
+
+    if (!is_numeric_string(level_name)) {
+        return nullptr;
+    }
+
+    const auto it = arrays_.find(parent_key);
+    if (it == arrays_.end()) {
+        return nullptr;
+    }
+
+    const auto* multiscale =
+      dynamic_cast<const zarr::MultiscaleArray*>(it->second->array.get());
+    if (!multiscale) {
+        return nullptr;
+    }
+
+    // "01" is not the path of level 1
+    size_t level = 0;
+    const auto [end, ec] = std::from_chars(
+      level_name.data(), level_name.data() + level_name.size(), level);
+    if (ec != std::errc{} || std::to_string(level) != level_name) {
+        return nullptr;
+    }
+
+    return multiscale->level(level);
 }
 
 size_t
@@ -1639,47 +1707,28 @@ ZarrStream_s::write_intermediate_metadata_()
       { "node_type", "group" },
       { "attributes", nlohmann::json::object() },
     });
-    const std::string metadata_key = "zarr.json";
-    std::string metadata_str;
 
-    for (const auto& parent_group_key : intermediate_group_paths_) {
-        const std::string relative_path =
-          (parent_group_key.empty() ? "" : parent_group_key);
+    std::unique_lock lock(groups_mutex_);
+    groups_.clear();
 
-        // root group has an empty relative_path; can't regularize_key the
-        // join because store_path_ may be absolute (#247)
-        std::string sink_path = store_path_;
-        if (!relative_path.empty()) {
-            sink_path += "/" + relative_path;
-        }
-        sink_path += "/" + metadata_key;
+    for (const auto& relative_path : intermediate_group_paths_) {
+        const std::string sink_path = group_sink_path_(relative_path);
+        nlohmann::json document(group_metadata); // make a copy to modify
 
         if (auto pit = plates_.find(relative_path); // is it a plate?
             pit != plates_.end()) {
-            const auto& plate = pit->second;
-            nlohmann::json plate_metadata(
-              group_metadata); // make a copy to modify
-
             // not supported for Zarr V2 / NGFF 0.4
-            plate_metadata["attributes"]["ome"] = {
+            document["attributes"]["ome"] = {
                 { "version", "0.5" },
-                { "plate", plate.to_json() },
+                { "plate", pit->second.to_json() },
             };
-
-            metadata_str = plate_metadata.dump(4);
         } else if (auto wit = wells_.find(relative_path); // is it a well?
                    wit != wells_.end()) {
-            const auto& well = wit->second;
-            nlohmann::json well_metadata(
-              group_metadata); // make a copy to modify
-
             // not supported for Zarr V2 / NGFF 0.4
-            well_metadata["attributes"]["ome"] = {
+            document["attributes"]["ome"] = {
                 { "version", "0.5" },
-                { "well", well.to_json() },
+                { "well", wit->second.to_json() },
             };
-
-            metadata_str = well_metadata.dump(4);
         } else { // generic group
             // a generic group carries nothing of ours, so the caller decides
             // whether we write it (#186)
@@ -1687,23 +1736,52 @@ ZarrStream_s::write_intermediate_metadata_()
                 continue;
             }
 
-            metadata_str = group_metadata.dump(4);
-
             // with overwrite, the filesystem store starts empty; write
             // unconditionally so that S3, which is not cleared, matches it
             if (intermediate_groups_ == ZarrIntermediateGroups_IfMissing &&
                 !overwrite_) {
-                if (!write_group_metadata_if_missing_(sink_path,
-                                                      metadata_str)) {
+                if (!write_group_metadata_if_missing_(sink_path, document)) {
                     return false;
                 }
+                groups_.emplace(relative_path,
+                                OutputGroup{ .document = std::move(document) });
                 continue;
             }
         }
 
-        if (!write_metadata_object_(sink_path, metadata_str)) {
+        if (!write_metadata_object_(sink_path, document.dump(4))) {
             set_error_("Failed to write intermediate metadata for group '" +
-                       parent_group_key + "'");
+                       relative_path + "'");
+            return false;
+        }
+        groups_.emplace(relative_path,
+                        OutputGroup{ .document = std::move(document) });
+    }
+
+    return true;
+}
+
+bool
+ZarrStream_s::write_group_custom_metadata_()
+{
+    std::unique_lock lock(groups_mutex_);
+    for (auto& [relative_path, group] : groups_) {
+        if (group.custom_metadata.empty()) {
+            continue;
+        }
+
+        auto& attributes = group.document["attributes"];
+        if (!attributes.is_object()) {
+            attributes = nlohmann::json::object();
+        }
+        for (const auto& [key, value] : group.custom_metadata) {
+            attributes[key] = value;
+        }
+
+        if (!write_metadata_object_(group_sink_path_(relative_path),
+                                    group.document.dump(4))) {
+            set_error_("Failed to write custom metadata for group '" +
+                       relative_path + "'");
             return false;
         }
     }
@@ -1711,10 +1789,24 @@ ZarrStream_s::write_intermediate_metadata_()
     return true;
 }
 
+std::string
+ZarrStream_s::group_sink_path_(const std::string& relative_path) const
+{
+    // root group has an empty relative_path; can't regularize_key the join
+    // because store_path_ may be absolute (#247)
+    std::string sink_path = store_path_;
+    if (!relative_path.empty()) {
+        sink_path += "/" + relative_path;
+    }
+    return sink_path + "/zarr.json";
+}
+
 bool
 ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
-                                               const std::string& metadata_str)
+                                               nlohmann::json& document)
 {
+    const std::string metadata_str = document.dump(4);
+
     if (is_s3_acquisition_()) {
         const auto& bucket_name = s3_settings_->bucket_name;
         ConstByteSpan metadata_span(
@@ -1742,7 +1834,11 @@ ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
         if (auto group = parse_v3_group_node(
               std::string_view(reinterpret_cast<const char*>(existing->data()),
                                existing->size()))) {
-            return keep_group_metadata_(sink_path, *group);
+            if (!keep_group_metadata_(sink_path, *group)) {
+                return false;
+            }
+            document = std::move(*group);
+            return true;
         }
     } else {
         std::error_code ec;
@@ -1777,7 +1873,11 @@ ZarrStream_s::write_group_metadata_if_missing_(const std::string& sink_path,
         }
         file.close(); // before a replacement opens it for writing
         if (auto group = parse_v3_group_node(existing)) {
-            return keep_group_metadata_(sink_path, *group);
+            if (!keep_group_metadata_(sink_path, *group)) {
+                return false;
+            }
+            document = std::move(*group);
+            return true;
         }
     }
 
@@ -2055,6 +2155,11 @@ finalize_stream(ZarrStream* stream)
                 return false;
             }
         }
+    }
+
+    if (!stream->write_group_custom_metadata_()) {
+        LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
+        return false;
     }
 
     return true;

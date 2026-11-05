@@ -54,6 +54,12 @@ zarr::MultiscaleArray::memory_usage() const noexcept
     return total;
 }
 
+zarr::ArrayBase*
+zarr::MultiscaleArray::level(size_t level) const
+{
+    return level < arrays_.size() ? arrays_[level].get() : nullptr;
+}
+
 zarr::WriteResult
 zarr::MultiscaleArray::write_frame(std::vector<uint8_t>& frame,
                                    size_t& bytes_written,

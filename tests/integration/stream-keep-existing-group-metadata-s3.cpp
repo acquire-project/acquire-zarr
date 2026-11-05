@@ -326,6 +326,41 @@ main()
         EXPECT_STR_EQ(get(root_key).c_str(), root_metadata.c_str());
         expect_empty_group(path_key);
 
+        LOG_INFO("Case: custom metadata on a kept group and a written group");
+        clear_store();
+        put(path_key, path_metadata);
+        {
+            StreamPtr stream(
+              create_stream(ZarrIntermediateGroups_IfMissing, false),
+              &ZarrStream_destroy);
+            EXPECT(stream != nullptr, "Failed to create stream");
+
+            for (const char* key : { "path", "path/to" }) {
+                const auto metadata = nlohmann::json{ { "node", key } }.dump();
+                CHECK_OK(ZarrStream_write_custom_metadata(
+                  stream.get(), key, "custom", metadata.c_str()));
+            }
+
+            const ZarrStatusCode status = ZarrStream_close(stream.release());
+            EXPECT(status == ZarrStatusCode_Success,
+                   "Failed to close stream: ",
+                   Zarr_get_status_message(status));
+        }
+
+        const auto path = nlohmann::json::parse(get(path_key));
+        EXPECT(path["attributes"]["written_by"] == "caller",
+               "Kept group lost its attributes: ",
+               path.dump());
+        EXPECT(path["attributes"]["custom"]["node"] == "path",
+               "Kept group has no custom metadata: ",
+               path.dump());
+
+        const auto to = nlohmann::json::parse(get(to_key));
+        EXPECT(to["attributes"]["custom"]["node"] == "path/to",
+               "Written group has no custom metadata: ",
+               to.dump());
+        expect_empty_group(root_key);
+
         retval = 0;
     } catch (const std::exception& e) {
         LOG_ERROR("Caught exception: ", e.what());
