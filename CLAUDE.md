@@ -97,7 +97,7 @@ A self-review in the same context does not satisfy this rule.
 ### Public interface
 
 - `include/acquire.zarr.h` — C API (the stable public surface)
-- `include/zarr.types.h` — all enums and structs (`ZarrStream*`, `ZarrStreamSettings`, `ZarrArraySettings`, dimension types, compression params, HCS types)
+- `include/zarr.types.h` — all enums and structs (`ZarrStream*`, `ZarrStreamSettings`, `ZarrArraySettings`, dimension types, compression params)
 - `python/acquire-zarr-py.cpp` — pybind11 wrapper; `python/acquire_zarr/` holds the Python-side package
 
 ### Core streaming pipeline (`src/streaming/`)
@@ -116,7 +116,6 @@ A self-review in the same context does not satisfy this rule.
 | `sink.hh/cpp` | Abstract write-sink interface |
 | `file.sink.hh/cpp` + `posix/`/`win32/` | Filesystem sink (platform-specific implementation) |
 | `s3.sink.hh/cpp` + `s3.client.hh/cpp` | S3 sink backed by the aws-crt-cpp vcpkg package |
-| `plate.hh/cpp` | HCS plate/well/field-of-view OME-NGFF metadata |
 | `file.handle.hh/cpp` | File handle pool to respect OS open-file limits |
 | `zarr.common.hh/cpp` | Shared types, JSON helpers (nlohmann-json) |
 | `blosc.compression.params`, `zstd.compression.params` | Compression parameter structs |
@@ -143,11 +142,13 @@ A self-review in the same context does not satisfy this rule.
      (`win32/platform.cpp`), with the same exposure
    - S3 sink: one whole-object PUT, which is atomic (`s3.sink.cpp`)
 
-   Intermediate group metadata (root, plate, well and generic parent groups) is written
-   once, when the stream is created (`write_intermediate_metadata_`), not at close.
-   `ZarrIntermediateGroups_Never` skips generic groups. `ZarrIntermediateGroups_IfMissing`
-   writes a generic group only if it is absent, unless `overwrite` is set; on S3 that check
-   is a conditional PUT (`If-None-Match: *`). The multiscale group's metadata is still
+   Intermediate group metadata (the root and the parent groups of each array) is
+   written when the stream is created (`write_intermediate_metadata_`). A group is
+   written again only if it gets custom metadata: on each `write_custom_metadata`
+   call and at close (`write_group_`). `ZarrIntermediateGroups_Never` skips the
+   groups. `ZarrIntermediateGroups_IfMissing` writes a group only if it is absent,
+   unless `overwrite` is set; on S3 that check is a conditional PUT
+   (`If-None-Match: *`). The multiscale group's metadata is still
    written at close (`MultiscaleArray::close_`)
 7. For multiscale stores, the frame-queue thread drives the levels in sequence, but the
    tile scatter for each level fans out to the `parallel_for_reduce` team. Chunk
@@ -156,7 +157,7 @@ A self-review in the same context does not satisfy this rule.
 ### Tests layout
 
 - `tests/unit-tests/` — component-level (dimensions, chunks, downsampling, frame queue, etc.)
-- `tests/integration/` — end-to-end scenarios (filesystem, S3, multiscale, HCS plates)
+- `tests/integration/` — end-to-end scenarios (filesystem, S3, multiscale, HCS plates built from arrays and custom metadata)
 - `python/tests/` — Python-binding tests (`test_stream.py`, `test_settings.py`, `test_dimension_transposition.py`)
 
 ### Examples and benchmarks

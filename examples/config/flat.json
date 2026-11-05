@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "store_path": "acquisition.zarr",
   "overwrite": true,
   "max_threads": 0,

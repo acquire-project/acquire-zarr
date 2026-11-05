@@ -34,9 +34,6 @@ extern "C"
         ZarrArraySettings*
           arrays; /**< The settings for the Zarr arrays being streamed. */
         size_t array_count; /**< The number of arrays in the Zarr stream. */
-        ZarrHCSSettings* hcs_settings; /**< Optional HCS plate settings. If
-                                               non-NULL, the stream will be
-                                               configured for HCS data. */
         ZarrIntermediateGroups
           intermediate_groups; /**< Whether to write the generic groups
                                   above the arrays. */
@@ -100,8 +97,7 @@ extern "C"
       size_t* usage);
 
     /**
-     * @brief Get the number of arrays configured in the Zarr stream settings,
-     * including both flat arrays and arrays in HCS plates.
+     * @brief Get the number of arrays configured in the Zarr stream settings.
      * @param settings The Zarr stream settings struct.
      * @return The number of array paths configured in the settings.
      */
@@ -156,7 +152,7 @@ extern "C"
     /**
      * @brief Free settings populated by ZarrStreamSettings_load_from_file or
      * ZarrStreamSettings_load_from_string, including all loader-owned strings,
-     * arrays, dimensions, and plates.
+     * arrays and dimensions.
      * @param[in, out] settings The loader-populated stream settings struct.
      */
     void ZarrStreamSettings_destroy_loaded(ZarrStreamSettings* settings);
@@ -205,120 +201,6 @@ extern "C"
      * dimension array to free.
      */
     void ZarrArraySettings_destroy_dimension_array(ZarrArraySettings* settings);
-
-    /**
-     * @brief Allocate memory for the images array in the ZarrHCSWell struct.
-     * @param[in,out] well The ZarrHCSWell struct.
-     * @param image_count The number of images in the well to allocate memory
-     * for.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSWell_create_image_array(ZarrHCSWell* well,
-                                                  size_t image_count);
-
-    /**
-     * @brief Free memory for the images array in the ZarrHCSWell struct.
-     * @param well The ZarrHCSWell struct containing the images array to free.
-     */
-    void ZarrHCSWell_destroy_image_array(ZarrHCSWell* well);
-
-    /**
-     * @brief Allocate memory for the wells array in the ZarrHCSPlate struct.
-     * @param[in,out] plate The ZarrHCSPlate struct.
-     * @param well_count The number of wells in the plate to allocate memory
-     * for.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSPlate_create_well_array(ZarrHCSPlate* plate,
-                                                  size_t well_count);
-
-    /**
-     * @brief Free memory for the wells array in the ZarrHCSPlate struct.
-     * @param plate The ZarrHCSPlate struct containing the wells array to free.
-     */
-    void ZarrHCSPlate_destroy_well_array(ZarrHCSPlate* plate);
-
-    /**
-     * @brief Allocate memory for the acquisitions array in the ZarrHCSPlate
-     * struct.
-     * @param[in,out] plate The ZarrHCSPlate struct.
-     * @param acquisition_count The number of acquisitions in the plate to
-     * allocate memory for.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSPlate_create_acquisition_array(
-      ZarrHCSPlate* plate,
-      size_t acquisition_count);
-
-    /**
-     * @brief Free memory for the acquisitions array in the ZarrHCSPlate struct.
-     * @param plate The ZarrHCSPlate struct containing the acquisitions array to
-     */
-    void ZarrHCSPlate_destroy_acquisition_array(ZarrHCSPlate* plate);
-
-    /**
-     * @brief Allocate memory for the row names array in the ZarrHCSPlate
-     * struct.
-     * @note You must call ZarrHCSPlate_destroy_row_name_array to free the
-     * memory allocated by this function.
-     * @note The strings in the row names array are not allocated by this
-     * function. You must allocate and assign them separately.
-     * @param plate The ZarrHCSPlate struct.
-     * @param row_count The number of row names in the plate to allocate
-     * memory for.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSPlate_create_row_name_array(ZarrHCSPlate* plate,
-                                                      size_t row_count);
-
-    /**
-     * @brief Free memory for the row names array in the ZarrHCSPlate struct.
-     * @param plate The ZarrHCSPlate struct containing the row names array to
-     * free.
-     */
-    void ZarrHCSPlate_destroy_row_name_array(ZarrHCSPlate* plate);
-
-    /**
-     * @brief Allocate memory for the column names array in the ZarrHCSPlate
-     * struct.
-     * @note You must call ZarrHCSPlate_destroy_column_name_array to free the
-     * memory allocated by this function.
-     * @note The strings in the column names array are not allocated by this
-     * function. You must allocate and assign them separately.
-     * @param plate The ZarrHCSPlate struct.
-     * @param column_count The number of column names in the plate to allocate
-     * memory for.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSPlate_create_column_name_array(ZarrHCSPlate* plate,
-                                                         size_t column_count);
-
-    /**
-     * @brief Free memory for the column names array in the ZarrHCSPlate struct.
-     * @param plate The ZarrHCSPlate struct containing the column names array to
-     * free.
-     */
-    void ZarrHCSPlate_destroy_column_name_array(ZarrHCSPlate* plate);
-
-    /**
-     * @brief Allocate memory for the ZarrHCSSettings struct in the Zarr stream
-     * settings.
-     * @details This function allocates memory for the plates array in the
-     * ZarrHCSSettings struct. You must call ZarrHCSSettings_destroy_plate_array
-     * to free the memory allocated by this function.
-     * @param[in, out] settings The Zarr stream settings struct.
-     * @param[in] plate_count The number of plates in the dataset to allocate
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
-     */
-    ZarrStatusCode ZarrHCSSettings_create_plate_array(ZarrHCSSettings* settings,
-                                                      size_t plate_count);
-
-    /**
-     * @brief Free memory for the plates array in the ZarrHCSSettings struct.
-     * @param settings The ZarrHCSSettings struct containing the plates array to
-     * free.
-     */
-    void ZarrHCSSettings_destroy_plate_array(ZarrHCSSettings* settings);
 
     /**
      * @brief Create a Zarr stream.
@@ -400,24 +282,23 @@ extern "C"
     /**
      * @brief Write custom metadata to a node of the stream.
      * @details The node can be an array, a group that the stream writes (the
-     * root, a plate, a well, or a group between the root and an array), or a
-     * level of detail of a multiscale array (`<array_key>/<level>`, e.g.
-     * `"plate/A/1/0/1"`). For an array, a level of detail, or a multiscale
-     * image group (for example an HCS field of view), the metadata is held in
-     * memory and written with the array's metadata, at the latest when the
-     * stream is closed. Any other group is written at once, so a reader sees
-     * the metadata during the acquisition, and again at close: its whole
-     * zarr.json is replaced by the group as the stream wrote or kept it at
-     * create, with all of its custom attributes added. A change that anything
-     * else made to that group after create is lost. On a filesystem the file
-     * is rewritten in place, so a reader that opens it during the write can
-     * see an incomplete document, as for array metadata. If the write fails,
-     * the call returns ZarrStatusCode_IOError and the stream keeps the
+     * root, or a group between the root and an array, such as an HCS plate or
+     * well), or a level of detail of a multiscale array
+     * (`<array_key>/<level>`, e.g. `"plate/A/1/0/1"`). For an array, a level of
+     * detail, or a multiscale image group (for example an HCS field of view),
+     * the metadata is held in memory and written with the array's metadata, at
+     * the latest when the stream is closed. Any other group is written at once,
+     * so a reader sees the metadata during the acquisition, and again at close:
+     * its whole zarr.json is replaced by the group as the stream wrote or kept
+     * it at create, with all of its custom attributes added. A change that
+     * anything else made to that group after create is lost. On a filesystem
+     * the file is rewritten in place, so a reader that opens it during the
+     * write can see an incomplete document, as for array metadata. If the write
+     * fails, the call returns ZarrStatusCode_IOError and the stream keeps the
      * group's earlier custom metadata; the file is undefined until a later
-     * call or the close writes it again. The stream continues. A generic
-     * group (the root, an HCS row group, or any group that is not a plate or a
-     * well) is not addressable when `intermediate_groups` is
-     * ZarrIntermediateGroups_Never, because the stream does not write it.
+     * call or the close writes it again. The stream continues. No group is
+     * addressable when `intermediate_groups` is ZarrIntermediateGroups_Never,
+     * because the stream does not write the groups.
      * @param stream The Zarr stream struct.
      * @param node_key Key of the node to write the metadata to, relative to
      * the store root. An empty key is the root. If NULL, the stream's only
@@ -430,9 +311,9 @@ extern "C"
      * on the node. A later custom 'ome' replaces an earlier one, as for any
      * other attribute. 'ome.multiscales' is refused on every node, and so is
      * any other key that the stream writes under 'ome' on the node ('version'
-     * and 'name' on a multiscale group, 'version' and 'plate' or 'well' on a
-     * plate or well), except 'version' with the same value. A metadata_key
-     * that begins with "ome/" is refused: a metadata key is not a path.
+     * and 'name' on a multiscale group), except 'version' with the same value.
+     * A metadata_key that begins with "ome/" is refused: a metadata key is not
+     * a path.
      * @param metadata JSON-formatted metadata to be written to the dataset.
      * @return ZarrStatusCode_Success on success, ZarrStatusCode_KeyNotFound if
      * no node has the key, ZarrStatusCode_InvalidArgument if the node is not

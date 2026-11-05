@@ -7,7 +7,6 @@
 #include "file.handle.hh"
 #include "frame.queue.hh"
 #include "multiscale.array.hh"
-#include "plate.hh"
 #include "s3.client.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
@@ -93,10 +92,6 @@ struct ZarrStream_s
         ZarrIntermediateGroups_IfMissing
     };
 
-    // maps of plates and wells, key by their paths relative to the store root
-    std::unordered_map<std::string, zarr::Plate> plates_;
-    std::unordered_map<std::string, const zarr::Well&> wells_;
-
     std::unordered_map<std::string, std::unique_ptr<OutputArray>> arrays_;
     // Held only where the arrays themselves are retired, so that
     // get_memory_usage() -- which any thread may call, including during close
@@ -107,7 +102,6 @@ struct ZarrStream_s
     struct OutputGroup
     {
         nlohmann::json document;    // as written or kept at create
-        nlohmann::json library_ome; // what the stream writes under `ome`
         std::unordered_map<std::string, nlohmann::json> custom_metadata;
     };
 
@@ -143,22 +137,9 @@ struct ZarrStream_s
     /**
      * @brief Configure the stream for an array.
      * @param settings Struct containing settings to configure.
-     * @param parent_path Path to the parent group of the array.
-     * @param force_ngff Treat the array as OME-NGFF regardless of @p settings.
-     * True for HCS fields of view, which are always multiscales groups.
      * @return True if the array was configured successfully, false otherwise.
      */
-    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings,
-                                        const std::string& parent_path,
-                                        bool force_ngff);
-
-    /**
-     * @brief Commit HCS settings to the stream.
-     * @param hcs_settings Struct containing HCS settings to commit.
-     * @return True if the HCS settings were committed successfully, false
-     * otherwise.
-     */
-    [[nodiscard]] bool commit_hcs_settings_(const ZarrHCSSettings* hcs_settings);
+    [[nodiscard]] bool configure_array_(const ZarrArraySettings* settings);
 
     /**
      * @brief Copy settings to the stream and create the output node.
@@ -188,14 +169,13 @@ struct ZarrStream_s
     [[nodiscard]] bool create_store_(bool overwrite);
 
     /**
-     * @brief Write intermediate group metadata to the store, including HCS
-     * metadata (if applicable).
-     * @details Called once, when the stream is created. Every path and all HCS
-     * metadata are known then, and a reader can navigate the hierarchy while
-     * frames arrive. Each group written or kept is recorded in groups_. The
-     * stream writes a group again only when the caller gives it custom
-     * metadata (write_group_()), and at close if it has any, so metadata that
-     * the caller writes after create to any other group is kept.
+     * @brief Write intermediate group metadata to the store.
+     * @details Called once, when the stream is created. Every path is known
+     * then, and a reader can navigate the hierarchy while frames arrive. Each
+     * group written or kept is recorded in groups_. The stream writes a group
+     * again only when the caller gives it custom metadata (write_group_()), and
+     * at close if it has any, so metadata that the caller writes after create
+     * to any other group is kept.
      * @return True if the metadata was written successfully, false otherwise.
      */
     [[nodiscard]] bool write_intermediate_metadata_();

@@ -14,7 +14,6 @@ import numpy
 from typing import Any, ClassVar, List, Optional, Union
 
 __all__ = [
-    "Acquisition",
     "ArraySettings",
     "CompressionCodec",
     "CompressionSettings",
@@ -23,38 +22,15 @@ __all__ = [
     "Dimension",
     "DimensionType",
     "DownsamplingMethod",
-    "FieldOfView",
     "IntermediateGroups",
     "LogLevel",
-    "Plate",
     "S3Settings",
     "StreamSettings",
-    "Well",
     "ZarrStream",
     "ZarrVersion",
     "get_log_level",
     "set_log_level",
 ]
-
-class Acquisition:
-    """Acquisition metadata for HCS experiments.
-
-    Attributes:
-        id: Unique identifier for this acquisition.
-        name: Optional human-readable name for the acquisition.
-        description: Optional description of the acquisition.
-        start_time: Optional acquisition start timestamp.
-        end_time: Optional acquisition end timestamp.
-    """
-
-    id: int
-    name: Optional[str]
-    description: Optional[str]
-    start_time: Optional[int]
-    end_time: Optional[int]
-
-    def __init__(self, **kwargs) -> None: ...
-    def __repr__(self) -> str: ...
 
 class ArraySettings:
     """Settings for a single array in the Zarr stream.
@@ -73,14 +49,10 @@ class ArraySettings:
     ``store_path`` if ``output_key`` is empty or omitted. Intermediate group
     directories are created as needed.
 
-    Arrays belonging to a ``FieldOfView`` are always treated as NGFF regardless
-    of the value of ``is_ngff``.
-
     Attributes:
       output_key: Path within the Zarr store where this array (or multiscales
         group) will be written, relative to ``StreamSettings.store_path``. If
-        empty or omitted, the array is placed at the store root. For an Array
-        belonging to a FieldOfView, this MUST be None.
+        empty or omitted, the array is placed at the store root.
       dimensions: List of dimension properties defining the dataset structure.
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
@@ -339,31 +311,12 @@ class DownsamplingMethod:
     @property
     def value(self) -> int: ...
 
-class FieldOfView:
-    """Field of view configuration for HCS datasets.
-
-    Attributes:
-        path: Path to this field of view within the plate structure.
-        acquisition_id: Optional ID linking this field of view to a specific acquisition.
-        array_settings: Array configuration for this field of view's data.
-            ``output_key`` must be None to prevent key conflicts with the FOV path.
-            The array is always written as an OME-NGFF multiscales group,
-            regardless of ``is_ngff``.
-    """
-
-    path: str
-    acquisition_id: Optional[int]
-    array_settings: ArraySettings
-
-    def __init__(self, **kwargs) -> None: ...
-    def __repr__(self) -> str: ...
-
 class IntermediateGroups:
     """
-    Whether the stream writes ``zarr.json`` for the generic groups above its
-    arrays. Plate and well groups are always written. The stream writes these
-    groups when it is created, and again only when it is given custom
-    metadata for one of them.
+    Whether the stream writes ``zarr.json`` for the groups above its arrays,
+    HCS plate and well groups included. The stream writes these groups when it
+    is created, and again only when it is given custom metadata for one of
+    them.
 
     Attributes:
       IF_MISSING: Write a group unless a valid Zarr v3 group node is already
@@ -437,28 +390,6 @@ class LogLevel:
     @property
     def value(self) -> int: ...
 
-class Plate:
-    """Plate configuration for HCS datasets.
-
-    Attributes:
-        path: Storage path for the plate dataset.
-        name: Human-readable name for the plate.
-        row_names: List of row identifiers (e.g., ["A", "B", "C"]).
-        column_names: List of column identifiers (e.g., ["01", "02", "03"]).
-        wells: List of well configurations in this plate.
-        acquisitions: List of acquisition metadata for this plate.
-    """
-
-    path: str
-    name: str
-    row_names: List[str]
-    column_names: List[str]
-    wells: List[Well]
-    acquisitions: List[Acquisition]
-
-    def __init__(self, **kwargs) -> None: ...
-    def __repr__(self) -> str: ...
-
 class S3Settings:
     """Settings for connecting to and storing data in S3.
 
@@ -498,8 +429,8 @@ class StreamSettings:
             auto-detect based on available hardware concurrency.
         custom_metadata: Optional JSON-formatted custom metadata to include in the dataset.
         overwrite: If True, removes any existing data at store_path before writing.
-        intermediate_groups: Whether to write ``zarr.json`` for the generic
-            groups above the arrays. Defaults to IntermediateGroups.IF_MISSING.
+        intermediate_groups: Whether to write ``zarr.json`` for the groups
+            above the arrays. Defaults to IntermediateGroups.IF_MISSING.
 
     Note:
         For S3 storage with endpoint "http://localhost:9000", bucket "my-bucket",
@@ -516,7 +447,6 @@ class StreamSettings:
     max_threads: int
     overwrite: bool
     intermediate_groups: IntermediateGroups
-    plates: List[Plate]
 
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
@@ -549,22 +479,6 @@ class StreamSettings:
 
     def to_json(self) -> str:
         """Serialize stream settings to a JSON string."""
-
-class Well:
-    """Well configuration for HCS plate layouts.
-
-    Attributes:
-        row_name: Row identifier for this well (e.g., "A", "B", "C").
-        column_name: Column identifier for this well (e.g., "01", "02", "03").
-        images: List of field of view configurations within this well.
-    """
-
-    row_name: str
-    column_name: str
-    images: List[FieldOfView]
-
-    def __init__(self, **kwargs) -> None: ...
-    def __repr__(self) -> str: ...
 
 class ZarrStream:
     def __init__(self, arg0: StreamSettings) -> None: ...
@@ -600,9 +514,10 @@ class ZarrStream:
         Args:
             metadata: JSON object, as a dict or a string.
             node_key: Key of the node, relative to the store root: an array,
-                a group that the stream writes (the root ``""``, a plate, a
-                well, or a group between the root and an array), or a level
-                of detail of a multiscale array (``"<array key>/<level>"``).
+                a group that the stream writes (the root ``""``, or a group
+                between the root and an array, such as an HCS plate or
+                well), or a level of detail of a multiscale array
+                (``"<array key>/<level>"``).
                 If None, the stream's only array.
             metadata_key: Key under ``attributes`` to write to. If None,
                 each top-level key of ``metadata`` is written under
@@ -611,8 +526,7 @@ class ZarrStream:
                 later custom ``ome`` replaces an earlier one.
                 ``ome.multiscales`` is refused, and so is any other key that
                 the stream writes under ``ome`` on the node (``version`` and
-                ``name`` on a multiscale group; ``version`` and ``plate`` or
-                ``well`` on a plate or well), except an equal ``version``.
+                ``name`` on a multiscale group), except an equal ``version``.
 
         Raises:
             RuntimeError: If the node is not found or not addressable, or the

@@ -31,10 +31,6 @@ from acquire_zarr import (
     DimensionType,
     LogLevel,
     DownsamplingMethod,
-    Plate,
-    Well,
-    FieldOfView,
-    Acquisition,
     IntermediateGroups,
     set_log_level,
     get_log_level,
@@ -95,10 +91,57 @@ def s3_settings():
         yield settings
 
 
-def create_hcs_settings():
-    """Create HCS settings that match the C++ test structure."""
-    # Well C/5 with two FOVs
+def hcs_plate_metadata(
+    name: str,
+    rows: list[str],
+    columns: list[str],
+    wells: dict[str, list[tuple[str, int]]],
+    acquisitions: list[dict],
+) -> dict[str, dict]:
+    """Build OME-NGFF 0.5 plate and well metadata for write_custom_metadata.
+
+    ``wells`` maps ``"<row>/<column>"`` to that well's fields of view, as
+    ``(path, acquisition id)``. Returns the ``ome`` object for each group,
+    keyed by its path relative to the plate (``""`` for the plate itself).
+    """
+    max_fields = {}  # acquisition id -> most fields in one well
+    for fields in wells.values():
+        for acq_id in {acq for _, acq in fields}:
+            n = sum(1 for _, acq in fields if acq == acq_id)
+            max_fields[acq_id] = max(max_fields.get(acq_id, 0), n)
+
+    plate = {
+        "name": name,
+        "field_count": max(len(fields) for fields in wells.values()),
+        "acquisitions": [
+            dict(acq, maximumfieldcount=max_fields[acq["id"]])
+            for acq in acquisitions
+        ],
+        "columns": [{"name": c} for c in columns],
+        "rows": [{"name": r} for r in rows],
+        "wells": [
+            {
+                "path": key,
+                "rowIndex": rows.index(key.split("/")[0]),
+                "columnIndex": columns.index(key.split("/")[1]),
+            }
+            for key in wells
+        ],
+    }
+
+    metadata = {"": {"version": "0.5", "plate": plate}}
+    for key, fields in wells.items():
+        images = [{"acquisition": acq, "path": path} for path, acq in fields]
+        metadata[key] = {"version": "0.5", "well": {"images": images}}
+    return metadata
+
+
+def create_hcs_plate() -> tuple[list[ArraySettings], dict[str, dict]]:
+    """Create the HCS plate of the C++ HCS tests: its fields of view, as
+    OME-NGFF arrays, and the plate and well metadata, keyed by group."""
     c5_fov1_array = ArraySettings(
+        output_key="test_plate/C/5/fov1",
+        is_ngff=True,
         data_type=np.uint8,
         dimensions=[
             Dimension(
@@ -126,6 +169,8 @@ def create_hcs_settings():
     )
 
     c5_fov2_array = ArraySettings(
+        output_key="test_plate/C/5/fov2",
+        is_ngff=True,
         data_type=np.uint16,
         dimensions=[
             Dimension(
@@ -152,25 +197,9 @@ def create_hcs_settings():
         ],
     )
 
-    c5_well = Well(
-        row_name="C",
-        column_name="5",
-        images=[
-            FieldOfView(
-                path="fov1",  # Will be at test_plate/C/5/fov1
-                acquisition_id=0,
-                array_settings=c5_fov1_array,
-            ),
-            FieldOfView(
-                path="fov2",  # Will be at test_plate/C/5/fov2
-                acquisition_id=1,
-                array_settings=c5_fov2_array,
-            ),
-        ],
-    )
-
-    # Well D/7 with one FOV
     d7_fov1_array = ArraySettings(
+        output_key="test_plate/D/7/fov1",
+        is_ngff=True,
         data_type=np.uint16,
         dimensions=[
             Dimension(
@@ -211,56 +240,40 @@ def create_hcs_settings():
         ],
     )
 
-    d7_well = Well(
-        row_name="D",
-        column_name="7",
-        images=[
-            FieldOfView(
-                path="fov1",  # Will be at test_plate/D/7/fov1
-                acquisition_id=0,
-                array_settings=d7_fov1_array,
-            ),
-        ],
-    )
-
-    # Create plate with acquisitions
-    acquisitions = [
-        Acquisition(
-            id=0,
-            name="Meas_01(2012-07-31_10-41-12)",
-            start_time=1343731272000,
-        ),
-        Acquisition(
-            id=1,
-            name="Meas_02(2012-07-31_10-45-12)",
-            start_time=1343735801000,
-            end_time=1343737645000,
-        ),
-    ]
-
-    plate = Plate(
-        path="test_plate",
+    metadata = hcs_plate_metadata(
         name="Test Plate",
-        row_names=["A", "B", "C", "D", "E", "F", "G", "H"],
-        column_names=[
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10",
-            "11",
-            "12",
+        rows=["A", "B", "C", "D", "E", "F", "G", "H"],
+        columns=[str(c) for c in range(1, 13)],
+        wells={
+            "C/5": [("fov1", 0), ("fov2", 1)],
+            "D/7": [("fov1", 0)],
+        },
+        acquisitions=[
+            {
+                "id": 0,
+                "name": "Meas_01(2012-07-31_10-41-12)",
+                "starttime": 1343731272000,
+            },
+            {
+                "id": 1,
+                "name": "Meas_02(2012-07-31_10-45-12)",
+                "starttime": 1343735801000,
+                "endtime": 1343737645000,
+            },
         ],
-        wells=[c5_well, d7_well],
-        acquisitions=acquisitions,
     )
 
-    return plate
+    fields = [c5_fov1_array, c5_fov2_array, d7_fov1_array]
+    return fields, {
+        f"test_plate/{key}".rstrip("/"): ome for key, ome in metadata.items()
+    }
+
+
+def write_hcs_metadata(stream: ZarrStream, metadata: dict[str, dict]) -> None:
+    for node, ome in metadata.items():
+        assert stream.write_custom_metadata(
+            ome, node_key=node, metadata_key="ome"
+        )
 
 
 def validate_v3_metadata(store_path: Path):
@@ -1714,11 +1727,10 @@ def validate_plate_metadata(base_path: Path):
     assert ome["version"] == "0.5"
 
     plate = ome["plate"]
-    assert len(plate) == 7
+    assert len(plate) == 6
 
     # Validate plate fields
     assert plate["name"] == "Test Plate"
-    assert plate["version"] == "0.5"
     assert plate["field_count"] == 2
 
     # Validate acquisitions
@@ -1796,8 +1808,7 @@ def validate_well_metadata(base_path: Path):
         assert ome["version"] == "0.5"
 
         well = ome["well"]
-        assert len(well) == 2
-        assert well["version"] == "0.5"
+        assert len(well) == 1
 
         images = well["images"]
         assert len(images) == expected_image_counts[i]
@@ -1849,13 +1860,12 @@ def check_arrays_exist_mixed(base_path: Path):
 
 def test_pure_hcs_acquisition(store_path: Path):
     """Test pure HCS acquisition (equivalent to stream-pure-hcs-acquisition.cpp)"""
-    plate = create_hcs_settings()
+    fields, metadata = create_hcs_plate()
 
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
         overwrite=True,
-        arrays=[],  # No flat arrays, only HCS
-        hcs_plates=[plate],
+        arrays=fields,
     )
 
     expected_keys = {
@@ -1868,6 +1878,11 @@ def test_pure_hcs_acquisition(store_path: Path):
 
     stream = ZarrStream(settings)
     assert stream
+    write_hcs_metadata(stream, metadata)
+
+    # written at once, so a reader can open the plate during the acquisition
+    validate_plate_metadata(store_path / "test.zarr")
+    validate_well_metadata(store_path / "test.zarr")
 
     # Write test data to each FOV
     # FOV1 in well C/5 (uint8, 3D: z,y,x)
@@ -1891,48 +1906,33 @@ def test_pure_hcs_acquisition(store_path: Path):
     check_hcs_multiscale_arrays(store_path / "test.zarr")
 
 
-@pytest.mark.parametrize(
-    "intermediate_groups",
-    [IntermediateGroups.IF_MISSING, IntermediateGroups.NEVER],
-)
-def test_write_custom_metadata_to_hcs_nodes(
-    store_path: Path, intermediate_groups: IntermediateGroups
-):
+def test_write_custom_metadata_to_hcs_nodes(store_path: Path):
+    fields, metadata = create_hcs_plate()
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
         overwrite=True,
-        arrays=[],
-        hcs_plates=[create_hcs_settings()],
-        intermediate_groups=intermediate_groups,
+        arrays=fields,
     )
     stream = ZarrStream(settings)
+    write_hcs_metadata(stream, metadata)
 
-    # generic groups, which the stream does not write under NEVER
-    generic_groups = ["", "test_plate/C"]
     nodes = [
+        "",  # root group
         "test_plate",  # plate
+        "test_plate/C",  # row group
         "test_plate/C/5",  # well
         "test_plate/C/5/fov1",  # field of view
         "test_plate/C/5/fov1/0",  # level of detail
     ]
-    if intermediate_groups == IntermediateGroups.NEVER:
-        for node in generic_groups:
-            with pytest.raises(RuntimeError):
-                stream.write_custom_metadata({}, node_key=node)
-    else:
-        nodes += generic_groups
-
     for node in nodes:
         assert stream.write_custom_metadata(
             {"node": node}, node_key=node, metadata_key="custom"
         )
 
-    # the stream writes `ome.version` and `ome.plate` / `ome.well` here
+    # the stream writes `ome.multiscales` and `ome.version` on a field of view
     for node, ome in [
-        ("test_plate", {"plate": {}}),
-        ("test_plate", {"version": "0.6"}),
-        ("test_plate/C/5", {"well": {}}),
         ("test_plate/C/5/fov1", {"multiscales": []}),
+        ("test_plate/C/5/fov1", {"version": "0.6"}),
         ("test_plate/C/5/fov1/0", {"multiscales": []}),
     ]:
         with pytest.raises(RuntimeError):
@@ -1948,7 +1948,7 @@ def test_write_custom_metadata_to_hcs_nodes(
     with pytest.raises(RuntimeError):
         stream.write_custom_metadata({}, node_key="test_plate/Z")
 
-    # plate and well groups are written at once, before any frame or close
+    # groups are written at once, before any frame or close
     base_path = Path(settings.store_path)
     for node in ["test_plate", "test_plate/C/5"]:
         with open(base_path / node / "zarr.json", "r") as fh:
@@ -1972,7 +1972,6 @@ def test_write_custom_metadata_to_hcs_nodes(
             attributes = json.load(fh)["attributes"]
         assert attributes["custom"] == {"node": node}
 
-    # the stream's own metadata is kept, and the custom `ome` keys merge in
     validate_plate_metadata(base_path)
     validate_well_metadata(base_path)
     with open(base_path / "test_plate/C/5/fov1" / "zarr.json", "r") as fh:
@@ -1981,9 +1980,34 @@ def test_write_custom_metadata_to_hcs_nodes(
     assert len(ome["multiscales"]) == 1
 
 
+def test_hcs_groups_not_addressable_under_never(store_path: Path):
+    fields, metadata = create_hcs_plate()
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        overwrite=True,
+        arrays=fields,
+        intermediate_groups=IntermediateGroups.NEVER,
+    )
+    stream = ZarrStream(settings)
+
+    # the stream does not write any group, plates and wells included
+    for node in ["", "test_plate", "test_plate/C", "test_plate/C/5"]:
+        with pytest.raises(RuntimeError):
+            stream.write_custom_metadata({}, node_key=node)
+
+    # fields of view and their levels are arrays, so still addressable
+    for node in ["test_plate/C/5/fov1", "test_plate/C/5/fov1/0"]:
+        assert stream.write_custom_metadata({"a": 1}, node_key=node)
+    stream.close()
+
+    base_path = Path(settings.store_path)
+    for node in ["", "test_plate", "test_plate/C", "test_plate/C/5"]:
+        assert not (base_path / node / "zarr.json").exists()
+
+
 def test_mixed_flat_and_hcs_acquisition(store_path: Path):
     """Test mixed flat and HCS acquisition (equivalent to stream-mixed-flat-and-hcs-acquisition.cpp)"""
-    plate = create_hcs_settings()
+    fields, metadata = create_hcs_plate()
 
     # Add a labels array outside the HCS structure
     labels_array = ArraySettings(
@@ -2017,8 +2041,7 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
         overwrite=True,
-        arrays=[labels_array],
-        hcs_plates=[plate],
+        arrays=[*fields, labels_array],
     )
 
     expected_keys = {
@@ -2032,6 +2055,7 @@ def test_mixed_flat_and_hcs_acquisition(store_path: Path):
 
     stream = ZarrStream(settings)
     assert stream
+    write_hcs_metadata(stream, metadata)
 
     del settings
 
