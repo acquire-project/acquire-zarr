@@ -107,11 +107,11 @@ zarr::MultiscaleArray::make_metadata_(nlohmann::json& metadata)
         attributes["ome"] = get_ome_metadata_();
     }
 
-    // write custom metadata, if any; custom `ome` keys merge with ours, and
-    // write_custom_metadata refused any that would replace one of ours
+    // write the caller's attributes, if any; their `ome` keys merge with
+    // ours, and write_attributes refused any that would replace one of ours
     {
         std::unique_lock lock(metadata_mutex_);
-        apply_custom_metadata(attributes, custom_metadata_);
+        apply_attributes(attributes, attributes_);
     }
 
     metadata = std::move(meta_tmp);

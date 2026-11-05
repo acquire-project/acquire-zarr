@@ -314,10 +314,10 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
     meta_tmp["attributes"] = json::object();
     auto& attributes = meta_tmp["attributes"];
 
-    // write custom metadata, if any
+    // write the caller's attributes, if any
     {
         std::unique_lock lock(metadata_mutex_);
-        apply_custom_metadata(attributes, custom_metadata_);
+        apply_attributes(attributes, attributes_);
     }
 
     meta_tmp["zarr_format"] = 3;
@@ -432,7 +432,7 @@ zarr::Array::close_()
 
         close_sinks_();
 
-        if (frames_written_() > 0 || !custom_metadata_.empty()) {
+        if (frames_written_() > 0 || !attributes_.empty()) {
             if (!write_metadata_()) {
                 LOG_ERROR("Failed to write metadata on close");
                 return false;

@@ -128,12 +128,12 @@ append_frames(ZarrStream* stream)
 void
 expect_status(ZarrStream* stream,
               const char* key,
-              const char* metadata_key,
+              const char* attribute_key,
               const char* metadata,
               ZarrStatusCode expected)
 {
     const auto status =
-      ZarrStream_write_custom_metadata(stream, key, metadata_key, metadata);
+      ZarrStream_write_attributes(stream, key, attribute_key, metadata);
     EXPECT(status == expected,
            "Writing metadata to '",
            key ? key : "(NULL)",
@@ -175,11 +175,11 @@ test_every_node_is_addressable()
           stream.get(), "/foo/bar/", "extra", "1", ZarrStatusCode_Success);
 
         // groups are written at once, so a reader sees their metadata while
-        // the stream is open; each write keeps the earlier custom keys
+        // the stream is open; each write keeps the earlier keys
         for (const std::string key : { "", "foo", "foo/bar" }) {
             auto metadata = read_metadata(key);
             EXPECT(metadata["attributes"]["custom"]["node"] == key,
-                   "Expected custom metadata on group '",
+                   "Expected attributes on group '",
                    key,
                    "' before close, got ",
                    metadata.dump());
@@ -199,7 +199,7 @@ test_every_node_is_addressable()
                                    "foo/qux" }) {
         auto metadata = read_metadata(key);
         EXPECT(metadata["attributes"]["custom"]["node"] == key,
-               "Expected custom metadata on '",
+               "Expected attributes on '",
                key,
                "', got ",
                metadata.dump());
@@ -249,7 +249,7 @@ test_unknown_keys_are_rejected()
 void
 test_ome_rules()
 {
-    LOG_INFO("Case: custom 'ome' metadata");
+    LOG_INFO("Case: 'ome' attributes");
     remove_test_path();
 
     const char* omero = R"({"omero": {"channels": []}})";
@@ -306,6 +306,16 @@ test_ome_rules()
                       R"({"ome": {"multiscales": []}, "partial": 1})",
                       ZarrStatusCode_InvalidArgument);
 
+        // with no key, the value must be an object: an array or a scalar has
+        // no attribute names
+        for (const char* value : { "[1, 2]", "5", R"("s")", "null" }) {
+            expect_status(stream.get(),
+                          "foo",
+                          nullptr,
+                          value,
+                          ZarrStatusCode_InvalidArgument);
+        }
+
         // not an object, and not a path
         expect_status(
           stream.get(), "foo", "ome", "[]", ZarrStatusCode_InvalidArgument);
@@ -346,7 +356,7 @@ test_ome_rules()
            "Expected 'ome.version' on foo/qux: ",
            qux.dump());
 
-    // the custom keys merge with the stream's own
+    // the caller's keys merge with the stream's own
     auto baz = read_metadata("foo/bar/baz");
     auto& ome = baz["attributes"]["ome"];
     EXPECT(ome["version"] == "0.5", "Unexpected version: ", baz.dump());
@@ -405,7 +415,7 @@ test_kept_group_keeps_its_attributes()
                       ZarrStatusCode_Success);
 
         // the kept group's `ome` is the caller's, so no key of it is refused;
-        // the custom keys merge into it
+        // the caller's keys merge into it
         expect_status(stream.get(),
                       "foo",
                       "ome",
@@ -419,7 +429,7 @@ test_kept_group_keeps_its_attributes()
            "Kept group lost its attributes: ",
            foo.dump());
     EXPECT(foo["attributes"]["added_by"] == "stream",
-           "Kept group has no custom metadata: ",
+           "Kept group has no attributes: ",
            foo.dump());
     auto& ome = foo["attributes"]["ome"];
     EXPECT(ome["kept"] == true && ome["added"] == true &&

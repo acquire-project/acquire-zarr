@@ -221,25 +221,24 @@ validate_compression_settings(const ZarrCompressionSettings* settings,
 }
 
 [[nodiscard]] bool
-validate_custom_metadata(std::string_view metadata,
-                         nlohmann::json& metadata_json)
+parse_attributes(std::string_view text, nlohmann::json& value)
 {
-    if (metadata.empty()) {
+    if (text.empty()) {
         return false;
     }
 
     // parse the JSON
-    auto val = nlohmann::json::parse(metadata,
+    auto val = nlohmann::json::parse(text,
                                      nullptr, // callback
                                      false,   // allow exceptions
                                      true     // ignore comments
     );
 
     if (val.is_discarded()) {
-        LOG_ERROR("Invalid JSON: '", metadata, "'");
+        LOG_ERROR("Invalid JSON: '", text, "'");
         return false;
     }
-    metadata_json = std::move(val);
+    value = std::move(val);
 
     return true;
 }
@@ -754,12 +753,12 @@ dimension_type_to_string(ZarrDimensionType type)
             return "(unknown)";
     }
 }
-/// Check each custom metadata entry without writing anything: the node exists
+/// Check each attribute entry without writing anything: the node exists
 /// and is addressable, the metadata is JSON, and no reserved key is used. A
 /// level's index is checked when the entry is written, because the number of
 /// levels is known only when the arrays exist.
 [[nodiscard]] bool
-check_custom_metadata_entries(
+check_attribute_entries(
   const ZarrStreamSettings* settings,
   const std::vector<std::shared_ptr<zarr::ArrayConfig>>& arrays,
   const std::vector<std::string>& group_paths,
@@ -773,9 +772,9 @@ check_custom_metadata_entries(
         { "multiscales", nullptr },
     };
 
-    for (size_t i = 0; i < settings->custom_metadata_count; ++i) {
-        const auto& entry = settings->custom_metadata[i];
-        const std::string ctx = "custom_metadata[" + std::to_string(i) + "]";
+    for (size_t i = 0; i < settings->attributes_count; ++i) {
+        const auto& entry = settings->attributes[i];
+        const std::string ctx = "attributes[" + std::to_string(i) + "]";
 
         std::string key;
         if (entry.node_key) {
@@ -829,21 +828,19 @@ check_custom_metadata_entries(
             return false;
         }
 
-        nlohmann::json metadata;
-        if (!validate_custom_metadata(entry.metadata ? entry.metadata : "",
-                                      metadata)) {
-            error = ctx + ": metadata is not valid JSON";
+        nlohmann::json value;
+        if (!parse_attributes(entry.value ? entry.value : "", value)) {
+            error = ctx + ": value is not valid JSON";
             return false;
         }
 
         std::unordered_map<std::string, nlohmann::json> scratch;
-        if (!zarr::merge_custom_metadata(
+        if (!zarr::merge_attributes(
               scratch,
-              zarr::regularize_key(entry.metadata_key ? entry.metadata_key
-                                                      : ""),
-              metadata,
+              zarr::regularize_key(entry.key ? entry.key : ""),
+              value,
               library_ome)) {
-            error = ctx + ": metadata refused for '" + key + "' (see the log)";
+            error = ctx + ": value refused for '" + key + "' (see the log)";
             return false;
         }
     }
@@ -865,7 +862,7 @@ ZarrStream::ZarrStream_s(const ZarrStreamSettings_s* settings)
 
     EXPECT(write_intermediate_metadata_(), error_);
 
-    EXPECT(write_initial_custom_metadata_(settings), error_);
+    EXPECT(write_initial_attributes_(settings), error_);
 
     // initialize the frame queue
     EXPECT(init_frame_queue_(), error_);
@@ -1010,9 +1007,9 @@ ZarrStream::append(const char* key_,
 }
 
 ZarrStatusCode
-ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
-                                    std::string_view metadata_key,
-                                    std::string_view metadata)
+ZarrStream_s::write_attributes(const std::optional<std::string>& node_key,
+                               std::string_view attribute_key,
+                               std::string_view value)
 {
 
     std::string key;
@@ -1024,13 +1021,12 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
         LOG_ERROR("Node key is required when there are multiple output arrays");
         return ZarrStatusCode_InvalidArgument;
     }
-    const std::string meta_key = zarr::regularize_key(metadata_key);
+    const std::string attr_key = zarr::regularize_key(attribute_key);
 
     // parsed before the group lock is taken; reported after the lookup, so
     // that an unknown key is reported first
-    nlohmann::json metadata_json;
-    const bool metadata_is_valid =
-      validate_custom_metadata(metadata, metadata_json);
+    nlohmann::json value_json;
+    const bool value_is_valid = parse_attributes(value, value_json);
 
     zarr::ArrayBase* array = nullptr;
     if (const auto it = arrays_.find(key); it != arrays_.end()) {
@@ -1050,7 +1046,7 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
             LOG_ERROR("Group '",
                       key,
                       "' is not written by this stream (intermediate groups: "
-                      "never), so it cannot take custom metadata");
+                      "never), so it cannot take attributes");
             return ZarrStatusCode_InvalidArgument;
         } else {
             LOG_ERROR("Key '",
@@ -1061,15 +1057,15 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
         }
     }
 
-    if (!metadata_is_valid) {
-        LOG_ERROR("Invalid custom metadata: '", metadata, "'");
+    if (!value_is_valid) {
+        LOG_ERROR("Invalid attributes: '", value, "'");
         return ZarrStatusCode_InvalidArgument;
     }
 
     if (array) {
         // held in memory, and written with the array's metadata
-        if (!array->write_custom_metadata(meta_key, metadata_json)) {
-            LOG_ERROR("Error writing custom metadata for '", key, "'");
+        if (!array->write_attributes(attr_key, value_json)) {
+            LOG_ERROR("Error writing attributes for '", key, "'");
             return ZarrStatusCode_InvalidArgument;
         }
         return ZarrStatusCode_Success;
@@ -1077,20 +1073,19 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& node_key,
 
     // a group is written now, so that a reader sees its metadata during the
     // acquisition; the merge is kept only if the write succeeds
-    auto custom_metadata = group->custom_metadata;
+    auto attributes = group->attributes;
     // the stream writes no `ome` on a group, so no `ome` key of the group is
     // ours to protect
-    if (!zarr::merge_custom_metadata(
-          custom_metadata, meta_key, metadata_json, nullptr)) {
-        LOG_ERROR("Error writing custom metadata for '", key, "'");
+    if (!zarr::merge_attributes(attributes, attr_key, value_json, nullptr)) {
+        LOG_ERROR("Error writing attributes for '", key, "'");
         return ZarrStatusCode_InvalidArgument;
     }
 
-    if (!write_group_(key, group->document, custom_metadata)) {
-        LOG_ERROR("Failed to write custom metadata for group '", key, "'");
+    if (!write_group_(key, group->document, attributes)) {
+        LOG_ERROR("Failed to write attributes for group '", key, "'");
         return ZarrStatusCode_IOError;
     }
-    group->custom_metadata = std::move(custom_metadata);
+    group->attributes = std::move(attributes);
 
     return ZarrStatusCode_Success;
 }
@@ -1179,9 +1174,8 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
         return false;
     }
 
-    if (settings->custom_metadata_count > 0 &&
-        settings->custom_metadata == nullptr) {
-        error_ = "Null pointer: custom_metadata";
+    if (settings->attributes_count > 0 && settings->attributes == nullptr) {
+        error_ = "Null pointer: attributes";
         return false;
     }
 
@@ -1238,11 +1232,11 @@ ZarrStream_s::validate_settings_(const ZarrStreamSettings* settings)
 
     // before the store is touched, so that a mistake fails create without
     // changing the store
-    if (!check_custom_metadata_entries(settings,
-                                       arrays,
-                                       intermediate_group_paths_,
-                                       settings->intermediate_groups,
-                                       error_)) {
+    if (!check_attribute_entries(settings,
+                                 arrays,
+                                 intermediate_group_paths_,
+                                 settings->intermediate_groups,
+                                 error_)) {
         return false;
     }
 
@@ -1452,22 +1446,20 @@ ZarrStream_s::write_intermediate_metadata_()
 }
 
 bool
-ZarrStream_s::write_initial_custom_metadata_(const ZarrStreamSettings* settings)
+ZarrStream_s::write_initial_attributes_(const ZarrStreamSettings* settings)
 {
-    for (size_t i = 0; i < settings->custom_metadata_count; ++i) {
-        const auto& entry = settings->custom_metadata[i];
+    for (size_t i = 0; i < settings->attributes_count; ++i) {
+        const auto& entry = settings->attributes[i];
 
         std::optional<std::string> node_key;
         if (entry.node_key) {
             node_key = entry.node_key;
         }
 
-        const auto status =
-          write_custom_metadata(node_key,
-                                entry.metadata_key ? entry.metadata_key : "",
-                                entry.metadata ? entry.metadata : "");
+        const auto status = write_attributes(
+          node_key, entry.key ? entry.key : "", entry.value ? entry.value : "");
         if (status != ZarrStatusCode_Success) {
-            set_error_("Failed to write custom_metadata[" + std::to_string(i) +
+            set_error_("Failed to write attributes[" + std::to_string(i) +
                        "] to '" + node_key.value_or("(NULL)") +
                        "': " + Zarr_get_status_message(status));
             return false;
@@ -1478,17 +1470,16 @@ ZarrStream_s::write_initial_custom_metadata_(const ZarrStreamSettings* settings)
 }
 
 bool
-ZarrStream_s::write_groups_with_custom_metadata_()
+ZarrStream_s::write_groups_with_attributes_()
 {
     std::unique_lock lock(groups_mutex_);
     for (const auto& [relative_path, group] : groups_) {
-        if (group.custom_metadata.empty()) {
+        if (group.attributes.empty()) {
             continue;
         }
 
-        if (!write_group_(
-              relative_path, group.document, group.custom_metadata)) {
-            set_error_("Failed to write custom metadata for group '" +
+        if (!write_group_(relative_path, group.document, group.attributes)) {
+            set_error_("Failed to write attributes for group '" +
                        relative_path + "'");
             return false;
         }
@@ -1501,14 +1492,14 @@ bool
 ZarrStream_s::write_group_(
   const std::string& relative_path,
   const nlohmann::json& document,
-  const std::unordered_map<std::string, nlohmann::json>& custom_metadata)
+  const std::unordered_map<std::string, nlohmann::json>& user_attributes)
 {
     nlohmann::json out(document);
     auto& attributes = out["attributes"];
     if (!attributes.is_object()) {
         attributes = nlohmann::json::object();
     }
-    zarr::apply_custom_metadata(attributes, custom_metadata);
+    zarr::apply_attributes(attributes, user_attributes);
 
     return write_metadata_object_(group_sink_path_(relative_path), out.dump(4));
 }
@@ -1881,9 +1872,9 @@ finalize_stream(ZarrStream* stream)
         }
     }
 
-    // a group is written each time it gets custom metadata; write it once more
+    // a group is written each time it gets attributes; write it once more
     // so that a write that failed part-way does not leave it broken
-    if (!stream->write_groups_with_custom_metadata_()) {
+    if (!stream->write_groups_with_attributes_()) {
         LOG_ERROR("Error finalizing Zarr stream: ", stream->error_);
         return false;
     }

@@ -549,7 +549,7 @@ class PyZarrArraySettings
     std::vector<std::string> storage_dimension_order_;
 };
 
-class PyZarrCustomMetadata
+class PyZarrAttributes
 {
   public:
     const std::optional<std::string>& node_key() const { return node_key_; }
@@ -558,43 +558,36 @@ class PyZarrCustomMetadata
         node_key_ = key;
     }
 
-    const std::optional<std::string>& metadata_key() const
-    {
-        return metadata_key_;
-    }
-    void set_metadata_key(const std::optional<std::string>& key)
-    {
-        metadata_key_ = key;
-    }
+    const std::optional<std::string>& key() const { return key_; }
+    void set_key(const std::optional<std::string>& key) { key_ = key; }
 
-    /// The metadata as JSON text; a str from Python is taken as JSON text,
-    /// as in ZarrStream.write_custom_metadata.
-    const std::string& metadata() const { return metadata_; }
-    void set_metadata(const std::string& json) { metadata_ = json; }
+    /// The value as JSON text; a str from Python is taken as JSON text, as
+    /// in ZarrStream.write_attributes.
+    const std::string& value() const { return value_; }
+    void set_value(const std::string& json) { value_ = json; }
 
     std::string repr() const
     {
         auto quoted = [](const std::optional<std::string>& v) {
             return v ? "'" + *v + "'" : std::string("None");
         };
-        return "CustomMetadata(node_key=" + quoted(node_key_) +
-               ", metadata_key=" + quoted(metadata_key_) +
-               ", metadata=" + metadata_ + ")";
+        return "Attributes(node_key=" + quoted(node_key_) +
+               ", key=" + quoted(key_) + ", value=" + value_ + ")";
     }
 
-    ZarrCustomMetadata to_c() const
+    ZarrAttributes to_c() const
     {
         return {
             .node_key = node_key_ ? node_key_->c_str() : nullptr,
-            .metadata_key = metadata_key_ ? metadata_key_->c_str() : nullptr,
-            .metadata = metadata_.c_str(),
+            .key = key_ ? key_->c_str() : nullptr,
+            .value = value_.c_str(),
         };
     }
 
   private:
     std::optional<std::string> node_key_;
-    std::optional<std::string> metadata_key_;
-    std::string metadata_;
+    std::optional<std::string> key_;
+    std::string value_;
 };
 
 std::string
@@ -607,7 +600,7 @@ to_json_text(const py::object& obj)
 }
 
 PYBIND11_MAKE_OPAQUE(std::vector<PyZarrArraySettings>);
-PYBIND11_MAKE_OPAQUE(std::vector<PyZarrCustomMetadata>);
+PYBIND11_MAKE_OPAQUE(std::vector<PyZarrAttributes>);
 
 class PyZarrStreamSettings
 {
@@ -655,17 +648,14 @@ class PyZarrStreamSettings
         arrays_ = arrays;
     }
 
-    const std::vector<PyZarrCustomMetadata>& custom_metadata() const
+    const std::vector<PyZarrAttributes>& attributes() const
     {
-        return custom_metadata_;
+        return attributes_;
     }
-    std::vector<PyZarrCustomMetadata>& custom_metadata()
+    std::vector<PyZarrAttributes>& attributes() { return attributes_; }
+    void set_attributes(const std::vector<PyZarrAttributes>& entries)
     {
-        return custom_metadata_;
-    }
-    void set_custom_metadata(const std::vector<PyZarrCustomMetadata>& entries)
-    {
-        custom_metadata_ = entries;
+        attributes_ = entries;
     }
 
     ZarrStreamSettings* to_settings() const
@@ -700,13 +690,13 @@ class PyZarrStreamSettings
             settings_.array_count = n_arrays;
         }
 
-        custom_metadata_settings_.clear();
-        for (const auto& entry : custom_metadata_) {
-            custom_metadata_settings_.push_back(entry.to_c());
+        attributes_settings_.clear();
+        for (const auto& entry : attributes_) {
+            attributes_settings_.push_back(entry.to_c());
         }
-        if (!custom_metadata_settings_.empty()) {
-            settings_.custom_metadata = custom_metadata_settings_.data();
-            settings_.custom_metadata_count = custom_metadata_settings_.size();
+        if (!attributes_settings_.empty()) {
+            settings_.attributes = attributes_settings_.data();
+            settings_.attributes_count = attributes_settings_.size();
         }
 
         return &settings_;
@@ -766,14 +756,14 @@ class PyZarrStreamSettings
     };
 
     std::vector<PyZarrArraySettings> arrays_;
-    std::vector<PyZarrCustomMetadata> custom_metadata_;
+    std::vector<PyZarrAttributes> attributes_;
 
     mutable ZarrS3Settings s3_settings_{};
 
     mutable std::vector<ArrayLifetimeProps> array_lifetimes_;
 
     mutable std::vector<ZarrArraySettings> array_settings_;
-    mutable std::vector<ZarrCustomMetadata> custom_metadata_settings_;
+    mutable std::vector<ZarrAttributes> attributes_settings_;
 
     mutable ZarrStreamSettings settings_{};
 };
@@ -870,19 +860,19 @@ read_stream_settings(const ZarrStreamSettings& s)
         out.set_arrays(arrays);
     }
 
-    if (s.custom_metadata) {
-        std::vector<PyZarrCustomMetadata> entries(s.custom_metadata_count);
-        for (size_t i = 0; i < s.custom_metadata_count; ++i) {
-            const auto& c = s.custom_metadata[i];
+    if (s.attributes) {
+        std::vector<PyZarrAttributes> entries(s.attributes_count);
+        for (size_t i = 0; i < s.attributes_count; ++i) {
+            const auto& c = s.attributes[i];
             if (c.node_key) {
                 entries[i].set_node_key(std::string(c.node_key));
             }
-            if (c.metadata_key) {
-                entries[i].set_metadata_key(std::string(c.metadata_key));
+            if (c.key) {
+                entries[i].set_key(std::string(c.key));
             }
-            entries[i].set_metadata(c.metadata ? c.metadata : "");
+            entries[i].set_value(c.value ? c.value : "");
         }
-        out.set_custom_metadata(entries);
+        out.set_attributes(entries);
     }
 
     return out;
@@ -1069,43 +1059,45 @@ class PyZarrStream
         }
     }
 
-    bool write_custom_metadata(py::object metadata,
-                               const std::optional<std::string>& node_key,
-                               const std::optional<std::string>& metadata_key)
+    bool write_attributes(const py::object& value,
+                          const std::optional<std::string>& node_key,
+                          const std::optional<std::string>& key)
     {
         if (!is_active()) {
             PyErr_SetString(PyExc_RuntimeError,
-                            "Cannot write metadata unless streaming.");
+                            "Cannot write attributes unless streaming.");
             throw py::error_already_set();
         }
 
-        std::string metadata_str;
-        if (py::isinstance<py::dict>(metadata)) {
-            py::module_ json = py::module_::import("json");
-            metadata_str = json.attr("dumps")(metadata).cast<std::string>();
-        } else if (py::isinstance<py::str>(metadata)) {
-            metadata_str = metadata.cast<std::string>();
-        } else {
-            PyErr_SetString(PyExc_TypeError, "metadata must be a str or dict");
-            throw py::error_already_set();
-        }
-
+        const std::string json = to_json_text(value);
         const char* node_cstr =
           node_key.has_value() ? node_key->c_str() : nullptr;
-        const char* meta_cstr =
-          metadata_key.has_value() ? metadata_key->c_str() : nullptr;
+        const char* key_cstr = key.has_value() ? key->c_str() : nullptr;
 
-        auto status = ZarrStream_write_custom_metadata(
-          stream_.get(), node_cstr, meta_cstr, metadata_str.c_str());
+        auto status = ZarrStream_write_attributes(
+          stream_.get(), node_cstr, key_cstr, json.c_str());
 
         if (status != ZarrStatusCode_Success) {
-            std::string err = "Failed to write custom metadata: " +
+            std::string err = "Failed to write attributes: " +
                               std::string(Zarr_get_status_message(status));
             PyErr_SetString(PyExc_RuntimeError, err.c_str());
             throw py::error_already_set();
         }
 
         return true;
+    }
+
+    bool write_custom_metadata(const py::object& metadata,
+                               const std::optional<std::string>& node_key,
+                               const std::optional<std::string>& metadata_key)
+    {
+        if (PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "write_custom_metadata is deprecated; use "
+                         "write_attributes(value, node_key=..., key=...)",
+                         1) < 0) {
+            throw py::error_already_set();
+        }
+        return write_attributes(metadata, node_key, metadata_key);
     }
 
     bool is_active() const { return static_cast<bool>(stream_); }
@@ -1213,8 +1205,7 @@ PYBIND11_MODULE(acquire_zarr, m)
     py::bind_vector<std::vector<PyZarrDimensionProperties>>(m,
                                                             "VectorDimension");
     py::bind_vector<std::vector<PyZarrArraySettings>>(m, "VectorArraySettings");
-    py::bind_vector<std::vector<PyZarrCustomMetadata>>(m,
-                                                       "VectorCustomMetadata");
+    py::bind_vector<std::vector<PyZarrAttributes>>(m, "VectorAttributes");
 
     py::enum_<ZarrVersion>(m, "ZarrVersion").value("V3", ZarrVersion_3);
 
@@ -1611,35 +1602,32 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrArraySettings::is_ngff,
                     &PyZarrArraySettings::set_is_ngff);
 
-    py::class_<PyZarrCustomMetadata>(m, "CustomMetadata", py::dynamic_attr())
-      .def(py::init([](const py::object& metadata,
+    py::class_<PyZarrAttributes>(m, "Attributes", py::dynamic_attr())
+      .def(py::init([](const py::object& value,
                        std::optional<std::string> node_key,
-                       std::optional<std::string> metadata_key) {
-               PyZarrCustomMetadata entry;
-               entry.set_metadata(to_json_text(metadata));
+                       std::optional<std::string> key) {
+               PyZarrAttributes entry;
+               entry.set_value(to_json_text(value));
                entry.set_node_key(node_key);
-               entry.set_metadata_key(metadata_key);
+               entry.set_key(key);
                return entry;
            }),
-           py::arg("metadata"),
+           py::arg("value"),
            py::kw_only(),
            py::arg("node_key") = std::nullopt,
-           py::arg("metadata_key") = std::nullopt)
-      .def("__repr__",
-           [](const PyZarrCustomMetadata& self) { return self.repr(); })
+           py::arg("key") = std::nullopt)
+      .def("__repr__", [](const PyZarrAttributes& self) { return self.repr(); })
       .def_property("node_key",
-                    &PyZarrCustomMetadata::node_key,
-                    &PyZarrCustomMetadata::set_node_key)
-      .def_property("metadata_key",
-                    &PyZarrCustomMetadata::metadata_key,
-                    &PyZarrCustomMetadata::set_metadata_key)
+                    &PyZarrAttributes::node_key,
+                    &PyZarrAttributes::set_node_key)
+      .def_property("key", &PyZarrAttributes::key, &PyZarrAttributes::set_key)
       .def_property(
-        "metadata",
-        [](const PyZarrCustomMetadata& self) {
-            return py::module_::import("json").attr("loads")(self.metadata());
+        "value",
+        [](const PyZarrAttributes& self) {
+            return py::module_::import("json").attr("loads")(self.value());
         },
-        [](PyZarrCustomMetadata& self, const py::object& obj) {
-            self.set_metadata(to_json_text(obj));
+        [](PyZarrAttributes& self, const py::object& obj) {
+            self.set_value(to_json_text(obj));
         });
 
     py::class_<PyZarrStreamSettings>(m, "StreamSettings", py::dynamic_attr())
@@ -1650,7 +1638,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                        std::optional<bool> overwrite,
                        std::optional<py::list> arrays,
                        std::optional<ZarrIntermediateGroups> groups,
-                       std::optional<py::list> custom_metadata) {
+                       std::optional<py::list> attributes) {
                PyZarrStreamSettings settings;
                if (store_path) {
                    settings.set_store_path(*store_path);
@@ -1683,12 +1671,12 @@ PYBIND11_MODULE(acquire_zarr, m)
                    }
                    settings.set_arrays(arrs_vec);
                }
-               if (custom_metadata) {
-                   std::vector<PyZarrCustomMetadata> entries;
-                   for (auto item : *custom_metadata) {
-                       entries.push_back(item.cast<PyZarrCustomMetadata>());
+               if (attributes) {
+                   std::vector<PyZarrAttributes> entries;
+                   for (auto item : *attributes) {
+                       entries.push_back(item.cast<PyZarrAttributes>());
                    }
-                   settings.set_custom_metadata(entries);
+                   settings.set_attributes(entries);
                }
 
                return settings;
@@ -1701,7 +1689,7 @@ PYBIND11_MODULE(acquire_zarr, m)
            py::arg("overwrite") = std::nullopt,
            py::arg("arrays") = std::nullopt,
            py::arg("intermediate_groups") = std::nullopt,
-           py::arg("custom_metadata") = std::nullopt)
+           py::arg("attributes") = std::nullopt)
       .def("__repr__",
            [](const PyZarrStreamSettings& self) {
                std::string repr =
@@ -1713,11 +1701,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                repr +=
                  ", max_threads=" + std::to_string(self.max_threads()) + "," +
                  (self.overwrite() ? " overwrite=True" : " overwrite=False");
-               if (!self.custom_metadata().empty()) {
-                   repr += ", custom_metadata=[";
-                   for (size_t i = 0; i < self.custom_metadata().size(); ++i) {
-                       repr +=
-                         (i ? ", " : "") + self.custom_metadata()[i].repr();
+               if (!self.attributes().empty()) {
+                   repr += ", attributes=[";
+                   for (size_t i = 0; i < self.attributes().size(); ++i) {
+                       repr += (i ? ", " : "") + self.attributes()[i].repr();
                    }
                    repr += "]";
                }
@@ -1787,22 +1774,22 @@ PYBIND11_MODULE(acquire_zarr, m)
             }
         })
       .def_property(
-        "custom_metadata",
+        "attributes",
         [](PyZarrStreamSettings& self) -> py::object {
-            return py::cast(self.custom_metadata(),
+            return py::cast(self.attributes(),
                             py::return_value_policy::reference);
         },
         [](PyZarrStreamSettings& self, py::object& obj) {
             if (!py::isinstance<py::list>(obj)) {
                 PyErr_SetString(PyExc_TypeError,
-                                "Expected a list of CustomMetadata.");
+                                "Expected a list of Attributes.");
                 throw py::error_already_set();
             }
-            std::vector<PyZarrCustomMetadata> entries;
+            std::vector<PyZarrAttributes> entries;
             for (auto item : obj.cast<py::list>()) {
-                entries.push_back(item.cast<PyZarrCustomMetadata>());
+                entries.push_back(item.cast<PyZarrAttributes>());
             }
-            self.set_custom_metadata(entries);
+            self.set_attributes(entries);
         })
       .def(
         "get_array_keys",
@@ -1887,6 +1874,12 @@ PYBIND11_MODULE(acquire_zarr, m)
       .def("skip",
            &PyZarrStream::skip,
            py::arg("n_bytes"),
+           py::arg("key") = std::nullopt)
+      .def("write_attributes",
+           &PyZarrStream::write_attributes,
+           py::arg("value"),
+           py::kw_only(),
+           py::arg("node_key") = std::nullopt,
            py::arg("key") = std::nullopt)
       .def("write_custom_metadata",
            &PyZarrStream::write_custom_metadata,

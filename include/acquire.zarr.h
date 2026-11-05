@@ -10,7 +10,7 @@ extern "C"
     /**
      * @brief The settings for a Zarr stream.
      * @details This struct contains the settings for a Zarr stream, including
-     * the store path, custom metadata, S3 settings, chunk compression settings,
+     * the store path, attributes, S3 settings, chunk compression settings,
      * dimension properties, whether to stream to multiple levels of detail, the
      * pixel data type, and the Zarr format version.
      * @note The store path can be a filesystem path or an S3 key prefix. For
@@ -37,16 +37,13 @@ extern "C"
         ZarrIntermediateGroups
           intermediate_groups; /**< Whether to write the generic groups
                                   above the arrays. */
-        ZarrCustomMetadata* custom_metadata; /**< Optional custom metadata to
-                                                write at create, in order. If
-                                                an entry fails, create fails.
-                                                Each entry's node, JSON and
-                                                keys are checked before the
-                                                store is changed; a level of
-                                                detail that does not exist is
-                                                found only after. */
-        size_t custom_metadata_count;        /**< The number of custom metadata
-                                                entries. */
+        ZarrAttributes* attributes; /**< Optional attributes to write at
+                                       create, in order. If an entry fails,
+                                       create fails. Each entry's node, JSON
+                                       and keys are checked before the store is
+                                       changed; a level of detail that does not
+                                       exist is found only after. */
+        size_t attributes_count;    /**< The number of attribute entries. */
     } ZarrStreamSettings;
 
     typedef struct ZarrStream_s ZarrStream;
@@ -134,7 +131,7 @@ extern "C"
     /**
      * @brief Populate stream settings from a YAML or JSON config file.
      * @details JSON is a subset of YAML, so both formats are accepted. All
-     * arrays, dimensions, custom metadata entries, and strings referenced by
+     * arrays, dimensions, attribute entries, and strings referenced by
      * @p settings are allocated
      * and owned by the loader; free them with
      * ZarrStreamSettings_destroy_loaded (NOT the piecemeal destroy_*
@@ -163,7 +160,7 @@ extern "C"
     /**
      * @brief Free settings populated by ZarrStreamSettings_load_from_file or
      * ZarrStreamSettings_load_from_string, including all loader-owned strings,
-     * arrays, dimensions and custom metadata entries.
+     * arrays, dimensions and attribute entries.
      * @param[in, out] settings The loader-populated stream settings struct.
      */
     void ZarrStreamSettings_destroy_loaded(ZarrStreamSettings* settings);
@@ -291,45 +288,56 @@ extern "C"
                                      const char* key);
 
     /**
-     * @brief Write custom metadata to a node of the stream.
+     * @brief Write attributes to a node of the stream: the `attributes` of the
+     * node's zarr.json.
      * @details The node can be an array, a group that the stream writes (the
      * root, or a group between the root and an array, such as an HCS plate or
      * well), or a level of detail of a multiscale array
      * (`<array_key>/<level>`, e.g. `"plate/A/1/0/1"`). For an array, a level of
      * detail, or a multiscale image group (for example an HCS field of view),
-     * the metadata is held in memory and written with the array's metadata, at
-     * the latest when the stream is closed. Any other group is written at once,
-     * so a reader sees the metadata during the acquisition, and again at close:
-     * its whole zarr.json is replaced by the group as the stream wrote or kept
-     * it at create, with all of its custom attributes added. A change that
-     * anything else made to that group after create is lost. On a filesystem
-     * the file is rewritten in place, so a reader that opens it during the
-     * write can see an incomplete document, as for array metadata. If the write
-     * fails, the call returns ZarrStatusCode_IOError and the stream keeps the
-     * group's earlier custom metadata; the file is undefined until a later
-     * call or the close writes it again. The stream continues. No group is
-     * addressable when `intermediate_groups` is ZarrIntermediateGroups_Never,
-     * because the stream does not write the groups.
+     * the attributes are held in memory and written with the array's metadata,
+     * at the latest when the stream is closed. Any other group is written at
+     * once, so a reader sees the attributes during the acquisition, and again
+     * at close: its whole zarr.json is replaced by the group as the stream
+     * wrote or kept it at create, with all of the attributes given so far. A
+     * change that anything else made to that group after create is lost. On a
+     * filesystem the file is rewritten in place, so a reader that opens it
+     * during the write can see an incomplete document, as for array metadata.
+     * If the write fails, the call returns ZarrStatusCode_IOError and the
+     * stream keeps the group's earlier attributes; the file is undefined until
+     * a later call or the close writes it again. The stream continues. No
+     * group is addressable when `intermediate_groups` is
+     * ZarrIntermediateGroups_Never, because the stream does not write the
+     * groups.
      * @param stream The Zarr stream struct.
-     * @param node_key Key of the node to write the metadata to, relative to
-     * the store root. An empty key is the root. If NULL, the stream's only
-     * array; NULL is an error if the stream has more than one array.
-     * @param metadata_key Key under 'attributes' to write the metadata to. If
-     * metadata_key is empty or NULL, metadata will be written directly under
-     * 'attributes'. OME-NGFF metadata goes under the 'ome' key, as a JSON
-     * object, given either with metadata_key "ome" or as a top-level key of
-     * @p metadata. Its keys merge with the 'ome' keys that the stream writes
-     * on the node. A later custom 'ome' replaces an earlier one, as for any
-     * other attribute. 'ome.multiscales' is refused on every node, and so is
-     * any other key that the stream writes under 'ome' on the node ('version'
-     * and 'name' on a multiscale group), except 'version' with the same value.
-     * A metadata_key that begins with "ome/" is refused: a metadata key is not
-     * a path.
-     * @param metadata JSON-formatted metadata to be written to the dataset.
+     * @param node_key Key of the node, relative to the store root. An empty key
+     * is the root. If NULL, the stream's only array; NULL is an error if the
+     * stream has more than one array.
+     * @param key Key under 'attributes' to write @p value to. If @p key is NULL
+     * or empty, each key of @p value is written under 'attributes'. OME-NGFF
+     * metadata goes under the key 'ome', as a JSON object, given either with
+     * @p key "ome" or as a top-level key of @p value. Its keys merge with the
+     * 'ome' keys that the stream writes on the node. A later 'ome' replaces an
+     * earlier one, as for any other attribute. 'ome.multiscales' is refused on
+     * every node, and so is any other key that the stream writes under 'ome'
+     * on the node ('version' and 'name' on a multiscale group), except
+     * 'version' with the same value. A @p key that begins with "ome/" is
+     * refused: a key is not a path.
+     * @param value The value, as JSON.
      * @return ZarrStatusCode_Success on success, ZarrStatusCode_KeyNotFound if
      * no node has the key, ZarrStatusCode_InvalidArgument if the node is not
-     * addressable or the metadata is not valid, ZarrStatusCode_IOError if a
-     * group cannot be written, or another error code on failure.
+     * addressable or the value is not valid, ZarrStatusCode_IOError if a group
+     * cannot be written, or another error code on failure.
+     */
+    ZarrStatusCode ZarrStream_write_attributes(ZarrStream* stream,
+                                               const char* node_key,
+                                               const char* key,
+                                               const char* value);
+
+    /**
+     * @brief Write attributes to a node of the stream.
+     * @deprecated Use ZarrStream_write_attributes, which this calls. This name
+     * will be removed in a later release.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
                                                     const char* node_key,

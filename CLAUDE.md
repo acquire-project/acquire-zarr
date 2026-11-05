@@ -144,7 +144,7 @@ A self-review in the same context does not satisfy this rule.
 
    Intermediate group metadata (the root and the parent groups of each array) is
    written when the stream is created (`write_intermediate_metadata_`). A group is
-   written again only if it gets custom metadata: on each `write_custom_metadata`
+   written again only if it gets attributes: on each `write_attributes`
    call and at close (`write_group_`). `ZarrIntermediateGroups_Never` skips the
    groups. `ZarrIntermediateGroups_IfMissing` writes a group only if it is absent,
    unless `overwrite` is set; on S3 that check is a conditional PUT
@@ -157,7 +157,7 @@ A self-review in the same context does not satisfy this rule.
 ### Tests layout
 
 - `tests/unit-tests/` — component-level (dimensions, chunks, downsampling, frame queue, etc.)
-- `tests/integration/` — end-to-end scenarios (filesystem, S3, multiscale, HCS plates built from arrays and custom metadata)
+- `tests/integration/` — end-to-end scenarios (filesystem, S3, multiscale, HCS plates built from arrays and attributes)
 - `python/tests/` — Python-binding tests (`test_stream.py`, `test_settings.py`, `test_dimension_transposition.py`)
 
 ### Examples and benchmarks

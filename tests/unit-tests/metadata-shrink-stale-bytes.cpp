@@ -3,7 +3,7 @@
 // Metadata is written at offset 0 through the file sink, and neither backend
 // truncates (Win32 OPEN_ALWAYS; POSIX O_WRONLY|O_CREAT, no O_TRUNC/ftruncate).
 // So if a zarr.json is rewritten *shorter* than a previous version, the tail of
-// the old document survives past the end of the new one. Custom metadata is the
+// the old document survives past the end of the new one. Attributes is the
 // way to make the document shrink: write a large blob under `attributes`, then
 // rewrite with a small (or empty) one.
 //
@@ -85,17 +85,17 @@ create_stream()
     return stream;
 }
 
-// Write custom metadata to the root zarr.json under `attributes` and close.
+// Write attributes to the root zarr.json under `attributes` and close.
 void
-write_root_metadata_and_close(const std::string& metadata_key,
+write_root_metadata_and_close(const std::string& attribute_key,
                               const std::string& metadata_json)
 {
     auto* stream = create_stream();
     CHECK(stream);
 
     CHECK(ZarrStatusCode_Success ==
-          ZarrStream_write_custom_metadata(
-            stream, nullptr, metadata_key.c_str(), metadata_json.c_str()));
+          ZarrStream_write_attributes(
+            stream, nullptr, attribute_key.c_str(), metadata_json.c_str()));
 
     ZarrStream_destroy(stream);
 }
@@ -116,7 +116,7 @@ test_shrinking_metadata_leaves_stale_bytes()
 {
     CHECK(destroy_directory());
 
-    // 1) First acquisition: a large custom-metadata blob -> large zarr.json.
+    // 1) First acquisition: a large attributes blob -> large zarr.json.
     const std::string big_blob(8192, 'x');
     nlohmann::json big = { { "payload", big_blob } };
     write_root_metadata_and_close("big", big.dump());

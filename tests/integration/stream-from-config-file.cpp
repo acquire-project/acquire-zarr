@@ -114,7 +114,7 @@ run_stream(ZarrStreamSettings* settings)
 }
 
 // An HCS plate in one config file: the fields of view are arrays, and the
-// plate and well metadata are custom metadata that the stream writes at create
+// plate and well metadata are attributes that the stream writes at create
 const char* hcs_config = R"(version: 3
 store_path: config-hcs-test.zarr
 overwrite: true
@@ -126,21 +126,21 @@ arrays:
       - {name: t, type: time, array_size_px: 0, chunk_size_px: 1, shard_size_chunks: 1}
       - {name: y, type: space, array_size_px: 32, chunk_size_px: 32, shard_size_chunks: 1}
       - {name: x, type: space, array_size_px: 32, chunk_size_px: 32, shard_size_chunks: 1}
-custom_metadata:
+attributes:
   - node_key: plate
-    metadata_key: ome
-    metadata:
+    key: ome
+    value:
       version: "0.5"
       plate:
         rows: [{name: A}]
         columns: [{name: "1"}]
         wells: [{path: A/1, rowIndex: 0, columnIndex: 0}]
   - node_key: plate/A/1
-    metadata_key: ome
-    metadata: {version: "0.5", well: {images: [{path: "0"}]}}
+    key: ome
+    value: {version: "0.5", well: {images: [{path: "0"}]}}
   - node_key: plate/A/1/0
-    metadata_key: acquisition
-    metadata: "first"
+    key: acquisition
+    value: "first"
 )";
 
 nlohmann::json
@@ -152,7 +152,7 @@ read_json(const fs::path& path)
 }
 
 void
-test_custom_metadata_from_config()
+test_attributes_from_config()
 {
     const fs::path hcs_store = "config-hcs-test.zarr";
 
@@ -162,14 +162,14 @@ test_custom_metadata_from_config()
     ZarrStreamSettings refused{};
     EXPECT(ZarrStreamSettings_load_from_string(&refused, version_2.c_str()) !=
              ZarrStatusCode_Success,
-           "Expected 'custom_metadata' in a version 2 config to be refused");
+           "Expected 'attributes' in a version 2 config to be refused");
 
     ZarrStreamSettings settings{};
     CHECK_OK(ZarrStreamSettings_load_from_string(&settings, hcs_config));
-    EXPECT_EQ(size_t, settings.custom_metadata_count, 3u);
-    EXPECT_STR_EQ(settings.custom_metadata[0].node_key, "plate");
-    EXPECT_STR_EQ(settings.custom_metadata[0].metadata_key, "ome");
-    EXPECT_STR_EQ(settings.custom_metadata[2].metadata, R"("first")");
+    EXPECT_EQ(size_t, settings.attributes_count, 3u);
+    EXPECT_STR_EQ(settings.attributes[0].node_key, "plate");
+    EXPECT_STR_EQ(settings.attributes[0].key, "ome");
+    EXPECT_STR_EQ(settings.attributes[2].value, R"("first")");
 
     // a dump keeps each entry, with its metadata as a mapping
     char* yaml = nullptr;
@@ -178,11 +178,11 @@ test_custom_metadata_from_config()
     ZarrStreamSettings reloaded{};
     CHECK_OK(ZarrStreamSettings_load_from_string(&reloaded, yaml));
     std::free(yaml);
-    EXPECT_EQ(size_t, reloaded.custom_metadata_count, 3u);
+    EXPECT_EQ(size_t, reloaded.attributes_count, 3u);
     for (size_t i = 0; i < 3; ++i) {
-        EXPECT(nlohmann::json::parse(reloaded.custom_metadata[i].metadata) ==
-                 nlohmann::json::parse(settings.custom_metadata[i].metadata),
-               "custom_metadata[",
+        EXPECT(nlohmann::json::parse(reloaded.attributes[i].value) ==
+                 nlohmann::json::parse(settings.attributes[i].value),
+               "attributes[",
                i,
                "] changed in a round trip");
     }
@@ -209,7 +209,7 @@ test_custom_metadata_from_config()
 
     auto field = read_json(hcs_store / "plate" / "A" / "1" / "0" / "zarr.json");
     EXPECT(field["attributes"]["acquisition"] == "first",
-           "Expected the field's custom metadata: ",
+           "Expected the field's attributes: ",
            field.dump());
     EXPECT(field["attributes"]["ome"].contains("multiscales"),
            "Expected the field to be a multiscales group: ",
@@ -218,10 +218,10 @@ test_custom_metadata_from_config()
     // an entry with an unknown node fails create before the store changes:
     // the store from the first run, which overwrite would remove, is intact.
     // The loader owns the original string, so put it back before the free.
-    const char* well_key = settings.custom_metadata[1].node_key;
-    settings.custom_metadata[1].node_key = "plate/Z/9";
+    const char* well_key = settings.attributes[1].node_key;
+    settings.attributes[1].node_key = "plate/Z/9";
     stream = ZarrStream_create(&settings);
-    settings.custom_metadata[1].node_key = well_key;
+    settings.attributes[1].node_key = well_key;
     EXPECT(stream == nullptr, "Expected create to fail for an unknown node");
     CHECK(
       fs::exists(hcs_store / "plate" / "A" / "1" / "0" / "0" / "zarr.json"));
@@ -231,19 +231,30 @@ test_custom_metadata_from_config()
 
     // a dump refuses metadata that is not JSON, which would otherwise reload
     // as a valid JSON string
-    const char* metadata = settings.custom_metadata[2].metadata;
-    settings.custom_metadata[2].metadata = "first";
+    const char* metadata = settings.attributes[2].value;
+    settings.attributes[2].value = "first";
     char* text = nullptr;
     EXPECT(ZarrStreamSettings_dump_to_string(
              &settings, &text, ZarrConfigFormat_Yaml) != ZarrStatusCode_Success,
            "Expected a dump of metadata that is not JSON to fail");
-    settings.custom_metadata[2].metadata = metadata;
+    settings.attributes[2].value = metadata;
+
+    // with no key, an entry's value must be an object; checked before the
+    // store changes
+    const char* entry_key = settings.attributes[2].key;
+    settings.attributes[2].key = nullptr;
+    stream = ZarrStream_create(&settings);
+    settings.attributes[2].key = entry_key;
+    EXPECT(stream == nullptr,
+           "Expected create to fail for a non-object value with no key");
+    CHECK(
+      fs::exists(hcs_store / "plate" / "A" / "1" / "0" / "0" / "zarr.json"));
 
     // a NULL entry list, and a NULL node key with more than one array
     ZarrStreamSettings bad = settings;
-    bad.custom_metadata = nullptr;
+    bad.attributes = nullptr;
     EXPECT(ZarrStream_create(&bad) == nullptr,
-           "Expected create to fail for a NULL custom_metadata");
+           "Expected create to fail for a NULL attributes");
 
     ZarrArraySettings two_arrays[2] = { settings.arrays[0],
                                         settings.arrays[0] };
@@ -251,9 +262,9 @@ test_custom_metadata_from_config()
     bad = settings;
     bad.arrays = two_arrays;
     bad.array_count = 2;
-    ZarrCustomMetadata no_key = { .metadata = R"({"a": 1})" };
-    bad.custom_metadata = &no_key;
-    bad.custom_metadata_count = 1;
+    ZarrAttributes no_key = { .value = R"({"a": 1})" };
+    bad.attributes = &no_key;
+    bad.attributes_count = 1;
     EXPECT(ZarrStream_create(&bad) == nullptr,
            "Expected create to fail for a NULL node key with two arrays");
 
@@ -358,7 +369,7 @@ main()
                   ZarrDownsamplingMethod_Decimate);
         ZarrStreamSettings_destroy_loaded(&migrated);
 
-        test_custom_metadata_from_config();
+        test_attributes_from_config();
 
         retval = 0;
     } catch (const std::exception& e) {

@@ -43,22 +43,22 @@ struct ZarrStream_s
                           size_t& bytes_out);
 
     /**
-     * @brief Write custom metadata to a node of the stream.
+     * @brief Write attributes to a node of the stream.
      * @details The node is, in order of lookup: an array; a level of detail,
      * `<multiscale array key>/<level>`; or a group that the stream writes (the
-     * root, a plate, a well, or a generic group). The kinds cannot overlap,
-     * because a multiscale array has no numeric children and a plain array has
-     * no children.
-     * @param node_key Key of the node to write the metadata to. If not set,
-     * the only array of the stream.
-     * @param metadata_key Key under 'attributes' to write the metadata to.
-     * @param metadata JSON-formatted custom metadata to write.
+     * root, or a group between the root and an array). The kinds cannot
+     * overlap, because a multiscale array has no numeric children and a plain
+     * array has no children.
+     * @param node_key Key of the node. If not set, the only array of the
+     * stream.
+     * @param attribute_key Key under 'attributes', or empty to write each key
+     * of @p value there.
+     * @param value The value, as JSON.
      * @return ZarrStatusCode_Success on success, or an error code on failure.
      */
-    ZarrStatusCode write_custom_metadata(
-      const std::optional<std::string>& node_key,
-      std::string_view metadata_key,
-      std::string_view metadata);
+    ZarrStatusCode write_attributes(const std::optional<std::string>& node_key,
+                                    std::string_view attribute_key,
+                                    std::string_view value);
 
     /**
      * @brief Get the current memory usage of the stream.
@@ -102,7 +102,7 @@ struct ZarrStream_s
     struct OutputGroup
     {
         nlohmann::json document;    // as written or kept at create
-        std::unordered_map<std::string, nlohmann::json> custom_metadata;
+        std::unordered_map<std::string, nlohmann::json> attributes;
     };
 
     // the groups this stream wrote or kept at create, keyed by their paths
@@ -173,7 +173,7 @@ struct ZarrStream_s
      * @details Called once, when the stream is created. Every path is known
      * then, and a reader can navigate the hierarchy while frames arrive. Each
      * group written or kept is recorded in groups_. The stream writes a group
-     * again only when the caller gives it custom metadata (write_group_()), and
+     * again only when the caller gives it attributes (write_group_()), and
      * at close if it has any, so metadata that the caller writes after create
      * to any other group is kept.
      * @return True if the metadata was written successfully, false otherwise.
@@ -181,22 +181,22 @@ struct ZarrStream_s
     [[nodiscard]] bool write_intermediate_metadata_();
 
     /**
-     * @brief Write the custom metadata entries of @p settings, in order, as
-     * write_custom_metadata does. Called once, at create.
+     * @brief Write the attribute entries of @p settings, in order, as
+     * write_attributes does. Called once, at create.
      * @return True if every entry was written, otherwise false.
      */
-    [[nodiscard]] bool write_initial_custom_metadata_(
+    [[nodiscard]] bool write_initial_attributes_(
       const ZarrStreamSettings* settings);
 
     /**
-     * @brief Write each group that has custom metadata, at close.
+     * @brief Write each group that has attributes from the caller, at close.
      * @return True if every such group was written, otherwise false.
      */
-    [[nodiscard]] bool write_groups_with_custom_metadata_();
+    [[nodiscard]] bool write_groups_with_attributes_();
 
     /**
      * @brief Write a group: @p document, as recorded at create, with
-     * @p custom_metadata added, replaces the whole `zarr.json`.
+     * @p user_attributes added, replaces the whole `zarr.json`.
      * @details Does not set the stream's error: a failed write fails only the
      * call that asked for it.
      * @return True if the group was written, otherwise false.
@@ -204,7 +204,7 @@ struct ZarrStream_s
     [[nodiscard]] bool write_group_(
       const std::string& relative_path,
       const nlohmann::json& document,
-      const std::unordered_map<std::string, nlohmann::json>& custom_metadata);
+      const std::unordered_map<std::string, nlohmann::json>& user_attributes);
 
     /**
      * @brief Find a level of detail of a multiscale array by its key,
