@@ -500,9 +500,16 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
 
     stream.close()
 
-    # band-by-band flushing keeps live memory well under the full inner volume
-    assert peak < int(full_inner_volume * 0.75), (
-        f"peak memory {peak} not bounded below the full inner volume "
+    # the stream stays within its estimate, and band-by-band flushing keeps the
+    # chunk memory in that estimate well under the full inner volume. The frame
+    # queue does not depend on the volume (here it alone is half of it), so it
+    # is left out of the second check.
+    assert peak <= expected_max, (
+        f"peak memory {peak} above the estimate {expected_max}"
+    )
+    chunk_bound = expected_max - frame_queue_bytes
+    assert chunk_bound < int(full_inner_volume * 0.75), (
+        f"chunk memory bound {chunk_bound} not below the full inner volume "
         f"{full_inner_volume}"
     )
 
