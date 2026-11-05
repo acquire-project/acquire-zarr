@@ -1,7 +1,7 @@
 # Stream a high-content screening (HCS) plate to the filesystem
 #
 # Each field of view is an OME-NGFF array at <plate>/<row>/<column>/<field>.
-# The plate and well metadata are custom metadata under `ome`, which the stream
+# The plate and well metadata are attributes under `ome`, which the stream
 # writes as soon as it is given, so a reader can open the plate while the
 # acquisition runs.
 import numpy as np
@@ -112,9 +112,7 @@ def main():
 
     for group, ome in metadata.items():
         node_key = f"plate/{group}" if group else "plate"
-        stream.write_custom_metadata(
-            ome, node_key=node_key, metadata_key="ome"
-        )
+        stream.write_attributes(ome, node_key=node_key, key="ome")
 
     frame = np.zeros((256, 256), dtype=np.uint16)
     for t in range(4):

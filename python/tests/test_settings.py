@@ -631,56 +631,55 @@ arrays:
     assert reloaded.arrays[0].output_key == "5"
 
 
-def test_custom_metadata_round_trip():
+def test_attributes_round_trip():
     config = (
-        CONFIGS["yaml"].replace("version: 2", "version: 3")
-        + """custom_metadata:
-  - metadata_key: ome
-    metadata: {version: "0.5", omero: {channels: []}}
-  - metadata_key: note
-    metadata: "a string"
+        CONFIGS["yaml"].replace("version: 2", "version: 3") + """attributes:
+  - key: ome
+    value: {version: "0.5", omero: {channels: []}}
+  - key: note
+    value: "a string"
 """
     )
     s = aqz.StreamSettings.from_string(config)
-    assert len(s.custom_metadata) == 2
+    assert len(s.attributes) == 2
 
-    first = s.custom_metadata[0]
+    first = s.attributes[0]
     assert first.node_key is None
-    assert first.metadata_key == "ome"
-    assert first.metadata == {"version": "0.5", "omero": {"channels": []}}
-    assert s.custom_metadata[1].metadata == "a string"
+    assert first.key == "ome"
+    assert first.value == {"version": "0.5", "omero": {"channels": []}}
+    assert s.attributes[1].value == "a string"
 
     # dumps keep the entries, with metadata as a mapping
     d = s.to_dict()
-    assert d["custom_metadata"][0]["metadata"]["omero"] == {"channels": []}
+    assert d["attributes"][0]["value"]["omero"] == {"channels": []}
     reloaded = aqz.StreamSettings.from_string(s.to_yaml())
-    assert [e.metadata for e in reloaded.custom_metadata] == [
-        e.metadata for e in s.custom_metadata
+    assert [e.value for e in reloaded.attributes] == [
+        e.value for e in s.attributes
     ]
 
 
-def test_custom_metadata_class():
-    entry = aqz.CustomMetadata({"a": 1}, node_key="g", metadata_key="k")
-    assert entry.metadata == {"a": 1}
+def test_attributes_class():
+    entry = aqz.Attributes({"a": 1}, node_key="g", key="k")
+    assert entry.value == {"a": 1}
     assert entry.node_key == "g"
-    assert entry.metadata_key == "k"
+    assert entry.key == "k"
 
-    # a str is JSON text, as in write_custom_metadata
-    assert aqz.CustomMetadata('{"b": 2}').metadata == {"b": 2}
+    # a str is JSON text, as in write_attributes
+    assert aqz.Attributes('{"b": 2}').value == {"b": 2}
 
-    s = aqz.StreamSettings(custom_metadata=[entry])
-    assert s.custom_metadata[0].metadata == {"a": 1}
+    s = aqz.StreamSettings(attributes=[entry])
+    assert s.attributes[0].value == {"a": 1}
 
     # the list and its entries can be changed in place, as for arrays
-    s.custom_metadata.append(aqz.CustomMetadata({"b": 2}))
-    s.custom_metadata[0].node_key = "changed"
-    assert len(s.custom_metadata) == 2
-    assert s.custom_metadata[0].node_key == "changed"
+    s.attributes.append(aqz.Attributes({"b": 2}))
+    s.attributes[0].node_key = "changed"
+    assert len(s.attributes) == 2
+    assert s.attributes[0].node_key == "changed"
 
 
-def test_custom_metadata_requires_version_3():
-    config = CONFIGS["yaml"] + """custom_metadata:
-  - metadata: {a: 1}
+def test_attributes_require_version_3():
+    config = CONFIGS["yaml"] + """attributes:
+  - value: {a: 1}
 """
     with pytest.raises(ValueError):
         aqz.StreamSettings.from_string(config)  # CONFIGS declares version 2
@@ -689,7 +688,7 @@ def test_custom_metadata_requires_version_3():
 
 def test_dump_refuses_metadata_that_is_not_json():
     s = aqz.StreamSettings(
-        store_path="x.zarr", custom_metadata=[aqz.CustomMetadata("plate")]
+        store_path="x.zarr", attributes=[aqz.Attributes("plate")]
     )
     with pytest.raises(Exception):
         s.to_yaml()

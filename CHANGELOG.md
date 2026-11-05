@@ -13,17 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config file) controls whether the stream writes `zarr.json` for the groups above its arrays. `IfMissing`, the
   default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
   anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller (#186, #268)
-- `ZarrStream_write_custom_metadata` (`ZarrStream.write_custom_metadata` in Python) can address every node that the
-  stream writes, not only arrays: the root group (`""`), the groups between the root and an array (such as HCS plate,
-  row and well groups), and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives
-  custom metadata is written each time it receives some, and again at close, so a reader sees it during the
-  acquisition. Groups are not addressable under `ZarrIntermediateGroups_Never`
-- `ZarrStreamSettings.custom_metadata` (`StreamSettings.custom_metadata`, a list of `CustomMetadata`, in Python;
-  `custom_metadata` in a config file): custom metadata that the stream writes at create, in order, as
-  `ZarrStream_write_custom_metadata` does. Creating the stream fails if an entry fails. With it, a config file can
-  describe an HCS store, plate and well metadata included (`examples/config/hcs.yaml`)
-- Custom metadata can be written under `ome`, for OME-NGFF metadata that the stream does not write, such as `omero`.
-  The custom keys merge with the stream's own `ome` keys. `ome.multiscales` is refused on every node, and so is any
+- `ZarrStream_write_attributes(stream, node_key, key, value)` (`ZarrStream.write_attributes(value, node_key=...,
+  key=...)` in Python) writes to the `attributes` of any node that the stream writes, not only arrays: the root group
+  (`""`), the groups between the root and an array (such as HCS plate, row and well groups), and the levels of detail
+  of a multiscale array (`<array key>/<level>`). A group that receives attributes is written each time it receives
+  some, and again at close, so a reader sees them during the acquisition. Groups are not addressable under
+  `ZarrIntermediateGroups_Never`
+- `ZarrStreamSettings.attributes` (`StreamSettings.attributes`, a list of `Attributes`, in Python; `attributes` in a
+  config file): attributes that the stream writes at create, in order, as `ZarrStream_write_attributes` does. Creating
+  the stream fails if an entry fails. With it, a config file can describe an HCS store, plate and well metadata
+  included (`examples/config/hcs.yaml`)
+- Attributes can be written under `ome`, for OME-NGFF metadata that the stream does not write, such as `omero`. Their
+  keys merge with the stream's own `ome` keys. `ome.multiscales` is refused on every node, and so is any
   other key that the stream writes under `ome` on the node (`version` and `name` on a multiscale group), except
   `version` with the same value
 
@@ -31,15 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The stream writes the intermediate group metadata when it is created, not when it closes. A reader can navigate the
   hierarchy during the acquisition, and group metadata that the caller writes after `ZarrStream_create` is kept,
-  unless the caller also gives that group custom metadata through `ZarrStream_write_custom_metadata`: the stream then
-  replaces the group's `zarr.json` each time (#186, #268)
+  unless the caller also gives that group attributes through `ZarrStream_write_attributes`: the stream then replaces
+  the group's `zarr.json` each time (#186, #268)
 - ⚠️ **Breaking:** the Python keyword `array_key` of `ZarrStream.write_custom_metadata` is renamed `node_key`, because
   the key can now name a group or a level of detail. The C parameter has the same new name; C callers are not affected
-- `ZarrStream_write_custom_metadata` returns `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when it
-  refuses the metadata
+- `ZarrStream_write_attributes` (and the deprecated `ZarrStream_write_custom_metadata`) returns
+  `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when it refuses the value. With no key, a value that is
+  not a JSON object is refused (it used to write attributes named `""`, `"0"`, `"1"`, ...)
 - ⚠️ **Breaking:** the config-file schema is now version 3. A config of any version that has `plates` is refused
   with a message. Versions 1 and 2 without `plates` still load, and a dump writes version 3. Version 3 adds
-  `custom_metadata`
+  `attributes`
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less
@@ -52,13 +54,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The bucket is now checked once when the stream is created rather than once per object written (#248)
 - Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
 
+### Deprecated
+
+- `ZarrStream_write_custom_metadata` and `ZarrStream.write_custom_metadata`, in favor of `write_attributes`, which they
+  call. The Python method emits a `DeprecationWarning`, and now accepts any value that `json.dumps` accepts, as
+  `write_attributes` does (it accepted only `str` and `dict`). They will be removed in a later release. The new names
+  say where the data goes, and OME-NGFF metadata written there is not "custom"
+
 ### Removed
 
 - ⚠️ **Breaking:** the typed HCS settings: `ZarrHCSSettings`, `ZarrHCSPlate`, `ZarrHCSWell`,
   `ZarrHCSFieldOfView`, `ZarrHCSAcquisition`, `ZarrStreamSettings.hcs_settings` and their create/destroy functions in
   C, and `Plate`, `Well`, `FieldOfView`, `Acquisition` and `StreamSettings.hcs_plates` in Python. Configure each field
   of view as an array with `output_key` `<plate>/<row>/<column>/<field>` and `is_ngff` set, and write the plate and
-  well metadata with `write_custom_metadata` under `ome`. The plate, row and well groups now follow
+  well metadata with `write_attributes` under `ome`. The plate, row and well groups now follow
   `intermediate_groups`: under `Never` the stream does not write them. See "High-content screening workflows" in the
   README and `examples/python/stream_hcs_plate.py`
 

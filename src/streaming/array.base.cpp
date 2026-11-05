@@ -24,10 +24,10 @@ namespace {
 const std::string ome_key = "ome";
 
 bool
-check_custom_ome(const nlohmann::json& ome, const nlohmann::json& library_ome)
+check_ome(const nlohmann::json& ome, const nlohmann::json& library_ome)
 {
     if (!ome.is_object()) {
-        LOG_ERROR("Custom '", ome_key, "' metadata must be a JSON object");
+        LOG_ERROR("'", ome_key, "' must be a JSON object");
         return false;
     }
 
@@ -65,49 +65,56 @@ check_custom_ome(const nlohmann::json& ome, const nlohmann::json& library_ome)
 } // namespace
 
 bool
-zarr::merge_custom_metadata(
+zarr::merge_attributes(
   std::unordered_map<std::string, nlohmann::json>& attributes,
   const std::string& key,
-  const nlohmann::json& metadata,
+  const nlohmann::json& value,
   const nlohmann::json& library_ome)
 {
     // write immediately under 'attributes'
     if (key.empty()) {
-        if (metadata.is_object() && metadata.contains(ome_key) &&
-            !check_custom_ome(metadata[ome_key], library_ome)) {
+        // each key of the object becomes an attribute; any other value has no
+        // attribute names (an array's would be "0", "1", ...)
+        if (!value.is_object()) {
+            LOG_ERROR("With no key, the value must be a JSON object");
             return false;
         }
 
-        for (const auto& [k, value] : metadata.items()) {
-            attributes[k] = value;
+        if (value.contains(ome_key) &&
+            !check_ome(value[ome_key], library_ome)) {
+            return false;
+        }
+
+        for (const auto& [k, v] : value.items()) {
+            attributes[k] = v;
         }
     } else {
         if (key == ome_key) {
-            if (!check_custom_ome(metadata, library_ome)) {
+            if (!check_ome(value, library_ome)) {
                 return false;
             }
         } else if (key.starts_with(ome_key + "/")) {
             LOG_ERROR("Key '",
                       key,
-                      "' is not allowed: a metadata key is not a path. Write "
-                      "an object with the metadata key '",
+                      "' is not allowed: a key is not a path. Write an object "
+                      "with the key '",
                       ome_key,
                       "'.");
             return false;
         }
 
-        attributes[key] = metadata;
+        attributes[key] = value;
     }
 
     return true;
 }
 
 void
-zarr::apply_custom_metadata(
+zarr::apply_attributes(
   nlohmann::json& attributes,
-  const std::unordered_map<std::string, nlohmann::json>& custom_metadata)
+  const std::unordered_map<std::string, nlohmann::json>& user_attributes)
 {
-    for (const auto& [key, value] : custom_metadata) {
+    for (const auto& [key, value] : user_attributes) {
         if (key == ome_key && value.is_object() &&
             attributes.contains(ome_key) && attributes[ome_key].is_object()) {
             attributes[ome_key].update(value);
@@ -118,13 +125,13 @@ zarr::apply_custom_metadata(
 }
 
 bool
-zarr::ArrayBase::write_custom_metadata(const std::string& key,
-                                       const nlohmann::json& metadata)
+zarr::ArrayBase::write_attributes(const std::string& key,
+                                  const nlohmann::json& metadata)
 {
     // held in memory, and written with the array's metadata
     std::unique_lock lock(metadata_mutex_);
-    return merge_custom_metadata(
-      custom_metadata_, key, metadata, library_ome_metadata_());
+    return merge_attributes(
+      attributes_, key, metadata, library_ome_metadata_());
 }
 
 nlohmann::json

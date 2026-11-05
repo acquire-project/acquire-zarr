@@ -11,7 +11,7 @@ namespace fs = std::filesystem;
 
 namespace {
 const fs::path base_dir = TEST ".zarr";
-const std::string custom_metadata = R"({"foo":"bar"})";
+const std::string attributes = R"({"foo":"bar"})";
 
 void
 configure_stream_dimensions(ZarrArraySettings* settings)
@@ -78,7 +78,7 @@ create_stream(const std::optional<std::string>& array_key = std::nullopt,
 
 void
 check_metadata(const std::optional<std::string>& array_key,
-               const std::optional<std::string>& metadata_key)
+               const std::optional<std::string>& attribute_key)
 {
     const auto array_path =
       base_dir / (array_key.has_value() ? *array_key : "");
@@ -95,7 +95,7 @@ check_metadata(const std::optional<std::string>& array_key,
                "Missing 'attributes' in stream metadata");
         auto& container = metadata["attributes"];
 
-        const std::string key = metadata_key.value_or("");
+        const std::string key = attribute_key.value_or("");
         if (!key.empty()) {
             EXPECT(container.contains(key),
                    "Missing '",
@@ -156,7 +156,7 @@ test_no_metadata()
 
 bool
 test_with_metadata(const std::optional<std::string>& array_key,
-                   const std::optional<std::string>& metadata_key,
+                   const std::optional<std::string>& attribute_key,
                    bool multiscale)
 {
 
@@ -167,17 +167,16 @@ test_with_metadata(const std::optional<std::string>& array_key,
     }
 
     const char* array_key_cstr = array_key ? array_key->c_str() : nullptr;
-    const char* metadata_key_cstr =
-      metadata_key ? metadata_key->c_str() : nullptr;
+    const char* attribute_key_cstr =
+      attribute_key ? attribute_key->c_str() : nullptr;
 
-    // Write custom metadata to the stream
-    CHECK(
-      ZarrStatusCode_Success ==
-      ZarrStream_write_custom_metadata(
-        stream, array_key_cstr, metadata_key_cstr, custom_metadata.c_str()));
+    // Write attributes to the stream
+    CHECK(ZarrStatusCode_Success ==
+          ZarrStream_write_attributes(
+            stream, array_key_cstr, attribute_key_cstr, attributes.c_str()));
 
     ZarrStream_destroy(stream);
-    check_metadata(array_key, metadata_key);
+    check_metadata(array_key, attribute_key);
 
     CHECK(destroy_directory());
 
@@ -193,15 +192,35 @@ test_nonexistent_array_key()
         return false;
     }
 
-    // Attempt to write custom metadata with a nonexistent array key
+    // Attempt to write attributes with a nonexistent array key
     const char* nonexistent_array_key = "nonexistent_array";
-    CHECK(ZarrStatusCode_KeyNotFound ==
-          ZarrStream_write_custom_metadata(stream,
-                                           nonexistent_array_key,
-                                           "metadata_key",
-                                           custom_metadata.c_str()));
+    CHECK(
+      ZarrStatusCode_KeyNotFound ==
+      ZarrStream_write_attributes(
+        stream, nonexistent_array_key, "attribute_key", attributes.c_str()));
 
     ZarrStream_destroy(stream);
+    return true;
+}
+
+bool
+test_deprecated_write_custom_metadata()
+{
+    auto* stream = create_stream();
+    if (!stream) {
+        LOG_ERROR("Failed to create stream.");
+        return false;
+    }
+
+    // the old name still writes, through ZarrStream_write_attributes
+    CHECK(ZarrStatusCode_Success ==
+          ZarrStream_write_custom_metadata(
+            stream, nullptr, "baz", attributes.c_str()));
+
+    ZarrStream_destroy(stream);
+    check_metadata(std::nullopt, "baz");
+    CHECK(destroy_directory());
+
     return true;
 }
 } // namespace
@@ -219,9 +238,12 @@ main()
         // and no errors occur
         test_no_metadata();
 
-        // test that writing custom metadata with an array key that doesn't
+        // test that writing attributes with an array key that doesn't
         // exist returns the expected error code
         test_nonexistent_array_key();
+
+        // the deprecated name still works
+        test_deprecated_write_custom_metadata();
 
         // test various combinations of array key and metadata key
         // presence/absence
@@ -235,7 +257,7 @@ main()
         test_with_metadata("test_array", "baz/qux", false);
 
         // run the same tests with multiscale arrays, which have some different
-        // metadata handling logic, to ensure that custom metadata is still
+        // metadata handling logic, to ensure that attributes are still
         // written and read correctly in that case
         test_with_metadata(std::nullopt, std::nullopt, true);
         test_with_metadata(std::nullopt, "", true);

@@ -15,39 +15,41 @@
 
 namespace zarr {
 /**
- * @brief Merge custom metadata into the custom attributes of a node.
- * @details With an empty @p key, each top-level key of @p metadata becomes an
- * attribute. Otherwise @p metadata is stored under @p key. Shared by arrays
+ * @brief Merge attributes that the caller gives into a node's attributes.
+ * @details With an empty @p key, each top-level key of @p value, which must be
+ * an object, becomes an
+ * attribute. Otherwise @p value is stored under @p key. Shared by arrays
  * and groups so that every node applies the same rules for `ome`:
  * - `ome` must be a JSON object, given with @p key `ome` or as a top-level key
- *   of @p metadata. A @p key that begins with `ome/` is refused, because a key
+ *   of @p value. A @p key that begins with `ome/` is refused, because a key
  *   is not a path.
  * - `ome.multiscales` is refused on every node. The stream writes it.
  * - A key that the stream writes under `ome` on this node (@p library_ome) is
  *   refused, except `version` with the same value.
- * @param[in, out] attributes The node's custom attributes.
+ * @param[in, out] attributes The attributes that the caller gave the node.
  * @param key The attribute key, or empty.
- * @param metadata The JSON value to merge.
+ * @param value The JSON value to merge. With an empty @p key, it must be an
+ * object.
  * @param library_ome The object that the stream writes under `ome` on this
  * node, or null if it writes none.
- * @return True on success, false if a rule above refuses the metadata.
+ * @return True on success, false if a rule above refuses the value.
  */
 [[nodiscard]] bool
-merge_custom_metadata(
-  std::unordered_map<std::string, nlohmann::json>& attributes,
-  const std::string& key,
-  const nlohmann::json& metadata,
-  const nlohmann::json& library_ome);
+merge_attributes(std::unordered_map<std::string, nlohmann::json>& attributes,
+                 const std::string& key,
+                 const nlohmann::json& value,
+                 const nlohmann::json& library_ome);
 
 /**
- * @brief Write a node's custom attributes into its `attributes` object.
+ * @brief Write the attributes that the caller gave a node into the node's
+ * `attributes` object.
  * @details `ome` is merged key by key into the `ome` already in
  * @p attributes; any other key replaces what is there.
  */
 void
-apply_custom_metadata(
+apply_attributes(
   nlohmann::json& attributes,
-  const std::unordered_map<std::string, nlohmann::json>& custom_metadata);
+  const std::unordered_map<std::string, nlohmann::json>& user_attributes);
 
 struct ArrayConfig
 {
@@ -114,14 +116,14 @@ class ArrayBase
     virtual ~ArrayBase() = default;
 
     /**
-     * @brief Write custom metadata to the array.
-     * @param key The key for the custom metadata, relative to 'attributes' in
-     * the array metadata.
-     * @param metadata The JSON value to write as custom metadata.
+     * @brief Write attributes to the array.
+     * @param key The key under 'attributes' in the array metadata, or empty
+     * to write each key of @p metadata there.
+     * @param metadata The JSON value to write.
      * @return True on success, false on failure.
      */
-    bool write_custom_metadata(const std::string& key,
-                               const nlohmann::json& metadata);
+    bool write_attributes(const std::string& key,
+                          const nlohmann::json& metadata);
 
     /**
      * @brief Get the amount of memory currently used by this Array, in bytes.
@@ -164,7 +166,7 @@ class ArrayBase
     // JSON metadata
     const std::string metadata_path_{ "zarr.json" };
     std::mutex metadata_mutex_;
-    std::unordered_map<std::string, nlohmann::json> custom_metadata_;
+    std::unordered_map<std::string, nlohmann::json> attributes_;
     std::unique_ptr<Sink> metadata_sink_;
 
     std::string node_path_() const;

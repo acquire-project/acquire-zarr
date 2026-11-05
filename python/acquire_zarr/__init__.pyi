@@ -15,10 +15,10 @@ from typing import Any, ClassVar, List, Optional, Union
 
 __all__ = [
     "ArraySettings",
+    "Attributes",
     "CompressionCodec",
     "CompressionSettings",
     "Compressor",
-    "CustomMetadata",
     "DataType",
     "Dimension",
     "DimensionType",
@@ -175,35 +175,35 @@ class Compressor:
     @property
     def value(self) -> int: ...
 
-class CustomMetadata:
-    """Custom metadata that the stream writes when it is created.
+class Attributes:
+    """Attributes that the stream writes to a node when it is created.
 
-    The stream writes each entry of ``StreamSettings.custom_metadata`` in
-    order, as ``ZarrStream.write_custom_metadata`` does, before the stream is
-    returned. If an entry fails, creating the stream fails. Each entry's node,
-    JSON and keys are checked before the store is changed; a level of detail
-    that does not exist is found only after.
+    The stream writes each entry of ``StreamSettings.attributes`` in order,
+    as ``ZarrStream.write_attributes`` does, before the stream is returned.
+    If an entry fails, creating the stream fails. Each entry's node, JSON and
+    keys are checked before the store is changed; a level of detail that does
+    not exist is found only after.
 
     Attributes:
-        metadata: The metadata. A ``str`` is taken as JSON text, as in
-            ``write_custom_metadata``; any other value is serialized with
+        value: The value. A ``str`` is taken as JSON text, as in
+            ``write_attributes``; any other value is serialized with
             ``json.dumps``. Reading it gives the parsed value.
-        node_key: Key of the node, as for ``write_custom_metadata``. None is
-            the stream's only array.
-        metadata_key: Key under ``attributes``, or None to write each key of
-            ``metadata`` there.
+        node_key: Key of the node, as for ``write_attributes``. None is the
+            stream's only array.
+        key: Key under ``attributes``, or None to write each key of
+            ``value`` there.
     """
 
-    metadata: Any
+    value: Any
     node_key: Optional[str]
-    metadata_key: Optional[str]
+    key: Optional[str]
 
     def __init__(
         self,
-        metadata: Any,
+        value: Any,
         *,
         node_key: Optional[str] = None,
-        metadata_key: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> None: ...
     def __repr__(self) -> str: ...
 
@@ -348,7 +348,7 @@ class IntermediateGroups:
     """
     Whether the stream writes ``zarr.json`` for the groups above its arrays,
     HCS plate and well groups included. The stream writes these groups when it
-    is created, and again only when it is given custom metadata for one of
+    is created, and again only when it is given attributes for one of
     them.
 
     Attributes:
@@ -460,8 +460,8 @@ class StreamSettings:
         max_threads: Maximum number of threads for parallel processing. Defaults to 0,
             meaning: use the ZARR_MAX_THREADS environment variable if set, otherwise
             auto-detect based on available hardware concurrency.
-        custom_metadata: Custom metadata that the stream writes when it is
-            created, in order. See CustomMetadata.
+        attributes: Attributes that the stream writes to nodes when it is
+            created, in order. See Attributes.
         overwrite: If True, removes any existing data at store_path before writing.
         intermediate_groups: Whether to write ``zarr.json`` for the groups
             above the arrays. Defaults to IntermediateGroups.IF_MISSING.
@@ -475,7 +475,7 @@ class StreamSettings:
     """
 
     arrays: List[ArraySettings]
-    custom_metadata: List[CustomMetadata]
+    attributes: List[Attributes]
     s3: Optional[S3Settings]
     store_path: str
     max_threads: int
@@ -531,40 +531,54 @@ class ZarrStream:
         from two Python threads at the same time.
         """
     def skip(self, n_bytes: int, key: str | None = None) -> None: ...
-    def write_custom_metadata(
+    def write_attributes(
         self,
-        metadata: str | dict,
+        value: Any,
         *,
         node_key: str | None = None,
-        metadata_key: str | None = None,
+        key: str | None = None,
     ) -> bool:
-        """Write custom metadata to a node of the stream.
+        """Write attributes to a node of the stream: the ``attributes`` of
+        the node's ``zarr.json``.
 
         For an array, a level of detail, or a multiscale image group, the
-        metadata is written with the array's ``zarr.json``, at the latest when
-        the stream is closed. Any other group's ``zarr.json`` is written at
-        once, and again at close.
+        attributes are written with the array's ``zarr.json``, at the latest
+        when the stream is closed. Any other group's ``zarr.json`` is written
+        at once, and again at close.
 
         Args:
-            metadata: JSON object, as a dict or a string.
+            value: The value. A ``str`` is taken as JSON text; any other value
+                is serialized with ``json.dumps``. With no ``key``, it must be
+                a JSON object.
             node_key: Key of the node, relative to the store root: an array,
                 a group that the stream writes (the root ``""``, or a group
-                between the root and an array, such as an HCS plate or
-                well), or a level of detail of a multiscale array
-                (``"<array key>/<level>"``).
-                If None, the stream's only array.
-            metadata_key: Key under ``attributes`` to write to. If None,
-                each top-level key of ``metadata`` is written under
-                ``attributes``. OME-NGFF metadata goes under ``ome``, as an
-                object, and merges with the stream's own ``ome`` keys. A
-                later custom ``ome`` replaces an earlier one.
-                ``ome.multiscales`` is refused, and so is any other key that
-                the stream writes under ``ome`` on the node (``version`` and
-                ``name`` on a multiscale group), except an equal ``version``.
+                between the root and an array, such as an HCS plate or well),
+                or a level of detail of a multiscale array
+                (``"<array key>/<level>"``). If None, the stream's only
+                array.
+            key: Key under ``attributes`` to write to. If None, each key of
+                ``value`` is written under ``attributes``. OME-NGFF metadata
+                goes under ``ome``, as an object, and merges with the
+                stream's own ``ome`` keys. A later ``ome`` replaces an earlier
+                one. ``ome.multiscales`` is refused, and so is any other key
+                that the stream writes under ``ome`` on the node
+                (``version`` and ``name`` on a multiscale group), except an
+                equal ``version``.
 
         Raises:
             RuntimeError: If the node is not found or not addressable, or the
-                metadata is not valid.
+                value is not valid.
+        """
+    def write_custom_metadata(
+        self,
+        metadata: Any,
+        node_key: str | None = None,
+        metadata_key: str | None = None,
+    ) -> bool:
+        """Deprecated: use ``write_attributes(value, node_key=..., key=...)``.
+
+        Emits a ``DeprecationWarning``, then calls ``write_attributes``, so it
+        accepts the same values.
         """
     def is_active(self) -> bool: ...
     def close(self) -> None: ...

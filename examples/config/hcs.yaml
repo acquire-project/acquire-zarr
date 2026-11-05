@@ -15,10 +15,10 @@ arrays:
       - {name: y, type: space, array_size_px: 480, chunk_size_px: 256, shard_size_chunks: 4}
       - {name: x, type: space, array_size_px: 640, chunk_size_px: 256, shard_size_chunks: 4}
 
-custom_metadata:
+attributes:
   - node_key: test_plate
-    metadata_key: ome
-    metadata:
+    key: ome
+    value:
       version: "0.5"
       plate:
         name: Test Plate
@@ -28,8 +28,8 @@ custom_metadata:
         field_count: 1
         acquisitions: [{id: 0, name: Meas_01, starttime: 1343731272000, maximumfieldcount: 1}]
   - node_key: test_plate/C/5
-    metadata_key: ome
-    metadata:
+    key: ome
+    value:
       version: "0.5"
       well:
         images: [{path: fov1, acquisition: 0}]

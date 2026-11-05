@@ -120,7 +120,7 @@ extern "C"
      * @details This applies to every group between the store root and an
      *          array, HCS plate and well groups included. The stream writes
      *          these groups when it is created. It writes a group again only
-     *          if the caller gives it custom metadata.
+     *          if the caller gives it attributes.
      * @note `ZarrIntermediateGroups_IfMissing` is the zero value, so a zeroed
      *       `ZarrStreamSettings` keeps metadata that the caller wrote.
      */
@@ -235,20 +235,20 @@ extern "C"
     } ZarrArraySettings;
 
     /**
-     * @brief Custom metadata that ZarrStream_create writes, as if by
-     * ZarrStream_write_custom_metadata, before it returns.
+     * @brief Attributes that ZarrStream_create writes to a node, as if by
+     * ZarrStream_write_attributes, before it returns.
      * @details A config file can give these entries, so that a stream that
-     * needs custom metadata (for example the plate and well metadata of an HCS
+     * needs attributes (for example the plate and well metadata of an HCS
      * dataset) can be described in one file.
      */
     typedef struct
     {
-        const char* node_key;     /**< Key of the node, relative to the store
-                                       root. NULL is the stream's only array. */
-        const char* metadata_key; /**< Key under 'attributes', or NULL to write
-                                       each key of @p metadata there. */
-        const char* metadata;     /**< The metadata, as JSON. */
-    } ZarrCustomMetadata;
+        const char* node_key; /**< Key of the node, relative to the store
+                                   root. NULL is the stream's only array. */
+        const char* key;      /**< Key under 'attributes', or NULL to write
+                                   each key of @p value there. */
+        const char* value;    /**< The value, as JSON. */
+    } ZarrAttributes;
 
 #ifdef __cplusplus
 }

@@ -326,7 +326,7 @@ main()
         EXPECT_STR_EQ(get(root_key).c_str(), root_metadata.c_str());
         expect_empty_group(path_key);
 
-        LOG_INFO("Case: custom metadata on a kept group and a written group");
+        LOG_INFO("Case: attributes on a kept group and a written group");
         clear_store();
         put(path_key, path_metadata);
         {
@@ -337,7 +337,7 @@ main()
 
             for (const char* key : { "path", "path/to" }) {
                 const auto metadata = nlohmann::json{ { "node", key } }.dump();
-                CHECK_OK(ZarrStream_write_custom_metadata(
+                CHECK_OK(ZarrStream_write_attributes(
                   stream.get(), key, "custom", metadata.c_str()));
             }
 
@@ -345,7 +345,7 @@ main()
             // stream is open
             auto open_to = nlohmann::json::parse(get(to_key));
             EXPECT(open_to["attributes"]["custom"]["node"] == "path/to",
-                   "Expected custom metadata before close: ",
+                   "Expected attributes before close: ",
                    open_to.dump());
 
             const ZarrStatusCode status = ZarrStream_close(stream.release());
@@ -359,12 +359,12 @@ main()
                "Kept group lost its attributes: ",
                path.dump());
         EXPECT(path["attributes"]["custom"]["node"] == "path",
-               "Kept group has no custom metadata: ",
+               "Kept group has no attributes: ",
                path.dump());
 
         const auto to = nlohmann::json::parse(get(to_key));
         EXPECT(to["attributes"]["custom"]["node"] == "path/to",
-               "Written group has no custom metadata: ",
+               "Written group has no attributes: ",
                to.dump());
         expect_empty_group(root_key);
 

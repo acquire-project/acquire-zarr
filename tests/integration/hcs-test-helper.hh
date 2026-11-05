@@ -9,7 +9,7 @@
 
 /// The HCS plate of the HCS integration tests, built as a caller builds it:
 /// each field of view is an OME-NGFF array at <plate>/<row>/<column>/<field>,
-/// and the plate and well metadata are custom metadata under `ome`.
+/// and the plate and well metadata are attributes under `ome`.
 namespace hcs {
 constexpr size_t field_count = 3;
 
@@ -151,7 +151,7 @@ write_metadata(ZarrStream* stream)
                                     std::pair{ "test_plate/D/7", &d7_ome } }) {
         const std::string json = ome->dump();
         const auto status =
-          ZarrStream_write_custom_metadata(stream, key, "ome", json.c_str());
+          ZarrStream_write_attributes(stream, key, "ome", json.c_str());
         EXPECT(status == ZarrStatusCode_Success,
                "Failed to write metadata to '",
                key,

@@ -32,7 +32,7 @@ from acquire_zarr import (
     LogLevel,
     DownsamplingMethod,
     IntermediateGroups,
-    CustomMetadata,
+    Attributes,
     set_log_level,
     get_log_level,
 )
@@ -99,7 +99,7 @@ def hcs_plate_metadata(
     wells: dict[str, list[tuple[str, int]]],
     acquisitions: list[dict],
 ) -> dict[str, dict]:
-    """Build OME-NGFF 0.5 plate and well metadata for write_custom_metadata.
+    """Build OME-NGFF 0.5 plate and well metadata for write_attributes.
 
     ``wells`` maps ``"<row>/<column>"`` to that well's fields of view, as
     ``(path, acquisition id)``. Returns the ``ome`` object for each group,
@@ -272,9 +272,7 @@ def create_hcs_plate() -> tuple[list[ArraySettings], dict[str, dict]]:
 
 def write_hcs_metadata(stream: ZarrStream, metadata: dict[str, dict]) -> None:
     for node, ome in metadata.items():
-        assert stream.write_custom_metadata(
-            ome, node_key=node, metadata_key="ome"
-        )
+        assert stream.write_attributes(ome, node_key=node, key="ome")
 
 
 def validate_v3_metadata(store_path: Path):
@@ -779,7 +777,7 @@ def test_set_log_level(level: LogLevel):
 
 
 @pytest.mark.parametrize(
-    ("array_key", "metadata_key", "multiscale"),
+    ("array_key", "attribute_key", "multiscale"),
     [
         (None, None, False),
         (None, "", False),
@@ -799,11 +797,11 @@ def test_set_log_level(level: LogLevel):
         ("test_array", "baz/qux", True),
     ],
 )
-def test_write_custom_metadata(
+def test_write_attributes(
     settings: StreamSettings,
     store_path: Path,
     array_key: str | None,
-    metadata_key: str | None,
+    attribute_key: str | None,
     multiscale: bool,
 ):
     settings.store_path = str(store_path / "test.zarr")
@@ -817,8 +815,8 @@ def test_write_custom_metadata(
     assert stream
 
     metadata_dict = {"foo": "bar"}
-    assert stream.write_custom_metadata(
-        metadata_dict, node_key=array_key, metadata_key=metadata_key
+    assert stream.write_attributes(
+        metadata_dict, node_key=array_key, key=attribute_key
     )
 
     stream.close()
@@ -837,14 +835,46 @@ def test_write_custom_metadata(
     attributes = data["attributes"]
 
     container = attributes
-    if metadata_key is not None and not len(metadata_key) == 0:
-        assert metadata_key in container
-        container = container[metadata_key]
+    if attribute_key is not None and not len(attribute_key) == 0:
+        assert attribute_key in container
+        container = container[attribute_key]
         assert len(container) == 1
     else:
         assert len(container) == (2 if multiscale else 1)
 
     assert container.get("foo") == "bar"
+
+
+def test_write_custom_metadata_is_deprecated(
+    settings: StreamSettings, store_path: Path
+):
+    settings.store_path = str(store_path / "test.zarr")
+    stream = ZarrStream(settings)
+
+    # the old name still writes, through write_attributes, and warns
+    with pytest.warns(DeprecationWarning, match="write_attributes"):
+        assert stream.write_custom_metadata({"foo": "bar"}, metadata_key="baz")
+    stream.close()
+
+    with open(Path(settings.store_path) / "zarr.json", "r") as fh:
+        assert json.load(fh)["attributes"]["baz"] == {"foo": "bar"}
+
+
+@pytest.mark.parametrize("value", [[1, 2], 5, "s", None])
+def test_write_attributes_requires_object_without_key(
+    settings: StreamSettings, store_path: Path, value
+):
+    settings.store_path = str(store_path / "test.zarr")
+    stream = ZarrStream(settings)
+
+    # none of these has attribute names; under a key, any of them is fine
+    with pytest.raises(RuntimeError, match="Invalid argument"):
+        stream.write_attributes(json.dumps(value))
+    assert stream.write_attributes(json.dumps(value), key="value")
+    stream.close()
+
+    with open(Path(settings.store_path) / "zarr.json", "r") as fh:
+        assert json.load(fh)["attributes"] == {"value": value}
 
 
 def test_write_transposed_array(
@@ -1907,7 +1937,7 @@ def test_pure_hcs_acquisition(store_path: Path):
     check_hcs_multiscale_arrays(store_path / "test.zarr")
 
 
-def test_write_custom_metadata_to_hcs_nodes(store_path: Path):
+def test_write_attributes_to_hcs_nodes(store_path: Path):
     fields, metadata = create_hcs_plate()
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
@@ -1926,8 +1956,8 @@ def test_write_custom_metadata_to_hcs_nodes(store_path: Path):
         "test_plate/C/5/fov1/0",  # level of detail
     ]
     for node in nodes:
-        assert stream.write_custom_metadata(
-            {"node": node}, node_key=node, metadata_key="custom"
+        assert stream.write_attributes(
+            {"node": node}, node_key=node, key="custom"
         )
 
     # the stream writes `ome.multiscales` and `ome.version` on a field of view
@@ -1937,17 +1967,15 @@ def test_write_custom_metadata_to_hcs_nodes(store_path: Path):
         ("test_plate/C/5/fov1/0", {"multiscales": []}),
     ]:
         with pytest.raises(RuntimeError):
-            stream.write_custom_metadata(
-                ome, node_key=node, metadata_key="ome"
-            )
-    assert stream.write_custom_metadata(
+            stream.write_attributes(ome, node_key=node, key="ome")
+    assert stream.write_attributes(
         {"version": "0.5", "extra": 1},
         node_key="test_plate/C/5/fov1",
-        metadata_key="ome",
+        key="ome",
     )
 
     with pytest.raises(RuntimeError):
-        stream.write_custom_metadata({}, node_key="test_plate/Z")
+        stream.write_attributes({}, node_key="test_plate/Z")
 
     # groups are written at once, before any frame or close
     base_path = Path(settings.store_path)
@@ -1994,11 +2022,11 @@ def test_hcs_groups_not_addressable_under_never(store_path: Path):
     # the stream does not write any group, plates and wells included
     for node in ["", "test_plate", "test_plate/C", "test_plate/C/5"]:
         with pytest.raises(RuntimeError):
-            stream.write_custom_metadata({}, node_key=node)
+            stream.write_attributes({}, node_key=node)
 
     # fields of view and their levels are arrays, so still addressable
     for node in ["test_plate/C/5/fov1", "test_plate/C/5/fov1/0"]:
-        assert stream.write_custom_metadata({"a": 1}, node_key=node)
+        assert stream.write_attributes({"a": 1}, node_key=node)
     stream.close()
 
     base_path = Path(settings.store_path)
@@ -2008,14 +2036,14 @@ def test_hcs_groups_not_addressable_under_never(store_path: Path):
 
 def test_hcs_metadata_from_settings(store_path: Path):
     # the plate and well metadata given in the settings exist when create
-    # returns, with no write_custom_metadata call
+    # returns, with no write_attributes call
     fields, metadata = create_hcs_plate()
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
         overwrite=True,
         arrays=fields,
-        custom_metadata=[
-            CustomMetadata(ome, node_key=node, metadata_key="ome")
+        attributes=[
+            Attributes(ome, node_key=node, key="ome")
             for node, ome in metadata.items()
         ],
     )
@@ -2025,7 +2053,7 @@ def test_hcs_metadata_from_settings(store_path: Path):
     stream.close()
 
 
-def test_failed_custom_metadata_fails_create(store_path: Path):
+def test_failed_attributes_fail_create(store_path: Path):
     fields, metadata = create_hcs_plate()
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
@@ -2041,9 +2069,9 @@ def test_failed_custom_metadata_fails_create(store_path: Path):
 
     # an entry with an unknown node fails create before the store changes, so
     # the store above, which overwrite would remove, is intact
-    settings.custom_metadata = [
-        CustomMetadata({"a": 1}, node_key="test_plate"),
-        CustomMetadata({"a": 1}, node_key="test_plate/Z"),
+    settings.attributes = [
+        Attributes({"a": 1}, node_key="test_plate"),
+        Attributes({"a": 1}, node_key="test_plate/Z"),
     ]
     with pytest.raises(RuntimeError):
         ZarrStream(settings)

@@ -417,30 +417,37 @@ extern "C"
         return result;
     }
 
+    ZarrStatusCode ZarrStream_write_attributes(struct ZarrStream_s* stream,
+                                               const char* node_key,
+                                               const char* key,
+                                               const char* value)
+    {
+        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
+        EXPECT_VALID_ARGUMENT(value, "Null pointer: value");
+
+        std::optional<std::string> node = std::nullopt;
+        if (node_key) {
+            node = zarr::regularize_key(node_key);
+        }
+
+        ZarrStatusCode status;
+        try {
+            status = stream->write_attributes(node, key ? key : "", value);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error writing attributes: ", e.what());
+            status = ZarrStatusCode_InternalError;
+        }
+
+        return status;
+    }
+
     ZarrStatusCode ZarrStream_write_custom_metadata(struct ZarrStream_s* stream,
                                                     const char* node_key,
                                                     const char* metadata_key,
                                                     const char* metadata)
     {
-        EXPECT_VALID_ARGUMENT(stream, "Null pointer: stream");
-        EXPECT_VALID_ARGUMENT(metadata, "Null pointer: metadata");
-
-        std::optional<std::string> key = std::nullopt;
-        if (node_key) {
-            key = zarr::regularize_key(node_key);
-        }
-
-        const std::string meta_key = metadata_key ? metadata_key : "";
-
-        ZarrStatusCode status;
-        try {
-            status = stream->write_custom_metadata(key, meta_key, metadata);
-        } catch (const std::exception& e) {
-            LOG_ERROR("Error writing metadata: ", e.what());
-            status = ZarrStatusCode_InternalError;
-        }
-
-        return status;
+        return ZarrStream_write_attributes(
+          stream, node_key, metadata_key, metadata);
     }
 
     ZarrStatusCode ZarrStream_get_current_memory_usage(const ZarrStream* stream,

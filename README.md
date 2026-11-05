@@ -393,7 +393,7 @@ When set to `false`, the stream will use the existing directory if it exists, or
 An array at `path/to/data` sits below the groups at the store root, `path`, and `path/to`. When the stream is created,
 it writes a `zarr.json` for each of these groups, so a reader can navigate the hierarchy during the acquisition. The
 stream does not write these groups again, so metadata that you write after `ZarrStream_create` is kept, unless you give
-a group custom metadata through `write_custom_metadata` (see below). The `intermediate_groups` setting controls the write
+a group attributes through `write_attributes` (see below). The `intermediate_groups` setting controls the write
 at create:
 
 | C                                  | Python                          | Effect                                                                                                                                   |
@@ -415,18 +415,17 @@ update any consolidated metadata yourself.
 On S3, `IfMissing` uses a conditional write (`If-None-Match: *`). A server that ignores this header replaces existing
 group metadata.
 
-### Writing custom metadata
+### Writing attributes
 
-Custom metadata can be written to any node in the stream using
-`ZarrStream_write_custom_metadata` (C) or `stream.write_custom_metadata`
-(Python). Metadata is written under the `attributes` key of the target node's
-`zarr.json` file, which is the standard location for user-defined metadata in
-Zarr v3.
+Every Zarr v3 node has an `attributes` object in its `zarr.json`. You can write
+to the `attributes` of any node in the stream with
+`ZarrStream_write_attributes` (C) or `stream.write_attributes` (Python). This
+includes OME-NGFF metadata under `attributes.ome`.
 
 The function takes three parameters:
 
-- **`node_key`**: The key of the node to write metadata to, relative to the
-  store root. The node can be:
+- **`node_key`**: The key of the node, relative to the store root. The node
+  can be:
   - an array, matching the `output_key` set when configuring the array (see the
     array configuration examples above);
   - a group that the stream writes: the root (`""`), or a group between the
@@ -439,74 +438,84 @@ The function takes three parameters:
   If `NULL` (C) or `None` (Python) and the stream has only one array, that
   array is targeted automatically. Required when the stream has multiple
   arrays.
-- **`metadata_key`**: An optional key under `attributes` to nest the metadata
-  under. If `NULL`/`None` or empty, metadata is written directly under
-  `attributes`.
-- **`metadata`**: A JSON-formatted string containing the metadata to write.
+- **`key`**: An optional key under `attributes` to write the value to. If
+  `NULL`/`None`, empty, or only slashes and whitespace, each key of the value
+  is written directly under `attributes`, so the value must be a JSON object.
+- **`value`**: The value, as JSON text (C, or a `str` in Python) or as any
+  value that `json.dumps` accepts (Python).
 
 > [!NOTE]
 > The `ome` key under `attributes` holds OME-NGFF metadata. You can write it,
-> as a JSON object, with `metadata_key` `"ome"` or as a top-level key of the
-> metadata. Its keys merge with the `ome` keys that the stream writes on that
-> node, for example `omero` next to the stream's `multiscales`. A later custom
-> `ome` replaces an earlier one, as for any other attribute. The function
-> returns an error for:
+> as a JSON object, with `key` `"ome"` or as a top-level key of the value. Its
+> keys merge with the `ome` keys that the stream writes on that node, for
+> example `omero` next to the stream's `multiscales`. A later `ome` replaces an
+> earlier one, as for any other attribute. The function returns an error for:
 >
 > - `ome.multiscales`, on any node: the stream writes it;
 > - any other key that the stream writes under `ome` on that node, except
 >   `version` with the same value: `version` and `name` on a multiscale group;
 > - an `ome` value that is not an object;
-> - a `metadata_key` that begins with `"ome/"`. A metadata key is not a path:
->   write an object with `metadata_key` `"ome"` instead.
+> - a `key` that begins with `"ome/"`. A key is not a path: write an object
+>   with `key` `"ome"` instead.
+
+`ZarrStream_write_custom_metadata` and `stream.write_custom_metadata` are the
+earlier names of this function. They still work, but they are deprecated and
+will be removed in a later release.
 
 In C:
 ```c
-// Write directly under 'attributes'
-ZarrStream_write_custom_metadata(stream,
-                                 "my-array",   // node_key
-                                 NULL,          // metadata_key: write under 'attributes'
-                                 "{\"device\": \"motor-1\", \"position\": 42}");
+// Write each key of the value directly under 'attributes'
+ZarrStream_write_attributes(stream,
+                            "my-array", // node_key
+                            NULL,       // key: write under 'attributes'
+                            "{\"device\": \"motor-1\", \"position\": 42}");
 
-// Write under 'attributes/device'
-ZarrStream_write_custom_metadata(stream,
-                                 "my-array",
-                                 "device",
-                                 "{\"name\": \"motor-1\", \"position\": 42}");
+// Write the value under 'attributes/device'
+ZarrStream_write_attributes(stream,
+                            "my-array",
+                            "device",
+                            "{\"name\": \"motor-1\", \"position\": 42}");
 ```
 
 In Python:
 ```python
-import json
-
-# Write as a dict directly under 'attributes'
-stream.write_custom_metadata(
+# Write each key of the value directly under 'attributes'
+stream.write_attributes(
     {"device": "motor-1", "position": 42},
-    node_key="my-array"
+    node_key="my-array",
 )
 
-# Write as a string directly under 'attributes'
-stream.write_custom_metadata(
-    json.dumps({"device": "motor-1", "position": 42}),
-    node_key="my-array"
-)
-
-# Write under 'attributes/device'
-stream.write_custom_metadata(
+# Write the value under 'attributes/device'
+stream.write_attributes(
     {"name": "motor-1", "position": 42},
     node_key="my-array",
-    metadata_key="device"
+    key="device",
+)
+
+# Write OME-NGFF rendering settings; on an OME-NGFF array they sit next to
+# the stream's multiscales
+stream.write_attributes(
+    {"version": "0.5", "omero": {"channels": [{"label": "DAPI"}]}},
+    node_key="my-array",
+    key="ome",
 )
 ```
 
-Metadata can be written at any point while the stream is active. Metadata for
-an array, a level of detail, or a multiscale image group (for example an HCS
-field of view) is flushed to disk with the array's metadata, at the latest when
-the stream is closed. Any other group is written at once, so a reader sees its
-metadata during the acquisition, and again at close: its whole `zarr.json` is
-replaced by the group as the stream wrote or kept it at create, with all of its
-custom attributes added. A change that anything else made to that group after
-create is lost. On a filesystem the file is rewritten in place, so a reader
-that opens it during the write can see an incomplete document.
+You can also give attributes in the settings, as `StreamSettings.attributes`
+(a list of `Attributes(value, node_key=..., key=...)`;
+`ZarrStreamSettings.attributes` in C) or under `attributes` in a config file.
+The stream writes these entries, in order, before `ZarrStream_create` returns.
+
+Attributes can be written at any point while the stream is active. Attributes
+of an array, a level of detail, or a multiscale image group (for example an HCS
+field of view) are flushed to disk with the array's metadata, at the latest
+when the stream is closed. Any other group is written at once, so a reader sees
+its attributes during the acquisition, and again at close: its whole
+`zarr.json` is replaced by the group as the stream wrote or kept it at create,
+with all of the attributes given so far. A change that anything else made to
+that group after create is lost. On a filesystem the file is rewritten in
+place, so a reader that opens it during the write can see an incomplete
+document.
 
 ### High-content screening workflows
 
@@ -521,7 +530,7 @@ in a well. The stream writes this as ordinary arrays and groups:
 2. After the stream is created, write the
    [plate](https://ngff.openmicroscopy.org/0.5/#plate-md) and
    [well](https://ngff.openmicroscopy.org/0.5/#well-md) metadata with
-   `write_custom_metadata` under the `ome` key. The stream writes each group at
+   `write_attributes` under the `ome` key. The stream writes each group at
    once, so a reader can open the plate during the acquisition.
 
 The stream does not check the plate and well metadata. You compute the values
@@ -559,7 +568,7 @@ settings = aqz.StreamSettings(
 )
 stream = aqz.ZarrStream(settings)
 
-stream.write_custom_metadata(
+stream.write_attributes(
     {
         "version": "0.5",
         "plate": {
@@ -575,16 +584,16 @@ stream.write_custom_metadata(
         },
     },
     node_key="plate",
-    metadata_key="ome",
+    key="ome",
 )
 for well, fields in {"A/1": ["0", "1"], "B/3": ["0"]}.items():
-    stream.write_custom_metadata(
+    stream.write_attributes(
         {
             "version": "0.5",
             "well": {"images": [{"path": f, "acquisition": 0} for f in fields]},
         },
         node_key=f"plate/{well}",
-        metadata_key="ome",
+        key="ome",
     )
 
 frame = np.zeros((512, 512), dtype=np.uint16)
@@ -593,15 +602,15 @@ stream.close()
 ```
 
 In C, the steps are the same: set `output_key` and `is_ngff` on each field's
-`ZarrArraySettings`, then call `ZarrStream_write_custom_metadata(stream,
+`ZarrArraySettings`, then call `ZarrStream_write_attributes(stream,
 "plate", "ome", plate_json)` and the same for each well.
 
 You can also give the plate and well metadata in the settings, as
-`StreamSettings.custom_metadata` (a list of `CustomMetadata(metadata,
-node_key=..., metadata_key=...)`; `ZarrStreamSettings.custom_metadata` in C).
+`StreamSettings.attributes` (a list of `Attributes(value,
+node_key=..., key=...)`; `ZarrStreamSettings.attributes` in C).
 The stream writes these entries, in order, before `ZarrStream_create`
 returns, and creating the stream fails if an entry fails. A config file can
-give the same list under `custom_metadata`, so a whole HCS store can be
+give the same list under `attributes`, so a whole HCS store can be
 described in one file: see `examples/config/hcs.yaml`.
 
 Releases up to 0.10 had typed HCS settings (`ZarrHCSSettings`,
