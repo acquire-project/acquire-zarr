@@ -144,7 +144,10 @@ def test_stream_jpeg_pyramid(store_path: Path):
         "reshape",
         "jpeg",
     ]
-    assert codecs[0]["configuration"] == {"data_type": "float32"}
+    assert codecs[0]["configuration"] == {
+        "data_type": "float32",
+        "out_of_range": "clamp",
+    }
     assert codecs[1]["configuration"]["offset"] == 0.0
     assert codecs[1]["configuration"]["scale"] == pytest.approx(
         np.float32(255.0 / WINDOW_MAX)

@@ -85,7 +85,9 @@ class Array : public ArrayBase
      * encoding: convert to uint8 as the codec chain describes, then encode.
      * The storage-order last dimension is the image width; the other
      * dimensions are merged into the height, as the `reshape` codec describes.
-     * @throws std::runtime_error on a NaN or infinite sample.
+     * @return False, with @p error set, if TurboJPEG fails.
+     * @throws std::runtime_error on a sample that cannot be mapped to uint8
+     * (NaN, infinite, or overflowing the window arithmetic).
      */
     [[nodiscard]] bool encode_jpeg_chunk_(const JpegParams& params,
                                           std::vector<uint8_t>& data,

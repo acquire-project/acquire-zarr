@@ -1,5 +1,6 @@
 #include "acquire.zarr.h"
 #include "array.base.hh"
+#include "jpeg.hh"
 #include "macros.hh"
 #include "sink.hh"
 #include "zarr.common.hh"
@@ -10,6 +11,7 @@
 #include <algorithm> // clamp
 #include <bit>       // bit_ceil
 #include <cmath>     // isfinite
+#include <cstdint>   // integer limits
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -523,32 +525,90 @@ validate_jpeg_settings(const ZarrArraySettings* settings, std::string& error)
         return false;
     }
 
-    if (settings->data_type != ZarrDataType_uint8 &&
-        !(std::isfinite(jpeg->window_min) && std::isfinite(jpeg->window_max) &&
-          jpeg->window_min < jpeg->window_max)) {
-        error = "JPEG window must be finite, with window_min < window_max";
-        return false;
+    if (settings->data_type != ZarrDataType_uint8) {
+        if (!(std::isfinite(jpeg->window_min) &&
+              std::isfinite(jpeg->window_max) &&
+              jpeg->window_min < jpeg->window_max)) {
+            error = "JPEG window must be finite, with window_min < window_max";
+            return false;
+        }
+
+        // window_min is the fill value of the JPEG levels, so it must be a
+        // value of the data type
+        double type_min = 0, type_max = 0;
+        switch (settings->data_type) {
+            case ZarrDataType_int8:
+                type_min = INT8_MIN, type_max = INT8_MAX;
+                break;
+            case ZarrDataType_uint16:
+                type_max = UINT16_MAX;
+                break;
+            case ZarrDataType_int16:
+                type_min = INT16_MIN, type_max = INT16_MAX;
+                break;
+            case ZarrDataType_uint32:
+                type_max = UINT32_MAX;
+                break;
+            case ZarrDataType_int32:
+                type_min = INT32_MIN, type_max = INT32_MAX;
+                break;
+            case ZarrDataType_uint64:
+                type_max = static_cast<double>(UINT64_MAX);
+                break;
+            case ZarrDataType_int64:
+                type_min = static_cast<double>(INT64_MIN);
+                type_max = static_cast<double>(INT64_MAX);
+                break;
+            default: // float32, float64
+                type_min = -INFINITY, type_max = INFINITY;
+        }
+        const bool is_integer = std::isfinite(type_max);
+        if (is_integer &&
+            (std::floor(jpeg->window_min) != jpeg->window_min ||
+             jpeg->window_min < type_min || jpeg->window_min >= type_max + 1)) {
+            error = "JPEG window_min must be an integer within the range of "
+                    "the data type, because it is the fill value of the JPEG "
+                    "levels";
+            return false;
+        }
+
+        const auto so = zarr::jpeg_scale_offset(zarr::JpegParams{
+          .quality = jpeg->quality,
+          .window_min = jpeg->window_min,
+          .window_max = jpeg->window_max,
+          .source_dtype = settings->data_type,
+        });
+        if (!(std::isfinite(so.offset) && std::isfinite(so.scale) &&
+              so.scale > 0)) {
+            error = "JPEG window is not representable in the arithmetic of "
+                    "the codec chain";
+            return false;
+        }
     }
 
     const size_t ndims = settings->dimension_count;
     const auto* dims = settings->dimensions;
 
-    // the other chunk sizes need no check: they multiply the image height,
-    // which stays a multiple of 8, and each 8x8 block stays in one Y-X plane
+    // a policy, not a requirement of the jpeg spec (which says SHOULD): with Y
+    // and X chunk sizes that are multiples of 8, no 8x8 block pads the image
+    // edge or spans two planes of the last two storage dimensions, which are
+    // always the spatial ones. The other chunk sizes only multiply the height.
     const auto& y_dim = dims[ndims - 2];
     if (y_dim.chunk_size_px % 8 != 0) {
-        error = "JPEG needs the chunk size of dimension '" +
+        error = "acquire-zarr requires the chunk size of dimension '" +
                 std::string(y_dim.name) +
-                "' to be a multiple of 8, but it is " +
+                "' to be a multiple of 8 (the JPEG block size) for JPEG "
+                "levels, but it is " +
                 std::to_string(y_dim.chunk_size_px);
         return false;
     }
 
     const auto& x_dim = dims[ndims - 1];
     if (x_dim.chunk_size_px % 8 != 0) {
-        error = "JPEG needs the chunk size of dimension '" +
+        error = "acquire-zarr requires the chunk size of dimension '" +
                 std::string(x_dim.name) +
-                "' to be a multiple of 8, but it is " +
+                "' to be a multiple of 8 (the JPEG block size) for JPEG "
+                "levels, but it is " +
                 std::to_string(x_dim.chunk_size_px);
         return false;
     }

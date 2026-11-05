@@ -45,7 +45,17 @@ convert(std::span<const uint8_t> src,
                    ") of a JPEG level to uint8: only finite values are "
                    "supported");
         }
-        const F v = std::nearbyint((static_cast<F>(in[i]) - offset) * scale);
+        const F scaled = (static_cast<F>(in[i]) - offset) * scale;
+        if constexpr (std::is_floating_point_v<T>) {
+            EXPECT(std::isfinite(scaled),
+                   "Cannot map sample ",
+                   i,
+                   " (",
+                   in[i],
+                   ") of a JPEG level to uint8: it overflows the window "
+                   "arithmetic");
+        }
+        const F v = std::nearbyint(scaled);
         dst[i] = v >= F(255) ? 255 : (v > F(0) ? static_cast<uint8_t>(v) : 0);
     }
 }
@@ -198,6 +208,22 @@ zarr::encode_jpeg(std::span<const uint8_t> src,
 }
 
 nlohmann::json
+zarr::jpeg_fill_value(const JpegParams& params)
+{
+    switch (params.source_dtype) {
+        case ZarrDataType_uint8:
+            return 0;
+        case ZarrDataType_float32:
+        case ZarrDataType_float64:
+            return jpeg_scale_offset(params).offset;
+        case ZarrDataType_uint64:
+            return static_cast<uint64_t>(params.window_min);
+        default:
+            return static_cast<int64_t>(params.window_min);
+    }
+}
+
+nlohmann::json
 zarr::jpeg_inner_codecs(size_t ndims, const JpegParams& params)
 {
     auto codecs = nlohmann::json::array();
@@ -210,9 +236,12 @@ zarr::jpeg_inner_codecs(size_t ndims, const JpegParams& params)
         if (f != params.source_dtype) {
             codecs.push_back({
               { "name", "cast_value" },
+              // clamp, so that a window_max past the type's range decodes
+              // to the type's maximum, not an error
               { "configuration",
                 { { "data_type",
-                    f == ZarrDataType_float32 ? "float32" : "float64" } } },
+                    f == ZarrDataType_float32 ? "float32" : "float64" },
+                  { "out_of_range", "clamp" } } },
             });
         }
         codecs.push_back({

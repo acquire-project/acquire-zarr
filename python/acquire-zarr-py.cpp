@@ -1873,7 +1873,12 @@ PYBIND11_MODULE(acquire_zarr, m)
            [](const PyZarrJpegSettings& self) { return self.repr(); })
       .def_property("quality",
                     &PyZarrJpegSettings::quality,
-                    &PyZarrJpegSettings::set_quality)
+                    [](PyZarrJpegSettings& self, int quality) {
+                        if (quality < 1 || quality > 100) {
+                            throw py::value_error("JPEG quality must be 1-100");
+                        }
+                        self.set_quality(static_cast<uint8_t>(quality));
+                    })
       .def_property("window_min",
                     &PyZarrJpegSettings::window_min,
                     &PyZarrJpegSettings::set_window_min)

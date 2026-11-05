@@ -27,7 +27,9 @@ struct JpegScaleOffset
 
 /**
  * @brief The floating-point type in which the window is applied: float32
- * where it represents every source value exactly, float64 otherwise.
+ * where it represents every source value exactly (8- and 16-bit integers and
+ * float32), float64 otherwise. 64-bit integers round to float64 with
+ * nearest-even, the cast_value default.
  */
 ZarrDataType
 jpeg_intermediate_type(ZarrDataType source);
@@ -40,10 +42,19 @@ JpegScaleOffset
 jpeg_scale_offset(const JpegParams& params);
 
 /**
+ * @brief The fill value of a JPEG level: window_min, which the codec chain maps
+ * to 0 and decodes back exactly, as cast_value requires of the fill value.
+ * Validation makes window_min representable in the level's data type.
+ */
+nlohmann::json
+jpeg_fill_value(const JpegParams& params);
+
+/**
  * @brief Map each sample of @p src, of type @p params.source_dtype, to uint8
  * as the codec chain from jpeg_inner_codecs() describes. uint8 data is copied
  * unchanged.
- * @throws std::runtime_error on a NaN or infinite sample.
+ * @throws std::runtime_error on a NaN or infinite sample, or one that overflows
+ * the window arithmetic.
  */
 std::vector<uint8_t>
 convert_to_uint8(std::span<const uint8_t> src, const JpegParams& params);

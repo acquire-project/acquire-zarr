@@ -309,7 +309,9 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
         json::object({ { "separator", "/" } }),
       },
     });
-    meta_tmp["fill_value"] = 0;
+    // a JPEG level's fill value must survive its codec chain
+    meta_tmp["fill_value"] =
+      config_->jpeg_params ? jpeg_fill_value(*config_->jpeg_params) : json(0);
 
     meta_tmp["attributes"] = json::object();
     auto& attributes = meta_tmp["attributes"];

@@ -133,6 +133,62 @@ test_validation()
                     create_stream(ZarrDataType_uint16,
                                   five_dims(1, chunk_z, chunk_y, chunk_x),
                                   &bad));
+
+    // window_min is the fill value, so it must be a value of the data type
+    for (const double window_min : { -100.0, 0.5, 70000.0 }) {
+        bad = jpeg_settings;
+        bad.window_min = window_min;
+        bad.window_max = 80000.0;
+        expect_rejected("window_min not a uint16 value",
+                        create_stream(ZarrDataType_uint16,
+                                      five_dims(1, chunk_z, chunk_y, chunk_x),
+                                      &bad));
+    }
+}
+
+nlohmann::json
+read_json(const fs::path& path);
+
+/**
+ * A window_max past the data type's range is accepted: the first cast_value
+ * clamps on decode. window_min is the fill value of the JPEG levels.
+ */
+void
+verify_fill_value_and_clamp()
+{
+    std::vector<ZarrDimensionProperties> dims = {
+        DIM("z", ZarrDimensionType_Space, 0, 8, 1, nullptr, 1.0),
+        DIM("y", ZarrDimensionType_Space, 256, 64, 1, nullptr, 1.0),
+        DIM("x", ZarrDimensionType_Space, 256, 64, 1, nullptr, 1.0),
+    };
+    ZarrJpegSettings jpeg = jpeg_settings;
+    jpeg.window_min = 100.0;
+    jpeg.window_max = 70000.0;
+    auto* stream = create_stream(ZarrDataType_uint16, dims, &jpeg);
+    CHECK(stream);
+
+    std::vector<uint16_t> frame(256 * 256, 1000);
+    size_t bytes_out;
+    for (int z = 0; z < 2; ++z) {
+        CHECK_OK(ZarrStream_append(stream,
+                                   frame.data(),
+                                   frame.size() * sizeof(uint16_t),
+                                   &bytes_out,
+                                   nullptr));
+    }
+    ZarrStream_destroy(stream);
+
+    const auto level0 = read_json(fs::path(test_path) / "0" / "zarr.json");
+    EXPECT_EQ(int, level0["fill_value"].get<int>(), 0);
+
+    const auto meta = read_json(fs::path(test_path) / "1" / "zarr.json");
+    EXPECT_EQ(int, meta["fill_value"].get<int>(), 100);
+    const auto& cast = meta["codecs"][0]["configuration"]["codecs"][0];
+    EXPECT_STR_EQ(cast["name"].get<std::string>().c_str(), "cast_value");
+    EXPECT_STR_EQ(
+      cast["configuration"]["out_of_range"].get<std::string>().c_str(),
+      "clamp");
+    fs::remove_all(test_path);
 }
 
 void
@@ -225,7 +281,8 @@ verify_level1()
            chunk_shape.dump());
 
     const auto expected_codecs = nlohmann::json::parse(R"([
-      {"name": "cast_value", "configuration": {"data_type": "float32"}},
+      {"name": "cast_value", "configuration": {
+        "data_type": "float32", "out_of_range": "clamp"}},
       {"name": "scale_offset", "configuration": {"offset": 0.0}},
       {"name": "cast_value", "configuration": {
         "data_type": "uint8", "rounding": "nearest-even",
@@ -325,6 +382,7 @@ main()
     try {
         test_validation();
         test_config_round_trip();
+        verify_fill_value_and_clamp();
 
         auto* stream = create_stream(ZarrDataType_uint16,
                                      five_dims(1, chunk_z, chunk_y, chunk_x),
