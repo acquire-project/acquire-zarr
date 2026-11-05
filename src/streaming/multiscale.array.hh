@@ -10,6 +10,9 @@ namespace zarr {
 class MultiscaleArray : public ArrayBase
 {
   public:
+    /// The OME-NGFF version of the `ome` metadata that this group writes.
+    static constexpr const char* ome_version = "0.5";
+
     MultiscaleArray(std::shared_ptr<ArrayConfig> config,
                     std::shared_ptr<ThreadPool> thread_pool,
                     std::shared_ptr<FileHandlePool> file_handle_pool,

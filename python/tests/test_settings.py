@@ -629,3 +629,67 @@ arrays:
 
     reloaded = aqz.StreamSettings.from_string(yaml)
     assert reloaded.arrays[0].output_key == "5"
+
+
+def test_custom_metadata_round_trip():
+    config = (
+        CONFIGS["yaml"].replace("version: 2", "version: 3")
+        + """custom_metadata:
+  - metadata_key: ome
+    metadata: {version: "0.5", omero: {channels: []}}
+  - metadata_key: note
+    metadata: "a string"
+"""
+    )
+    s = aqz.StreamSettings.from_string(config)
+    assert len(s.custom_metadata) == 2
+
+    first = s.custom_metadata[0]
+    assert first.node_key is None
+    assert first.metadata_key == "ome"
+    assert first.metadata == {"version": "0.5", "omero": {"channels": []}}
+    assert s.custom_metadata[1].metadata == "a string"
+
+    # dumps keep the entries, with metadata as a mapping
+    d = s.to_dict()
+    assert d["custom_metadata"][0]["metadata"]["omero"] == {"channels": []}
+    reloaded = aqz.StreamSettings.from_string(s.to_yaml())
+    assert [e.metadata for e in reloaded.custom_metadata] == [
+        e.metadata for e in s.custom_metadata
+    ]
+
+
+def test_custom_metadata_class():
+    entry = aqz.CustomMetadata({"a": 1}, node_key="g", metadata_key="k")
+    assert entry.metadata == {"a": 1}
+    assert entry.node_key == "g"
+    assert entry.metadata_key == "k"
+
+    # a str is JSON text, as in write_custom_metadata
+    assert aqz.CustomMetadata('{"b": 2}').metadata == {"b": 2}
+
+    s = aqz.StreamSettings(custom_metadata=[entry])
+    assert s.custom_metadata[0].metadata == {"a": 1}
+
+    # the list and its entries can be changed in place, as for arrays
+    s.custom_metadata.append(aqz.CustomMetadata({"b": 2}))
+    s.custom_metadata[0].node_key = "changed"
+    assert len(s.custom_metadata) == 2
+    assert s.custom_metadata[0].node_key == "changed"
+
+
+def test_custom_metadata_requires_version_3():
+    config = CONFIGS["yaml"] + """custom_metadata:
+  - metadata: {a: 1}
+"""
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_string(config)  # CONFIGS declares version 2
+    aqz.StreamSettings.from_string(config.replace("version: 2", "version: 3"))
+
+
+def test_dump_refuses_metadata_that_is_not_json():
+    s = aqz.StreamSettings(
+        store_path="x.zarr", custom_metadata=[aqz.CustomMetadata("plate")]
+    )
+    with pytest.raises(Exception):
+        s.to_yaml()

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row and well groups), and the levels of detail of a multiscale array (`<array key>/<level>`). A group that receives
   custom metadata is written each time it receives some, and again at close, so a reader sees it during the
   acquisition. Groups are not addressable under `ZarrIntermediateGroups_Never`
+- `ZarrStreamSettings.custom_metadata` (`StreamSettings.custom_metadata`, a list of `CustomMetadata`, in Python;
+  `custom_metadata` in a config file): custom metadata that the stream writes at create, in order, as
+  `ZarrStream_write_custom_metadata` does. Creating the stream fails if an entry fails. With it, a config file can
+  describe an HCS store, plate and well metadata included (`examples/config/hcs.yaml`)
 - Custom metadata can be written under `ome`, for OME-NGFF metadata that the stream does not write, such as `omero`.
   The custom keys merge with the stream's own `ome` keys. `ome.multiscales` is refused on every node, and so is any
   other key that the stream writes under `ome` on the node (`version` and `name` on a multiscale group), except
@@ -34,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZarrStream_write_custom_metadata` returns `ZarrStatusCode_InvalidArgument`, not `ZarrStatusCode_IOError`, when it
   refuses the metadata
 - ⚠️ **Breaking:** the config-file schema is now version 3. A config of any version that has `plates` is refused
-  with a message. Versions 1 and 2 without `plates` still load, and a dump writes version 3
+  with a message. Versions 1 and 2 without `plates` still load, and a dump writes version 3. Version 3 adds
+  `custom_metadata`
 - Replaced the `minio-cpp` submodule with the [aws-crt-cpp](https://github.com/awslabs/aws-crt-cpp) vcpkg package for
   S3 storage (#248)
 - ⚠️ **Breaking:** the S3 `endpoint` must now begin with `http://` or `https://`. `minio-cpp` treated a scheme-less

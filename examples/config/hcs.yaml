@@ -1,0 +1,35 @@
+# HCS plate store. Each field of view is an OME-NGFF array at
+# <plate>/<row>/<column>/<field>; the plate and well metadata are custom
+# metadata, which the stream writes when it is created, in order. Quote
+# numeric names so they stay strings (e.g. "5").
+version: 3
+store_path: plate.zarr
+overwrite: true
+
+arrays:
+  - output_key: test_plate/C/5/fov1
+    is_ngff: true
+    data_type: uint16
+    dimensions:
+      - {name: z, type: space, array_size_px: 0,   chunk_size_px: 1,   shard_size_chunks: 1}
+      - {name: y, type: space, array_size_px: 480, chunk_size_px: 256, shard_size_chunks: 4}
+      - {name: x, type: space, array_size_px: 640, chunk_size_px: 256, shard_size_chunks: 4}
+
+custom_metadata:
+  - node_key: test_plate
+    metadata_key: ome
+    metadata:
+      version: "0.5"
+      plate:
+        name: Test Plate
+        rows: [{name: A}, {name: B}, {name: C}, {name: D}]
+        columns: [{name: "1"}, {name: "2"}, {name: "3"}, {name: "4"}, {name: "5"}]
+        wells: [{path: C/5, rowIndex: 2, columnIndex: 4}]
+        field_count: 1
+        acquisitions: [{id: 0, name: Meas_01, starttime: 1343731272000, maximumfieldcount: 1}]
+  - node_key: test_plate/C/5
+    metadata_key: ome
+    metadata:
+      version: "0.5"
+      well:
+        images: [{path: fov1, acquisition: 0}]

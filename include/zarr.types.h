@@ -234,6 +234,22 @@ extern "C"
         bool is_ngff;
     } ZarrArraySettings;
 
+    /**
+     * @brief Custom metadata that ZarrStream_create writes, as if by
+     * ZarrStream_write_custom_metadata, before it returns.
+     * @details A config file can give these entries, so that a stream that
+     * needs custom metadata (for example the plate and well metadata of an HCS
+     * dataset) can be described in one file.
+     */
+    typedef struct
+    {
+        const char* node_key;     /**< Key of the node, relative to the store
+                                       root. NULL is the stream's only array. */
+        const char* metadata_key; /**< Key under 'attributes', or NULL to write
+                                       each key of @p metadata there. */
+        const char* metadata;     /**< The metadata, as JSON. */
+    } ZarrCustomMetadata;
+
 #ifdef __cplusplus
 }
 #endif
