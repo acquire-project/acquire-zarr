@@ -53,8 +53,11 @@ decimate4(const T& a, const T& b, const T& c, const T& d)
  * without overflowing T. 8- and 16-bit types sum in a 32-bit accumulator (N is
  * at most 4, so the sum fits) and 32-bit types in a 64-bit one; the narrower
  * accumulator lets the compiler use wider vector lanes. The 64-bit types sum
- * quotients and remainders separately, then move the result toward zero when
- * the two have opposite signs.
+ * exactly in a two-word (hi:lo) two's-complement accumulator and divide the
+ * magnitude by N, a power of two, with a shift, so there is no signed
+ * division. MSVC Release builds computed the earlier quotient-and-remainder
+ * form one too low on acquire-project/acquire-zarr#282; the cause was not
+ * identified, and disabling vectorization did not help.
  */
 template<typename T, size_t N>
 T
@@ -74,23 +77,33 @@ integer_mean(const std::array<T, N>& values)
         }
         return static_cast<T>(sum / static_cast<Wide>(N));
     } else {
-        constexpr T n = N;
-        T quotient = 0, remainder = 0;
-        for (const T value : values) {
-            quotient += value / n;
-            remainder += value % n;
-        }
-        quotient += remainder / n;
-        remainder %= n;
+        static_assert(N == 2 || N == 4);
+        constexpr unsigned shift = N == 2 ? 1 : 2;
 
-        if constexpr (std::is_signed_v<T>) {
-            if (quotient > 0 && remainder < 0) {
-                --quotient;
-            } else if (quotient < 0 && remainder > 0) {
-                ++quotient;
+        uint64_t lo = 0;
+        int64_t hi = 0;
+        for (const T value : values) {
+            const auto value_lo = static_cast<uint64_t>(value);
+            int64_t value_hi = 0;
+            if constexpr (std::is_signed_v<T>) {
+                value_hi = value < 0 ? -1 : 0;
             }
+            const uint64_t sum_lo = lo + value_lo;
+            hi += value_hi + (sum_lo < lo ? 1 : 0);
+            lo = sum_lo;
         }
-        return quotient;
+
+        // shift the magnitude, so that the result truncates toward zero
+        const bool negative = hi < 0;
+        uint64_t magnitude_lo = lo, magnitude_hi = static_cast<uint64_t>(hi);
+        if (negative) {
+            magnitude_lo = ~magnitude_lo + 1;
+            magnitude_hi = ~magnitude_hi + (magnitude_lo == 0 ? 1 : 0);
+        }
+        const uint64_t quotient =
+          (magnitude_lo >> shift) | (magnitude_hi << (64 - shift));
+        return negative ? static_cast<T>(0 - quotient)
+                        : static_cast<T>(quotient);
     }
 }
 
