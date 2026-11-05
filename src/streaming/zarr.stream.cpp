@@ -1136,6 +1136,16 @@ ZarrStream_s::write_custom_metadata(const std::optional<std::string>& array_key,
             return ZarrStatusCode_InvalidArgument;
         }
 
+        // each key of the object becomes an attribute; any other value has no
+        // attribute names (an array's would be "0", "1", ...)
+        if (meta_key.empty() && !metadata_json.is_object()) {
+            LOG_ERROR("Custom metadata must be a JSON object when no metadata "
+                      "key is given: '",
+                      metadata,
+                      "'");
+            return ZarrStatusCode_InvalidArgument;
+        }
+
         if (const auto& output = it->second;
             !output->array->write_custom_metadata(meta_key, metadata_json)) {
             LOG_ERROR("Error writing custom metadata for array '", key, "'");

@@ -404,11 +404,14 @@ extern "C"
      * Metadata will be written to <array_key>/zarr.json. If array_key is empty
      * or NULL, metadata will be written to the root zarr.json.
      * @param metadata_key Key under 'attributes' to write the metadata to. If
-     * metadata_key is empty or NULL, metadata will be written directly under
-     * 'attributes'. Note: the 'ome' key is disallowed. Passing 'ome' will
-     * return an error.
+     * metadata_key is NULL, empty, or only slashes and whitespace, each key of
+     * @p metadata, which must then be a JSON object, is written directly under
+     * 'attributes'. Note: the 'ome'
+     * key is disallowed. Passing 'ome' will return an error.
      * @param metadata JSON-formatted metadata to be written to the dataset.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @return ZarrStatusCode_Success on success, or an error code on failure:
+     * for example, ZarrStatusCode_InvalidArgument if @p metadata is not valid
+     * JSON, or is not a JSON object while there is no metadata_key.
      */
     ZarrStatusCode ZarrStream_write_custom_metadata(ZarrStream* stream,
                                                     const char* array_key,
