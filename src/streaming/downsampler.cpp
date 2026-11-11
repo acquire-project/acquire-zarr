@@ -358,7 +358,10 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
     size_t frame_height = base_dims->height_dim().array_size_px;
     ++level_frame_count_.at(0);
 
-    ByteVector current_frame(frame.begin(), frame.end());
+    // a view of each level's input: the caller's frame for level 1, then the
+    // previous level's frame (stored for its writer, or, if a frame for that
+    // level is still waiting to be taken, next_level_frame itself)
+    ConstByteSpan current_frame(frame);
     ByteVector next_level_frame;
 
     for (auto level = 1; level < n_levels_(); ++level) {
@@ -388,7 +391,9 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
         if (next_width < prev_width || next_height < prev_height) {
             next_level_frame =
               scale_fun_(current_frame, frame_width, frame_height);
-        } else {
+        } else if (current_frame.data() != next_level_frame.data()) {
+            // the level does not shrink in x and y, so it needs its own copy;
+            // skip the assign when the input already is next_level_frame
             next_level_frame.assign(current_frame.begin(), current_frame.end());
         }
 
@@ -420,29 +425,21 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
                 // swap here so that decimation keeps the earlier frame
                 next_level_frame.swap(it->second);
                 average2_fun_(next_level_frame, it->second);
-                emplace_downsampled_frame_(level, next_level_frame);
 
                 // clean up this LOD
                 partial_scaled_frames_.erase(it);
 
-                // set up for next iteration
-                if (level + 1 < writer_configurations_.size()) {
-                    current_frame.assign(next_level_frame.begin(),
-                                         next_level_frame.end());
-                }
+                current_frame =
+                  emplace_downsampled_frame_(level, next_level_frame);
             } else {
-                partial_scaled_frames_.emplace(level, next_level_frame);
+                partial_scaled_frames_.emplace(level,
+                                               std::move(next_level_frame));
                 break;
             }
         } else {
             // no downsampling in Z, so we can just pass the data to the
             // next level
-            emplace_downsampled_frame_(level, next_level_frame);
-
-            if (level + 1 < writer_configurations_.size()) {
-                current_frame.assign(next_level_frame.begin(),
-                                     next_level_frame.end());
-            }
+            current_frame = emplace_downsampled_frame_(level, next_level_frame);
         }
     }
 }
@@ -644,10 +641,19 @@ zarr::Downsampler::make_writer_configurations_(
     }
 }
 
-void
-zarr::Downsampler::emplace_downsampled_frame_(int level,
-                                              const ByteVector& frame_data)
+ConstByteSpan
+zarr::Downsampler::emplace_downsampled_frame_(int level, ByteVector& frame_data)
 {
-    downsampled_frames_.emplace(level, frame_data);
     ++level_frame_count_.at(level);
+
+    // try_emplace leaves frame_data alone if a frame for this level is still
+    // waiting to be taken; the stored frame is kept, as before
+    if (const auto [it, inserted] =
+          downsampled_frames_.try_emplace(level, std::move(frame_data));
+        inserted) {
+        // references into the map survive a rehash, and nothing erases this
+        // entry before the caller's next take_frame
+        return it->second;
+    }
+    return frame_data;
 }
