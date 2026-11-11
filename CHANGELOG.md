@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `append()` now blocks when compression or the storage is slower than the frames arrive. Each array holds a bounded
+  number of uncompressed chunks waiting for or in compression: at full resolution the larger of two layers and four
+  chunks per worker thread, and two layers at each downsampled level (with band-by-band flushing, a layer is a band).
+  Before, these chunks queued without limit, and memory grew until close: 12 to 15 GiB within seconds in a blosc-zstd
+  stream that compressed slower than it received frames
+- `ZarrStream_get_current_memory_usage` (`get_current_memory_usage` in Python) now counts the chunks waiting for or in
+  compression. Before, it left them out and could report a small fraction of the real usage
+- `ZarrStreamSettings_estimate_max_memory_usage` (`get_maximum_memory_usage` in Python) now includes those chunks and a
+  compressed buffer per worker thread, so it depends on `max_threads` (and `ZARR_MAX_THREADS`). It also follows the
+  stream's real pyramid levels, including levels that keep their size along x and y, and the full frame of a 2D array.
+  Expect larger values than before. It now returns `ZarrStatusCode_InvalidArgument` (a `RuntimeError` in Python) for
+  an array with fewer than two dimensions, a zero chunk size, or last two dimensions that are not spatial, and it checks
+  `arrays[0]` for null dimensions, which it skipped. Shard sizes and names may still be unset
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
   `ZarrStream_create` is kept (#186, #268)
