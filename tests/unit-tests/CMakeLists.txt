@@ -16,6 +16,7 @@ set(tests
         parallel-for-reduce
         resolve-max-threads
         resolve-direct-io
+        regularize-key
         construct-data-paths
         endpoint-request-target
         s3-client-bucket-exists
