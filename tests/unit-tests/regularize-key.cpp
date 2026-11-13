@@ -72,15 +72,23 @@ main()
         expect_regularized(std::string_view("a\0b", 3),
                            std::string_view("a\0b", 3));
 
-        // every string up to length 6 over an alphabet of key characters,
+        // interior line feeds are pinned here rather than compared with the
+        // regex below: before microsoft/STL#5535, MSVC's std::regex let `^`
+        // and `$` match at line feeds, so the reference disagrees there
+        expect_regularized("\na\n", "a");
+        expect_regularized("a/\nb", "a/\nb");
+        expect_regularized("a\n/b", "a\n/b");
+        expect_regularized("a\n\nb", "a\n\nb");
+
+        // every string up to length 7 over an alphabet of key characters,
         // slashes and whitespace
-        const std::string alphabet = { 'a', '/', ' ', '\t', '\n' };
+        const std::string alphabet = { 'a', '/', ' ', '\t' };
         std::vector<std::string> frontier{ "" };
-        for (int len = 0; len <= 6; ++len) {
+        for (int len = 0; len <= 7; ++len) {
             std::vector<std::string> next;
             for (const auto& key : frontier) {
                 expect_matches_regex(key);
-                if (len < 6) {
+                if (len < 7) {
                     for (char c : alphabet) {
                         next.push_back(key + c);
                     }
