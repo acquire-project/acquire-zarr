@@ -48,6 +48,8 @@ add_library(${tgt}
         multiscale.array.cpp
         plate.hh
         plate.cpp
+        buffer.pool.hh
+        buffer.pool.cpp
         chunk.hh
         chunk.cpp
         shard.hh

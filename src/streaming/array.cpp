@@ -104,8 +104,22 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
 
-    // allocated lazily on write, freed per band/layer on flush
+    // allocated lazily on write, released per band/layer on flush
     chunks_.resize(n_chunks);
+
+    // Keep one layer of chunk buffers, plus one per pool thread for those
+    // still being compressed and written when the next layer starts, and one
+    // compression output per thread. Neither pool holds more than was live at
+    // once, so peak memory is unchanged.
+    const size_t n_threads = thread_pool_ ? thread_pool_->n_threads() : 1;
+    const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
+    chunk_pool_ =
+      std::make_shared<BufferPool>(bytes_per_chunk, n_chunks + n_threads);
+    if (config_->compression_params) {
+        output_pool_ = std::make_shared<BufferPool>(
+          compressed_size_bound(bytes_per_chunk, *config_->compression_params),
+          n_threads + 1);
+    }
 
     // append chunk > 1 keeps the whole inner volume resident (no banding); warn
     const auto& dims = *config_->dimensions;
@@ -167,6 +181,12 @@ zarr::Array::memory_usage() const noexcept
         if (chunk_lock.owns_lock() && chunks_[i]) {
             total += chunks_[i]->size_bytes();
         }
+    }
+
+    // buffers kept for reuse are still resident
+    total += chunk_pool_->retained_bytes();
+    if (output_pool_) {
+        total += output_pool_->retained_bytes();
     }
 
     // An S3 shard stages fragments that arrived out of order, which can reach
@@ -579,7 +599,6 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
         return 0;
     }
 
-    const auto bytes_per_chunk = dimensions->bytes_per_chunk();
     const auto bytes_per_tile_row = tile_cols * bytes_per_px;
 
     const auto n_tiles_x = (frame_cols + tile_cols - 1) / tile_cols;
@@ -617,7 +636,7 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
                   std::unique_lock lock(chunk_mutexes_[tile_idx + group_offset]);
                   if (chunk == nullptr) {
                       chunk =
-                        std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
+                        std::make_shared<Chunk>(chunk_pool_, bytes_per_px);
                   }
               }
 
@@ -762,20 +781,31 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                     result = ThreadPool::TaskResult::Fatal;
                 }
             } else {
-                std::vector<uint8_t> compressed;
-                if (!chunk->compress_and_take_buffer(params, compressed)) {
+                // the sink is done with `encoded` when write_chunk returns
+                // (it writes synchronously or copies), so the output can go
+                // back to the pool right after
+                ByteVector output;
+                if (output_pool_) {
+                    output = output_pool_->acquire(false);
+                }
+
+                ConstByteSpan encoded;
+                if (!chunk->encode(params, output, encoded)) {
                     err = "Failed to compress chunk " +
                           std::to_string(chunk_idx) + " of shard " +
                           std::to_string(shard_idx);
                     result = ThreadPool::TaskResult::Fatal;
                 } else if (try_write([&] {
-                               return shard->write_chunk(internal_idx,
-                                                         compressed);
+                               return shard->write_chunk(internal_idx, encoded);
                            })) {
                     result = ThreadPool::TaskResult::Success;
                 } else {
                     err = retries_exhausted_msg();
                     result = ThreadPool::TaskResult::Fatal;
+                }
+
+                if (output_pool_) {
+                    output_pool_->release(std::move(output));
                 }
             }
         } catch (const std::exception& exc) {

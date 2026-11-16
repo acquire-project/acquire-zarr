@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints that validate the signing region require it to be set explicitly (#248)
 - The bucket is now checked once when the stream is created rather than once per object written (#248)
 - Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
+- Chunk buffers and compression outputs are reused from bounded per-array pools instead of allocated per chunk. A
+  stream no longer faults in about twice its data rate in fresh pages, which cut system CPU time about 10x in a
+  770 MB/s benchmark (`benchmarks/chunk_buffer_faults.py`). Output is unchanged, and so is peak memory
 
 ### Fixed
 

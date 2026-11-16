@@ -83,26 +83,38 @@ uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
 
 /**
- * @brief Compress @p data in place using Blosc with the given parameters.
- * @param data The buffer to compress.
+ * @brief The most bytes compressing @p n_bytes with @p params can produce.
+ * @details Size an output buffer for compress_into() with this.
+ */
+size_t
+compressed_size_bound(size_t n_bytes, const CompressionParams& params);
+
+/**
+ * @brief Compress @p src into @p dst using Blosc with the given parameters.
+ * @param src The bytes to compress.
+ * @param dst The output, at least compressed_size_bound() bytes.
  * @param params Compression parameters.
  * @param type_size Size of the data type being compressed (e.g., 1 for uint8, 2
  * for uint16).
- * @return true if compression was successful, false otherwise.
+ * @return The number of bytes written to the front of @p dst, or 0 on failure.
  */
-bool
-compress_in_place(ByteVector& data,
-                  const BloscCompressionParams& params,
-                  size_t type_size);
+size_t
+compress_into(ConstByteSpan src,
+              ByteSpan dst,
+              const BloscCompressionParams& params,
+              size_t type_size);
 
 /**
- * @brief Compress @p data in place using stock zstd.
- * @param data The buffer to compress.
+ * @brief Compress @p src into @p dst using stock zstd.
+ * @param src The bytes to compress.
+ * @param dst The output, at least compressed_size_bound() bytes.
  * @param params Compression parameters.
- * @return true if compression was successful, false otherwise.
+ * @return The number of bytes written to the front of @p dst, or 0 on failure.
  */
-bool
-compress_in_place(ByteVector& data, const ZstdCompressionParams& params);
+size_t
+compress_into(ConstByteSpan src,
+              ByteSpan dst,
+              const ZstdCompressionParams& params);
 
 /**
  * @brief Regularize a Zarr key by removing leading, trailing, and consecutive

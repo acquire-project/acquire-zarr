@@ -118,66 +118,69 @@ zarr::shards_along_dimension(const ZarrDimension& dimension)
     return (n_chunks + shard_size - 1) / shard_size;
 }
 
-bool
-zarr::compress_in_place(ByteVector& data,
-                        const zarr::BloscCompressionParams& params,
-                        size_t type_size)
+size_t
+zarr::compressed_size_bound(size_t n_bytes, const CompressionParams& params)
 {
-    if (data.empty()) {
+    return std::visit(
+      [n_bytes]<typename ParamT>(const ParamT&) -> size_t {
+          if constexpr (std::is_same_v<ParamT, BloscCompressionParams>) {
+              return n_bytes + BLOSC_MAX_OVERHEAD;
+          } else {
+              return ZSTD_compressBound(n_bytes);
+          }
+      },
+      params);
+}
+
+size_t
+zarr::compress_into(ConstByteSpan src,
+                    ByteSpan dst,
+                    const zarr::BloscCompressionParams& params,
+                    size_t type_size)
+{
+    if (src.empty()) {
         LOG_WARNING("Buffer is empty, not compressing.");
-        return false;
+        return 0;
     }
 
-    std::vector<uint8_t> compressed_data(data.size() + BLOSC_MAX_OVERHEAD);
     const auto n_bytes_compressed = blosc_compress_ctx(params.clevel,
                                                        params.shuffle,
                                                        type_size,
-                                                       data.size(),
-                                                       data.data(),
-                                                       compressed_data.data(),
-                                                       compressed_data.size(),
+                                                       src.size(),
+                                                       src.data(),
+                                                       dst.data(),
+                                                       dst.size(),
                                                        params.codec_id.c_str(),
                                                        0,
                                                        1);
 
     if (n_bytes_compressed <= 0) {
         LOG_ERROR("blosc_compress_ctx failed with code ", n_bytes_compressed);
-        return false;
+        return 0;
     }
 
-    compressed_data.resize(n_bytes_compressed);
-    data.swap(compressed_data);
-
-    return true;
+    return static_cast<size_t>(n_bytes_compressed);
 }
 
-bool
-zarr::compress_in_place(ByteVector& data,
-                        const zarr::ZstdCompressionParams& params)
+size_t
+zarr::compress_into(ConstByteSpan src,
+                    ByteSpan dst,
+                    const zarr::ZstdCompressionParams& params)
 {
-    if (data.empty()) {
+    if (src.empty()) {
         LOG_WARNING("Buffer is empty, not compressing.");
-        return false;
+        return 0;
     }
 
-    const size_t max_dst_size = ZSTD_compressBound(data.size());
-    std::vector<uint8_t> compressed_data(max_dst_size);
-
-    const size_t compressed_size = ZSTD_compress(compressed_data.data(),
-                                                  compressed_data.size(),
-                                                  data.data(),
-                                                  data.size(),
-                                                  params.level);
+    const size_t compressed_size = ZSTD_compress(
+      dst.data(), dst.size(), src.data(), src.size(), params.level);
 
     if (ZSTD_isError(compressed_size)) {
         LOG_ERROR("ZSTD_compress failed: ", ZSTD_getErrorName(compressed_size));
-        return false;
+        return 0;
     }
 
-    compressed_data.resize(compressed_size);
-    data.swap(compressed_data);
-
-    return true;
+    return compressed_size;
 }
 
 std::string

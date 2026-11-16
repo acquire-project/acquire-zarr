@@ -2029,6 +2029,86 @@ def test_with_ragged_final_shard(store_path: Path):
     np.testing.assert_array_equal(data, array)
 
 
+@pytest.mark.parametrize(
+    ("compressor", "codec"),
+    [
+        (Compressor.NONE, CompressionCodec.NONE),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_LZ4),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_ZSTD),
+        (Compressor.ZSTD, CompressionCodec.ZSTD),
+    ],
+)
+def test_reused_buffers_round_trip(
+    store_path: Path, compressor: Compressor, codec: CompressionCodec
+):
+    """Chunk buffers and compression outputs are reused across layers. Many
+    layers of random data, with edge tiles, a ragged internal dimension and a
+    short final chunk, must read back exactly."""
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=2,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=3,
+                        chunk_size_px=2,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=30,
+                        chunk_size_px=16,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=50,
+                        chunk_size_px=16,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=np.uint16,
+                compression=(
+                    None
+                    if compressor == Compressor.NONE
+                    else CompressionSettings(
+                        compressor=compressor,
+                        codec=codec,
+                        level=1,
+                        # stock zstd does not shuffle
+                        shuffle=0 if compressor == Compressor.ZSTD else 1,
+                    )
+                ),
+            )
+        ],
+    )
+    stream = ZarrStream(settings)
+
+    # 41 timepoints: an odd count, so the final t chunk is short. Random data
+    # varies the compressed size of each chunk.
+    rng = np.random.default_rng(0)
+    data = rng.integers(0, 1024, (41, 3, 30, 50), dtype=np.uint16)
+    stream.append(data)
+    stream.close()
+
+    del stream
+
+    array = zarr.open(settings.store_path)
+
+    np.testing.assert_array_equal(data, array)
+
+
 def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
     settings = StreamSettings(
         store_path=str(store_path / f"{request.node.name}.zarr"),
