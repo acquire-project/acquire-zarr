@@ -108,17 +108,24 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     chunks_.resize(n_chunks);
 
     // A pool allocates only when it has nothing to hand out, so it never holds
-    // more buffers than this array had in use at once, and the pools do not
-    // raise its peak. Chunk buffers in use at once are the layer being filled
-    // plus, at most, the previous layer still being written, so keep up to two
-    // layers. Compressions in use at once are at most one per pool thread
-    // plus the calling thread. Between layers the buffers stay resident
-    // instead of being freed; a bounded array drains them once it has its last
+    // more buffers than this array had in use at once. Keep one flush's worth
+    // of chunk buffers: a dim-1 band when banding, otherwise a layer. That is
+    // enough to reuse every buffer in steady state, since each flush takes the
+    // buffers the flush before last gave back, and it caps what a write
+    // backlog leaves kept once it drains: a banded array stays within the band
+    // being filled plus one kept band. Compressions in use at once are at most
+    // one per pool thread plus the calling thread. Between flushes the kept
+    // buffers stay resident; a bounded array drains them once it has its last
     // frame (write_frame). ZarrStreamSettings_estimate_max_memory_usage
     // budgets for both limits.
+    const auto& dimensions = *config_->dimensions;
+    const size_t chunks_per_flush = dimensions.supports_dim1_banding()
+                                      ? dimensions.chunks_per_dim1_band()
+                                      : n_chunks;
     const size_t n_threads = thread_pool_->n_threads();
-    const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
-    chunk_pool_ = std::make_shared<BufferPool>(bytes_per_chunk, 2 * n_chunks);
+    const size_t bytes_per_chunk = dimensions.bytes_per_chunk();
+    chunk_pool_ =
+      std::make_shared<BufferPool>(bytes_per_chunk, chunks_per_flush);
     if (config_->compression_params) {
         output_pool_ = std::make_shared<BufferPool>(
           compressed_size_bound(bytes_per_chunk, *config_->compression_params),

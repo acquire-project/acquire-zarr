@@ -497,10 +497,11 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
 
     stream.close()
 
-    # band-by-band flushing keeps live memory well under the full inner volume
-    assert peak < int(full_inner_volume * 0.75), (
-        f"peak memory {peak} not bounded below the full inner volume "
-        f"{full_inner_volume}"
+    # band-by-band flushing keeps live memory within the two-band maximum, well
+    # under the full inner volume
+    assert peak <= expected_max < full_inner_volume, (
+        f"peak memory {peak} exceeds the two-band maximum {expected_max} "
+        f"(full inner volume {full_inner_volume})"
     )
 
     array = zarr.open(s.store_path, mode="r")
