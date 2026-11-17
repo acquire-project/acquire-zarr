@@ -1,0 +1,3 @@
+vcpkg-overlays/snappy/* -text whitespace=cr-at-eol
+vcpkg-overlays/snappy/*.patch -whitespace
+vcpkg-overlays/snappy/*.diff -whitespace
