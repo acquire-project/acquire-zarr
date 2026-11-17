@@ -19,13 +19,15 @@ it again with the same arguments; for example, at each of two chunk depths:
     python benchmarks/chunk_buffer_faults.py /tmp/faults --chunk 16
     python benchmarks/chunk_buffer_faults.py /tmp/faults --chunk 64
 
-The store is written under OUTDIR and deleted afterwards. Use a local disk, so
-the sink is not the bottleneck.
+The store is written in a new temporary directory under OUTDIR, and only that
+directory is deleted afterwards. Use a local disk, so the sink is not the
+bottleneck.
 """
 
 import argparse
 import resource
 import shutil
+import tempfile
 import time
 from pathlib import Path
 
@@ -39,7 +41,9 @@ PAGE_BYTES = resource.getpagesize()
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("out", type=Path, help="scratch directory")
+    parser.add_argument(
+        "out", type=Path, help="directory to create the scratch store under"
+    )
     parser.add_argument("--frames", type=int, default=3072)
     parser.add_argument(
         "--warmup",
@@ -60,8 +64,10 @@ def main() -> None:
         rng.poisson(210, (HEIGHT, WIDTH)).astype(np.uint16) for _ in range(32)
     ]
 
-    shutil.rmtree(args.out, ignore_errors=True)
-    args.out.mkdir(parents=True)
+    args.out.mkdir(parents=True, exist_ok=True)
+    scratch = Path(
+        tempfile.mkdtemp(prefix="chunk_buffer_faults_", dir=args.out)
+    )
     dimensions = [
         az.Dimension(
             name="t",
@@ -93,7 +99,7 @@ def main() -> None:
     )
     stream = az.ZarrStream(
         az.StreamSettings(
-            store_path=str(args.out / "faults.zarr"),
+            store_path=str(scratch / "faults.zarr"),
             arrays=[
                 az.ArraySettings(
                     dimensions=dimensions,
@@ -128,7 +134,7 @@ def main() -> None:
     user_s = usage1.ru_utime - usage0.ru_utime
     sys_s = usage1.ru_stime - usage0.ru_stime
     stream.close()
-    shutil.rmtree(args.out, ignore_errors=True)
+    shutil.rmtree(scratch, ignore_errors=True)
 
     counted = args.frames - args.warmup
     data_bytes = counted * HEIGHT * WIDTH * 2
