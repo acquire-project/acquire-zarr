@@ -109,9 +109,11 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
 
     // Keep one layer of chunk buffers, plus one per pool thread for those
     // still being compressed and written when the next layer starts, and one
-    // compression output per thread. Neither pool holds more than was live at
-    // once, so peak memory is unchanged.
-    const size_t n_threads = thread_pool_ ? thread_pool_->n_threads() : 1;
+    // compression output per thread. Neither pool holds more buffers than this
+    // array had in use at once, so the pools do not raise its peak. Between
+    // layers the buffers stay resident instead of being freed; a bounded array
+    // drains them once it has its last frame (write_frame).
+    const size_t n_threads = thread_pool_->n_threads();
     const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
     chunk_pool_ =
       std::make_shared<BufferPool>(bytes_per_chunk, n_chunks + n_threads);
@@ -269,6 +271,18 @@ zarr::Array::write_frame(std::vector<uint8_t>& frame,
             CHECK(write_metadata_());
         }
         bytes_to_flush_ = 0;
+    }
+
+    // A bounded array takes no frames after its last, so it will need no
+    // more buffers. Free the kept ones now rather than at stream close, so a
+    // stream that fills several arrays in turn does not keep a layer of
+    // buffers for each finished one. Chunks still being written, and any the
+    // close flush takes, are freed when they come back.
+    if (max_bytes_ > 0 && total_bytes_written_ == max_bytes_) {
+        chunk_pool_->drain();
+        if (output_pool_) {
+            output_pool_->drain();
+        }
     }
 
     return bytes_written == frame.size() ? WriteResult::Ok

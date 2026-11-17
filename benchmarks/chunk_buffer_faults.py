@@ -9,8 +9,12 @@ compression outputs now come from bounded per-array pools, so after the first
 layers the steady state should fault in almost nothing.
 
 This streams camera-sized uint16 frames (blosc zstd level 2, one array) at a
-fixed rate and counts minor page faults after a warmup, which excludes filling
-the pools. Compare two builds by running it against each:
+fixed rate and, after a warmup that excludes filling the pools, reports minor
+page faults and the process's user and system CPU time. The CPU time covers
+every thread of the process, so it includes compression and writing.
+
+To compare two builds, install one, run the script, install the other and run
+it again with the same arguments; for example, at each of two chunk depths:
 
     python benchmarks/chunk_buffer_faults.py /tmp/faults --chunk 16
     python benchmarks/chunk_buffer_faults.py /tmp/faults --chunk 64
@@ -103,35 +107,42 @@ def main() -> None:
 
     period = 1.0 / args.fps
     latency = np.empty(args.frames)
-    faults0 = t0 = None
+    usage0 = t0 = None
     t_next = time.perf_counter()
     for k in range(args.frames):
         if k == args.warmup:
-            faults0 = resource.getrusage(resource.RUSAGE_SELF).ru_minflt
+            usage0 = resource.getrusage(resource.RUSAGE_SELF)
             t0 = time.perf_counter()
-        while time.perf_counter() < t_next:
-            pass
+        # sleep rather than spin, so the pacing adds no CPU time of its own
+        delay = t_next - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
         t_next += period
         start = time.perf_counter()
         stream.append(frames[k % len(frames)])
         latency[k] = time.perf_counter() - start
 
     wall = time.perf_counter() - t0
-    faults = resource.getrusage(resource.RUSAGE_SELF).ru_minflt - faults0
+    usage1 = resource.getrusage(resource.RUSAGE_SELF)
+    faults = usage1.ru_minflt - usage0.ru_minflt
+    user_s = usage1.ru_utime - usage0.ru_utime
+    sys_s = usage1.ru_stime - usage0.ru_stime
     stream.close()
     shutil.rmtree(args.out, ignore_errors=True)
 
     counted = args.frames - args.warmup
     data_bytes = counted * HEIGHT * WIDTH * 2
     ms = latency[args.warmup :] * 1e3
-    peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    # ru_maxrss is in KiB on Linux
+    peak_rss_gib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
     print(
         f"chunk {args.chunk} frames: {counted / wall:.1f} fps, "
         f"{data_bytes / wall / 1e6:.0f} MB/s | "
         f"faults {faults / wall / 1e3:.1f}k/s, "
         f"{faults * PAGE_BYTES / data_bytes:.3f}x the data | "
+        f"CPU user {user_s:.2f} s, sys {sys_s:.2f} s in {wall:.1f} s | "
         f"append mean {ms.mean():.2f} p99 {np.percentile(ms, 99):.2f} "
-        f"max {ms.max():.2f} ms | peak RSS {peak_rss_gb:.2f} GB"
+        f"max {ms.max():.2f} ms | peak RSS {peak_rss_gib:.2f} GiB"
     )
 
 

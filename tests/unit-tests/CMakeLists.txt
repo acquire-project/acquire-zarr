@@ -41,6 +41,7 @@ set(tests
         zarr-stream-append-null-zeros
         frame-queue
         buffer-pool
+        array-drain-when-full
         zarr-stream-reused-buffers-zero
         downsampler
         downsampler-odd-z

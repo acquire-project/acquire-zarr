@@ -50,6 +50,18 @@ zarr::BufferPool::release(ByteVector buffer)
     // otherwise buffer is freed on return, after the lock is released
 }
 
+void
+zarr::BufferPool::drain()
+{
+    std::vector<ByteVector> to_free;
+    {
+        std::unique_lock lock(mutex_);
+        max_free_ = 0;
+        to_free.swap(free_);
+    }
+    // to_free is destroyed here, outside the lock
+}
+
 size_t
 zarr::BufferPool::buffer_size() const noexcept
 {
