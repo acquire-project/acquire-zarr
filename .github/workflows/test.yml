@@ -29,13 +29,13 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - "ubuntu-24.04"
+          - "ubuntu-latest"
           - "ubuntu-24.04-arm"
           - "windows-latest"
           - "macos-latest" # arm
           - "macos-15-intel" # x86_64
         include:
-          - platform: "ubuntu-24.04"
+          - platform: "ubuntu-latest"
             vcpkg_triplet: "x64-linux"
           - platform: "ubuntu-24.04-arm"
             vcpkg_triplet: "arm64-linux"
@@ -65,7 +65,7 @@ jobs:
           path: |
             ~/.cache/vcpkg/archives
             ~/AppData/Local/vcpkg/archives
-          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
 
@@ -125,7 +125,7 @@ jobs:
 
   test_s3:
     name: Test S3
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     env:
       SCCACHE_GHA_ENABLED: "true"
       CMAKE_ARGS: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
@@ -146,6 +146,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Set up Python 3.15
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.11
 
@@ -154,9 +159,9 @@ jobs:
         with:
           path: |
             ~/.cache/vcpkg/archives
-          key: vcpkg-ubuntu-24.04-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-ubuntu-latest-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
-            vcpkg-ubuntu-24.04-
+            vcpkg-ubuntu-latest-
 
       - name: Install CMake 3.31
         uses: jwlawson/actions-setup-cmake@v2
@@ -245,7 +250,7 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - "ubuntu-24.04"
+          - "ubuntu-latest"
           - "ubuntu-24.04-arm"
           - "windows-latest"
           - "macos-latest" # arm
@@ -260,10 +265,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.15
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13.3"
+          python-version: "3.15"
           cache: 'pip'
 
       - name: Set up sccache
@@ -275,7 +280,7 @@ jobs:
           path: |
             ~/.cache/vcpkg/archives
             ~/AppData/Local/vcpkg/archives
-          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
 
