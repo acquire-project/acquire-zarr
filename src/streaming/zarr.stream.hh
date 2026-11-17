@@ -91,7 +91,21 @@ struct ZarrStream_s
     std::unordered_map<std::string, zarr::Plate> plates_;
     std::unordered_map<std::string, const zarr::Well&> wells_;
 
-    std::unordered_map<std::string, std::unique_ptr<OutputArray>> arrays_;
+    /** Lets arrays_ be searched with a std::string_view, without a copy. */
+    struct KeyHash
+    {
+        using is_transparent = void;
+        size_t operator()(std::string_view key) const noexcept
+        {
+            return std::hash<std::string_view>{}(key);
+        }
+    };
+
+    std::unordered_map<std::string,
+                       std::unique_ptr<OutputArray>,
+                       KeyHash,
+                       std::equal_to<>>
+      arrays_;
     // Held only where the arrays themselves are retired, so that
     // get_memory_usage() -- which any thread may call, including during close
     // -- cannot read an array slot while finalize_stream is moving out of it.

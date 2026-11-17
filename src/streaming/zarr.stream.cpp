@@ -390,12 +390,9 @@ make_array_config(const ZarrArraySettings* settings,
                   bool force_ngff)
 {
     // remove leading/trailing slashes and whitespace
-    std::string key = zarr::regularize_key(settings->output_key);
-    if (array_key) {
-        key = zarr::regularize_key(*array_key);
-    }
-    key = parent_path + "/" + key;
-    key = zarr::regularize_key(key);
+    std::string key = array_key ? zarr::regularize_key(*array_key)
+                                : zarr::regularize_key(settings->output_key);
+    key = zarr::regularize_key(parent_path + "/" + key);
 
     if (!key.empty() && !is_valid_zarr_key(key, error)) {
         error = "Invalid output key: '" + key + "': " + error;
@@ -984,17 +981,20 @@ ZarrStream::append(const char* key_,
     }
 
     // if the key is null and we have only one output array, use that
-    std::string key;
+    auto array_it = arrays_.end();
     if (key_ == nullptr && arrays_.size() == 1) {
-        key = arrays_.begin()->first;
+        array_it = arrays_.begin();
+    } else if (const std::string_view key_view = key_ ? key_ : "";
+               zarr::is_regular_key(key_view)) {
+        array_it = arrays_.find(key_view);
     } else {
-        key = zarr::regularize_key(key_);
+        array_it = arrays_.find(zarr::regularize_key(key_view));
     }
 
-    const auto array_it = arrays_.find(key);
     if (array_it == arrays_.end()) {
         return ZarrStatusCode_KeyNotFound;
     }
+    const std::string& key = array_it->first;
 
     if (bytes_in == 0) {
         LOG_INFO("Skipping append to array '", key, "': no data");

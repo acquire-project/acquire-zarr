@@ -239,14 +239,26 @@ zarr::resolve_direct_io()
     return false;
 }
 
+namespace {
+// a slash, or ASCII whitespace (what regex `\s` matches in the C locale)
+bool
+is_trimmed(char c)
+{
+    return c == '/' || c == ' ' || (c >= '\t' && c <= '\r');
+}
+} // namespace
+
+bool
+zarr::is_regular_key(const std::string_view key)
+{
+    return key.empty() ||
+           (!is_trimmed(key.front()) && !is_trimmed(key.back()) &&
+            key.find("//") == std::string_view::npos);
+}
+
 std::string
 zarr::regularize_key(const std::string_view key)
 {
-    // a slash, or ASCII whitespace (what regex `\s` matches in the C locale)
-    const auto is_trimmed = [](char c) {
-        return c == '/' || c == ' ' || (c >= '\t' && c <= '\r');
-    };
-
     // strip leading and trailing whitespace and/or slashes
     size_t begin = 0;
     size_t end = key.size();
@@ -261,7 +273,7 @@ zarr::regularize_key(const std::string_view key)
     std::string regularized_key;
     regularized_key.reserve(end - begin);
     for (size_t i = begin; i < end; ++i) {
-        if (key[i] == '/' && regularized_key.ends_with('/')) {
+        if (key[i] == '/' && i > begin && key[i - 1] == '/') {
             continue;
         }
         regularized_key.push_back(key[i]);

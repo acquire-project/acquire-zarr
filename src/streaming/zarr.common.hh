@@ -125,6 +125,15 @@ std::string
 regularize_key(std::string_view key);
 
 /**
+ * @brief Check whether a key is already regular, so that a caller can look it
+ * up without making a regularized copy.
+ * @param key The key to check.
+ * @return True if regularize_key(key) == key.
+ */
+bool
+is_regular_key(std::string_view key);
+
+/**
  * @brief Resolve the number of threads to use, applying the ZARR_MAX_THREADS
  * environment variable when no explicit value was requested.
  * @param requested_max_threads The value from ZarrStreamSettings.max_threads.
