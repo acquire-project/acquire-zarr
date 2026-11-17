@@ -24,12 +24,12 @@ jobs:
       matrix:
         platform:
           - "windows-latest"
-          - "ubuntu-latest"
+          - "ubuntu-24.04"
           - "ubuntu-24.04-arm"
           - "macos-latest" # arm
           - "macos-15-intel" # x86_64
         include:
-          - platform: "ubuntu-latest"
+          - platform: "ubuntu-24.04"
             vcpkg_triplet: "x64-linux"
           - platform: "windows-latest"
             vcpkg_triplet: "x64-windows-static"
