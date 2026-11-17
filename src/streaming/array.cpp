@@ -8,12 +8,10 @@
 #include <crc32c/crc32c.h>
 
 #include <algorithm> // std::fill
-#include <blosc.h>
 #include <cstring>
 #include <functional>
 #include <future>
 #include <stdexcept>
-#include <zstd.h>
 
 using json = nlohmann::json;
 
@@ -62,26 +60,6 @@ shuffle_to_string(uint8_t shuffle)
             throw std::runtime_error("Invalid shuffle value: " +
                                      std::to_string(shuffle));
     }
-}
-
-size_t
-max_compressed_size(size_t uncompressed_size,
-                    const std::optional<zarr::CompressionParams>& params)
-{
-    if (!params) {
-        return uncompressed_size;
-    }
-
-    return std::visit(
-      [&uncompressed_size]<typename ParamT>(const ParamT& params) {
-          using T = std::decay_t<ParamT>;
-          if constexpr (std::is_same_v<T, zarr::BloscCompressionParams>) {
-              return uncompressed_size + BLOSC_MAX_OVERHEAD;
-          } else {
-              return ZSTD_compressBound(uncompressed_size);
-          }
-      },
-      *params);
 }
 } // namespace
 
