@@ -107,20 +107,22 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     // allocated lazily on write, released per band/layer on flush
     chunks_.resize(n_chunks);
 
-    // Keep one layer of chunk buffers, plus one per pool thread for those
-    // still being compressed and written when the next layer starts, and one
-    // compression output per thread. Neither pool holds more buffers than this
-    // array had in use at once, so the pools do not raise its peak. Between
-    // layers the buffers stay resident instead of being freed; a bounded array
-    // drains them once it has its last frame (write_frame).
+    // A pool allocates only when it has nothing to hand out, so it never holds
+    // more buffers than this array had in use at once, and the pools do not
+    // raise its peak. Chunk buffers in use at once are the layer being filled
+    // plus, at most, the previous layer still being written, so keep up to two
+    // layers. Compressions in use at once are at most one per pool thread
+    // plus the calling thread. Between layers the buffers stay resident
+    // instead of being freed; a bounded array drains them once it has its last
+    // frame (write_frame). ZarrStreamSettings_estimate_max_memory_usage
+    // budgets for both limits.
     const size_t n_threads = thread_pool_->n_threads();
     const size_t bytes_per_chunk = config_->dimensions->bytes_per_chunk();
-    chunk_pool_ =
-      std::make_shared<BufferPool>(bytes_per_chunk, n_chunks + n_threads);
+    chunk_pool_ = std::make_shared<BufferPool>(bytes_per_chunk, 2 * n_chunks);
     if (config_->compression_params) {
         output_pool_ = std::make_shared<BufferPool>(
           compressed_size_bound(bytes_per_chunk, *config_->compression_params),
-          n_threads + 1);
+          std::min<size_t>(n_threads + 1, 2 * n_chunks));
     }
 
     // append chunk > 1 keeps the whole inner volume resident (no banding); warn

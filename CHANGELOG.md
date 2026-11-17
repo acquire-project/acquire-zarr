@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `benchmarks/chunk_buffer_faults.py`, system CPU time fell from about 8 s to under 0.5 s in 19 s of streaming. A pool
   keeps no more buffers than its array had in use at once. A bounded array frees them when it receives its last frame;
   an unbounded array keeps them until the stream closes
+- `ZarrStream_get_current_memory_usage` now also counts chunk buffers kept for reuse, and
+  `ZarrStreamSettings_estimate_max_memory_usage` budgets for them: up to two chunk layers per array, plus a compressed
+  copy of each when the array is compressed (previously one layer, doubled for compression)
 
 ### Fixed
 

@@ -2,11 +2,11 @@
 """Fresh pages faulted in per byte streamed, at a steady frame rate.
 
 Each chunk used to get a freshly allocated, zero-filled buffer, and each
-compression a fresh output buffer, both freed after the shard write. A stream
-therefore faulted in about twice its data rate in new pages, and under load the
-writer threads queued on the kernel's page allocator. Chunk buffers and
-compression outputs now come from bounded per-array pools, so after the first
-layers the steady state should fault in almost nothing.
+compression a fresh output buffer, both freed after the shard write. With chunks
+above glibc's mmap threshold, as here, a stream therefore faulted in about twice
+its data rate in new pages, each one handled and zeroed by the kernel. Chunk
+buffers and compression outputs now come from bounded per-array pools, so after
+the first layers the steady state should fault in almost nothing.
 
 This streams camera-sized uint16 frames (blosc zstd level 2, one array) at a
 fixed rate and, after a warmup that excludes filling the pools, reports minor

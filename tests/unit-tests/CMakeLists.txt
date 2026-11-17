@@ -42,6 +42,7 @@ set(tests
         frame-queue
         buffer-pool
         array-drain-when-full
+        chunk-encode
         zarr-stream-reused-buffers-zero
         downsampler
         downsampler-odd-z

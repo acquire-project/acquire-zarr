@@ -114,6 +114,11 @@ zarr::Chunk::encode(const std::optional<CompressionParams>& compression_params,
         return false;
     }
 
+    // The compressed bytes are all the write needs, so the raw buffer goes back
+    // to the pool now rather than staying resident through a slow sink write.
+    pool_->release(std::move(buffer_));
+    buffer_ = {};
+
     encoded = ConstByteSpan(output.data(), n_bytes);
     return true;
 }

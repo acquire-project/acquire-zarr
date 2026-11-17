@@ -471,8 +471,9 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     # frame queue: 256 MiB clamped to [16, 512] frames
     frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
 
-    # the maximum reflects a single z band, not the whole volume
-    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    # the maximum reflects z bands, not the whole volume: up to two, one being
+    # filled and one being written or kept for reuse
+    expected_max = frame_queue_bytes + 2 * band_bytes + frame_bytes
     assert s.get_maximum_memory_usage() == expected_max
 
     stream = ZarrStream(s)
@@ -2127,9 +2128,8 @@ def test_reused_buffers_multiscale_round_trip(
     store_path: Path, compressor: Compressor, codec: CompressionCodec
 ):
     """Each level of a multiscale array is its own array with its own buffer
-    pools, and a bounded one drains them when it fills. Both levels must read
-    back exactly: level 0 as written, level 1 as the recorded downsampling of
-    level 0."""
+    pools. Both levels must read back exactly: level 0 as written, level 1 as
+    the recorded downsampling of level 0."""
     settings = StreamSettings(
         store_path=str(store_path / "test.zarr"),
         arrays=[

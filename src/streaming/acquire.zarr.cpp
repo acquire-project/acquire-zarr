@@ -292,11 +292,28 @@ extern "C"
                 }
             }
 
-            // compression can instantaneously double memory usage in the worst
-            // case, so we account for that here
-            if (array.compression_settings) {
-                array_usage *= 2;
+            // Chunk buffers in use at once are the layer (or band) being
+            // filled plus, at most, the previous one still being written, and
+            // the array keeps up to that many for reuse between layers. With
+            // compression, each chunk being written also has a compressed copy
+            // of up to the codec's bound. @see Array::Array
+            size_t chunk_bytes = bytes_of_type;
+            for (auto j = 0; j < ndims; ++j) {
+                chunk_bytes *= dims[j].chunk_size_px;
             }
+            const size_t n_chunks = array_usage / chunk_bytes;
+
+            size_t buffers_usage = 2 * array_usage;
+            if (array.compression_settings) {
+                const zarr::CompressionParams params =
+                  array.compression_settings->compressor == ZarrCompressor_Zstd
+                    ? zarr::CompressionParams{ zarr::ZstdCompressionParams{} }
+                    : zarr::CompressionParams{ zarr::BloscCompressionParams{} };
+                buffers_usage +=
+                  2 * n_chunks *
+                  zarr::compressed_size_bound(chunk_bytes, params);
+            }
+            array_usage = buffers_usage;
 
             if (array.downsampling_method > ZarrDownsamplingMethod_None) {
                 // we can bound the memory usage of multiscale arrays by

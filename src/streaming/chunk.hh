@@ -45,6 +45,8 @@ class Chunk
      * compressing, otherwise the chunk's own buffer, valid while the chunk
      * lives.
      * @return True if and only if encoding succeeded.
+     * @details Compressing returns the chunk's buffer to its pool, so a
+     * compressed chunk can be encoded only once.
      */
     bool encode(const std::optional<CompressionParams>& compression_params,
                 ByteSpan output,

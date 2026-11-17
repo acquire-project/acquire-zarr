@@ -10,10 +10,11 @@ namespace zarr {
 /**
  * @brief A bounded free list of equally sized byte buffers.
  * @details A chunk buffer is written once, compressed, written to its shard and
- * then discarded, so allocating a fresh one per chunk faults in new pages at
- * the stream's data rate and serializes on the kernel's page allocator.
- * Returning buffers here instead lets the next layer reuse their pages. The
- * pool keeps at most `max_free` buffers; any more are freed on release, so
+ * then discarded. Allocating a fresh one per chunk, when chunks are larger than
+ * the allocator returns to the system on free (glibc's mmap threshold, at most
+ * 32 MiB by default), faults in new, kernel-zeroed pages at the stream's data
+ * rate. Returning buffers here instead lets the next layer reuse their pages.
+ * The pool keeps at most `max_free` buffers; any more are freed on release, so
  * it never holds more than its owner had live together. drain() frees them
  * once the owner will need no more.
  */
