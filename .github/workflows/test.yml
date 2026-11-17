@@ -326,7 +326,11 @@ jobs:
         env:
           CC: clang-cl
           CXX: clang-cl
-        run: python -m pip install scikit-image
+        run: |
+          $env:PATH = (Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin') + ';' + $env:PATH
+          clang-cl --version
+          python -m pip install scikit-image
+        shell: pwsh
 
       - name: Build and install Python bindings
         run: python -m pip install ".[testing]"
