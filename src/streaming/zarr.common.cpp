@@ -8,7 +8,6 @@
 #include <cctype>
 #include <charconv>
 #include <cstdlib>
-#include <regex>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -243,15 +242,30 @@ zarr::resolve_direct_io()
 std::string
 zarr::regularize_key(const std::string_view key)
 {
-    std::string regularized_key{ key };
+    // a slash, or ASCII whitespace (what regex `\s` matches in the C locale)
+    const auto is_trimmed = [](char c) {
+        return c == '/' || c == ' ' || (c >= '\t' && c <= '\r');
+    };
 
-    // replace leading and trailing whitespace and/or slashes
-    regularized_key = std::regex_replace(
-      regularized_key, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
+    // strip leading and trailing whitespace and/or slashes
+    size_t begin = 0;
+    size_t end = key.size();
+    while (begin < end && is_trimmed(key[begin])) {
+        ++begin;
+    }
+    while (end > begin && is_trimmed(key[end - 1])) {
+        --end;
+    }
 
-    // replace multiple consecutive slashes with single slashes
-    regularized_key =
-      std::regex_replace(regularized_key, std::regex(R"(\/+)"), "/");
+    // collapse runs of slashes into a single slash
+    std::string regularized_key;
+    regularized_key.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i) {
+        if (key[i] == '/' && regularized_key.ends_with('/')) {
+            continue;
+        }
+        regularized_key.push_back(key[i]);
+    }
 
     return regularized_key;
 }
