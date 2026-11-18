@@ -92,10 +92,11 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     // buffers the flush before last gave back, and it caps what a write
     // backlog leaves kept once it drains: a banded array stays within the band
     // being filled plus one kept band. Compressions in use at once are at most
-    // one per pool thread plus the calling thread. Between flushes the kept
-    // buffers stay resident; a bounded array drains them once it has its last
-    // frame (write_frame). ZarrStreamSettings_estimate_max_memory_usage
-    // budgets for both limits.
+    // one per pool thread plus the calling thread, and a flush has no more
+    // chunks to compress than it holds, so keep the smaller of the two in
+    // compression outputs. Between flushes the kept buffers stay resident; a
+    // bounded array drains them once it has its last frame (write_frame).
+    // ZarrStreamSettings_estimate_max_memory_usage budgets for both limits.
     const auto& dimensions = *config_->dimensions;
     const size_t chunks_per_flush = dimensions.supports_dim1_banding()
                                       ? dimensions.chunks_per_dim1_band()
@@ -107,7 +108,7 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     if (config_->compression_params) {
         output_pool_ = std::make_shared<BufferPool>(
           compressed_size_bound(bytes_per_chunk, *config_->compression_params),
-          std::min<size_t>(n_threads + 1, 2 * n_chunks));
+          std::min<size_t>(n_threads + 1, chunks_per_flush));
     }
 
     // append chunk > 1 keeps the whole inner volume resident (no banding); warn

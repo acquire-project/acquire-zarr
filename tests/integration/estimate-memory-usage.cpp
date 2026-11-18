@@ -95,15 +95,14 @@ test_max_memory_usage()
     // or kept for reuse
     const size_t uncompressed_usage = 2 * layer_bytes;
 
-    // with compression, a compressed copy per chunk of those two layers
+    // with compression, up to one layer of compressed copies
     const size_t chunk_bytes = 2 * 32 * 1 * chunk_height * chunk_width;
     const size_t n_chunks = layer_bytes / chunk_bytes;
     const size_t compressed_usage =
       uncompressed_usage +
-      2 * n_chunks *
-        zarr::compressed_size_bound(
-          chunk_bytes,
-          zarr::CompressionParams{ zarr::BloscCompressionParams{} });
+      n_chunks * zarr::compressed_size_bound(
+                   chunk_bytes,
+                   zarr::CompressionParams{ zarr::BloscCompressionParams{} });
 
     size_t usage = 0, expected_usage;
     EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==

@@ -292,11 +292,12 @@ extern "C"
                 }
             }
 
-            // Chunk buffers in use at once are the layer (or band) being
-            // filled plus, at most, the previous one still being written, and
-            // the array keeps up to that many for reuse between layers. With
-            // compression, each chunk being written also has a compressed copy
-            // of up to the codec's bound. @see Array::Array
+            // Chunk buffers: the layer (or band) being filled, plus one kept
+            // for reuse. With compression, up to one flush of compressed
+            // copies, each up to the codec's bound. The array keeps no more
+            // outputs than that; it may keep fewer, one per pool thread, but
+            // budgeting a whole flush keeps the multiscale factor below an
+            // upper bound, since each level keeps its own. @see Array::Array
             size_t chunk_bytes = bytes_of_type;
             for (auto j = 0; j < ndims; ++j) {
                 chunk_bytes *= dims[j].chunk_size_px;
@@ -307,8 +308,7 @@ extern "C"
             if (const auto params =
                   zarr::make_compression_params(array.compression_settings)) {
                 buffers_usage +=
-                  2 * n_chunks *
-                  zarr::compressed_size_bound(chunk_bytes, *params);
+                  n_chunks * zarr::compressed_size_bound(chunk_bytes, *params);
             }
             array_usage = buffers_usage;
 
