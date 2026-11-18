@@ -243,26 +243,6 @@ validate_custom_metadata(std::string_view metadata,
     return true;
 }
 
-std::optional<zarr::CompressionParams>
-make_compression_params(const ZarrCompressionSettings* settings)
-{
-    if (!settings || settings->compressor == ZarrCompressor_None) {
-        return std::nullopt;
-    }
-
-    switch (settings->compressor) {
-        case ZarrCompressor_Blosc1:
-            return zarr::BloscCompressionParams(
-              zarr::blosc_codec_to_string(settings->codec),
-              settings->level,
-              settings->shuffle);
-        case ZarrCompressor_Zstd:
-            return zarr::ZstdCompressionParams{ settings->level };
-        default:
-            return std::nullopt;
-    }
-}
-
 std::shared_ptr<ArrayDimensions>
 make_array_dimensions(const ZarrArraySettings* settings)
 {
@@ -403,7 +383,7 @@ make_array_config(const ZarrArraySettings* settings,
     }
 
     std::optional<zarr::CompressionParams> compression_params =
-      make_compression_params(settings->compression_settings);
+      zarr::make_compression_params(settings->compression_settings);
 
     std::shared_ptr<ArrayDimensions> dimensions =
       make_array_dimensions(settings);

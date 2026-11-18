@@ -304,14 +304,11 @@ extern "C"
             const size_t n_chunks = array_usage / chunk_bytes;
 
             size_t buffers_usage = 2 * array_usage;
-            if (array.compression_settings) {
-                const zarr::CompressionParams params =
-                  array.compression_settings->compressor == ZarrCompressor_Zstd
-                    ? zarr::CompressionParams{ zarr::ZstdCompressionParams{} }
-                    : zarr::CompressionParams{ zarr::BloscCompressionParams{} };
+            if (const auto params =
+                  zarr::make_compression_params(array.compression_settings)) {
                 buffers_usage +=
                   2 * n_chunks *
-                  zarr::compressed_size_bound(chunk_bytes, params);
+                  zarr::compressed_size_bound(chunk_bytes, *params);
             }
             array_usage = buffers_usage;
 

@@ -118,6 +118,26 @@ zarr::shards_along_dimension(const ZarrDimension& dimension)
     return (n_chunks + shard_size - 1) / shard_size;
 }
 
+std::optional<zarr::CompressionParams>
+zarr::make_compression_params(const ZarrCompressionSettings* settings)
+{
+    if (!settings || settings->compressor == ZarrCompressor_None) {
+        return std::nullopt;
+    }
+
+    switch (settings->compressor) {
+        case ZarrCompressor_Blosc1:
+            return zarr::BloscCompressionParams(
+              zarr::blosc_codec_to_string(settings->codec),
+              settings->level,
+              settings->shuffle);
+        case ZarrCompressor_Zstd:
+            return zarr::ZstdCompressionParams{ settings->level };
+        default:
+            return std::nullopt;
+    }
+}
+
 size_t
 zarr::compressed_size_bound(size_t n_bytes, const CompressionParams& params)
 {

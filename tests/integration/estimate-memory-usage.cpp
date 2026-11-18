@@ -119,6 +119,21 @@ test_max_memory_usage()
            ", got ",
            usage);
 
+    // compression settings with no compressor are estimated as uncompressed,
+    // as at runtime
+    ZarrCompressionSettings no_compressor{ .compressor = ZarrCompressor_None };
+    settings.arrays[0].compression_settings = &no_compressor;
+    usage = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
+             ZarrStatusCode_Success,
+           "Failed to estimate memory usage");
+    EXPECT(usage == expected_usage,
+           "Expected max memory usage ",
+           expected_usage,
+           " with ZarrCompressor_None, got ",
+           usage);
+    settings.arrays[0].compression_settings = nullptr;
+
     ZarrStreamSettings_destroy_arrays(&settings);
 
     // create settings for a Zarr stream with two arrays, one compressed

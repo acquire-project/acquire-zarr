@@ -6,6 +6,8 @@
 #include "definitions.hh"
 #include "compression.params.hh"
 
+#include <optional>
+
 namespace zarr {
 /**
  * @brief Trim whitespace from a string.
@@ -81,6 +83,14 @@ chunks_along_dimension(const ZarrDimension& dimension);
  */
 uint32_t
 shards_along_dimension(const ZarrDimension& dimension);
+
+/**
+ * @brief The compression parameters for @p settings.
+ * @return nullopt if @p settings is null or its compressor is
+ * ZarrCompressor_None.
+ */
+std::optional<CompressionParams>
+make_compression_params(const ZarrCompressionSettings* settings);
 
 /**
  * @brief The most bytes compressing @p n_bytes with @p params can produce.
