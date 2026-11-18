@@ -127,21 +127,21 @@ compress_into(ConstByteSpan src,
               const ZstdCompressionParams& params);
 
 /**
- * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
- * slashes.
+ * @brief Regularize a Zarr key by stripping leading and trailing slashes and
+ * whitespace, and collapsing runs of slashes into one.
  * @param key The key to regularize.
  * @return The regularized key. If the input key is null, empty, or consists
- * only of slashes, an empty string is returned.
+ * only of slashes and whitespace, an empty string is returned.
  */
 std::string
 regularize_key(const char* key);
 
 /**
- * @brief Regularize a Zarr key by removing leading, trailing, and consecutive
- * slashes.
+ * @brief Regularize a Zarr key by stripping leading and trailing slashes and
+ * whitespace, and collapsing runs of slashes into one.
  * @param key The key to regularize.
  * @return The regularized key. If the input key is empty or consists only of
- * slashes, an empty string is returned.
+ * slashes and whitespace, an empty string is returned.
  */
 std::string
 regularize_key(std::string_view key);

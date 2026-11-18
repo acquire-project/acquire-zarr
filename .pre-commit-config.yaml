@@ -6,7 +6,9 @@ repos:
     rev: v4.4.0
     hooks:
     -   id: trailing-whitespace
+        exclude: ^vcpkg-overlays/snappy/.*\.(patch|diff)$
     -   id: end-of-file-fixer
+        exclude: ^vcpkg-overlays/snappy/snappy\.pc\.in$
     -   id: check-yaml
     -   id: check-added-large-files
 -   repo: https://github.com/pocc/pre-commit-hooks
