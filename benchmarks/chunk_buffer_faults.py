@@ -20,13 +20,20 @@ it again with the same arguments; for example, at each of two chunk depths:
     python benchmarks/chunk_buffer_faults.py /tmp/faults --chunk 64
 
 The store is written in a new temporary directory under OUTDIR, and only that
-directory is deleted afterwards. Use a local disk, so the sink is not the
-bottleneck.
+directory is deleted afterwards. Put OUTDIR on the storage you want to measure;
+results depend on it. The first line of output records the host, OUTDIR's
+filesystem, the acquire-zarr version (and this checkout's commit) and any
+ZARR_* environment variables, so runs can be compared.
 """
 
 import argparse
+import importlib.metadata
+import os
+import platform
 import resource
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -37,6 +44,56 @@ import acquire_zarr as az
 
 HEIGHT, WIDTH = 1260, 2036
 PAGE_BYTES = resource.getpagesize()
+
+
+def filesystem_of(path: Path) -> str:
+    """The filesystem type holding path, from /proc/self/mounts on Linux."""
+    try:
+        mounts = Path("/proc/self/mounts").read_text().splitlines()
+    except OSError:
+        return "unknown"
+    resolved = str(path.resolve())
+    best, fstype = "", "unknown"
+    for line in mounts:
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        mount_point = fields[1].replace("\\040", " ")
+        inside = resolved == mount_point or resolved.startswith(
+            mount_point.rstrip("/") + "/"
+        )
+        if inside and len(mount_point) > len(best):
+            best, fstype = mount_point, fields[2]
+    return fstype
+
+
+def checkout_commit() -> str:
+    """This script's checkout commit, if it runs from a git checkout."""
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def context(out: Path) -> str:
+    zarr_env = " ".join(
+        f"{k}={v}"
+        for k, v in sorted(os.environ.items())
+        if k.startswith("ZARR_")
+    )
+    return (
+        f"host {platform.node()} ({platform.system()}) | "
+        f"OUTDIR {out} ({filesystem_of(out)}) | "
+        f"acquire-zarr {importlib.metadata.version('acquire-zarr')}, "
+        f"checkout {checkout_commit()} | "
+        f"env {zarr_env or '(no ZARR_* set)'}"
+    )
 
 
 def main() -> None:
@@ -65,6 +122,7 @@ def main() -> None:
     ]
 
     args.out.mkdir(parents=True, exist_ok=True)
+    print(context(args.out))
     scratch = Path(
         tempfile.mkdtemp(prefix="chunk_buffer_faults_", dir=args.out)
     )
@@ -139,8 +197,9 @@ def main() -> None:
     counted = args.frames - args.warmup
     data_bytes = counted * HEIGHT * WIDTH * 2
     ms = latency[args.warmup :] * 1e3
-    # ru_maxrss is in KiB on Linux
-    peak_rss_gib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
+    # ru_maxrss is in bytes on macOS and in KiB elsewhere
+    maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_rss_gib = maxrss / (2**30 if sys.platform == "darwin" else 2**20)
     print(
         f"chunk {args.chunk} frames: {counted / wall:.1f} fps, "
         f"{data_bytes / wall / 1e6:.0f} MB/s | "
