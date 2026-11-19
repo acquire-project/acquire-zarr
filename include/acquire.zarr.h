@@ -91,9 +91,25 @@ extern "C"
 
     /**
      * @brief Estimate the maximum memory usage of the Zarr stream.
+     * @details The frame and chunk memory of the stream: the frame queue, one
+     * frame buffer per array, and for each array and each pyramid level one
+     * layer of chunks being filled plus the chunks waiting for or in
+     * compression, with one compressed buffer per worker thread when the array
+     * is compressed. In compression, a downsampled level holds at most two
+     * layers, and a full-resolution array the larger of two layers and four
+     * chunks per worker (with banding, a layer is one band). A compressor or a
+     * sink that is slower than append() therefore makes append() block instead
+     * of growing memory. The thread count is resolved from @p settings the
+     * way the stream resolves it, including ZARR_MAX_THREADS.
+     * @note Not included: the downsampler's frame caches (up to two frames per
+     * level), the frame being tiled, and S3 fragments staged out of order,
+     * which ZarrStream_get_current_memory_usage does count. On a single-core
+     * host the stream compresses inline and holds less than this.
      * @param[in] settings The Zarr stream settings struct.
      * @param[out] usage The estimated maximum memory usage in bytes.
-     * @return ZarrStatusCode_Success on success, or an error code on failure.
+     * @return ZarrStatusCode_Success on success; ZarrStatusCode_InvalidArgument
+     * for an array with fewer than two dimensions, a zero chunk size, or last
+     * two dimensions that are not spatial. Shard sizes and names may be unset.
      */
     ZarrStatusCode ZarrStreamSettings_estimate_max_memory_usage(
       const ZarrStreamSettings* settings,

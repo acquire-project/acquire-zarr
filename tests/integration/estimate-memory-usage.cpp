@@ -18,6 +18,10 @@ padded_size(size_t size, size_t chunk_size)
 {
     return chunk_size * ((size + chunk_size - 1) / chunk_size);
 }
+
+// two threads: one runs the frame queue, so there is one worker on any host
+const unsigned int requested_threads = 2;
+const size_t workers = 1;
 } // namespace
 
 void
@@ -67,6 +71,7 @@ void
 test_max_memory_usage()
 {
     ZarrStreamSettings settings{};
+    settings.max_threads = requested_threads;
 
     // create settings for a Zarr stream with one array
     EXPECT(ZarrStreamSettings_create_arrays(&settings, 1) ==
@@ -86,9 +91,21 @@ test_max_memory_usage()
     const size_t padded_width = padded_size(array_width, chunk_width);
     const size_t padded_height = padded_size(array_height, chunk_height);
     const size_t padded_frame_size = 2 * padded_height * padded_width;
-    const size_t expected_array_usage = padded_frame_size * // frame
-                                        3 *                 // channels
-                                        32;                 // time
+    const size_t layer = padded_frame_size * // frame
+                         3 *                 // channels
+                         32;                 // time
+    const size_t chunk = 2 * chunk_height * chunk_width * 32;
+
+    // a layer in the slots, plus the larger of two layers and four chunks per
+    // worker in jobs; compression adds a compressed buffer per worker (blosc
+    // adds BLOSC_MAX_OVERHEAD, 16 bytes); each downsampled level holds a layer
+    // in its slots and two in jobs. 48 x 64 in 16 px chunks gives two levels,
+    // 24 x 32 (2 x 2 chunks) and 12 x 16 (1 x 1), for each of 3 channels.
+    const size_t inflight = chunk * std::max(2 * (layer / chunk), 4 * workers);
+    const size_t raw = layer + inflight;
+    const size_t compressed = raw + workers * (chunk + 16);
+    const size_t compressed_multiscale =
+      compressed + 3 * (3 * 2 * 2 + 3 * 1 * 1) * chunk;
 
     size_t usage = 0, expected_usage;
     EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
@@ -96,8 +113,7 @@ test_max_memory_usage()
            "Failed to estimate memory usage");
 
     //  for the array + each array's frame buffer
-    expected_usage =
-      frame_queue_size + expected_array_usage + expected_frame_size;
+    expected_usage = frame_queue_size + raw + expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,
@@ -123,10 +139,9 @@ test_max_memory_usage()
              ZarrStatusCode_Success,
            "Failed to estimate memory usage");
 
-    // one uncompressed (1) and one compressed (2), plus each array's frame
-    // buffer
+    // one uncompressed and one compressed, plus each array's frame buffer
     expected_usage =
-      frame_queue_size + 3 * expected_array_usage + 2 * expected_frame_size;
+      frame_queue_size + raw + compressed + 2 * expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,
@@ -159,10 +174,10 @@ test_max_memory_usage()
              ZarrStatusCode_Success,
            "Failed to estimate memory usage");
 
-    // one uncompressed (1), one compressed (2), one compressed with
-    // downsampling (4), and 3 frame buffers
-    expected_usage =
-      frame_queue_size + 7 * expected_array_usage + 3 * expected_frame_size;
+    // one uncompressed, one compressed, one compressed with downsampling, and
+    // 3 frame buffers
+    expected_usage = frame_queue_size + raw + compressed +
+                     compressed_multiscale + 3 * expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,

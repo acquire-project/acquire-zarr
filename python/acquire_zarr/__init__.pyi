@@ -520,7 +520,18 @@ class StreamSettings:
     def __init__(self, **kwargs) -> None: ...
     def __repr__(self) -> str: ...
     def get_maximum_memory_usage(self) -> int:
-        """Get the maximum memory usage of the stream in bytes."""
+        """Estimate the maximum frame and chunk memory of the stream in bytes.
+
+        Includes the frame queue, a frame buffer per array, and for each array
+        and pyramid level one layer of chunks being filled plus the chunks
+        waiting for or in compression. The stream bounds the latter, so a slow
+        compressor or store makes ``append`` block instead of growing memory.
+        The value depends on ``max_threads`` (or ``ZARR_MAX_THREADS``). It does
+        not include the downsampler's frame caches or S3 fragments staged out
+        of order. Raises ``RuntimeError`` for an array with fewer than two
+        dimensions, a zero chunk size, or last two dimensions that are not
+        spatial.
+        """
 
     def get_array_keys(self) -> List[str]:
         """Get the list of array keys configured in this stream."""
@@ -592,7 +603,11 @@ class ZarrStream:
     def is_active(self) -> bool: ...
     def close(self) -> None: ...
     def get_current_memory_usage(self) -> int:
-        """Get the current memory usage of the stream in bytes."""
+        """Get the current memory usage of the stream in bytes.
+
+        Includes the chunks waiting for or in compression, and S3 fragments
+        staged out of order.
+        """
 
 class ZarrVersion:
     """

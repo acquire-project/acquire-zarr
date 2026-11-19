@@ -350,11 +350,21 @@ def test_estimate_max_memory_usage():
     ]
     array.data_type = np.uint16
 
-    array_usage = (
-        np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
-    )
+    # one layer of chunk slots (the sizes are multiples of the chunk sizes)
+    layer = np.dtype(np.uint16).itemsize * array.dimensions[0].chunk_size_px
     for dim in array.dimensions[1:]:
-        array_usage *= dim.array_size_px
+        layer *= dim.array_size_px
+    chunk = np.dtype(np.uint16).itemsize
+    for dim in array.dimensions:
+        chunk *= dim.chunk_size_px
+
+    # two threads: one runs the frame queue, so there is one worker on any host
+    workers = 1
+
+    # chunks waiting for or in compression: the larger of two layers and four
+    # chunks per worker
+    inflight = chunk * max(2 * (layer // chunk), 4 * workers)
+    array_usage = layer + inflight
     frame_buffer_usage = (
         array.dimensions[-2].array_size_px
         * array.dimensions[-1].array_size_px
@@ -365,7 +375,7 @@ def test_estimate_max_memory_usage():
     frame_queue_usage = frame_queue_frames * frame_buffer_usage
     expected_memory = array_usage + frame_buffer_usage + frame_queue_usage
 
-    stream = aqz.StreamSettings(arrays=[array])
+    stream = aqz.StreamSettings(arrays=[array], max_threads=2)
     max_memory = stream.get_maximum_memory_usage()
 
     assert max_memory == expected_memory
