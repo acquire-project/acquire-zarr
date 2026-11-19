@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pyramid levels 1 and up can be stored with the zarr-extensions [`jpeg`](https://github.com/zarr-developers/zarr-extensions/tree/main/codecs/jpeg)
+  codec, while level 0 keeps its data type and compression: `ZarrJpegSettings` and `ZarrArraySettings.jpeg_settings`
+  in C, `JpegSettings` and `ArraySettings.jpeg` in Python, `jpeg` in a config file. Each JPEG level keeps level 0's
+  data type; its codec chain (`cast_value`, `scale_offset`, `cast_value`, `reshape`, `jpeg`) maps a caller-supplied
+  intensity window to `uint8`. Readers need those codecs; zarr-python reads them with the `zarr-ext-jpeg` and
+  `zarr-reshape` plugins and `cast-value-rs`
+- New build dependency: libjpeg-turbo (vcpkg)
+
 - `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
   config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
   default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
@@ -16,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always written (#186, #268)
 
 ### Changed
+
+- ⚠️ **ABI:** `ZarrArraySettings` has a new field, `jpeg_settings`, so its size changes. C callers must recompile, and
+  must zero the struct or set the field (`ZarrStreamSettings_create_arrays` already zeroes it)
 
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after

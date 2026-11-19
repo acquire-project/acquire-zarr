@@ -39,6 +39,9 @@ struct ArrayLifetimeProps
     ZarrCompressionSettings compression{};
     bool has_compression{ false };
 
+    ZarrJpegSettings jpeg{};
+    bool has_jpeg{ false };
+
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     bool is_ngff{ false };
     uint32_t max_levels{ 0 };
@@ -56,6 +59,8 @@ struct ArrayLifetimeProps
         } else {
             array_settings_.compression_settings = nullptr;
         }
+
+        array_settings_.jpeg_settings = has_jpeg ? &jpeg : nullptr;
 
         const size_t n_dims = names.size();
 
@@ -481,6 +486,34 @@ class PyZarrCompressionSettings
     uint8_t shuffle_{ 0 };
 };
 
+class PyZarrJpegSettings
+{
+  public:
+    PyZarrJpegSettings() = default;
+    ~PyZarrJpegSettings() = default;
+
+    uint8_t quality() const { return quality_; }
+    void set_quality(uint8_t quality) { quality_ = quality; }
+
+    double window_min() const { return window_min_; }
+    void set_window_min(double value) { window_min_ = value; }
+
+    double window_max() const { return window_max_; }
+    void set_window_max(double value) { window_max_ = value; }
+
+    std::string repr() const
+    {
+        return "JpegSettings(quality=" + std::to_string(quality_) +
+               ", window_min=" + std::to_string(window_min_) +
+               ", window_max=" + std::to_string(window_max_) + ")";
+    }
+
+  private:
+    uint8_t quality_{ 95 }; // the zarr-extensions jpeg spec suggests 95
+    double window_min_{ 0.0 };
+    double window_max_{ 0.0 };
+};
+
 class PyZarrDimensionProperties
 {
   public:
@@ -555,6 +588,16 @@ class PyZarrArraySettings
       const std::optional<PyZarrCompressionSettings>& settings)
     {
         compression_settings_ = settings;
+    }
+
+    const std::optional<PyZarrJpegSettings>& jpeg() const
+    {
+        return jpeg_settings_;
+    }
+
+    void set_jpeg(const std::optional<PyZarrJpegSettings>& settings)
+    {
+        jpeg_settings_ = settings;
     }
 
     // a value for downsampling_method coerces is_ngff to True, but only for
@@ -665,6 +708,15 @@ class PyZarrArraySettings
             lt_props.has_compression = false;
         }
 
+        if (jpeg_settings_.has_value()) {
+            lt_props.jpeg = {
+                .quality = jpeg_settings_->quality(),
+                .window_min = jpeg_settings_->window_min(),
+                .window_max = jpeg_settings_->window_max(),
+            };
+            lt_props.has_jpeg = true;
+        }
+
         const size_t n_dims = dims_.size();
         lt_props.names.resize(n_dims);
         lt_props.units.resize(n_dims);
@@ -713,6 +765,7 @@ class PyZarrArraySettings
   private:
     std::string output_key_;
     std::optional<PyZarrCompressionSettings> compression_settings_;
+    std::optional<PyZarrJpegSettings> jpeg_settings_;
     std::vector<PyZarrDimensionProperties> dims_;
 
     ZarrDataType data_type_{ ZarrDataType_uint8 };
@@ -1179,6 +1232,13 @@ read_array(const ZarrArraySettings& a)
         c.set_level(a.compression_settings->level);
         c.set_shuffle(a.compression_settings->shuffle);
         arr.set_compression(c);
+    }
+    if (a.jpeg_settings) {
+        PyZarrJpegSettings j;
+        j.set_quality(a.jpeg_settings->quality);
+        j.set_window_min(a.jpeg_settings->window_min);
+        j.set_window_max(a.jpeg_settings->window_max);
+        arr.set_jpeg(j);
     }
 
     std::vector<PyZarrDimensionProperties> dims;
@@ -1786,6 +1846,46 @@ PYBIND11_MODULE(acquire_zarr, m)
                     &PyZarrCompressionSettings::shuffle,
                     &PyZarrCompressionSettings::set_shuffle);
 
+    py::class_<PyZarrJpegSettings>(m, "JpegSettings", py::dynamic_attr())
+      .def(py::init([](std::optional<int> quality,
+                       std::optional<double> window_min,
+                       std::optional<double> window_max) {
+               PyZarrJpegSettings settings;
+               if (quality) {
+                   if (*quality < 1 || *quality > 100) {
+                       throw py::value_error("JPEG quality must be 1-100");
+                   }
+                   settings.set_quality(*quality);
+               }
+               if (window_min) {
+                   settings.set_window_min(*window_min);
+               }
+               if (window_max) {
+                   settings.set_window_max(*window_max);
+               }
+               return settings;
+           }),
+           py::kw_only(),
+           py::arg("quality") = std::nullopt,
+           py::arg("window_min") = std::nullopt,
+           py::arg("window_max") = std::nullopt)
+      .def("__repr__",
+           [](const PyZarrJpegSettings& self) { return self.repr(); })
+      .def_property("quality",
+                    &PyZarrJpegSettings::quality,
+                    [](PyZarrJpegSettings& self, int quality) {
+                        if (quality < 1 || quality > 100) {
+                            throw py::value_error("JPEG quality must be 1-100");
+                        }
+                        self.set_quality(static_cast<uint8_t>(quality));
+                    })
+      .def_property("window_min",
+                    &PyZarrJpegSettings::window_min,
+                    &PyZarrJpegSettings::set_window_min)
+      .def_property("window_max",
+                    &PyZarrJpegSettings::window_max,
+                    &PyZarrJpegSettings::set_window_max);
+
     py::class_<PyZarrDimensionProperties>(m, "Dimension", py::dynamic_attr())
       .def(py::init([](std::optional<std::string> name,
                        std::optional<ZarrDimensionType> kind,
@@ -1861,7 +1961,8 @@ PYBIND11_MODULE(acquire_zarr, m)
                     std::optional<ZarrDownsamplingMethod> downsampling_method,
                     uint32_t max_levels,
                     std::optional<py::list> storage_dimension_order,
-                    std::optional<bool> is_ngff) {
+                    std::optional<bool> is_ngff,
+                    std::optional<PyZarrJpegSettings> jpeg) {
             PyZarrArraySettings settings;
 
             if (output_key) {
@@ -1869,6 +1970,9 @@ PYBIND11_MODULE(acquire_zarr, m)
             }
             if (compression) {
                 settings.set_compression(*compression);
+            }
+            if (jpeg) {
+                settings.set_jpeg(*jpeg);
             }
             if (dimensions) {
                 auto& dims = *dimensions;
@@ -1922,7 +2026,8 @@ PYBIND11_MODULE(acquire_zarr, m)
         py::arg("downsampling_method") = std::nullopt,
         py::arg("max_levels") = 0,
         py::arg("storage_dimension_order") = std::nullopt,
-        py::arg("is_ngff") = std::nullopt)
+        py::arg("is_ngff") = std::nullopt,
+        py::arg("jpeg") = std::nullopt)
       .def("__repr__",
            [](const PyZarrArraySettings& self) {
                std::string repr =
@@ -1964,6 +2069,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                repr += std::string(", is_ngff=") +
                        (self.is_ngff() ? "True" : "False");
 
+               if (self.jpeg().has_value()) {
+                   repr += ", jpeg=" + self.jpeg()->repr();
+               }
+
                repr += ")";
                return repr;
            })
@@ -1983,6 +2092,21 @@ PYBIND11_MODULE(acquire_zarr, m)
                 self.set_compression(std::nullopt);
             } else {
                 self.set_compression(obj.cast<PyZarrCompressionSettings>());
+            }
+        })
+      .def_property(
+        "jpeg",
+        [](const PyZarrArraySettings& self) -> py::object {
+            if (self.jpeg()) {
+                return py::cast(*self.jpeg());
+            }
+            return py::none();
+        },
+        [](PyZarrArraySettings& self, py::object& obj) {
+            if (obj.is_none()) {
+                self.set_jpeg(std::nullopt);
+            } else {
+                self.set_jpeg(obj.cast<PyZarrJpegSettings>());
             }
         })
       .def_property(

@@ -9,6 +9,7 @@ find_dependency(Crc32c CONFIG REQUIRED)
 find_dependency(zstd CONFIG REQUIRED)
 find_dependency(yaml-cpp CONFIG REQUIRED)
 find_dependency(aws-crt-cpp CONFIG REQUIRED)
+find_dependency(libjpeg-turbo CONFIG REQUIRED)
 find_dependency(Threads)
 
 # Include the targets file

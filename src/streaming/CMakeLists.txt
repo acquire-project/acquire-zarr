@@ -50,6 +50,8 @@ add_library(${tgt}
         plate.cpp
         chunk.hh
         chunk.cpp
+        jpeg.hh
+        jpeg.cpp
         shard.hh
         shard.cpp
         $<TARGET_OBJECTS:acquire-logger-obj>
@@ -71,6 +73,7 @@ target_link_libraries(${tgt} PRIVATE
         nlohmann_json::nlohmann_json
         yaml-cpp::yaml-cpp
         $<IF:$<TARGET_EXISTS:zstd::libzstd_static>,zstd::libzstd_static,zstd::libzstd_shared>
+        $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg-static>,libjpeg-turbo::turbojpeg-static,libjpeg-turbo::turbojpeg>
         Threads::Threads
 )
 
