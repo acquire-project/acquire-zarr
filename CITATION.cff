@@ -10,8 +10,7 @@ authors:
   given-names: Nathan
   orcid: https://orcid.org/0000-0001-6236-9282
 cff-version: 1.2.0
-date-released: '2026-09-11'
-doi: 10.5281/zenodo.21892791
+date-released: '2026-11-19'
 identifiers:
 - type: doi
   value: 10.5281/zenodo.14828040
@@ -21,4 +20,4 @@ message: If you use this software, please cite it using the metadata from this f
 repository-code: https://github.com/acquire-project/acquire-zarr
 title: 'acquire-zarr: Streaming directly to Zarr on the file system or cloud'
 type: software
-version: 0.10.0
+version: 0.11.0
