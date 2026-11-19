@@ -72,7 +72,7 @@ main()
     fs::remove_all(data_path, ec);
 
     settings.store_path = data_path.c_str();
-    settings.max_threads = 0;
+    settings.max_threads = 2;
 
     ZarrStreamSettings_create_arrays(&settings, 1);
     settings.arrays->data_type = ZarrDataType_uint8;
