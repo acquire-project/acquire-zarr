@@ -1,6 +1,7 @@
 #include "acquire.zarr.h"
 #include "unit.test.macros.hh"
 
+#include <chrono>
 #include <filesystem>
 #include <thread>
 #include <vector>
@@ -88,12 +89,15 @@ main()
         std::vector<uint8_t> frame(array_width * array_height, 1);
         size_t bytes_out = 0;
         ZarrStatusCode status = ZarrStatusCode_Success;
-        for (int i = 0; i < 2000 && status == ZarrStatusCode_Success; ++i) {
+        for (int i = 0; i < 1000 && status == ZarrStatusCode_Success; ++i) {
             status = ZarrStream_append(
               stream, frame.data(), frame.size(), &bytes_out, nullptr);
+            if (status == ZarrStatusCode_Success) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
         }
         EXPECT(status != ZarrStatusCode_Success,
-               "the shard write never failed");
+               "append did not report the worker's shard write error");
         EXPECT_EQ(int, status, ZarrStatusCode_InternalError);
 
         status = ZarrStream_close(stream);

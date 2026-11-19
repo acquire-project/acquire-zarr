@@ -7,16 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - [2026-11-19](https://github.com/acquire-project/acquire-zarr/compare/v0.10.0...v0.11.0)
+
 ### Added
 
 - `ZarrStreamSettings.intermediate_groups` (`StreamSettings.intermediate_groups` in Python, `intermediate_groups` in a
-  config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. `IfMissing`, the
-  default, keeps an existing Zarr v3 group node that a reader can open, clears its consolidated metadata, and replaces
-  anything else; `Always` replaces what is there; `Never` leaves the hierarchy to the caller. Plate and well groups are
-  always written (#186, #268)
+  config file) controls whether the stream writes `zarr.json` for the generic groups above its arrays. With
+  `overwrite=false`, the default `IfMissing` mode keeps readable Zarr v3 group metadata, clears its consolidated
+  metadata, and replaces invalid group metadata. With `overwrite=true`, `IfMissing` writes new group metadata.
+  `Always` writes new group metadata. `Never` leaves generic group metadata to the caller. The stream always writes
+  plate and well group metadata (#186, #268)
 
 ### Changed
 
+- ⚠️ **Breaking for C and C++ callers:** The new `intermediate_groups` field changes the layout of
+  `ZarrStreamSettings`. Recompile code that uses this struct with the 0.11.0 headers (#268)
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
   `ZarrStream_create` is kept (#186, #268)
@@ -31,14 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints that validate the signing region require it to be set explicitly (#248)
 - The bucket is now checked once when the stream is created rather than once per object written (#248)
 - Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
-- Chunk buffers and compression outputs are reused from bounded per-array pools instead of being allocated for every
-  chunk. A stream no longer faults in about twice its data rate in fresh pages; at 770 MB/s in
-  `benchmarks/chunk_buffer_faults.py`, system CPU time fell from about 8 s to under 0.5 s in 19 s of streaming. A pool
-  keeps no more buffers than its array had in use at once. A bounded array frees them when it receives its last frame;
-  an unbounded array keeps them until the stream closes
+- Each array reuses chunk and compression buffers from its own pools. This reduces allocations and page faults.
+  Each pool keeps at most as many buffers as the array has used at the same time. A bounded array frees the buffers
+  when it receives its last frame. An unbounded array keeps the buffers until the stream closes (#297)
 - `ZarrStream_get_current_memory_usage` now also counts chunk buffers kept for reuse, and
   `ZarrStreamSettings_estimate_max_memory_usage` budgets for them: up to two chunk layers per array, plus a compressed
-  copy of each when the array is compressed (previously one layer, doubled for compression)
+  copy of each when the array is compressed (previously one layer, doubled for compression) (#297)
+- Replaced the OpenMP tile copy with a fixed pool of worker threads. The build no longer requires OpenMP (#266)
+- The downsampling kernels now use vector instructions where the compiler supports them (#282)
+- Pushing a frame to a named array now normalizes the array key without a regular expression (#296)
 
 ### Fixed
 
@@ -70,8 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#186, #268)
 - `ZarrStream_close` and `ZarrStream_destroy` no longer let a C++ exception escape into the C caller, and they free the
   stream even when finalization throws (#268)
-- `Zarr_get_api_version()` now returns the library release version (`0.10.0`), not the stale `0.8.0`. The string is
-  now derived from the CMake project version (#264)
+- `Zarr_get_api_version()` now uses the CMake project version (#264)
 - `ZarrStream_append` now sets `bytes_out` to 0 when it fails on an earlier stream error. That path returned before it
   wrote `bytes_out` (#264)
 - The installed CMake package no longer requires OpenMP, which the library stopped using in #266. It now finds
