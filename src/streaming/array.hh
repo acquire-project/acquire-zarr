@@ -1,6 +1,7 @@
 #pragma once
 
 #include "array.base.hh"
+#include "buffer.pool.hh"
 #include "chunk.hh"
 #include "definitions.hh"
 #include "file.sink.hh"
@@ -32,6 +33,11 @@ class Array : public ArrayBase
   protected:
     std::vector<std::shared_ptr<Chunk>> chunks_;
     mutable std::vector<std::mutex> chunk_mutexes_;
+
+    // Chunk buffers and compression outputs are reused across layers rather
+    // than allocated per chunk; output_pool_ is null without compression.
+    std::shared_ptr<BufferPool> chunk_pool_;
+    std::shared_ptr<BufferPool> output_pool_;
 
     std::vector<std::shared_ptr<Shard>> shards_;
     mutable std::mutex shards_mutex_;

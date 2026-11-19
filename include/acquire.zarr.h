@@ -91,6 +91,8 @@ extern "C"
 
     /**
      * @brief Estimate the maximum memory usage of the Zarr stream.
+     * @details Includes each array's chunk buffers, both those being written
+     * and those kept for reuse between layers, and their compressed copies.
      * @param[in] settings The Zarr stream settings struct.
      * @param[out] usage The estimated maximum memory usage in bytes.
      * @return ZarrStatusCode_Success on success, or an error code on failure.

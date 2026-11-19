@@ -51,8 +51,7 @@ zarr::Shard::~Shard()
 }
 
 bool
-zarr::Shard::write_chunk(uint32_t internal_index,
-                         const std::vector<uint8_t>& buffer)
+zarr::Shard::write_chunk(uint32_t internal_index, ConstByteSpan buffer)
 {
     EXPECT(internal_index < offsets_.size(),
            "Internal index ",

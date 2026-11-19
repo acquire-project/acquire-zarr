@@ -3,6 +3,7 @@
 
 #include "chunk.hh"
 #include "compression.params.hh"
+#include "definitions.hh"
 #include "sink.hh"
 #include "thread.pool.hh"
 
@@ -36,7 +37,7 @@ class Shard
     ~Shard();
 
     [[nodiscard]] bool write_chunk(uint32_t internal_index,
-                                   const std::vector<uint8_t>& buffer);
+                                   ConstByteSpan buffer);
     [[nodiscard]] bool skip_chunk(uint32_t internal_index);
 
     /**

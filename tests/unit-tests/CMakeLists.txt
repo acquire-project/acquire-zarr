@@ -41,6 +41,11 @@ set(tests
         api-version
         zarr-stream-append-null-zeros
         frame-queue
+        buffer-pool
+        array-drain-when-full
+        array-pool-bounded-after-backlog
+        chunk-encode
+        zarr-stream-reused-buffers-zero
         downsampler
         downsampler-odd-z
         downsampler-integer-mean
