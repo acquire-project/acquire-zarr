@@ -5,13 +5,23 @@
 #include <algorithm>
 #include <cstring>
 
-zarr::Chunk::Chunk(size_t size_bytes, size_t bytes_per_px)
-  : size_bytes_(size_bytes)
+zarr::Chunk::Chunk(std::shared_ptr<BufferPool> pool, size_t bytes_per_px)
+  : pool_(std::move(pool))
+  , size_bytes_(pool_ ? pool_->buffer_size() : 0)
   , bytes_per_px_(bytes_per_px)
-  , buffer_(size_bytes_, 0)
   , has_data_(false)
 {
     EXPECT(size_bytes_ > 0, "Empty chunk");
+
+    // Every byte a frame does not write (edge-tile padding, the tail of a short
+    // final chunk, a ragged internal dimension) must read as zero, so a reused
+    // buffer is zeroed like a fresh one.
+    buffer_ = pool_->acquire(true);
+}
+
+zarr::Chunk::~Chunk()
+{
+    pool_->release(std::move(buffer_));
 }
 
 void
@@ -76,31 +86,39 @@ zarr::Chunk::size_bytes() const
 }
 
 bool
-zarr::Chunk::compress_and_take_buffer(
-  const std::optional<CompressionParams>& compression_params,
-  std::vector<uint8_t>& data)
+zarr::Chunk::encode(const std::optional<CompressionParams>& compression_params,
+                    ByteSpan output,
+                    ConstByteSpan& encoded)
 {
     std::unique_lock lock(mutex_);
     if (buffer_.empty()) {
         return false;
     }
 
-    if (compression_params) {
-        if (!std::visit(
-              [this]<typename ParamT>(const ParamT& params) {
-                  using T = std::decay_t<ParamT>;
-                  if constexpr (std::is_same_v<T, BloscCompressionParams>) {
-                      return compress_in_place(buffer_, params, bytes_per_px_);
-                  } else {
-                      return compress_in_place(buffer_, params);
-                  }
-              },
-              *compression_params)) {
-            return false;
-        }
+    if (!compression_params) {
+        encoded = ConstByteSpan(buffer_);
+        return true;
     }
 
-    // single-shot: move the buffer out, leaving the chunk empty
-    data = std::move(buffer_);
+    const size_t n_bytes = std::visit(
+      [this, output]<typename ParamT>(const ParamT& params) -> size_t {
+          if constexpr (std::is_same_v<ParamT, BloscCompressionParams>) {
+              return compress_into(buffer_, output, params, bytes_per_px_);
+          } else {
+              return compress_into(buffer_, output, params);
+          }
+      },
+      *compression_params);
+
+    if (n_bytes == 0) {
+        return false;
+    }
+
+    // The compressed bytes are all the write needs, so the raw buffer goes back
+    // to the pool now rather than staying resident through a slow sink write.
+    pool_->release(std::move(buffer_));
+    buffer_ = {};
+
+    encoded = ConstByteSpan(output.data(), n_bytes);
     return true;
 }

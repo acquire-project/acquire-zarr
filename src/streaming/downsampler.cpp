@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <regex>
 #include <type_traits>
+#include <tuple>
+#include <utility>
 
 namespace {
 ZarrDimension
@@ -48,9 +50,14 @@ decimate4(const T& a, const T& b, const T& c, const T& d)
 
 /**
  * The mean of N integers, truncated toward zero as (a + b + ...) / N is, but
- * without overflowing T. Types narrower than 64 bits sum in a 64-bit
- * accumulator. The 64-bit types sum quotients and remainders separately, then
- * move the result toward zero when the two have opposite signs.
+ * without overflowing T. 8- and 16-bit types sum in a 32-bit accumulator (N is
+ * at most 4, so the sum fits) and 32-bit types in a 64-bit one; the narrower
+ * accumulator lets the compiler use wider vector lanes. The 64-bit types sum
+ * exactly in a two-word (hi:lo) two's-complement accumulator and divide the
+ * magnitude by N, a power of two, with a shift, so there is no signed
+ * division. MSVC Release builds computed the earlier quotient-and-remainder
+ * form one too low on acquire-project/acquire-zarr#282; the cause was not
+ * identified, and disabling vectorization did not help.
  */
 template<typename T, size_t N>
 T
@@ -59,31 +66,44 @@ integer_mean(const std::array<T, N>& values)
     static_assert(std::is_integral_v<T>);
 
     if constexpr (sizeof(T) < sizeof(int64_t)) {
-        using Wide =
-          std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+        static_assert(N <= 4);
+        using Wide = std::conditional_t<
+          sizeof(T) <= 2,
+          std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>,
+          std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>>;
         Wide sum = 0;
         for (const T value : values) {
             sum += value;
         }
         return static_cast<T>(sum / static_cast<Wide>(N));
     } else {
-        constexpr T n = N;
-        T quotient = 0, remainder = 0;
-        for (const T value : values) {
-            quotient += value / n;
-            remainder += value % n;
-        }
-        quotient += remainder / n;
-        remainder %= n;
+        static_assert(N == 2 || N == 4);
+        constexpr unsigned shift = N == 2 ? 1 : 2;
 
-        if constexpr (std::is_signed_v<T>) {
-            if (quotient > 0 && remainder < 0) {
-                --quotient;
-            } else if (quotient < 0 && remainder > 0) {
-                ++quotient;
+        uint64_t lo = 0;
+        int64_t hi = 0;
+        for (const T value : values) {
+            const auto value_lo = static_cast<uint64_t>(value);
+            int64_t value_hi = 0;
+            if constexpr (std::is_signed_v<T>) {
+                value_hi = value < 0 ? -1 : 0;
             }
+            const uint64_t sum_lo = lo + value_lo;
+            hi += value_hi + (sum_lo < lo ? 1 : 0);
+            lo = sum_lo;
         }
-        return quotient;
+
+        // shift the magnitude, so that the result truncates toward zero
+        const bool negative = hi < 0;
+        uint64_t magnitude_lo = lo, magnitude_hi = static_cast<uint64_t>(hi);
+        if (negative) {
+            magnitude_lo = ~magnitude_lo + 1;
+            magnitude_hi = ~magnitude_hi + (magnitude_lo == 0 ? 1 : 0);
+        }
+        const uint64_t quotient =
+          (magnitude_lo >> shift) | (magnitude_hi << (64 - shift));
+        return negative ? static_cast<T>(0 - quotient)
+                        : static_cast<T>(quotient);
     }
 }
 
@@ -136,13 +156,6 @@ max4(const T& a, const T& b, const T& c, const T& d)
 
 template<typename T>
 T
-decimate2(const T& a, const T& b)
-{
-    return a;
-}
-
-template<typename T>
-T
 mean2(const T& a, const T& b)
 {
     if constexpr (std::is_integral_v<T>) {
@@ -166,31 +179,44 @@ max2(const T& a, const T& b)
     return a > b ? a : b;
 }
 
-template<typename T>
-[[nodiscard]] ByteVector
-scale_image(ConstByteSpan src,
-            size_t& width,
-            size_t& height,
-            ZarrDownsamplingMethod method)
+/**
+ * Reduce each 2x2 block of @p src to one pixel of @p dst. An odd final row or
+ * column is paired with itself. @p reduce is a template parameter, not a
+ * function pointer, so it inlines and the inner loop can vectorize.
+ */
+template<typename T, typename Reduce4>
+void
+scale_rows(const T* src, T* dst, size_t width, size_t height, Reduce4 reduce)
 {
-    T (*scale_fun)(const T&, const T&, const T&, const T&) = nullptr;
-    switch (method) {
-        case ZarrDownsamplingMethod_Decimate:
-            scale_fun = decimate4<T>;
-            break;
-        case ZarrDownsamplingMethod_Mean:
-            scale_fun = mean4<T>;
-            break;
-        case ZarrDownsamplingMethod_Min:
-            scale_fun = min4<T>;
-            break;
-        case ZarrDownsamplingMethod_Max:
-            scale_fun = max4<T>;
-            break;
-        default:
-            throw std::runtime_error("Invalid downsampling method");
-    }
+    const size_t width_out = (width + 1) / 2;
+    const size_t full_pairs = width / 2;
 
+    for (size_t row = 0; row < height; row += 2) {
+        const T* top = src + row * width;
+        const T* bottom = row + 1 < height ? top + width : top;
+        T* out = dst + (row / 2) * width_out;
+
+        for (size_t i = 0; i < full_pairs; ++i) {
+            out[i] = reduce(
+              top[2 * i], top[2 * i + 1], bottom[2 * i], bottom[2 * i + 1]);
+        }
+        if (full_pairs < width_out) {
+            const size_t col = width - 1;
+            out[full_pairs] =
+              reduce(top[col], top[col], bottom[col], bottom[col]);
+        }
+    }
+}
+
+/**
+ * Reduce each 2x2 block of a frame with the kernel @p Reduce. The kernel is a
+ * template argument, so the call is direct and inlines; the Downsampler picks
+ * one specialization per data type and method when it is constructed.
+ */
+template<typename T, T (*Reduce)(const T&, const T&, const T&, const T&)>
+[[nodiscard]] ByteVector
+scale_image(ConstByteSpan src, size_t& width, size_t& height)
+{
     const auto bytes_of_src = src.size();
     const auto bytes_of_frame = width * height * sizeof(T);
 
@@ -200,78 +226,76 @@ scale_image(ConstByteSpan src,
            " bytes, got ",
            bytes_of_src);
 
-    const int downscale = 2;
-    constexpr auto bytes_of_type = sizeof(T);
-    const uint32_t factor = 4;
+    const size_t width_out = (width + 1) / 2;
+    const size_t height_out = (height + 1) / 2;
 
-    const auto w_pad = width + (width % downscale);
-    const auto h_pad = height + (height % downscale);
-    const auto size_downscaled = w_pad * h_pad * bytes_of_type / factor;
+    ByteVector dst(width_out * height_out * sizeof(T), 0);
+    scale_rows(reinterpret_cast<const T*>(src.data()),
+               reinterpret_cast<T*>(dst.data()),
+               width,
+               height,
+               [](T a, T b, T c, T d) { return Reduce(a, b, c, d); });
 
-    ByteVector dst(size_downscaled, 0);
-    auto* dst_as_T = reinterpret_cast<T*>(dst.data());
-    auto* src_as_T = reinterpret_cast<const T*>(src.data());
-
-    size_t dst_idx = 0;
-    for (auto row = 0; row < height; row += downscale) {
-        const bool pad_height = (row == height - 1 && height != h_pad);
-
-        for (auto col = 0; col < width; col += downscale) {
-            size_t src_idx = row * width + col;
-            const bool pad_width = (col == width - 1 && width != w_pad);
-
-            T here = src_as_T[src_idx];
-            T right = src_as_T[src_idx + !pad_width];
-            T down = src_as_T[src_idx + width * (!pad_height)];
-            T diag = src_as_T[src_idx + width * (!pad_height) + (!pad_width)];
-
-            dst_as_T[dst_idx++] = scale_fun(here, right, down, diag);
-        }
-    }
-
-    width = w_pad / downscale;
-    height = h_pad / downscale;
+    width = width_out;
+    height = height_out;
 
     return dst;
 }
 
-template<typename T>
 void
-average_two_frames(ByteVector& dst,
-                   ConstByteSpan src,
-                   ZarrDownsamplingMethod method)
+expect_same_size(const ByteVector& dst, ConstByteSpan src)
 {
-    T (*average_fun)(const T&, const T&) = nullptr;
-    switch (method) {
-        case ZarrDownsamplingMethod_Decimate:
-            average_fun = decimate2<T>;
-            break;
-        case ZarrDownsamplingMethod_Mean:
-            average_fun = mean2<T>;
-            break;
-        case ZarrDownsamplingMethod_Min:
-            average_fun = min2<T>;
-            break;
-        case ZarrDownsamplingMethod_Max:
-            average_fun = max2<T>;
-            break;
-        default:
-            throw std::runtime_error("Invalid downsampling method");
-    }
+    EXPECT(dst.size() == src.size(),
+           "Expecting ",
+           src.size(),
+           " bytes in destination, got ",
+           dst.size());
+}
 
-    const auto bytes_of_dst = dst.size();
-    const auto bytes_of_src = src.size();
-    EXPECT(bytes_of_dst == bytes_of_src,
-           "Expecting %zu bytes in destination, got %zu",
-           bytes_of_src,
-           bytes_of_dst);
+/**
+ * Combine @p src into @p dst pixel by pixel with the kernel @p Reduce, a
+ * template argument so that it inlines.
+ */
+template<typename T, T (*Reduce)(const T&, const T&)>
+void
+average_two_frames(ByteVector& dst, ConstByteSpan src)
+{
+    expect_same_size(dst, src);
 
     T* dst_as_T = reinterpret_cast<T*>(dst.data());
     const T* src_as_T = reinterpret_cast<const T*>(src.data());
+    const auto num_pixels = src.size() / sizeof(T);
+    for (size_t i = 0; i < num_pixels; ++i) {
+        dst_as_T[i] = Reduce(dst_as_T[i], src_as_T[i]);
+    }
+}
 
-    const auto num_pixels = bytes_of_src / sizeof(T);
-    for (auto i = 0; i < num_pixels; ++i) {
-        dst_as_T[i] = average_fun(dst_as_T[i], src_as_T[i]);
+/** Decimation keeps the earlier frame, which is already in @p dst. */
+void
+keep_earlier_frame(ByteVector& dst, ConstByteSpan src)
+{
+    expect_same_size(dst, src);
+}
+
+using ScaleFn = ByteVector (*)(ConstByteSpan, size_t&, size_t&);
+using CombineFn = void (*)(ByteVector&, ConstByteSpan);
+
+template<typename T>
+std::pair<ScaleFn, CombineFn>
+kernels_for(ZarrDownsamplingMethod method)
+{
+    switch (method) {
+        case ZarrDownsamplingMethod_Decimate:
+            return { scale_image<T, decimate4<T>>, keep_earlier_frame };
+        case ZarrDownsamplingMethod_Mean:
+            return { scale_image<T, mean4<T>>,
+                     average_two_frames<T, mean2<T>> };
+        case ZarrDownsamplingMethod_Min:
+            return { scale_image<T, min4<T>>, average_two_frames<T, min2<T>> };
+        case ZarrDownsamplingMethod_Max:
+            return { scale_image<T, max4<T>>, average_two_frames<T, max2<T>> };
+        default:
+            throw std::runtime_error("Invalid downsampling method");
     }
 }
 } // namespace
@@ -281,57 +305,48 @@ zarr::Downsampler::Downsampler(std::shared_ptr<ArrayConfig> config,
 {
     make_writer_configurations_(config);
 
+    EXPECT(method > ZarrDownsamplingMethod_None,
+           "Cannot construct downsampler with DownsamplingMethod: None");
+    EXPECT(method < ZarrDownsamplingMethodCount,
+           "Invalid downsampling method: ",
+           static_cast<int>(method));
+
     switch (config->dtype) {
         case ZarrDataType_uint8:
-            scale_fun_ = scale_image<uint8_t>;
-            average2_fun_ = average_two_frames<uint8_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint8_t>(method);
             break;
         case ZarrDataType_uint16:
-            scale_fun_ = scale_image<uint16_t>;
-            average2_fun_ = average_two_frames<uint16_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint16_t>(method);
             break;
         case ZarrDataType_uint32:
-            scale_fun_ = scale_image<uint32_t>;
-            average2_fun_ = average_two_frames<uint32_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint32_t>(method);
             break;
         case ZarrDataType_uint64:
-            scale_fun_ = scale_image<uint64_t>;
-            average2_fun_ = average_two_frames<uint64_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<uint64_t>(method);
             break;
         case ZarrDataType_int8:
-            scale_fun_ = scale_image<int8_t>;
-            average2_fun_ = average_two_frames<int8_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int8_t>(method);
             break;
         case ZarrDataType_int16:
-            scale_fun_ = scale_image<int16_t>;
-            average2_fun_ = average_two_frames<int16_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int16_t>(method);
             break;
         case ZarrDataType_int32:
-            scale_fun_ = scale_image<int32_t>;
-            average2_fun_ = average_two_frames<int32_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int32_t>(method);
             break;
         case ZarrDataType_int64:
-            scale_fun_ = scale_image<int64_t>;
-            average2_fun_ = average_two_frames<int64_t>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<int64_t>(method);
             break;
         case ZarrDataType_float32:
-            scale_fun_ = scale_image<float>;
-            average2_fun_ = average_two_frames<float>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<float>(method);
             break;
         case ZarrDataType_float64:
-            scale_fun_ = scale_image<double>;
-            average2_fun_ = average_two_frames<double>;
+            std::tie(scale_fun_, average2_fun_) = kernels_for<double>(method);
             break;
         default:
             throw std::runtime_error("Invalid data type: " +
                                      std::to_string(config->dtype));
     }
 
-    EXPECT(method > ZarrDownsamplingMethod_None,
-           "Cannot construct downsampler with DownsamplingMethod: None");
-    EXPECT(method < ZarrDownsamplingMethodCount,
-           "Invalid downsampling method: ",
-           static_cast<int>(method));
     method_ = method;
 }
 
@@ -372,7 +387,7 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
         // only downsample if this level's XY size is smaller than the last
         if (next_width < prev_width || next_height < prev_height) {
             next_level_frame =
-              scale_fun_(current_frame, frame_width, frame_height, method_);
+              scale_fun_(current_frame, frame_width, frame_height);
         } else {
             next_level_frame.assign(current_frame.begin(), current_frame.end());
         }
@@ -402,9 +417,9 @@ zarr::Downsampler::add_frame(std::vector<uint8_t>& frame)
             auto it = partial_scaled_frames_.find(level);
             if (it != partial_scaled_frames_.end()) {
                 // average2_fun_ writes to next_level_frame
-                // swap here so that decimate2 can take it->second
+                // swap here so that decimation keeps the earlier frame
                 next_level_frame.swap(it->second);
-                average2_fun_(next_level_frame, it->second, method_);
+                average2_fun_(next_level_frame, it->second);
                 emplace_downsampled_frame_(level, next_level_frame);
 
                 // clean up this LOD

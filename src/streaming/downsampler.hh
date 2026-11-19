@@ -41,15 +41,14 @@ class Downsampler
     nlohmann::json get_metadata() const;
 
   private:
-    using ScaleFunT = std::function<
-      ByteVector(ConstByteSpan, size_t&, size_t&, ZarrDownsamplingMethod)>;
-    using Average2FunT =
-      std::function<void(ByteVector&, ConstByteSpan, ZarrDownsamplingMethod)>;
+    // chosen once, per data type and method, in the constructor
+    using ScaleFunT = ByteVector (*)(ConstByteSpan, size_t&, size_t&);
+    using Average2FunT = void (*)(ByteVector&, ConstByteSpan);
 
     ZarrDownsamplingMethod method_;
 
-    ScaleFunT scale_fun_;
-    Average2FunT average2_fun_;
+    ScaleFunT scale_fun_ = nullptr;
+    Average2FunT average2_fun_ = nullptr;
 
     std::unordered_map<int, std::shared_ptr<ArrayConfig>>
       writer_configurations_;

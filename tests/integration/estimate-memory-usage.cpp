@@ -1,5 +1,6 @@
 #include "acquire.zarr.h"
 #include "test.macros.hh"
+#include "zarr.common.hh"
 
 #include <algorithm>
 #include <cstring>
@@ -86,9 +87,22 @@ test_max_memory_usage()
     const size_t padded_width = padded_size(array_width, chunk_width);
     const size_t padded_height = padded_size(array_height, chunk_height);
     const size_t padded_frame_size = 2 * padded_height * padded_width;
-    const size_t expected_array_usage = padded_frame_size * // frame
-                                        3 *                 // channels
-                                        32;                 // time
+    const size_t layer_bytes = padded_frame_size * // frame
+                               3 *                 // channels
+                               32;                 // time
+
+    // up to two layers of chunk buffers: one being filled, one being written
+    // or kept for reuse
+    const size_t uncompressed_usage = 2 * layer_bytes;
+
+    // with compression, up to one layer of compressed copies
+    const size_t chunk_bytes = 2 * 32 * 1 * chunk_height * chunk_width;
+    const size_t n_chunks = layer_bytes / chunk_bytes;
+    const size_t compressed_usage =
+      uncompressed_usage +
+      n_chunks * zarr::compressed_size_bound(
+                   chunk_bytes,
+                   zarr::CompressionParams{ zarr::BloscCompressionParams{} });
 
     size_t usage = 0, expected_usage;
     EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
@@ -97,12 +111,27 @@ test_max_memory_usage()
 
     //  for the array + each array's frame buffer
     expected_usage =
-      frame_queue_size + expected_array_usage + expected_frame_size;
+      frame_queue_size + uncompressed_usage + expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,
            ", got ",
            usage);
+
+    // compression settings with no compressor are estimated as uncompressed,
+    // as at runtime
+    ZarrCompressionSettings no_compressor{ .compressor = ZarrCompressor_None };
+    settings.arrays[0].compression_settings = &no_compressor;
+    usage = 0;
+    EXPECT(ZarrStreamSettings_estimate_max_memory_usage(&settings, &usage) ==
+             ZarrStatusCode_Success,
+           "Failed to estimate memory usage");
+    EXPECT(usage == expected_usage,
+           "Expected max memory usage ",
+           expected_usage,
+           " with ZarrCompressor_None, got ",
+           usage);
+    settings.arrays[0].compression_settings = nullptr;
 
     ZarrStreamSettings_destroy_arrays(&settings);
 
@@ -123,10 +152,9 @@ test_max_memory_usage()
              ZarrStatusCode_Success,
            "Failed to estimate memory usage");
 
-    // one uncompressed (1) and one compressed (2), plus each array's frame
-    // buffer
-    expected_usage =
-      frame_queue_size + 3 * expected_array_usage + 2 * expected_frame_size;
+    // one uncompressed and one compressed, plus each array's frame buffer
+    expected_usage = frame_queue_size + uncompressed_usage + compressed_usage +
+                     2 * expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,
@@ -159,10 +187,10 @@ test_max_memory_usage()
              ZarrStatusCode_Success,
            "Failed to estimate memory usage");
 
-    // one uncompressed (1), one compressed (2), one compressed with
-    // downsampling (4), and 3 frame buffers
-    expected_usage =
-      frame_queue_size + 7 * expected_array_usage + 3 * expected_frame_size;
+    // one uncompressed, one compressed, one compressed with downsampling
+    // (twice the full-resolution array), and 3 frame buffers
+    expected_usage = frame_queue_size + uncompressed_usage +
+                     3 * compressed_usage + 3 * expected_frame_size;
     EXPECT(usage == expected_usage,
            "Expected max memory usage ",
            expected_usage,

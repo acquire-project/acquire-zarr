@@ -16,6 +16,7 @@ set(tests
         parallel-for-reduce
         resolve-max-threads
         resolve-direct-io
+        regularize-key
         construct-data-paths
         endpoint-request-target
         s3-client-bucket-exists
@@ -41,9 +42,15 @@ set(tests
         zarr-stream-worker-error
         zarr-stream-append-null-zeros
         frame-queue
+        buffer-pool
+        array-drain-when-full
+        array-pool-bounded-after-backlog
+        chunk-encode
+        zarr-stream-reused-buffers-zero
         downsampler
         downsampler-odd-z
         downsampler-integer-mean
+        downsampler-kernels
         plate
 )
 

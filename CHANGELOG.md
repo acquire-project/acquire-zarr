@@ -31,12 +31,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints that validate the signing region require it to be set explicitly (#248)
 - The bucket is now checked once when the stream is created rather than once per object written (#248)
 - Bumped the vcpkg baseline and the CI vcpkg pin to `2026.07.29`, which re-resolves every other dependency (#248)
+- Chunk buffers and compression outputs are reused from bounded per-array pools instead of being allocated for every
+  chunk. A stream no longer faults in about twice its data rate in fresh pages; at 770 MB/s in
+  `benchmarks/chunk_buffer_faults.py`, system CPU time fell from about 8 s to under 0.5 s in 19 s of streaming. A pool
+  keeps no more buffers than its array had in use at once. A bounded array frees them when it receives its last frame;
+  an unbounded array keeps them until the stream closes
+- `ZarrStream_get_current_memory_usage` now also counts chunk buffers kept for reuse, and
+  `ZarrStreamSettings_estimate_max_memory_usage` budgets for them: up to two chunk layers per array, plus a compressed
+  copy of each when the array is compressed (previously one layer, doubled for compression)
 
 ### Fixed
 
 - Fixed a data race on the stream's error state. A pool worker, the frame-queue thread and the appending thread can
   each record an error, and `ZarrStream_append` reads it, with no lock. The error is now recorded and read under a
   mutex (#276, #278)
+- A multiscale array whose append dimension is spatial no longer crashes on x86_64 (integer division by zero in the
+  OME `scale` computation). The append dimension keeps its base scale at every level (#295)
 - Mean downsampling of `uint32`, `int32`, `uint64` and `int64` data no longer overflows. The overflow-safe integer
   path never compiled in, so a 2x2 block or z pair whose sum left the type's range wrapped (unsigned) or was undefined
   (signed). Results are unchanged for every input that did not overflow: the mean is still truncated toward zero

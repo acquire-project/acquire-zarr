@@ -243,7 +243,9 @@ zarr::MultiscaleArray::make_multiscales_metadata_() const
         for (auto j = start_dim; j < ndims; ++j) {
             const auto& base_dim = base_dims->at(j);
             const auto& down_dim = config->dimensions->at(j);
-            if (base_dim.type != ZarrDimensionType_Space) {
+            // an appended dimension has size 0 and is never downsampled
+            if (base_dim.type != ZarrDimensionType_Space ||
+                down_dim.array_size_px == 0) {
                 continue;
             }
 

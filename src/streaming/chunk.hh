@@ -1,8 +1,11 @@
 #pragma once
 
+#include "buffer.pool.hh"
 #include "compression.params.hh"
+#include "definitions.hh"
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -11,8 +14,9 @@ namespace zarr {
 class Chunk
 {
   public:
-    Chunk(size_t size_bytes, size_t bytes_per_px);
-    ~Chunk() = default;
+    // Takes a zeroed buffer from `pool` and returns it there on destruction.
+    Chunk(std::shared_ptr<BufferPool> pool, size_t bytes_per_px);
+    ~Chunk();
 
     // Copy a frame's tile directly into the chunk buffer, row by row, without
     // an intermediate per-tile heap buffer. Row r of `copy_nbytes` bytes is
@@ -31,11 +35,25 @@ class Chunk
 
     bool has_data() const;
     size_t size_bytes() const;
-    bool compress_and_take_buffer(
-      const std::optional<CompressionParams>& compression_params,
-      std::vector<uint8_t>& data);
+
+    /**
+     * @brief Encode the chunk for its shard.
+     * @param compression_params Compression to apply, if any.
+     * @param output Scratch for the compressed bytes, at least
+     * compressed_size_bound() of the chunk's size. Unused without compression.
+     * @param[out] encoded The bytes to store: the front of @p output when
+     * compressing, otherwise the chunk's own buffer, valid while the chunk
+     * lives.
+     * @return True if and only if encoding succeeded.
+     * @details Compressing returns the chunk's buffer to its pool, so a
+     * compressed chunk can be encoded only once.
+     */
+    bool encode(const std::optional<CompressionParams>& compression_params,
+                ByteSpan output,
+                ConstByteSpan& encoded);
 
   private:
+    const std::shared_ptr<BufferPool> pool_;
     const size_t size_bytes_;
     const size_t bytes_per_px_;
 

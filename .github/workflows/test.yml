@@ -59,13 +59,17 @@ jobs:
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      - name: Start compiler cache with local fallback
+        run: bash scripts/start-sccache.sh
+        shell: bash
+
       - name: Cache vcpkg binaries
         uses: actions/cache@v6
         with:
           path: |
             ~/.cache/vcpkg/archives
             ~/AppData/Local/vcpkg/archives
-          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
 
@@ -146,15 +150,24 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Set up Python 3.15
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Start compiler cache with local fallback
+        run: bash scripts/start-sccache.sh
+        shell: bash
 
       - name: Cache vcpkg binaries
         uses: actions/cache@v6
         with:
           path: |
             ~/.cache/vcpkg/archives
-          key: vcpkg-ubuntu-latest-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-ubuntu-latest-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-ubuntu-latest-
 
@@ -260,14 +273,18 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.15
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13.3"
+          python-version: "3.15"
           cache: 'pip'
 
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Start compiler cache with local fallback
+        run: bash scripts/start-sccache.sh
+        shell: bash
 
       - name: Cache vcpkg binaries
         uses: actions/cache@v6
@@ -275,7 +292,7 @@ jobs:
           path: |
             ~/.cache/vcpkg/archives
             ~/AppData/Local/vcpkg/archives
-          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
 
@@ -303,6 +320,17 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install -U pip "pybind11[global]" "cmake<4.0.0" build numpy pytest
+
+      - name: Install Python source dependencies with clang-cl on Windows
+        if: startsWith(matrix.platform, 'windows')
+        env:
+          CC: clang-cl
+          CXX: clang-cl
+        run: |
+          $env:PATH = (Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin') + ';' + $env:PATH
+          clang-cl --version
+          python -m pip install scikit-image numcodecs
+        shell: pwsh
 
       - name: Build and install Python bindings
         run: python -m pip install ".[testing]"

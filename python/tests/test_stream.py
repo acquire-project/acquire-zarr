@@ -471,8 +471,9 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
     # frame queue: 256 MiB clamped to [16, 512] frames
     frame_queue_bytes = min(max((256 << 20) // frame_bytes, 16), 512) * frame_bytes
 
-    # the maximum reflects a single z band, not the whole volume
-    expected_max = frame_queue_bytes + band_bytes + frame_bytes
+    # the maximum reflects z bands, not the whole volume: up to two, one being
+    # filled and one being written or kept for reuse
+    expected_max = frame_queue_bytes + 2 * band_bytes + frame_bytes
     assert s.get_maximum_memory_usage() == expected_max
 
     stream = ZarrStream(s)
@@ -496,10 +497,11 @@ def test_intermediate_dimension_courtesy_flush(store_path: Path, ragged: bool):
 
     stream.close()
 
-    # band-by-band flushing keeps live memory well under the full inner volume
-    assert peak < int(full_inner_volume * 0.75), (
-        f"peak memory {peak} not bounded below the full inner volume "
-        f"{full_inner_volume}"
+    # band-by-band flushing keeps live memory within the two-band maximum, well
+    # under the full inner volume
+    assert peak <= expected_max < full_inner_volume, (
+        f"peak memory {peak} exceeds the two-band maximum {expected_max} "
+        f"(full inner volume {full_inner_volume})"
     )
 
     array = zarr.open(s.store_path, mode="r")
@@ -2027,6 +2029,166 @@ def test_with_ragged_final_shard(store_path: Path):
     array = zarr.open(settings.store_path)
 
     np.testing.assert_array_equal(data, array)
+
+
+def _compression_or_none(
+    compressor: Compressor, codec: CompressionCodec
+) -> Optional[CompressionSettings]:
+    if compressor == Compressor.NONE:
+        return None
+    return CompressionSettings(
+        compressor=compressor,
+        codec=codec,
+        level=1,
+        # stock zstd does not shuffle
+        shuffle=0 if compressor == Compressor.ZSTD else 1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("compressor", "codec"),
+    [
+        (Compressor.NONE, CompressionCodec.NONE),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_LZ4),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_ZSTD),
+        (Compressor.ZSTD, CompressionCodec.ZSTD),
+    ],
+)
+def test_reused_buffers_round_trip(
+    store_path: Path, compressor: Compressor, codec: CompressionCodec
+):
+    """Chunk buffers and compression outputs are reused across layers. With
+    random data, every chunk compresses to a different size, so a stale or
+    mis-sized output buffer would corrupt the read-back. zarr crops edge-tile
+    padding, so the padding itself is checked by the C++ test
+    zarr-stream-reused-buffers-zero, not here."""
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=0,
+                        chunk_size_px=2,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="z",
+                        kind=DimensionType.SPACE,
+                        array_size_px=3,
+                        chunk_size_px=2,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=30,
+                        chunk_size_px=16,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=50,
+                        chunk_size_px=16,
+                        shard_size_chunks=2,
+                    ),
+                ],
+                data_type=np.uint16,
+                compression=_compression_or_none(compressor, codec),
+            )
+        ],
+    )
+    stream = ZarrStream(settings)
+
+    # 41 timepoints: an odd count, so the final t chunk is short
+    rng = np.random.default_rng(0)
+    data = rng.integers(0, 1024, (41, 3, 30, 50), dtype=np.uint16)
+    stream.append(data)
+    stream.close()
+
+    del stream
+
+    array = zarr.open(settings.store_path)
+
+    np.testing.assert_array_equal(data, array)
+
+
+@pytest.mark.parametrize(
+    ("compressor", "codec"),
+    [
+        (Compressor.NONE, CompressionCodec.NONE),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_LZ4),
+        (Compressor.BLOSC1, CompressionCodec.BLOSC_ZSTD),
+        (Compressor.ZSTD, CompressionCodec.ZSTD),
+    ],
+)
+def test_reused_buffers_multiscale_round_trip(
+    store_path: Path, compressor: Compressor, codec: CompressionCodec
+):
+    """Each level of a multiscale array is its own array with its own buffer
+    pools. Both levels must read back exactly: level 0 as written, level 1 as
+    the recorded downsampling of level 0."""
+    settings = StreamSettings(
+        store_path=str(store_path / "test.zarr"),
+        arrays=[
+            ArraySettings(
+                dimensions=[
+                    Dimension(
+                        name="t",
+                        kind=DimensionType.TIME,
+                        array_size_px=40,
+                        chunk_size_px=2,
+                        shard_size_chunks=2,
+                    ),
+                    Dimension(
+                        name="y",
+                        kind=DimensionType.SPACE,
+                        array_size_px=48,
+                        chunk_size_px=20,
+                        shard_size_chunks=1,
+                    ),
+                    Dimension(
+                        name="x",
+                        kind=DimensionType.SPACE,
+                        array_size_px=64,
+                        chunk_size_px=24,
+                        shard_size_chunks=1,
+                    ),
+                ],
+                data_type=np.uint16,
+                compression=_compression_or_none(compressor, codec),
+                downsampling_method=DownsamplingMethod.MEAN,
+            )
+        ],
+    )
+    stream = ZarrStream(settings)
+
+    rng = np.random.default_rng(0)
+    data = rng.integers(0, 1024, (40, 48, 64), dtype=np.uint16)
+    stream.append(data)
+    stream.close()
+
+    del stream
+
+    group = zarr.open(settings.store_path, mode="r")
+    metadata = group.attrs["ome"]["multiscales"][0]["metadata"]
+    method = metadata["method"]
+    args = list(map(eval, metadata.get("args", [])))
+    kwargs = {k: eval(v) for k, v in metadata.get("kwargs", {}).items()}
+
+    full_res = group["0"]
+    np.testing.assert_array_equal(data, full_res)
+
+    downsampled = group["1"]
+    assert downsampled.shape == (40, 24, 32)
+    for t in range(downsampled.shape[0]):
+        expected = eval(method)(full_res[t], *args, **kwargs).astype(
+            data.dtype
+        )
+        np.testing.assert_array_equal(downsampled[t], expected)
 
 
 def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):

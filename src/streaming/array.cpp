@@ -8,12 +8,10 @@
 #include <crc32c/crc32c.h>
 
 #include <algorithm> // std::fill
-#include <blosc.h>
 #include <cstring>
 #include <functional>
 #include <future>
 #include <stdexcept>
-#include <zstd.h>
 
 using json = nlohmann::json;
 
@@ -63,26 +61,6 @@ shuffle_to_string(uint8_t shuffle)
                                      std::to_string(shuffle));
     }
 }
-
-size_t
-max_compressed_size(size_t uncompressed_size,
-                    const std::optional<zarr::CompressionParams>& params)
-{
-    if (!params) {
-        return uncompressed_size;
-    }
-
-    return std::visit(
-      [&uncompressed_size]<typename ParamT>(const ParamT& params) {
-          using T = std::decay_t<ParamT>;
-          if constexpr (std::is_same_v<T, zarr::BloscCompressionParams>) {
-              return uncompressed_size + BLOSC_MAX_OVERHEAD;
-          } else {
-              return ZSTD_compressBound(uncompressed_size);
-          }
-      },
-      *params);
-}
 } // namespace
 
 zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
@@ -104,8 +82,34 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
     const size_t n_chunks = config_->dimensions->number_of_chunks_in_memory();
     EXPECT(n_chunks > 0, "Array has zero chunks in memory");
 
-    // allocated lazily on write, freed per band/layer on flush
+    // allocated lazily on write, released per band/layer on flush
     chunks_.resize(n_chunks);
+
+    // A pool allocates only when it has nothing to hand out, so it never holds
+    // more buffers than this array had in use at once. Keep one flush's worth
+    // of chunk buffers: a dim-1 band when banding, otherwise a layer. That is
+    // enough to reuse every buffer in steady state, since each flush takes the
+    // buffers the flush before last gave back, and it caps what a write
+    // backlog leaves kept once it drains: a banded array stays within the band
+    // being filled plus one kept band. Compressions in use at once are at most
+    // one per pool thread plus the calling thread, and a flush has no more
+    // chunks to compress than it holds, so keep the smaller of the two in
+    // compression outputs. Between flushes the kept buffers stay resident; a
+    // bounded array drains them once it has its last frame (write_frame).
+    // ZarrStreamSettings_estimate_max_memory_usage budgets for both limits.
+    const auto& dimensions = *config_->dimensions;
+    const size_t chunks_per_flush = dimensions.supports_dim1_banding()
+                                      ? dimensions.chunks_per_dim1_band()
+                                      : n_chunks;
+    const size_t n_threads = thread_pool_->n_threads();
+    const size_t bytes_per_chunk = dimensions.bytes_per_chunk();
+    chunk_pool_ =
+      std::make_shared<BufferPool>(bytes_per_chunk, chunks_per_flush);
+    if (config_->compression_params) {
+        output_pool_ = std::make_shared<BufferPool>(
+          compressed_size_bound(bytes_per_chunk, *config_->compression_params),
+          std::min<size_t>(n_threads + 1, chunks_per_flush));
+    }
 
     // append chunk > 1 keeps the whole inner volume resident (no banding); warn
     const auto& dims = *config_->dimensions;
@@ -167,6 +171,12 @@ zarr::Array::memory_usage() const noexcept
         if (chunk_lock.owns_lock() && chunks_[i]) {
             total += chunks_[i]->size_bytes();
         }
+    }
+
+    // buffers kept for reuse are still resident
+    total += chunk_pool_->retained_bytes();
+    if (output_pool_) {
+        total += output_pool_->retained_bytes();
     }
 
     // An S3 shard stages fragments that arrived out of order, which can reach
@@ -249,6 +259,18 @@ zarr::Array::write_frame(std::vector<uint8_t>& frame,
             CHECK(write_metadata_());
         }
         bytes_to_flush_ = 0;
+    }
+
+    // A bounded array takes no frames after its last, so it will need no
+    // more buffers. Free the kept ones now rather than at stream close, so a
+    // stream that fills several arrays in turn does not keep a layer of
+    // buffers for each finished one. Chunks still being written, and any the
+    // close flush takes, are freed when they come back.
+    if (max_bytes_ > 0 && total_bytes_written_ == max_bytes_) {
+        chunk_pool_->drain();
+        if (output_pool_) {
+            output_pool_->drain();
+        }
     }
 
     return bytes_written == frame.size() ? WriteResult::Ok
@@ -579,7 +601,6 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
         return 0;
     }
 
-    const auto bytes_per_chunk = dimensions->bytes_per_chunk();
     const auto bytes_per_tile_row = tile_cols * bytes_per_px;
 
     const auto n_tiles_x = (frame_cols + tile_cols - 1) / tile_cols;
@@ -617,7 +638,7 @@ zarr::Array::write_frame_to_chunks_(std::vector<uint8_t>& frame)
                   std::unique_lock lock(chunk_mutexes_[tile_idx + group_offset]);
                   if (chunk == nullptr) {
                       chunk =
-                        std::make_shared<Chunk>(bytes_per_chunk, bytes_per_px);
+                        std::make_shared<Chunk>(chunk_pool_, bytes_per_px);
                   }
               }
 
@@ -762,20 +783,31 @@ zarr::Array::dispatch_chunk_job_(std::shared_ptr<Shard> shard,
                     result = ThreadPool::TaskResult::Fatal;
                 }
             } else {
-                std::vector<uint8_t> compressed;
-                if (!chunk->compress_and_take_buffer(params, compressed)) {
+                // the sink is done with `encoded` when write_chunk returns
+                // (it writes synchronously or copies), so the output can go
+                // back to the pool right after
+                ByteVector output;
+                if (output_pool_) {
+                    output = output_pool_->acquire(false);
+                }
+
+                ConstByteSpan encoded;
+                if (!chunk->encode(params, output, encoded)) {
                     err = "Failed to compress chunk " +
                           std::to_string(chunk_idx) + " of shard " +
                           std::to_string(shard_idx);
                     result = ThreadPool::TaskResult::Fatal;
                 } else if (try_write([&] {
-                               return shard->write_chunk(internal_idx,
-                                                         compressed);
+                               return shard->write_chunk(internal_idx, encoded);
                            })) {
                     result = ThreadPool::TaskResult::Success;
                 } else {
                     err = retries_exhausted_msg();
                     result = ThreadPool::TaskResult::Fatal;
+                }
+
+                if (output_pool_) {
+                    output_pool_->release(std::move(output));
                 }
             }
         } catch (const std::exception& exc) {

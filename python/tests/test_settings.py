@@ -355,6 +355,9 @@ def test_estimate_max_memory_usage():
     )
     for dim in array.dimensions[1:]:
         array_usage *= dim.array_size_px
+    # up to two chunk layers: one being filled, one being written or kept for
+    # reuse
+    array_usage *= 2
     frame_buffer_usage = (
         array.dimensions[-2].array_size_px
         * array.dimensions[-1].array_size_px
