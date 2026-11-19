@@ -79,6 +79,11 @@ struct ZarrStream_s
     };
 
     std::string error_; // error message. If nonempty, an error occurred.
+    // Guards error_ once the stream runs: pool workers, the frame-queue thread
+    // and the appending thread can all record an error, and append reads it.
+    // The constructor reads and writes it without the lock, because no pool job
+    // exists before init_frame_queue_ pushes the frame-queue job.
+    mutable std::mutex error_mutex_;
 
     std::string store_path_;
     std::optional<zarr::S3Settings> s3_settings_;
@@ -159,6 +164,7 @@ struct ZarrStream_s
      * @param msg The error message to set.
      */
     void set_error_(const std::string& msg);
+    [[nodiscard]] std::string get_error_() const;
 
     /**
      * @brief Create the data store.

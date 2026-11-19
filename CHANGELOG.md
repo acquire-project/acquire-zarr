@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed a data race on the stream's error state. A pool worker, the frame-queue thread and the appending thread can
+  each record an error, and `ZarrStream_append` reads it, with no lock. The error is now recorded and read under a
+  mutex (#276, #278)
 - A multiscale array whose append dimension is spatial no longer crashes on x86_64 (integer division by zero in the
   OME `scale` computation). The append dimension keeps its base scale at every level (#295)
 - Mean downsampling of `uint32`, `int32`, `uint64` and `int64` data no longer overflows. The overflow-safe integer

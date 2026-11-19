@@ -39,6 +39,7 @@ set(tests
         zarr-stream-partial-append
         zarr-stream-append-error-bytes-out
         api-version
+        zarr-stream-worker-error
         zarr-stream-append-null-zeros
         frame-queue
         buffer-pool
