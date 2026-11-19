@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Keys are regularized without `std::regex`, so a keyed append no longer compiles two regexes. Only ASCII whitespace is
+  trimmed from a key, as in the C locale. Before, the trimmed set followed the global C++ locale, and older MSVC builds
+  also trimmed at an interior line feed (#296)
+- A keyed append whose key is already regular looks it up without making a copy (#299)
 - The stream writes the intermediate group metadata (generic, plate and well groups) when it is created, not when it
   closes. A reader can navigate the hierarchy during the acquisition, and group metadata that the caller writes after
   `ZarrStream_create` is kept (#186, #268)

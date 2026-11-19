@@ -11,9 +11,12 @@ namespace {
 std::string
 regularize_key_regex(std::string_view key)
 {
+    static const std::regex trim(R"(^(\s|\/)+|(\s|\/)+$)");
+    static const std::regex slashes(R"(\/+)");
+
     std::string out{ key };
-    out = std::regex_replace(out, std::regex(R"(^(\s|\/)+|(\s|\/)+$)"), "");
-    out = std::regex_replace(out, std::regex(R"(\/+)"), "/");
+    out = std::regex_replace(out, trim, "");
+    out = std::regex_replace(out, slashes, "/");
     return out;
 }
 
@@ -43,6 +46,16 @@ expect_matches_regex(const std::string& key)
            actual,
            "', regex version returned '",
            expected,
+           "'");
+
+    const bool regular = zarr::is_regular_key(key);
+    EXPECT(regular == (actual == key),
+           "is_regular_key('",
+           key,
+           "') returned ",
+           regular,
+           ", but regularize_key returned '",
+           actual,
            "'");
 }
 } // namespace
@@ -80,15 +93,15 @@ main()
         expect_regularized("a\n/b", "a\n/b");
         expect_regularized("a\n\nb", "a\n\nb");
 
-        // every string up to length 7 over an alphabet of key characters,
-        // slashes and whitespace
-        const std::string alphabet = { 'a', '/', ' ', '\t' };
+        // every string up to length 6 over an alphabet of key characters,
+        // slashes and whitespace, with both ends of the '\t'-'\r' range
+        const std::string alphabet = { 'a', '/', ' ', '\t', '\r' };
         std::vector<std::string> frontier{ "" };
-        for (int len = 0; len <= 7; ++len) {
+        for (int len = 0; len <= 6; ++len) {
             std::vector<std::string> next;
             for (const auto& key : frontier) {
                 expect_matches_regex(key);
-                if (len < 7) {
+                if (len < 6) {
                     for (char c : alphabet) {
                         next.push_back(key + c);
                     }
