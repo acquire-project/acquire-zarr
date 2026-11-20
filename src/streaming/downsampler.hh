@@ -59,6 +59,13 @@ class Downsampler
     size_t n_levels_() const;
 
     void make_writer_configurations_(std::shared_ptr<ArrayConfig> config);
-    void emplace_downsampled_frame_(int level, const ByteVector& frame_data);
+    /**
+     * @brief Store @p frame_data, moved, as the next frame for @p level. If a
+     * frame for @p level is still waiting to be taken, keep that one and leave
+     * @p frame_data unchanged.
+     * @return A view of the stored frame, or of @p frame_data if it was not
+     * stored: the input to the next level.
+     */
+    ConstByteSpan emplace_downsampled_frame_(int level, ByteVector& frame_data);
 };
 } // namespace zarr
