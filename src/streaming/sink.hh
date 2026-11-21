@@ -58,14 +58,17 @@ finalize_sink(std::unique_ptr<Sink>&& sink);
  * @param dimensions The dimensions of the dataset.
  * @param parts_along_dimension Function to determine the number of parts along
  * a dimension.
- * @param make_directories Create intermediate directories if true.
+ * @param make_directories Create intermediate directories for slash-separated
+ * keys.
+ * @param separator Separator between chunk coordinates.
  * @return A vector of paths for the data sinks.
  */
 std::vector<std::string>
 construct_data_paths(std::string_view base_path,
                      const ArrayDimensions& dimensions,
                      const DimensionPartsFun& parts_along_dimension,
-                     bool make_directories);
+                     bool make_directories,
+                     char separator = '/');
 
 /**
  * @brief Create a file sink from a path.

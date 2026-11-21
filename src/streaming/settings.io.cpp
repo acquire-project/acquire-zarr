@@ -213,6 +213,11 @@ constexpr EnumEntry kDownsamplingMethods[] = {
     { "max", ZarrDownsamplingMethod_Max },
 };
 
+constexpr EnumEntry kChunkKeySeparators[] = {
+    { "/", '/' },
+    { ".", '.' },
+};
+
 constexpr EnumEntry kIntermediateGroups[] = {
     { "if_missing", ZarrIntermediateGroups_IfMissing },
     { "always", ZarrIntermediateGroups_Always },
@@ -509,6 +514,13 @@ load_array(const json& j,
           "'version: 1' to load this config with version-1 semantics");
     }
 
+    arr->chunk_key_separator =
+      j.contains("chunk_key_separator")
+        ? static_cast<char>(to_enum(kChunkKeySeparators,
+                                    as_string(j.at("chunk_key_separator"),
+                                              ctx + ".chunk_key_separator"),
+                                    "chunk_key_separator"))
+        : '/';
     arr->is_ngff =
       j.contains("is_ngff") ? as_bool(j.at("is_ngff"), ctx + ".is_ngff") : false;
     arr->downsampling_method = static_cast<ZarrDownsamplingMethod>(
@@ -734,6 +746,10 @@ dump_array(const ZarrArraySettings& a, bool include_output_key)
         j["output_key"] = a.output_key;
     }
     j["data_type"] = from_enum(kDataTypes, a.data_type, "data type");
+    j["chunk_key_separator"] =
+      from_enum(kChunkKeySeparators,
+                a.chunk_key_separator ? a.chunk_key_separator : '/',
+                "chunk_key_separator");
     j["is_ngff"] = a.is_ngff;
     j["downsampling_method"] = from_enum(
       kDownsamplingMethods, a.downsampling_method, "downsampling method");

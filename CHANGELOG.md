@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Arrays can select `.` as the Zarr v3 chunk key separator with `chunk_key_separator` in C, Python, and config
+  files. The default is `/` (#303).
+
+### Changed
+
+- C and C++ callers should recompile against the updated `ZarrArraySettings` header and initialize the new field
+  to zero or `'/'` for the default layout.
+
 ## [0.11.0] - [2026-11-19](https://github.com/acquire-project/acquire-zarr/compare/v0.10.0...v0.11.0)
 
 ### Added

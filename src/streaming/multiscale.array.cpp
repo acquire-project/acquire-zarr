@@ -288,7 +288,8 @@ zarr::MultiscaleArray::make_base_array_config_() const
                                          std::nullopt,
                                          0,
                                          true,
-                                         config_->max_levels);
+                                         config_->max_levels,
+                                         config_->chunk_key_separator);
 }
 
 zarr::WriteResult

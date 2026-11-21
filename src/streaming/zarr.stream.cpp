@@ -403,7 +403,8 @@ make_array_config(const ZarrArraySettings* settings,
       downsampling_method,
       0,
       downsampling_method.has_value() || settings->is_ngff || force_ngff,
-      settings->max_levels);
+      settings->max_levels,
+      settings->chunk_key_separator ? settings->chunk_key_separator : '/');
 }
 
 std::unique_ptr<zarr::ArrayBase>
@@ -518,6 +519,12 @@ validate_array_settings(const ZarrArraySettings* settings,
         if (!validate_dimension(settings->dimensions + i, i == 0, error)) {
             return false;
         }
+    }
+
+    const char separator = settings->chunk_key_separator;
+    if (separator != '\0' && separator != '/' && separator != '.') {
+        error = "chunk_key_separator must be '/' or '.'";
+        return false;
     }
 
     if (settings->downsampling_method >= ZarrDownsamplingMethodCount) {

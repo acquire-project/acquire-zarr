@@ -128,6 +128,10 @@ main()
         CHECK(ZarrStatusCode_Success ==
               ZarrStreamSettings_create_arrays(&settings, 1));
         configure_stream_dimensions(settings.arrays);
+        settings.arrays[0].chunk_key_separator = '-';
+        CHECK(nullptr == ZarrStream_create(&settings));
+        CHECK(!fs::exists(settings.store_path));
+        settings.arrays[0].chunk_key_separator = 0;
         stream = ZarrStream_create(&settings);
         CHECK(nullptr != stream);
         CHECK(fs::is_directory(settings.store_path));

@@ -31,7 +31,8 @@ std::vector<std::string>
 zarr::construct_data_paths(std::string_view base_path,
                            const ArrayDimensions& dimensions,
                            const DimensionPartsFun& parts_along_dimension,
-                           bool make_directories)
+                           bool make_directories,
+                           char separator)
 {
     std::queue<std::string> paths_queue;
     paths_queue.emplace(base_path);
@@ -51,11 +52,12 @@ zarr::construct_data_paths(std::string_view base_path,
 
             for (auto k = 0; k < n_parts; ++k) {
                 const auto kstr = std::to_string(k);
-                const auto dirname = path + (path.empty() ? kstr : "/" + kstr);
-                paths_queue.push(dirname);
+                const auto prefix =
+                  path.empty() ? kstr : path + separator + kstr;
+                paths_queue.push(prefix);
 
-                if (make_directories) {
-                    fs::create_directories(dirname);
+                if (make_directories && separator == '/') {
+                    fs::create_directories(prefix);
                 }
             }
         }
@@ -75,7 +77,7 @@ zarr::construct_data_paths(std::string_view base_path,
             const auto path = paths_queue.front();
             paths_queue.pop();
             for (auto j = 0; j < n_parts; ++j)
-                paths_out.push_back(path + "/" + std::to_string(j));
+                paths_out.push_back(path + separator + std::to_string(j));
         }
     }
 

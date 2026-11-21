@@ -288,6 +288,11 @@ levels. The number of levels is determined automatically from the chunk and
 array sizes. You can cap the pyramid depth with `max_levels` (`0` means no
 limit, which is the default).
 
+Each array uses `/` to separate shard coordinates by default, for example
+`c/0/1/2`. Set `chunk_key_separator="."` in Python, `chunk_key_separator: "."`
+in a settings file, or `array.chunk_key_separator = '.'` on a C `ZarrArraySettings` to
+write flat keys such as `c.0.1.2`. The setting applies to every pyramid level.
+
 ### Organizing data within a Zarr container
 
 The library allows you to stream multiple arrays to a single Zarr dataset by configuring multiple arrays.
