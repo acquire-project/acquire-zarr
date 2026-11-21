@@ -585,6 +585,26 @@ def test_config_dict_round_trip():
     _assert_expected(aqz.StreamSettings.from_dict(d))
 
 
+def test_chunk_key_separator_config_round_trip():
+    settings = aqz.StreamSettings.from_string(CONFIGS["yaml"])
+    assert settings.arrays[0].chunk_key_separator == "/"
+    settings.arrays[0].chunk_key_separator = "."
+    assert settings.to_dict()["arrays"][0]["chunk_key_separator"] == "."
+    for config in [settings.to_yaml(), settings.to_json()]:
+        loaded = aqz.StreamSettings.from_string(config)
+        assert loaded.arrays[0].chunk_key_separator == "."
+
+
+def test_invalid_chunk_key_separator():
+    with pytest.raises(ValueError, match="chunk_key_separator"):
+        aqz.ArraySettings(chunk_key_separator="-")
+
+    config = aqz.StreamSettings.from_string(CONFIGS["yaml"]).to_dict()
+    config["arrays"][0]["chunk_key_separator"] = ".."
+    with pytest.raises(ValueError):
+        aqz.StreamSettings.from_dict(config)
+
+
 def test_set_intermediate_groups(settings):
     assert settings.intermediate_groups == aqz.IntermediateGroups.IF_MISSING
 

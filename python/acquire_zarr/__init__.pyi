@@ -84,6 +84,8 @@ class ArraySettings:
       dimensions: List of dimension properties defining the dataset structure.
         Should be ordered from slowest to fastest changing (e.g., [Z, Y, X] for 3D data).
       data_type: The pixel data type for the dataset.
+      chunk_key_separator: Separator in Zarr v3 chunk keys, either "/" (default)
+        or ".". Applies to every pyramid level.
       compression: Optional compression settings for chunks. If None, no compression is applied.
       downsampling_method: Method used for generating optional multiscale levels
         (image pyramid). When set, `is_ngff` is also coerced to True and the array
@@ -119,6 +121,7 @@ class ArraySettings:
     data_type: Union[DataType, numpy.dtype]
     compression: Optional[CompressionSettings]
     downsampling_method: Optional[DownsamplingMethod]
+    chunk_key_separator: str
     max_levels: int
     storage_dimension_order: List[str]
     is_ngff: bool

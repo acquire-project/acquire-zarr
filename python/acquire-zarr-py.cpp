@@ -42,6 +42,7 @@ struct ArrayLifetimeProps
     std::optional<ZarrDownsamplingMethod> downsampling_method;
     bool is_ngff{ false };
     uint32_t max_levels{ 0 };
+    char chunk_key_separator{ '/' };
 
     ZarrArraySettings* array_settings()
     {
@@ -84,6 +85,7 @@ struct ArrayLifetimeProps
           downsampling_method.value_or(ZarrDownsamplingMethod_None);
         array_settings_.is_ngff = is_ngff;
         array_settings_.max_levels = max_levels;
+        array_settings_.chunk_key_separator = chunk_key_separator;
 
         if (!storage_dimension_order.empty()) {
             array_settings_.storage_dimension_order =
@@ -591,6 +593,15 @@ class PyZarrArraySettings
         downsampling_method_ = method;
     }
 
+    char chunk_key_separator() const { return chunk_key_separator_; }
+    void set_chunk_key_separator(char separator)
+    {
+        if (separator != '/' && separator != '.') {
+            throw py::value_error("chunk_key_separator must be '/' or '.'");
+        }
+        chunk_key_separator_ = separator;
+    }
+
     uint32_t max_levels() const { return max_levels_; }
     void set_max_levels(uint32_t levels) { max_levels_ = levels; }
 
@@ -650,6 +661,7 @@ class PyZarrArraySettings
         lt_props.downsampling_method = downsampling_method_;
         lt_props.is_ngff = is_ngff();
         lt_props.max_levels = max_levels_;
+        lt_props.chunk_key_separator = chunk_key_separator_;
 
         // compression settings
         if (compression_settings_.has_value()) {
@@ -719,6 +731,7 @@ class PyZarrArraySettings
     bool is_ngff_{ false };
     std::optional<ZarrDownsamplingMethod> downsampling_method_{ std::nullopt };
     uint32_t max_levels_{ 0 };
+    char chunk_key_separator_{ '/' };
 
     std::vector<std::string> storage_dimension_order_;
 };
@@ -1172,6 +1185,7 @@ read_array(const ZarrArraySettings& a)
         arr.set_max_levels(a.max_levels);
     }
     arr.set_is_ngff(a.is_ngff);
+    arr.set_chunk_key_separator(a.chunk_key_separator);
     if (a.compression_settings) {
         PyZarrCompressionSettings c;
         c.set_compressor(a.compression_settings->compressor);
@@ -1861,7 +1875,8 @@ PYBIND11_MODULE(acquire_zarr, m)
                     std::optional<ZarrDownsamplingMethod> downsampling_method,
                     uint32_t max_levels,
                     std::optional<py::list> storage_dimension_order,
-                    std::optional<bool> is_ngff) {
+                    std::optional<bool> is_ngff,
+                    char chunk_key_separator) {
             PyZarrArraySettings settings;
 
             if (output_key) {
@@ -1900,6 +1915,7 @@ PYBIND11_MODULE(acquire_zarr, m)
                 settings.set_downsampling_method(*downsampling_method);
             }
             settings.set_max_levels(max_levels);
+            settings.set_chunk_key_separator(chunk_key_separator);
             if (is_ngff) {
                 settings.set_is_ngff(*is_ngff);
             }
@@ -1922,7 +1938,8 @@ PYBIND11_MODULE(acquire_zarr, m)
         py::arg("downsampling_method") = std::nullopt,
         py::arg("max_levels") = 0,
         py::arg("storage_dimension_order") = std::nullopt,
-        py::arg("is_ngff") = std::nullopt)
+        py::arg("is_ngff") = std::nullopt,
+        py::arg("chunk_key_separator") = '/')
       .def("__repr__",
            [](const PyZarrArraySettings& self) {
                std::string repr =
@@ -1960,6 +1977,10 @@ PYBIND11_MODULE(acquire_zarr, m)
                    }
                    repr += ", downsampling_method=" + method_str;
                }
+
+               repr += ", chunk_key_separator='";
+               repr += self.chunk_key_separator();
+               repr += "'";
 
                repr += std::string(", is_ngff=") +
                        (self.is_ngff() ? "True" : "False");
@@ -2040,6 +2061,9 @@ PYBIND11_MODULE(acquire_zarr, m)
                   obj.cast<ZarrDownsamplingMethod>());
             }
         })
+      .def_property("chunk_key_separator",
+                    &PyZarrArraySettings::chunk_key_separator,
+                    &PyZarrArraySettings::set_chunk_key_separator)
       .def_property("max_levels",
                     &PyZarrArraySettings::max_levels,
                     &PyZarrArraySettings::set_max_levels)

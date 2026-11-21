@@ -635,7 +635,9 @@ zarr::Downsampler::make_writer_configurations_(
           prev_config->dtype,
           prev_config->downsampling_method,
           prev_config->level_of_detail + 1,
-          true);
+          true,
+          prev_config->max_levels,
+          prev_config->chunk_key_separator);
 
         writer_configurations_.emplace(down_config->level_of_detail,
                                        down_config);

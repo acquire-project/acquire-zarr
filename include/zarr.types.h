@@ -232,6 +232,8 @@ extern "C"
                                   pyramid. 0 means no limit. */
         const size_t* storage_dimension_order;
         bool is_ngff;
+        char chunk_key_separator; /**< '/' (default for zero) or '.' between
+                                       coordinates in Zarr v3 chunk keys. */
     } ZarrArraySettings;
 
     /**

@@ -53,7 +53,6 @@ class Array : public ArrayBase
     uint64_t total_bytes_written_;   // total bytes written to the array
     uint64_t bytes_to_flush_; // bytes written to the array since last flush
     uint32_t append_chunk_index_;
-    std::string data_root_;
     bool is_closing_;
 
     uint64_t last_successful_frame_id_;

@@ -131,13 +131,6 @@ zarr::Array::Array(std::shared_ptr<ArrayConfig> config,
                         "dimensions.");
         }
     }
-
-    // For 2D arrays, don't include append_chunk_index in the path
-    if (config_->dimensions->is_2d()) {
-        data_root_ = node_path_() + "/c";
-    } else {
-        data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
-    }
 }
 
 zarr::Array::~Array()
@@ -328,7 +321,8 @@ zarr::Array::make_metadata_(nlohmann::json& metadata)
       { "name", "default" },
       {
         "configuration",
-        json::object({ { "separator", "/" } }),
+        json::object(
+          { { "separator", std::string(1, config_->chunk_key_separator) } }),
       },
     });
     meta_tmp["fill_value"] = 0;
@@ -488,10 +482,16 @@ void
 zarr::Array::make_shards_()
 {
     if (data_paths_.empty()) {
-        data_paths_ = construct_data_paths(data_root_,
+        const char separator = config_->chunk_key_separator;
+        std::string prefix = node_path_() + "/c";
+        if (!config_->dimensions->is_2d()) {
+            prefix += separator + std::to_string(append_chunk_index_);
+        }
+        data_paths_ = construct_data_paths(prefix,
                                            *config_->dimensions,
                                            shards_along_dimension,
-                                           !is_s3_array_());
+                                           !is_s3_array_(),
+                                           separator);
 
         const size_t n_shards = data_paths_.size();
         const auto& dims = config_->dimensions;
@@ -1016,12 +1016,6 @@ zarr::Array::rollover_()
 
     close_sinks_();
     ++append_chunk_index_;
-    // For 2D arrays, don't include append_chunk_index in the path
-    if (config_->dimensions->is_2d()) {
-        data_root_ = node_path_() + "/c";
-    } else {
-        data_root_ = node_path_() + "/c/" + std::to_string(append_chunk_index_);
-    }
 }
 
 bool

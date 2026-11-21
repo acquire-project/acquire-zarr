@@ -666,11 +666,12 @@ def test_skip(
 
 
 @pytest.mark.parametrize(
-    ("compression_codec",),
+    ("compression_codec", "separator"),
     [
-        (None,),
-        (CompressionCodec.BLOSC_LZ4,),
-        (CompressionCodec.BLOSC_ZSTD,),
+        pytest.param(None, "/", id="raw-slash"),
+        pytest.param(None, ".", id="raw-dot"),
+        pytest.param(CompressionCodec.BLOSC_LZ4, "/", id="lz4-slash"),
+        pytest.param(CompressionCodec.BLOSC_ZSTD, "/", id="zstd-slash"),
     ],
 )
 def test_stream_data_to_s3(
@@ -678,6 +679,7 @@ def test_stream_data_to_s3(
     s3_settings: Optional[S3Settings],
     request: pytest.FixtureRequest,
     compression_codec: Optional[CompressionCodec],
+    separator: str,
 ):
     if s3_settings is None:
         pytest.skip("S3 settings not set")
@@ -695,6 +697,7 @@ def test_stream_data_to_s3(
             shuffle=1,
         )
     settings.arrays[0].data_type = np.uint16
+    settings.arrays[0].chunk_key_separator = separator
 
     stream = ZarrStream(settings)
     assert stream
@@ -728,6 +731,7 @@ def test_stream_data_to_s3(
         assert np.array_equal(array[i, :, :], data[i, :, :])
 
     metadata = array.metadata
+    assert metadata.chunk_key_encoding.separator == separator
     if compression_codec is not None:
         cname = (
             zblosc.BloscCname.lz4
@@ -2191,11 +2195,62 @@ def test_reused_buffers_multiscale_round_trip(
         np.testing.assert_array_equal(downsampled[t], expected)
 
 
-def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
+def test_dot_chunk_keys_at_each_pyramid_level(store_path: Path):
+    path = store_path / "nested" / "image"
+    settings = StreamSettings(
+        store_path=str(store_path),
+        arrays=[
+            ArraySettings(
+                output_key="nested/image",
+                dimensions=[
+                    Dimension(
+                        name=name,
+                        kind=kind,
+                        array_size_px=size,
+                        chunk_size_px=chunk,
+                        shard_size_chunks=1,
+                    )
+                    for name, kind, size, chunk in [
+                        ("t", DimensionType.TIME, 0, 1),
+                        ("y", DimensionType.SPACE, 8, 2),
+                        ("x", DimensionType.SPACE, 8, 2),
+                    ]
+                ],
+                data_type=np.uint16,
+                downsampling_method=DownsamplingMethod.DECIMATE,
+                max_levels=1,
+                chunk_key_separator=".",
+            )
+        ],
+    )
+    data = np.arange(3 * 8 * 8, dtype=np.uint16).reshape(3, 8, 8)
+    stream = ZarrStream(settings)
+    stream.append(data, key="nested/image")
+    stream.close()
+
+    for level, expected in [("0", data), ("1", data[:, ::2, ::2])]:
+        node = path / level
+        metadata = json.loads((node / "zarr.json").read_text())
+        assert metadata["chunk_key_encoding"] == {
+            "name": "default",
+            "configuration": {"separator": "."},
+        }
+        assert (node / "c.2.1.1").is_file()
+        assert all(entry.is_file() for entry in node.iterdir())
+        np.testing.assert_array_equal(
+            zarr.open_array(node, mode="r")[:], expected
+        )
+
+
+@pytest.mark.parametrize("separator", ["/", "."], ids=["slash", "dot"])
+def test_single_2d_image(
+    store_path: Path, request: pytest.FixtureRequest, separator: str
+):
     settings = StreamSettings(
         store_path=str(store_path / f"{request.node.name}.zarr"),
         arrays=[
             ArraySettings(
+                chunk_key_separator=separator,
                 dimensions=[
                     Dimension(
                         name="y",
@@ -2223,6 +2278,8 @@ def test_single_2d_image(store_path: Path, request: pytest.FixtureRequest):
     stream.close()
     del stream
     array = zarr.open_array(settings.store_path)
+    chunk_key = separator.join(["c", "1", "1"])
+    assert (Path(settings.store_path) / chunk_key).is_file()
     assert data.shape == array.shape
     np.testing.assert_array_equal(data, array)
 
